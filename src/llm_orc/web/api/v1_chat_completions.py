@@ -1,33 +1,28 @@
 """Serving Layer ``/v1/chat/completions`` endpoint.
 
-Per ``docs/agentic-serving/system-design.md`` §Serving Layer (L3) and
-ADR-043 (Collapse Dual Serving Surfaces to One Loop-Driven Surface).
-Every chat-completions request routes through the Client-Tool-Action
-Terminal composing the layer-A Loop Driver (ADR-033 / ADR-034). The
-endpoint:
+Per ``docs/agentic-serving/system-design.md`` §Cycle 8 and ADR-046 §1.
+Every chat-completions request is handled by the declarative Serving
+Ensemble (classify -> seat -> marshal), executed by the L0 Ensemble
+Engine. The endpoint:
 
 1. Parses the OpenAI-compatible request.
-2. Resolves a Session via :class:`SessionRegistry`.
-3. Runs :func:`resolve_session_start_context` exactly once per session
-   (FC-9); Phase 1 returns an empty list.
-4. Hands the request to the :class:`ClientToolActionTerminal`, which
-   composes the :class:`LoopDriver` and owns tool-call emission and
-   multi-turn loop participation. Tool-driven clients receive a
-   ``tool_calls`` turn; toolless clients receive a finish-with-text
-   turn (F-ι.1 adaptive marshalling, ADR-043 §Decision 3).
-5. Drives the terminal to produce either a non-streaming
-   ``chat.completion`` body or an SSE stream.
+2. Resolves a Session via :class:`SessionRegistry`; the session-start
+   context resolves once per session (FC-9).
+3. Hands the request to the :class:`ServingEnsembleCaller`, which runs
+   the declarative serving turn and yields the shared
+   :class:`OrchestratorChunk` vocabulary. Tool-driven clients receive a
+   ``tool_calls`` turn; toolless clients a finish-with-text turn.
+4. Produces either a non-streaming ``chat.completion`` body or an SSE
+   stream.
 
-The terminal factory is a process-scoped factory that module-level tests
-override via ``monkeypatch.setattr``. ``OrchestratorRuntime`` remains in
-the codebase per ADR-027 §"OrchestratorRuntime status" disposition (a)
-(preserved as architecture-for-future-surfaces) but has no caller here.
+The caller factory is process-scoped; module-level tests override it via
+``monkeypatch.setattr``. The dissolved loop-driver serving surface
+(ADR-033/034/043) was removed with the ``agentic/`` package at Cycle-8
+WP-F8; the declarative Serving Ensemble is the only path.
 """
 
 from __future__ import annotations
 
-import asyncio
-import os
 import time
 import uuid
 from collections.abc import AsyncIterator
@@ -35,57 +30,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from llm_orc.agentic.artifact_bridge import ArtifactBridge, parse_check_form_gate
-from llm_orc.agentic.autonomy_policy import AutonomyPolicy
-from llm_orc.agentic.budget_controller import BudgetController
-from llm_orc.agentic.calibration_gate import (
-    CalibrationGate,
-    EnsembleBackedChecker,
-)
-from llm_orc.agentic.client_tool_action_terminal import ClientToolActionTerminal
-from llm_orc.agentic.dispatch_event_substrate import DispatchEventSubstrate
-from llm_orc.agentic.inference_wait_heartbeat import (
-    InferenceWaitHeartbeatScheduler,
-)
-from llm_orc.agentic.loop_driver import LoopDriver
-from llm_orc.agentic.operator_terminal_event_sink import OperatorTerminalEventSink
-from llm_orc.agentic.orchestrator_config import OrchestratorConfig
-from llm_orc.agentic.orchestrator_context_event_sink import (
-    OrchestratorContextEventSink,
-)
-from llm_orc.agentic.orchestrator_tool_dispatch import (
-    TOOL_NAMES,
-    EnsembleConfigOutputSchemaReader,
-    EnsembleConfigSubstrateReader,
-    OrchestratorToolDispatch,
-)
-from llm_orc.agentic.result_summarizer_harness import ResultSummarizerHarness
-from llm_orc.agentic.session_action_record import SessionActionRecord
-from llm_orc.agentic.single_step_enforcer import SingleStepEnforcer
-from llm_orc.agentic.tier_router import (
-    EnsembleConfigTopazSkillReader,
-    TierRouter,
-    TierRouterDefaults,
-)
-from llm_orc.agentic.tier_router_audit import TierEscalationAuditor
-from llm_orc.core.auth.authentication import CredentialStorage
-from llm_orc.core.models.model_factory import ModelFactory
-from llm_orc.core.session.artifact_store import SessionArtifactStore
-from llm_orc.core.session.plexus_adapter import PlexusAdapter
 from llm_orc.core.session.registry import SessionRegistry
-from llm_orc.core.validation.composition_validator import (
-    CompositionValidator,
-    ConfigManagerEnsembleWriter,
-    ConfigManagerPrimitiveRegistry,
-)
-from llm_orc.models.base import ModelInterface
-from llm_orc.web.api import get_orchestra_service
 from llm_orc.web.api.sse_format import OpenAiSseFormatter, encode_tool_call_for_message
-from llm_orc.web.api.v1_models import get_orchestrator_config_resolver
 from llm_orc.web.serving.chunks import (
     ClientToolCall,
     Completion,
@@ -103,11 +53,6 @@ router = APIRouter(prefix="/v1", tags=["openai-compat"])
 
 _SHARED_REGISTRY = SessionRegistry()
 _SHARED_SESSION_START_CACHE = SessionStartCache()
-_SHARED_TOOL_DISPATCH: OrchestratorToolDispatch | None = None
-_SHARED_DISPATCH_EVENT_SUBSTRATE: DispatchEventSubstrate | None = None
-_SHARED_OPERATOR_TERMINAL_SINK: OperatorTerminalEventSink | None = None
-_SHARED_SESSION_ARTIFACT_STORE: SessionArtifactStore | None = None
-_SHARED_SESSION_ACTION_RECORD: SessionActionRecord | None = None
 
 
 def get_session_registry() -> SessionRegistry:
@@ -121,397 +66,6 @@ def get_session_registry() -> SessionRegistry:
 def get_session_start_cache() -> SessionStartCache:
     """Return the process-scoped session-start cache."""
     return _SHARED_SESSION_START_CACHE
-
-
-def get_dispatch_event_substrate() -> DispatchEventSubstrate:
-    """Return the process-scoped Dispatch Event Substrate (Cycle 6 WP-A).
-
-    Tool Dispatch emits ``DispatchTiming``, ``TierSelection``,
-    ``CalibrationVerdictEvent``, and ``CalibrationSignal`` events
-    through this substrate. WP-B's operator-terminal sink is registered
-    via :func:`get_operator_terminal_event_sink`; WP-C's orchestrator-
-    context sink and per-request inference-wait heartbeat schedulers
-    (Cycle 6 WP-B piece 5) register on top of the same shared instance.
-    """
-    global _SHARED_DISPATCH_EVENT_SUBSTRATE
-    if _SHARED_DISPATCH_EVENT_SUBSTRATE is None:
-        _SHARED_DISPATCH_EVENT_SUBSTRATE = DispatchEventSubstrate()
-    return _SHARED_DISPATCH_EVENT_SUBSTRATE
-
-
-def get_operator_terminal_event_sink() -> OperatorTerminalEventSink:
-    """Return the process-scoped Operator-Terminal Event Sink (Cycle 6 WP-B).
-
-    On first construction the sink registers with the shared dispatch
-    event substrate, primes the shared :class:`EnsembleLoader` for each
-    operator-configured ensemble directory, and emits one ``WARN`` line
-    per validation failure via
-    :meth:`OperatorTerminalEventSink.report_validation_results` —
-    closing the validate-once-at-load scenario per ADR-023 §"Noise-floor
-    remediation". Subsequent ``list_ensembles`` calls on the shared
-    loader return the cached validated subset without re-emitting
-    warnings.
-    """
-    global _SHARED_OPERATOR_TERMINAL_SINK
-    if _SHARED_OPERATOR_TERMINAL_SINK is None:
-        sink = OperatorTerminalEventSink()
-        sink.register_with(get_dispatch_event_substrate())
-        service = get_orchestra_service()
-        for dir_path in service.config_manager.get_ensembles_dirs():
-            service.ensemble_loader.prime(str(dir_path))
-        sink.report_validation_results(service.ensemble_loader.validation_results())
-        _SHARED_OPERATOR_TERMINAL_SINK = sink
-    return _SHARED_OPERATOR_TERMINAL_SINK
-
-
-def get_session_artifact_store() -> SessionArtifactStore:
-    """Return the process-scoped Session Artifact Store (Cycle 6 WP-E).
-
-    Per ADR-025 §"Session-dir location" the store owns the
-    ``.llm-orc/agentic-sessions/<session_id>/<dispatch_id>/<deliverable>.<ext>``
-    layout. Construction reads the operator-configured
-    ``observability.agentic_sessions_root`` (default
-    ``.llm-orc/agentic-sessions/``) and resolves it to an absolute
-    :class:`~pathlib.Path` rooted at the current working directory so
-    operator overrides flow through.
-
-    On first construction the store registers its
-    :meth:`~llm_orc.core.session.artifact_store.SessionArtifactStore.cleanup_session`
-    bound method as a close callback on the shared Session Registry
-    per ADR-025 §"Cleanup" + ``system-design.agents.md`` §"Session
-    Registry → Session Artifact Store" — session close drives
-    cleanup of ``retention: session`` artifacts.
-    """
-    global _SHARED_SESSION_ARTIFACT_STORE
-    if _SHARED_SESSION_ARTIFACT_STORE is None:
-        resolver = get_orchestrator_config_resolver()
-        config = resolver.resolve()
-        root = Path(config.observability.agentic_sessions_root)
-        store = SessionArtifactStore(agentic_sessions_root=root)
-        registry = get_session_registry()
-        registry.register_close_callback(
-            lambda identity: store.cleanup_session(identity.value)
-        )
-        _SHARED_SESSION_ARTIFACT_STORE = store
-    return _SHARED_SESSION_ARTIFACT_STORE
-
-
-def get_session_action_record() -> SessionActionRecord:
-    """Return the process-scoped Session Action Record (Cycle 7 LB#5, ADR-037).
-
-    The framework-owned digest's home: the Loop Driver records each
-    emitted client-tool action at decision time and joins the client's
-    per-call ``role: tool`` result on the next request (FC-64 — records
-    derive from the framework's own emissions, never client-serialized
-    reconstruction). On first construction the store registers its
-    ``cleanup_session`` as a close callback on the shared Session
-    Registry — lifecycle rides session scope, the Session Artifact Store
-    retention pattern.
-    """
-    global _SHARED_SESSION_ACTION_RECORD
-    if _SHARED_SESSION_ACTION_RECORD is None:
-        store = SessionActionRecord()
-        registry = get_session_registry()
-        registry.register_close_callback(
-            lambda identity: store.cleanup_session(identity.value)
-        )
-        _SHARED_SESSION_ACTION_RECORD = store
-    return _SHARED_SESSION_ACTION_RECORD
-
-
-def get_orchestrator_tool_dispatch() -> OrchestratorToolDispatch:
-    """Return the process-scoped Tool Dispatch.
-
-    Wraps :class:`OrchestraService` so the orchestrator's tool surface
-    is a thin adapter on the existing ensemble-operations facade. The
-    Result Summarizer Harness is constructed with the configured
-    summarizer ensemble name and the same ``OrchestraService`` (which
-    satisfies the ``SummarizerInvoker`` Protocol structurally). The
-    AutonomyPolicy reads the operator-configured default Autonomy Level
-    on every decision, so a ``config.yaml`` edit takes effect on the
-    next request without a server restart. Tests override this factory
-    to inject a stub dispatcher.
-    """
-    global _SHARED_TOOL_DISPATCH
-    if _SHARED_TOOL_DISPATCH is None:
-        service = get_orchestra_service()
-        resolver = get_orchestrator_config_resolver()
-        config = resolver.resolve()
-        harness = ResultSummarizerHarness(
-            invoker=service, summarizer_name=config.summarizer_ensemble
-        )
-        autonomy_policy = AutonomyPolicy(
-            level_provider=lambda: resolver.resolve().autonomy_level
-        )
-        primitive_registry = ConfigManagerPrimitiveRegistry(service.config_manager)
-        composition_validator = CompositionValidator(primitives=primitive_registry)
-        local_ensemble_writer = ConfigManagerEnsembleWriter(service.config_manager)
-        calibration_checker = EnsembleBackedChecker(
-            invoker=service,
-            checker_ensemble_name=config.calibration.checker_ensemble,
-        )
-        calibration_gate = CalibrationGate(
-            default_n=config.calibration.default_n,
-            checker=calibration_checker,
-        )
-        plexus_adapter = PlexusAdapter()
-        tier_router, tier_router_audit = _build_tier_router_and_audit(
-            service=service, config=config
-        )
-        substrate = get_dispatch_event_substrate()
-        sink = get_operator_terminal_event_sink()
-        # Cycle 6 WP-E (ADR-025) production wiring: SessionArtifactStore
-        # at the substrate slot; EnsembleConfigSubstrateReader bridges
-        # to OrchestraService.find_ensemble_by_name for per-ensemble
-        # output_substrate / output_retention / calibration_substrate_access
-        # lookup; EnsembleConfigOutputSchemaReader activates the ADR-024
-        # advisory JSON-parse path the WP-D envelope construction reads.
-        artifact_store = get_session_artifact_store()
-        substrate_reader = EnsembleConfigSubstrateReader(
-            find_ensemble=service.find_ensemble_by_name
-        )
-        output_schema_reader = EnsembleConfigOutputSchemaReader(
-            find_ensemble=service.find_ensemble_by_name
-        )
-        _SHARED_TOOL_DISPATCH = OrchestratorToolDispatch(
-            operations=service,
-            harness=harness,
-            autonomy_policy=autonomy_policy,
-            composition_validator=composition_validator,
-            local_ensemble_writer=local_ensemble_writer,
-            calibration_gate=calibration_gate,
-            plexus_adapter=plexus_adapter,
-            tool_call_validation_patterns=config.tool_call_validation_patterns,
-            tier_router=tier_router,
-            tier_router_audit=tier_router_audit,
-            event_substrate=substrate,
-            # WP-B feed-forward advisory 2: in production wiring this
-            # logger slot is the bare operator-terminal sink (not the
-            # heartbeat scheduler). The scheduler observes dispatch
-            # activity via the substrate's DispatchTiming fan-out
-            # filtered by session_id prefix — NOT via this emit-logger
-            # slot. The scheduler's ``emit_tool_call_log`` method
-            # exists for testability and as a future composition
-            # surface; it is dead in this wiring path.
-            tool_call_emit_logger=sink,
-            output_schema_reader=output_schema_reader,
-            ensemble_substrate_reader=substrate_reader,
-            session_artifact_store=artifact_store,
-        )
-    return _SHARED_TOOL_DISPATCH
-
-
-def _build_tier_router_and_audit(
-    *,
-    service: Any,
-    config: Any,
-) -> tuple[TierRouter | None, TierEscalationAuditor | None]:
-    """Construct the Tier-Escalation Router and audit per operator config.
-
-    Returns ``(None, None)`` when the operator has not configured
-    ``per_skill_tier_defaults`` — Tool Dispatch then runs without tier
-    escalation (pre-WP-G4-1 behavior). When configured, builds:
-
-    * an :class:`EnsembleConfigTopazSkillReader` bridged to the
-      service's ensemble loader (the L0 metadata source);
-    * a :class:`TierRouter` with the operator-configured 8-skill
-      defaults (WP-G4-1, ADR-015);
-    * a :class:`TierEscalationAuditor` with operator-tunable
-      thresholds (WP-G4-2, ADR-018).
-
-    Per-skill tier defaults flow from L3 → L2 at construction time
-    (no L3 import inside the router or auditor). The audit's
-    SystemAuditClock default is used; tests inject a controllable
-    clock via the factory override.
-    """
-    if config.per_skill_tier_defaults is None:
-        return None, None
-    skill_reader = EnsembleConfigTopazSkillReader(
-        find_ensemble=service.find_ensemble_by_name
-    )
-    router = TierRouter(
-        defaults=TierRouterDefaults(per_skill=dict(config.per_skill_tier_defaults)),
-        skill_reader=skill_reader,
-    )
-    auditor = TierEscalationAuditor(thresholds=config.tier_router_audit)
-    return router, auditor
-
-
-async def _build_capability_names() -> frozenset[str]:
-    """Build the registered capability-ensemble name set.
-
-    A capability ensemble carries ADR-015's ``topaz_skill`` marker;
-    system ensembles (summarizer, checker) carry no ``topaz_skill``
-    and are excluded.
-
-    ``read_ensembles`` returns name/source/path metadata without
-    ``topaz_skill``, so the marker is read per name via
-    ``find_ensemble_by_name`` — the same EnsembleConfig surface the
-    tier-router's skill reader uses.
-    """
-    service = get_orchestra_service()
-    entries = await service.read_ensembles()
-    names: set[str] = set()
-    for entry in entries:
-        name = entry.get("name")
-        if not isinstance(name, str):
-            continue
-        config = service.find_ensemble_by_name(name)
-        if config is not None and getattr(config, "topaz_skill", None):
-            names.add(name)
-    return frozenset(names)
-
-
-async def _resolve_seat_filler() -> ModelInterface:
-    """Resolve the loop-driver's seat-filler LLM from the Model Profile.
-
-    The seat-filler fills the client's "model" seat (ADR-033 §Decision 5):
-    the Serving Layer resolves the orchestrator's configured Model Profile
-    (ADR-011) to a tool-calling ``ModelInterface``, mirroring how the
-    Orchestrator Runtime is handed its orchestrator-LLM. Swapping the driver
-    model (cheap-tier ↔ frontier-tier — the named axis-2 fallback) is a
-    config edit to the profile, never a change to the Loop Driver (FC-46).
-
-    The returned ``ModelInterface`` satisfies both of the driver's model
-    ports: ``SeatFiller`` (``generate_with_tools`` — the action calls) and
-    ``JudgmentSeat`` (``generate_response`` — ADR-037's bare judgment
-    call). The judgment seat defaults to this same resolved model (FC-68:
-    shared profile = one re-validation covers both instruments).
-
-    The model must support tool calling — the loop-driver decides each turn
-    via ``generate_with_tools``. A profile resolving to a non-tool-calling
-    model is an operator misconfiguration surfaced as a clear error rather
-    than a silent failure at the first turn. Tests override this seam to
-    inject a seat-filler double without standing up model resolution.
-    """
-    service = get_orchestra_service()
-    config_manager = service.config_manager
-    config = get_orchestrator_config_resolver().resolve()
-    profile = config_manager.get_model_profiles().get(config.model_profile)
-    if profile is None or not profile.get("model"):
-        raise RuntimeError(
-            f"Seat-filler Model Profile '{config.model_profile}' is not "
-            "configured with a model in ConfigurationManager.get_model_profiles()"
-        )
-    credential_storage = CredentialStorage(config_manager)
-    model_factory = ModelFactory(config_manager, credential_storage)
-    model = await model_factory.load_model(
-        profile["model"],
-        profile.get("provider"),
-        base_url=profile.get("base_url"),
-    )
-    if not model.supports_tool_calling:
-        raise RuntimeError(
-            f"Seat-filler Model Profile '{config.model_profile}' resolves to a "
-            "model that does not support tool calling; the loop-driver decides "
-            "each turn via generate_with_tools"
-        )
-    return model
-
-
-def _coder_escalation_ladder(config: OrchestratorConfig) -> tuple[str, ...]:
-    """The coder-tier escalation ladder for form bleeds (ADR-041 §Decision 5).
-
-    Ordered Model Profiles the Loop Driver escalates the coder to after the
-    cheap re-sample cap exhausts on a persistent form bleed: the free
-    less-cheap rung (``code_generation`` ``escalated_tier``, e.g. qwen3:14b)
-    first, then the **opt-in** frontier rung — appended only when an operator
-    configured ``orchestrator.form_escalation.frontier_profile`` (the cost-gated
-    ceiling). Empty when no tier defaults are configured (no escalation; cap
-    exhaustion degrades straight to the FormGate refusal).
-    """
-    ladder: list[str] = []
-    tiers = config.per_skill_tier_defaults
-    if tiers is not None and "code_generation" in tiers:
-        ladder.append(tiers["code_generation"].escalated_tier)
-    if config.form_escalation_frontier_profile is not None:
-        ladder.append(config.form_escalation_frontier_profile)
-    return tuple(ladder)
-
-
-async def get_loop_driver() -> LoopDriver:
-    """Construct the real layer-A Loop Driver (ADR-033).
-
-    The seat-filler resolved from the Model Profile, the Single-Step Enforcer
-    (batch-truncation grounding guarantee), the shared Tool Dispatch chokepoint
-    for per-turn callee generation, and the shared Dispatch Event Substrate for
-    ``TurnDecision`` diagnostics. The driver decides each turn; the
-    Client-Tool-Action Terminal (composed by
-    :func:`get_client_tool_action_terminal`) emits the wire response. Tests
-    override this factory (or :func:`_resolve_seat_filler`) via
-    ``monkeypatch.setattr``.
-    """
-    seat_filler_model = await _resolve_seat_filler()
-    config = get_orchestrator_config_resolver().resolve()
-    budget = config.budget
-    return LoopDriver(
-        seat_filler=seat_filler_model,
-        enforcer=SingleStepEnforcer(),
-        tool_dispatch=get_orchestrator_tool_dispatch(),
-        action_record=get_session_action_record(),
-        # FC-68: the judgment seat defaults to the seat-filler's profile —
-        # one re-validation event covers both instruments. A split
-        # judgment-seat profile is a config choice (LB-8), not built here.
-        judgment_seat=seat_filler_model,
-        # FC-69: AS-3's turn cap is the absolute ceiling beneath the
-        # termination mechanism — wired onto the loop-driver path so the
-        # zombie-revision loop ADR-037 fixes has a deterministic backstop.
-        budget=BudgetController(
-            turn_limit=budget.turn_limit, token_limit=budget.token_limit
-        ),
-        capabilities=await _build_capability_names(),
-        event_substrate=get_dispatch_event_substrate(),
-        # ADR-041 §Decision 3 — the store is the server-side form-recovery
-        # dependency: it resolves the substrate-routed deliverable content the
-        # parse-check re-dispatches on.
-        artifact_store=get_session_artifact_store(),
-        # ADR-041 §Decision 5 — the coder-tier escalation ladder for persistent
-        # form bleeds: free less-cheap rung + the opt-in frontier rung.
-        escalation_ladder=_coder_escalation_ladder(config),
-    )
-
-
-async def get_client_tool_action_terminal() -> _ChatCompletionsCaller:
-    """Construct the universal surface caller (ADR-034 / ADR-043).
-
-    The Client-Tool-Action Terminal composes the real Loop Driver
-    (:func:`get_loop_driver`) and owns tool-call emission + multi-turn loop
-    participation, marshalling substrate-routed deliverable content via the
-    Artifact Bridge (ADR-034 §Decision 3) over the shared Session Artifact
-    Store. Every chat-completions request routes here (ADR-043 §Decision 1).
-    Tests override this factory via ``monkeypatch.setattr`` to inject a stub
-    caller.
-    """
-    return ClientToolActionTerminal(
-        loop_driver=await get_loop_driver(),
-        # ADR-041 §Decision 1 — the deterministic destination-validity gate
-        # installs at the FormGate seam (FC-57, zero-Terminal-edits): a
-        # deliverable that does not parse as what its destination path claims
-        # is refused before it reaches the client.
-        bridge=ArtifactBridge(
-            get_session_artifact_store(), form_gate=parse_check_form_gate
-        ),
-        # ADR-039 V-04: the Terminal captures each resolved deliverable's
-        # content onto the same process-scoped record the driver writes its
-        # actions to — the content anchor's source for a later turn's callee.
-        action_record=get_session_action_record(),
-    )
-
-
-_SERVING_MODE_ENV = "LLM_ORC_SERVING_MODE"
-_DECLARATIVE_ENSEMBLE = "declarative-ensemble"
-
-
-def _serving_mode() -> str:
-    """Select the serving path for the Cycle-8 parity window.
-
-    ``declarative-ensemble`` routes to the Serving Ensemble (classify -> seat
-    -> marshal, ADR-046 §1); anything else (the default) keeps the loop-driver
-    path. The toggle is a migration seam: the loop-driver stays runnable until
-    the declarative form reaches parity (WP-F8), then the default flips and the
-    loop-driver path is deleted. Set via ``LLM_ORC_SERVING_MODE``.
-    """
-    return os.environ.get(_SERVING_MODE_ENV, "loop-driver")
 
 
 def _resolve_serving_project_dir() -> Path:
@@ -561,153 +115,25 @@ class _ChatCompletionsRequest(BaseModel):
 async def chat_completions(
     request: _ChatCompletionsRequest,
 ) -> dict[str, Any] | StreamingResponse:
-    """Resolve session, route to the loop-driven terminal, then stream or return a body.
+    """Resolve the session and run the declarative Serving Ensemble turn.
 
-    Every request routes to the Client-Tool-Action Terminal (ADR-043
-    §Decision 1), which composes the layer-A Loop Driver (ADR-033 /
-    ADR-034). Tool-driven clients receive a ``tool_calls`` turn;
-    toolless clients receive a finish-with-text turn (F-ι.1 adaptive
-    marshalling, ADR-043 §Decision 3). The terminal satisfies
-    :class:`_ChatCompletionsCaller`, so the heartbeat + context-sink
-    lifecycle below wraps it unchanged.
-
-    Per Cycle 6 WP-B piece 5 a per-request
-    :class:`InferenceWaitHeartbeatScheduler` is registered with the
-    shared dispatch event substrate at request open and unregistered
-    after the response stream (streaming) or body (non-streaming)
-    completes. The scheduler emits one
-    ``INFO: inference wait: elapsed=<sec> session_id=<id>`` line per
-    ``heartbeat_interval_seconds`` (default 30s) of cloud-LLM
-    inference inactivity, giving operators liveness signal during
-    long-inference waits.
-
-    The per-request context sink (Cycle 6 WP-C) maintains its
-    substrate-registration + end-of-session ``dispatch_log`` role;
-    its turn-boundary observation injection fires on every request now
-    that all requests engage the loop-driver.
+    Every request is handled by the Serving Ensemble (classify -> seat ->
+    marshal, ADR-046 §1). Tool-driven clients receive a ``tool_calls``
+    turn; toolless clients a finish-with-text turn. Serving-turn
+    introspection is the vendor-neutral turn trace.
     """
     context = _resolve_context(request)
-
-    if _serving_mode() == _DECLARATIVE_ENSEMBLE:
-        # Cycle-8 declarative Serving Ensemble path (ADR-046 §1). Bypasses the
-        # dissolving loop-driver observability lifecycle (heartbeat / context
-        # sink); serving-turn introspection is the vendor-neutral turn trace.
-        serving_caller: _ChatCompletionsCaller = get_serving_ensemble_caller()
-        if request.stream:
-            return StreamingResponse(
-                _stream_completion(context, serving_caller, model=request.model),
-                media_type="text/event-stream",
-            )
-        return await _build_completion_body(
-            context, serving_caller, model=request.model
-        )
-
-    session_id = context.state.identity.value
-    context_sink = _build_context_sink(session_id=session_id)
-    caller: _ChatCompletionsCaller = await get_client_tool_action_terminal()
-    scheduler = _build_heartbeat_scheduler(session_id=session_id)
-
+    serving_caller: _ChatCompletionsCaller = get_serving_ensemble_caller()
     if request.stream:
         return StreamingResponse(
-            _stream_completion_with_heartbeat(
-                context,
-                caller,
-                model=request.model,
-                scheduler=scheduler,
-                context_sink=context_sink,
-            ),
+            _stream_completion(context, serving_caller, model=request.model),
             media_type="text/event-stream",
         )
-
-    return await _build_completion_body_with_heartbeat(
-        context,
-        caller,
-        model=request.model,
-        scheduler=scheduler,
-        context_sink=context_sink,
-    )
-
-
-def _build_heartbeat_scheduler(*, session_id: str) -> InferenceWaitHeartbeatScheduler:
-    """Construct a per-request heartbeat scheduler.
-
-    The scheduler uses ``observability.heartbeat_interval_seconds`` from
-    the operator config (default 30s) and the shared operator-terminal
-    sink as its emission target. The config has already resolved
-    successfully by the time chat_completions constructs the scheduler.
-    """
-    resolver = get_orchestrator_config_resolver()
-    config = resolver.resolve_validated()
-    sink = get_operator_terminal_event_sink()
-    return InferenceWaitHeartbeatScheduler(
-        sink=sink,
-        session_id=session_id,
-        interval_seconds=config.observability.heartbeat_interval_seconds,
-    )
-
-
-def _build_context_sink(*, session_id: str) -> OrchestratorContextEventSink:
-    """Construct a per-request Orchestrator-Context Event Sink (Cycle 6 WP-C).
-
-    Per ADR-023 §Destination 2: each request has its own sink so the
-    session-prefix filter cleanly isolates dispatches from cross-session
-    traffic — same pattern as :func:`_build_heartbeat_scheduler` per
-    WP-B feed-forward advisory 3. Reads
-    ``observability.orchestrator_context_routes_calibration_signal``
-    (default ``False``) to decide whether to include
-    :class:`CalibrationSignal` events in the end-of-session
-    ``dispatch_log`` summary.
-    """
-    resolver = get_orchestrator_config_resolver()
-    config = resolver.resolve_validated()
-    return OrchestratorContextEventSink(
-        session_id=session_id,
-        routes_calibration_signal=(
-            config.observability.orchestrator_context_routes_calibration_signal
-        ),
-    )
-
-
-def _reject_reserved_tool_names(tools: list[dict[str, Any]]) -> None:
-    """Reject client-declared tools that shadow llm-orc's internal surface.
-
-    The five ``TOOL_NAMES`` (ADR-003) are llm-orc's closed internal
-    action set. Rejecting a client tool that reuses one of those names
-    preserves the Cycle 1 reserved-name commitment ("reserved TOOL_NAMES
-    enforced") and surfaces the collision at the Serving Layer with
-    HTTP 400 rather than letting a confusingly-named tool through. Under
-    ADR-027 the pipeline does not route by ``tools`` membership, so the
-    guard is a defensive input check rather than a misrouting backstop.
-    """
-    collisions: list[str] = []
-    for tool in tools:
-        if not isinstance(tool, dict):
-            continue
-        function = tool.get("function")
-        if not isinstance(function, dict):
-            continue
-        name = function.get("name")
-        if isinstance(name, str) and name in TOOL_NAMES:
-            collisions.append(name)
-    if collisions:
-        raise HTTPException(
-            status_code=400,
-            detail={
-                "error": "reserved_tool_name",
-                "message": (
-                    "Client-declared tool names collide with the "
-                    "orchestrator's reserved internal tool surface "
-                    f"(ADR-003): {sorted(set(collisions))}. Rename or "
-                    "remove these tools from the request's 'tools' array."
-                ),
-                "reserved_names": sorted(TOOL_NAMES),
-            },
-        )
+    return await _build_completion_body(context, serving_caller, model=request.model)
 
 
 def _resolve_context(request: _ChatCompletionsRequest) -> SessionContext:
     """Run the pre-handoff work shared by streaming and non-streaming paths."""
-    _reject_reserved_tool_names(request.tools)
     messages = [
         ChatMessage(
             role=message.role,
@@ -738,11 +164,10 @@ def _resolve_context(request: _ChatCompletionsRequest) -> SessionContext:
 class _ChatCompletionsCaller(Protocol):
     """The chat-completions request driver.
 
-    The :class:`ClientToolActionTerminal` (ADR-034, the universal surface
-    per ADR-043) satisfies this structurally — ``run`` yields the shared
-    :class:`OrchestratorChunk` vocabulary the SSE formatter and
-    non-streaming collector consume. Tests inject :class:`_StubPipeline`
-    doubles through the same interface.
+    The :class:`ServingEnsembleCaller` (ADR-046 §1) satisfies this
+    structurally — ``run`` yields the shared :class:`OrchestratorChunk`
+    vocabulary the SSE formatter and non-streaming collector consume.
+    Tests inject stub doubles through the same interface.
     """
 
     def run(self, context: SessionContext) -> AsyncIterator[OrchestratorChunk]: ...
@@ -752,10 +177,11 @@ class _ChatCompletionsCaller(Protocol):
 class _NonStreamingResult:
     """Collected chunk output shaped for the non-streaming response body.
 
-    ``tool_calls`` is non-``None`` when the caller closed the turn with a
-    :class:`ClientToolCall` (ADR-034's tool-driven terminal) — the client-tool
-    delegations are carried on the response's ``message.tool_calls`` field and
-    ``finish_reason`` is ``"tool_calls"`` per the OpenAI shape.
+    ``tool_calls`` is non-``None`` when the serving turn closed with a
+    :class:`ClientToolCall` (the emit node's tool-driven finish) — the
+    client-tool delegations are carried on the response's
+    ``message.tool_calls`` field and ``finish_reason`` is ``"tool_calls"``
+    per the OpenAI shape.
     """
 
     content: str
@@ -768,12 +194,12 @@ async def _collect_non_streaming(
 ) -> _NonStreamingResult:
     """Drive the caller and flatten its chunks to the non-streaming shape.
 
-    The loop-driven terminal yields ``ContentDelta`` text and a terminal
-    ``Completion`` for finish-with-text turns (toolless clients, ADR-043
-    §Decision 3); tool-driven turns close with a ``ClientToolCall``, which
-    shapes into ``message.tool_calls`` + ``finish_reason: "tool_calls"``
-    per the OpenAI non-streaming tool-call shape (the streaming path
-    renders the same chunk via the SSE formatter).
+    The serving turn yields ``ContentDelta`` text and a terminal
+    ``Completion`` for finish-with-text turns (toolless clients); build
+    turns close with a ``ClientToolCall``, which shapes into
+    ``message.tool_calls`` + ``finish_reason: "tool_calls"`` per the
+    OpenAI non-streaming tool-call shape (the streaming path renders the
+    same chunk via the SSE formatter).
     """
     content_parts: list[str] = []
     finish_reason = "stop"
@@ -810,105 +236,6 @@ async def _stream_completion(
     yield formatter.done()
 
 
-async def _stream_completion_with_heartbeat(
-    context: SessionContext,
-    caller: _ChatCompletionsCaller,
-    *,
-    model: str,
-    scheduler: InferenceWaitHeartbeatScheduler,
-    context_sink: OrchestratorContextEventSink,
-) -> AsyncIterator[bytes]:
-    """Wrap :func:`_stream_completion` with heartbeat + context-sink lifecycle.
-
-    The scheduler and the orchestrator-context sink both register with
-    the shared substrate at request open; the scheduler starts its
-    async heartbeat loop; the response stream runs; on completion (or
-    exception, or client disconnect) the heartbeat task is cancelled,
-    the context sink writes its end-of-session ``dispatch_log`` to
-    the per-session path, and both register/unregister handshakes
-    reverse. FastAPI's streaming response runtime invokes the cleanup
-    branch when the underlying async generator's ``aclose`` runs.
-    """
-    substrate = get_dispatch_event_substrate()
-    scheduler.register_with(substrate)
-    context_sink.register_with(substrate)
-    heartbeat_task = asyncio.create_task(scheduler.run())
-    try:
-        async for chunk in _stream_completion(context, caller, model=model):
-            yield chunk
-    finally:
-        heartbeat_task.cancel()
-        try:
-            await heartbeat_task
-        except asyncio.CancelledError:
-            pass
-        _write_dispatch_log_safe(context_sink, session_id=context.state.identity.value)
-        context_sink.unregister_with(substrate)
-        scheduler.unregister_with(substrate)
-
-
-async def _build_completion_body_with_heartbeat(
-    context: SessionContext,
-    caller: _ChatCompletionsCaller,
-    *,
-    model: str,
-    scheduler: InferenceWaitHeartbeatScheduler,
-    context_sink: OrchestratorContextEventSink,
-) -> dict[str, Any]:
-    """Wrap :func:`_build_completion_body` with heartbeat + context-sink lifecycle.
-
-    Mirrors :func:`_stream_completion_with_heartbeat` for non-streaming
-    requests — both lifecycles wrap the body-construction call.
-    """
-    substrate = get_dispatch_event_substrate()
-    scheduler.register_with(substrate)
-    context_sink.register_with(substrate)
-    heartbeat_task = asyncio.create_task(scheduler.run())
-    try:
-        return await _build_completion_body(context, caller, model=model)
-    finally:
-        heartbeat_task.cancel()
-        try:
-            await heartbeat_task
-        except asyncio.CancelledError:
-            pass
-        _write_dispatch_log_safe(context_sink, session_id=context.state.identity.value)
-        context_sink.unregister_with(substrate)
-        scheduler.unregister_with(substrate)
-
-
-def _write_dispatch_log_safe(
-    context_sink: OrchestratorContextEventSink, *, session_id: str
-) -> None:
-    """Write the orchestrator-context sink's dispatch_log to per-session path.
-
-    Per ADR-023 §"end-of-session summary" — the path is
-    ``<agentic_sessions_root>/<session_id>/dispatch_log.json`` (default
-    root ``.llm-orc/agentic-sessions/`` per config). WP-E lands the
-    broader agentic-sessions tree (per-dispatch directories per
-    ADR-025); WP-C writes a standalone dispatch_log.json under the
-    session-scoped subdirectory so the integration composes when WP-E
-    arrives.
-
-    Exceptions during the write are caught and logged at WARN — a
-    filesystem failure at request close must not propagate as a
-    response-time error to the client. The operator-terminal sink
-    surfaces the failure separately.
-    """
-    try:
-        resolver = get_orchestrator_config_resolver()
-        config = resolver.resolve_validated()
-        root = Path(config.observability.agentic_sessions_root)
-        path = root / session_id / "dispatch_log.json"
-        context_sink.write_dispatch_log(path)
-    except Exception:  # noqa: BLE001 — close-time IO failure must not propagate
-        import logging
-
-        logging.getLogger("llm_orc.agentic.orchestrator_context").warning(
-            "dispatch_log write failed for session_id=%s", session_id, exc_info=True
-        )
-
-
 async def _build_completion_body(
     context: SessionContext, caller: _ChatCompletionsCaller, *, model: str
 ) -> dict[str, Any]:
@@ -918,8 +245,7 @@ async def _build_completion_body(
     ``SessionState.token_spend`` is the sum over every LLM call in the
     session. Per-request delta accounting can land in a follow-up when
     clients need it; the cumulative shape is what agentic coding tools
-    display today. The pipeline's per-dispatch token accounting is WP-C
-    work, so ``token_spend`` is unchanged by the pipeline in WP-A.
+    display today.
     """
     pre_token_spend = context.state.token_spend
     result = await _collect_non_streaming(context, caller)

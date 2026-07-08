@@ -1,54 +1,30 @@
 """Tests for the Serving Layer ``/v1/chat/completions`` endpoint.
 
-Per ``docs/agentic-serving/system-design.md`` §Serving Layer (L3) and
-ADR-043 (one surface). Every request routes through the Client-Tool-Action
-Terminal composing the layer-A Loop Driver. The endpoint:
+Per ``docs/agentic-serving/system-design.md`` §Cycle 8 and ADR-046 §1.
+Every request is handled by the declarative Serving Ensemble (classify ->
+seat -> marshal), executed by the L0 Ensemble Engine. The endpoint:
 
 - Parses the OpenAI-compatible request (messages, model, tools, user,
   stream).
 - Resolves a ``SessionIdentity`` via Session Registry.
 - Calls ``resolve_session_start_context`` exactly once per session
   start (FC-9); Phase 1 returns ``[]``.
-- Drives the loop-driven terminal and shapes its ``OrchestratorChunk``
+- Drives the Serving Ensemble caller and shapes its ``OrchestratorChunk``
   stream into a ``chat.completion`` body or SSE.
 
 Shape/streaming/session tests drive a :class:`_StubCaller` double
-injected as the terminal; the routing and FC-42 tests drive the real
-:class:`ClientToolActionTerminal` wired to stub ports through the HTTP
-boundary.
+injected as the serving caller; it satisfies the endpoint's
+``_ChatCompletionsCaller`` Protocol.
 """
 
-import dataclasses
 import json
-from collections.abc import AsyncIterator, Callable, Mapping
-from pathlib import Path
+from collections.abc import AsyncIterator, Callable
 from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
 
-from llm_orc.agentic.artifact_bridge import ArtifactBridge
-from llm_orc.agentic.budget_controller import BudgetController
-from llm_orc.agentic.client_tool_action_terminal import ClientToolActionTerminal
-from llm_orc.agentic.dispatch_event_substrate import DispatchEventSubstrate
-from llm_orc.agentic.loop_driver import LoopDriver, TurnDecision
-from llm_orc.agentic.orchestrator_config import (
-    BudgetDefaults,
-    CalibrationDefaults,
-    OrchestratorConfig,
-    OverrideBounds,
-)
-from llm_orc.agentic.orchestrator_tool_dispatch import (
-    TOOL_NAMES,
-    InternalToolCall,
-    ToolCallResult,
-)
-from llm_orc.agentic.session_action_record import SessionActionRecord
-from llm_orc.agentic.single_step_enforcer import SingleStepEnforcer
-from llm_orc.agentic.tier_router import PerSkillTierDefaults, TopazSkill
-from llm_orc.core.session.artifact_store import SessionArtifactStore
 from llm_orc.core.session.registry import SessionIdentity, SessionRegistry
-from llm_orc.models.base import ToolCallingResponse
 from llm_orc.web.api import v1_chat_completions
 from llm_orc.web.server import create_app
 from llm_orc.web.serving.chunks import (
@@ -68,10 +44,10 @@ from llm_orc.web.serving.session_start import (
 class _StubCaller:
     """A scripted ``_ChatCompletionsCaller`` double for shape/streaming/session tests.
 
-    Stands in for the loop-driven terminal: yields a fixed
+    Stands in for the declarative Serving Ensemble caller: yields a fixed
     ``OrchestratorChunk`` sequence; the default is a single
     ``Completion(stop)`` so the response body is empty content +
-    ``finish_reason: stop`` — the skeleton behavior the preserved
+    ``finish_reason: stop`` — the behavior the preserved
     shape/streaming/session tests assert.
     """
 
@@ -85,162 +61,6 @@ class _StubCaller:
         self.contexts.append(context)
         for chunk in self._chunks:
             yield chunk
-
-
-class _FakeSeatFiller:
-    """Seat-filler double returning a fixed tool-calling response.
-
-    Stands in for the resolved Model Profile so loop-driver wiring tests do
-    not stand up real model resolution.
-    """
-
-    def __init__(self, response: ToolCallingResponse) -> None:
-        self._response = response
-
-    async def generate_with_tools(
-        self,
-        *,
-        messages: list[dict[str, Any]],
-        tools: list[dict[str, Any]],
-    ) -> ToolCallingResponse:
-        return self._response
-
-
-class _NoToolDispatch:
-    """Tool-dispatch double that must not be called (finish-with-text paths)."""
-
-    async def dispatch(
-        self,
-        call: InternalToolCall,
-        *,
-        session_id: str = "",
-        model_profile_override: str | None = None,
-    ) -> ToolCallResult:
-        raise AssertionError("the finish-with-text path should not dispatch")
-
-
-class _CapturingSink:
-    """Event sink recording every event the substrate fans out."""
-
-    def __init__(self) -> None:
-        self.events: list[object] = []
-
-    def consume(self, event: object) -> None:
-        self.events.append(event)
-
-
-class _FakeJudgmentSeat:
-    """Judgment-seat double — the contexts here never reach a judgment."""
-
-    async def generate_response(self, message: str, role_prompt: str) -> str:
-        return "VERDICT: REMAINING\n"
-
-
-def _real_terminal(
-    seat_filler: _FakeSeatFiller, substrate: DispatchEventSubstrate
-) -> ClientToolActionTerminal:
-    """The tool-driven caller: the real Terminal over the real Loop Driver.
-
-    The endpoint drives the Terminal (the ``_ChatCompletionsCaller``); the
-    Terminal composes the Loop Driver, which still emits the ``TurnDecision``
-    diagnostics the FC-42 tests assert.
-    """
-    store = SessionArtifactStore(agentic_sessions_root=Path("unused-by-finish-path"))
-    return ClientToolActionTerminal(
-        loop_driver=LoopDriver(
-            seat_filler=seat_filler,
-            enforcer=SingleStepEnforcer(),
-            tool_dispatch=_NoToolDispatch(),
-            action_record=SessionActionRecord(),
-            judgment_seat=_FakeJudgmentSeat(),
-            budget=BudgetController(turn_limit=1_000, token_limit=1_000_000),
-            event_substrate=substrate,
-        ),
-        bridge=ArtifactBridge(store),
-    )
-
-
-def _default_orchestrator_config() -> OrchestratorConfig:
-    """An OrchestratorConfig used when tests don't care about its contents.
-
-    The terminal factory and lifecycle helpers read it via the
-    :class:`_FakeConfigResolver`; the field values are arbitrary defaults.
-    """
-    return OrchestratorConfig(
-        model_profile="test-profile",
-        budget=BudgetDefaults(turn_limit=10, token_limit=10_000),
-        autonomy_level="operator-as-tool-user",
-        plexus_enabled=False,
-        override_bounds=OverrideBounds(
-            allow_budget_override=True,
-            max_turn_limit=100,
-            max_token_limit=100_000,
-        ),
-        allowed_profiles=("test-profile",),
-        summarizer_ensemble="agentic-result-summarizer",
-        orchestrator_system_prompt="",
-        calibration=CalibrationDefaults(
-            default_n=3, checker_ensemble="agentic-calibration-checker"
-        ),
-    )
-
-
-class _FakeConfigResolver:
-    """Returns a canned ``OrchestratorConfig`` without touching the filesystem.
-
-    Satisfies the duck-typed surface of ``OrchestratorConfigResolver``
-    the handler reads — only ``resolve_validated`` is used.
-    """
-
-    def __init__(self, config: OrchestratorConfig) -> None:
-        self._config = config
-
-    def resolve_validated(self) -> OrchestratorConfig:
-        return self._config
-
-
-class TestCoderEscalationLadder:
-    """ADR-041 §Decision 5 — the factory builds the coder-tier escalation ladder.
-
-    The free less-cheap rung (``code_generation`` ``escalated_tier``) is present
-    whenever tier defaults are configured; the frontier rung is appended only
-    when an operator opts in via ``form_escalation_frontier_profile`` (the
-    cost-gated ceiling). No tier defaults → empty ladder (no escalation).
-    """
-
-    @staticmethod
-    def _config(
-        *, tiers: bool = True, frontier: str | None = None
-    ) -> OrchestratorConfig:
-        per_skill: Mapping[TopazSkill, PerSkillTierDefaults] | None = (
-            {
-                "code_generation": PerSkillTierDefaults(
-                    cheap_tier="agentic-tier-cheap-general",
-                    escalated_tier="agentic-tier-escalated-general",
-                )
-            }
-            if tiers
-            else None
-        )
-        return dataclasses.replace(
-            _default_orchestrator_config(),
-            per_skill_tier_defaults=per_skill,
-            form_escalation_frontier_profile=frontier,
-        )
-
-    def test_free_rung_only_when_no_frontier_configured(self) -> None:
-        ladder = v1_chat_completions._coder_escalation_ladder(self._config())
-        assert ladder == ("agentic-tier-escalated-general",)
-
-    def test_frontier_rung_appended_when_opted_in(self) -> None:
-        ladder = v1_chat_completions._coder_escalation_ladder(
-            self._config(frontier="agentic-coder-frontier")
-        )
-        assert ladder == ("agentic-tier-escalated-general", "agentic-coder-frontier")
-
-    def test_empty_ladder_without_tier_defaults(self) -> None:
-        ladder = v1_chat_completions._coder_escalation_ladder(self._config(tiers=False))
-        assert ladder == ()
 
 
 def _parse_sse_frames(body: bytes) -> list[dict[str, Any]]:
@@ -270,22 +90,18 @@ def _build_client(
     *,
     registry: SessionRegistry | None = None,
     session_start_spy: (Callable[[SessionContext], list[PromptFragment]] | None) = None,
-    terminal: "_StubCaller | ClientToolActionTerminal | None" = None,
-    config: OrchestratorConfig | None = None,
+    terminal: _StubCaller | None = None,
 ) -> tuple[TestClient, SessionRegistry, SessionStartCache]:
-    """Wire a TestClient with isolated Registry, cache, and terminal stub.
+    """Wire a TestClient with isolated Registry, cache, and serving-caller stub.
 
     Overrides the module-level factories in ``v1_chat_completions`` so each
     test runs the real Serving Layer wiring (session resolution, SSE
-    framing, heartbeat + context-sink lifecycle) but with a stub terminal
-    in place of the real Client-Tool-Action Terminal. The default
-    :class:`_StubCaller` yields a single ``Completion(stop)`` — empty
-    assistant content + ``finish_reason: stop`` — preserving the skeleton
-    behavior the shape/streaming/session tests assert.
-
-    FC-42 tests pass a real :class:`ClientToolActionTerminal` wired to stub
-    ports via ``terminal=`` to exercise real loop-driver behavior through
-    the HTTP boundary.
+    framing) but with a stub caller in place of the real declarative
+    Serving Ensemble caller. The default :class:`_StubCaller` yields a
+    single ``Completion(stop)`` — empty assistant content +
+    ``finish_reason: stop`` — the behavior the shape/streaming/session
+    tests assert. Tests pass a scripted caller via ``terminal=`` to
+    exercise content/tool-call shaping through the HTTP boundary.
     """
     shared_registry = registry or SessionRegistry()
     monkeypatch.setattr(
@@ -298,20 +114,9 @@ def _build_client(
     )
     monkeypatch.setattr(v1_chat_completions, "get_session_start_cache", lambda: cache)
 
-    stub_terminal: _StubCaller | ClientToolActionTerminal = terminal or _StubCaller()
-
-    async def _terminal_factory() -> _StubCaller | ClientToolActionTerminal:
-        return stub_terminal
-
+    stub_caller = terminal or _StubCaller()
     monkeypatch.setattr(
-        v1_chat_completions, "get_client_tool_action_terminal", _terminal_factory
-    )
-
-    resolver = _FakeConfigResolver(config or _default_orchestrator_config())
-    monkeypatch.setattr(
-        v1_chat_completions,
-        "get_orchestrator_config_resolver",
-        lambda: resolver,
+        v1_chat_completions, "get_serving_ensemble_caller", lambda: stub_caller
     )
 
     return TestClient(create_app()), shared_registry, cache
@@ -320,8 +125,8 @@ def _build_client(
 class TestChatCompletionsResponseShape:
     """``POST /v1/chat/completions`` returns an OpenAI-shaped body.
 
-    Group 4 skeleton: empty assistant content + ``finish_reason: "stop"``
-    + zero ``usage``. WP-C replaces this with real Runtime output.
+    The stub serving caller yields a single ``Completion(stop)`` — empty
+    assistant content + ``finish_reason: "stop"`` + zero ``usage``.
     """
 
     def test_returns_openai_chat_completion_object(
@@ -366,14 +171,10 @@ class TestChatCompletionsResponseShape:
         assert choice["message"]["role"] == "assistant"
         assert choice["message"]["content"] == ""
 
-    def test_returns_zero_usage_in_skeleton(
+    def test_returns_zero_usage_for_stub_caller(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """The skeleton does no model calls, so usage is zero across the board.
-
-        WP-C wires real token accounting via Budget Controller →
-        Session Registry.
-        """
+        """The stub caller does no model calls, so usage is zero across the board."""
         client, _, _ = _build_client(monkeypatch)
 
         body = client.post(
@@ -395,13 +196,11 @@ class TestChatCompletionsRequestParsing:
     """The endpoint accepts optional ``tools`` and ``user`` fields."""
 
     def test_accepts_tools_array(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Client-declared tools parse; under ADR-033 they engage the loop-driver.
+        """Client-declared tools parse and the request still returns 200.
 
-        WP-LB-A routes a ``tools[]`` request to the loop-driver surface
-        (here the default :class:`_StubCaller` loop-driver double), which
-        finishes with a stop completion — the request still returns 200.
-        Surface-mode discrimination itself is asserted in
-        :class:`TestSurfaceModeDiscrimination`.
+        Under ADR-046 the Serving Ensemble handles the turn (here the
+        default :class:`_StubCaller`, which finishes with a stop
+        completion).
         """
         client, _, _ = _build_client(monkeypatch)
 
@@ -438,12 +237,12 @@ class TestChatCompletionsRequestParsing:
 
 
 class TestRequestRouting:
-    """``POST /v1/chat/completions`` routes all requests through the terminal (ADR-043).
+    """``POST /v1/chat/completions`` routes every request through the serving caller.
 
-    Every request, tool-driven or toolless, engages the Client-Tool-Action
-    Terminal. The terminal is injected as a distinguishable :class:`_StubCaller`
-    caller so the route is observable in the response content at the HTTP
-    boundary.
+    Every request, tool-driven or toolless, engages the Serving Ensemble
+    caller (ADR-046 §1). The caller is injected as a distinguishable
+    :class:`_StubCaller` so the route is observable in the response
+    content at the HTTP boundary.
     """
 
     @staticmethod
@@ -452,11 +251,11 @@ class TestRequestRouting:
             [ContentDelta(content=label), Completion(finish_reason="stop")]
         )
 
-    def test_tool_request_engages_loop_driver(
+    def test_tool_request_engages_serving_ensemble(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        terminal_caller = self._scripted("LOOPDRIVER")
-        client, _, _ = _build_client(monkeypatch, terminal=terminal_caller)
+        caller = self._scripted("SERVING")
+        client, _, _ = _build_client(monkeypatch, terminal=caller)
 
         response = client.post(
             "/v1/chat/completions",
@@ -473,15 +272,15 @@ class TestRequestRouting:
         )
 
         body = response.json()
-        assert body["choices"][0]["message"]["content"] == "LOOPDRIVER"
-        assert terminal_caller.contexts, "terminal should be driven"
+        assert body["choices"][0]["message"]["content"] == "SERVING"
+        assert caller.contexts, "the serving caller should be driven"
 
-    def test_non_tool_request_engages_loop_driver(
+    def test_non_tool_request_engages_serving_ensemble(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """ADR-043 §Decision 1: toolless requests also route through the terminal."""
-        terminal_caller = self._scripted("LOOPDRIVER")
-        client, _, _ = _build_client(monkeypatch, terminal=terminal_caller)
+        """Toolless requests also route through the serving caller."""
+        caller = self._scripted("SERVING")
+        client, _, _ = _build_client(monkeypatch, terminal=caller)
 
         response = client.post(
             "/v1/chat/completions",
@@ -492,15 +291,15 @@ class TestRequestRouting:
         )
 
         body = response.json()
-        assert body["choices"][0]["message"]["content"] == "LOOPDRIVER"
-        assert terminal_caller.contexts, "terminal should drive toolless requests"
+        assert body["choices"][0]["message"]["content"] == "SERVING"
+        assert caller.contexts, "the serving caller should drive toolless requests"
 
-    def test_tool_request_engages_loop_driver_on_streaming_path(
+    def test_request_engages_serving_ensemble_on_streaming_path(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Routing to the terminal happens before the stream/non-stream branch."""
-        terminal_caller = self._scripted("LOOPDRIVER")
-        client, _, _ = _build_client(monkeypatch, terminal=terminal_caller)
+        """Routing to the serving caller happens before the stream branch."""
+        caller = self._scripted("SERVING")
+        client, _, _ = _build_client(monkeypatch, terminal=caller)
 
         response = client.post(
             "/v1/chat/completions",
@@ -523,120 +322,17 @@ class TestRequestRouting:
             for frame in frames
             if not frame.get("__done__")
         ]
-        assert "".join(deltas) == "LOOPDRIVER"
-        assert terminal_caller.contexts
-
-    async def test_terminal_factory_composes_the_real_loop_driver(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """WP-LB-C: the production caller factory builds the real Terminal.
-
-        :func:`get_loop_driver` builds the real Loop Driver (seat-filler
-        resolved via the overridable :func:`_resolve_seat_filler` seam, a
-        double here so the test does not stand up model resolution);
-        :func:`get_client_tool_action_terminal` composes it into the Terminal
-        every request routes through. The Terminal's ``run`` drives the real
-        driver — a no-action seat-filler finishes with a stop completion.
-        """
-        seat_filler = _FakeSeatFiller(
-            ToolCallingResponse(content="ok", tool_calls=[], finish_reason="stop")
-        )
-
-        async def _resolve() -> _FakeSeatFiller:
-            return seat_filler
-
-        monkeypatch.setattr(v1_chat_completions, "_resolve_seat_filler", _resolve)
-        monkeypatch.setattr(
-            v1_chat_completions,
-            "get_orchestrator_tool_dispatch",
-            lambda: _NoToolDispatch(),
-        )
-
-        assert isinstance(await v1_chat_completions.get_loop_driver(), LoopDriver)
-        caller = await v1_chat_completions.get_client_tool_action_terminal()
-
-        assert isinstance(caller, ClientToolActionTerminal)
-        registry = SessionRegistry()
-        state = registry.get_or_create_state(
-            SessionIdentity(value="seam-test", method="user_field")
-        )
-        context = SessionContext(messages=[], tools=[], state=state)
-        chunks = [chunk async for chunk in caller.run(context)]
-        assert any(
-            isinstance(chunk, Completion) and chunk.finish_reason == "stop"
-            for chunk in chunks
-        )
-
-    def test_tool_request_drives_real_loop_driver_emitting_turn_decision(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """FC-42 (event-based): a ``tools[]`` request drives the real driver.
-
-        WP-LB-A verified routing via distinguishable callers; the FC-42 event
-        assertion deferred to WP-LB-B verifies the routing engages the *real*
-        Loop Driver, which emits a ``TurnDecision`` diagnostic — not faked
-        against a stub.
-        """
-        substrate = DispatchEventSubstrate()
-        sink = _CapturingSink()
-        substrate.register_sink(sink)
-        seat_filler = _FakeSeatFiller(
-            ToolCallingResponse(content="ack", tool_calls=[], finish_reason="stop")
-        )
-        client, _, _ = _build_client(
-            monkeypatch, terminal=_real_terminal(seat_filler, substrate)
-        )
-
-        response = client.post(
-            "/v1/chat/completions",
-            json={
-                "model": "primary",
-                "messages": [{"role": "user", "content": "hello"}],
-                "tools": [{"type": "function", "function": {"name": "write"}}],
-            },
-        )
-
-        assert response.status_code == 200
-        turn_decisions = [e for e in sink.events if isinstance(e, TurnDecision)]
-        assert len(turn_decisions) == 1
-        assert turn_decisions[0].action == "finish"
-
-    def test_non_tool_request_drives_real_loop_driver_emitting_turn_decision(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """ADR-043 §Decision 1: toolless requests also engage the real driver."""
-        substrate = DispatchEventSubstrate()
-        sink = _CapturingSink()
-        substrate.register_sink(sink)
-        seat_filler = _FakeSeatFiller(
-            ToolCallingResponse(content="ack", tool_calls=[], finish_reason="stop")
-        )
-        client, _, _ = _build_client(
-            monkeypatch, terminal=_real_terminal(seat_filler, substrate)
-        )
-
-        client.post(
-            "/v1/chat/completions",
-            json={
-                "model": "primary",
-                "messages": [{"role": "user", "content": "what is a monad?"}],
-            },
-        )
-
-        turn_decisions = [e for e in sink.events if isinstance(e, TurnDecision)]
-        assert len(turn_decisions) == 1
-        assert turn_decisions[0].action == "finish"
+        assert "".join(deltas) == "SERVING"
+        assert caller.contexts
 
 
 class TestNonStreamingToolCallEmission:
     """FC-47 (non-streaming) — a tool-call outcome shapes ``message.tool_calls``.
 
-    The streaming path emits tool_calls via the SSE formatter (the formatter's
-    ``ClientToolCall`` case was retained by ``0a7a822``); the non-streaming body
-    shapes the same ``ClientToolCall`` into ``message.tool_calls`` + ``content:
-    null`` + ``finish_reason: "tool_calls"`` (the OpenAI non-streaming tool-call
-    shape — the collector + body pieces ``0a7a822`` removed, re-introduced on
-    the tool-driven terminal path per ADR-034).
+    The streaming path emits tool_calls via the SSE formatter; the
+    non-streaming body shapes the same ``ClientToolCall`` into
+    ``message.tool_calls`` + ``content: null`` + ``finish_reason:
+    "tool_calls"`` (the OpenAI non-streaming tool-call shape).
     """
 
     def test_tool_call_chunk_becomes_message_tool_calls(
@@ -670,13 +366,11 @@ class TestNonStreamingToolCallEmission:
 
 
 class TestStreamingPath:
-    """``stream: true`` returns an SSE response (WP-B Group 5).
+    """``stream: true`` returns an SSE response.
 
-    The skeleton response emits the OpenAI-expected opener (role delta)
-    and a single ``finish_reason: stop`` completion, terminated by
-    ``data: [DONE]``. WP-C replaces the stub stream handoff with the
-    real Runtime, which will interleave content deltas and internal
-    tool-call observations.
+    The stub caller emits the OpenAI-expected opener (role delta) and a
+    single ``finish_reason: stop`` completion, terminated by
+    ``data: [DONE]``.
     """
 
     def test_stream_true_returns_event_stream_content_type(
@@ -700,7 +394,7 @@ class TestStreamingPath:
     def test_stream_body_frames_role_delta_stop_and_done(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """The skeleton stream yields opener → stop completion → DONE."""
+        """The stub stream yields opener → stop completion → DONE."""
         client, _, _ = _build_client(monkeypatch)
 
         response = client.post(
@@ -840,7 +534,7 @@ class TestStreamingSessionStart:
 
 
 class TestNonStreamingPath:
-    """The Group 4 non-streaming body is preserved under Group 5."""
+    """The non-streaming body path."""
 
     def test_non_streaming_default_still_works(
         self, monkeypatch: pytest.MonkeyPatch
@@ -859,7 +553,7 @@ class TestNonStreamingPath:
         assert response.status_code == 200
 
     def test_stream_false_explicit_works(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """``stream: false`` is the Group 4 happy path."""
+        """``stream: false`` is the non-streaming happy path."""
         client, _, _ = _build_client(monkeypatch)
 
         response = client.post(
@@ -1037,12 +731,11 @@ class TestSessionStartIntegration:
     def test_cache_retains_fragments_across_requests(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """The cache retains fragments so Runtime (WP-C) can read them.
+        """The cache retains fragments so a later turn can read them.
 
-        Group 4 stores the resolver's result in the cache on first
-        request. The test asserts the retained value is exactly what
-        the resolver returned — WP-C will read it from the same cache
-        each iteration.
+        The resolver's result is stored in the cache on first request.
+        The test asserts the retained value is exactly what the resolver
+        returned.
         """
 
         def spy(context: SessionContext) -> list[PromptFragment]:
@@ -1084,8 +777,7 @@ class TestServingResolvesSessionIdentity:
     ``SessionRegistry.get_or_create_state``; the integration contract
     is that identity derivation and state lookup are coherent across
     requests — the same derivation inputs yield the same ``SessionState``
-    instance, so Budget Controller, Autonomy Policy, and (later) the
-    Orchestrator Runtime all read a single coherent view.
+    instance.
     """
 
     def test_same_user_field_resolves_to_same_session_state(
@@ -1151,9 +843,8 @@ class TestServingResolvesSessionIdentity:
         state_after = registry.get_or_create_state(identity)
         assert state_after is state_between
         # The same SessionState is retained across requests, so the manual
-        # between-request mutations persist. The loop-driven terminal records
-        # no ReAct iterations (no orchestrator-LLM loop on this surface,
-        # ADR-043), so only the two manual increments show.
+        # between-request mutations persist. The stub serving caller records
+        # no iterations, so only the two manual increments show.
         assert state_after.turn_count == 2
         assert state_after.token_spend == 192
 
@@ -1255,156 +946,3 @@ class TestServingResolvesSessionIdentity:
         cold_identities = [i for i in registry._states if i.method == "cold_start"]
         assert len(cold_identities) == 2
         assert cold_identities[0] != cold_identities[1]
-
-
-class TestHandlerInvariants:
-    """Handler-level invariants preserved across the surface collapse (ADR-043).
-
-    These hold for the unified loop-driven surface (the two-surface split was
-    removed by ADR-043).
-    """
-
-    def test_orchestrator_runtime_is_not_constructed_on_this_surface(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """The runtime-construction path is gone from the handler.
-
-        The handler does not construct ``OrchestratorRuntime`` — the
-        loader/runtime/compaction factories were removed. The class
-        remains in the codebase (ADR-027 disposition (a)) but has no
-        caller here.
-        """
-        assert not hasattr(v1_chat_completions, "get_orchestrator_llm_loader")
-        assert not hasattr(v1_chat_completions, "_build_runtime")
-        assert not hasattr(v1_chat_completions, "get_conversation_compaction")
-
-        client, _, _ = _build_client(
-            monkeypatch,
-            terminal=_StubCaller(
-                [ContentDelta(content="ok"), Completion(finish_reason="stop")]
-            ),
-        )
-        body = client.post(
-            "/v1/chat/completions",
-            json={
-                "model": "primary",
-                "messages": [{"role": "user", "content": "hi"}],
-            },
-        ).json()
-        assert body["choices"][0]["message"]["content"] == "ok"
-
-    def test_client_tool_reusing_reserved_internal_name_is_rejected(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """Reserved TOOL_NAMES stay enforced as a defensive input guard.
-
-        The Cycle 1 reserved-name commitment is preserved: a client tool
-        reusing an internal name is rejected with HTTP 400.
-        """
-        client, _, _ = _build_client(monkeypatch)
-        reserved = sorted(TOOL_NAMES)[0]
-
-        response = client.post(
-            "/v1/chat/completions",
-            json={
-                "model": "primary",
-                "messages": [{"role": "user", "content": "hi"}],
-                "tools": [
-                    {"type": "function", "function": {"name": reserved}},
-                ],
-            },
-        )
-
-        assert response.status_code == 400
-        # The app's custom HTTPException handler wraps ``detail`` under an
-        # ``"error"`` key (see ``web/server.py``); the inner payload is the
-        # guard's structured detail dict.
-        payload = response.json()["error"]
-        assert payload["error"] == "reserved_tool_name"
-        assert reserved in payload["reserved_names"]
-
-
-class _StubConfigManager:
-    def __init__(self, profiles: dict[str, dict[str, Any]]) -> None:
-        self._profiles = profiles
-
-    def get_model_profiles(self) -> dict[str, dict[str, Any]]:
-        return self._profiles
-
-
-class _StubService:
-    def __init__(self, profiles: dict[str, dict[str, Any]]) -> None:
-        self.config_manager = _StubConfigManager(profiles)
-
-
-class _ResolveOnlyResolver:
-    def __init__(self, config: OrchestratorConfig) -> None:
-        self._config = config
-
-    def resolve(self) -> OrchestratorConfig:
-        return self._config
-
-
-class _ToolCallingModel:
-    supports_tool_calling = True
-
-
-class _CapturingModelFactory:
-    """A ModelFactory double recording the kwargs ``load_model`` was handed."""
-
-    last_kwargs: dict[str, Any] = {}
-
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        pass
-
-    async def load_model(
-        self, model_name: str, provider: str | None = None, **kwargs: Any
-    ) -> _ToolCallingModel:
-        _CapturingModelFactory.last_kwargs = {
-            "model_name": model_name,
-            "provider": provider,
-            **kwargs,
-        }
-        return _ToolCallingModel()
-
-
-class TestResolveSeatFiller:
-    """The seat-filler resolution threads the profile's connection config.
-
-    A local OpenAI-compatible (Ollama) seat-filler profile carries
-    ``base_url: http://localhost:11434/v1``; if the resolution drops it, the
-    adapter defaults to ``api.openai.com`` and a $0 local seat-filler 401s.
-    The harness override of ``_resolve_seat_filler`` hides this, so the
-    threading is asserted here directly.
-    """
-
-    async def test_resolve_seat_filler_threads_profile_base_url(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        profiles = {
-            "test-profile": {
-                "model": "qwen3:14b",
-                "provider": "openai-compatible/ollama",
-                "base_url": "http://localhost:11434/v1",
-            }
-        }
-        _CapturingModelFactory.last_kwargs = {}
-        monkeypatch.setattr(
-            v1_chat_completions, "get_orchestra_service", lambda: _StubService(profiles)
-        )
-        monkeypatch.setattr(
-            v1_chat_completions,
-            "get_orchestrator_config_resolver",
-            lambda: _ResolveOnlyResolver(_default_orchestrator_config()),
-        )
-        monkeypatch.setattr(
-            v1_chat_completions, "CredentialStorage", lambda config_manager: object()
-        )
-        monkeypatch.setattr(v1_chat_completions, "ModelFactory", _CapturingModelFactory)
-
-        await v1_chat_completions._resolve_seat_filler()
-
-        assert (
-            _CapturingModelFactory.last_kwargs.get("base_url")
-            == "http://localhost:11434/v1"
-        )
