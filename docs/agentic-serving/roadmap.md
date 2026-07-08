@@ -1,6 +1,6 @@
 # Roadmap: Agentic Serving
 
-**Generated:** 2026-04-20; **last amended:** 2026-07-02 (Cycle 8 ARCHITECT — additive Cycle-8 Work Packages WP-A8..F8 for the declarative-ensemble collapse; the Cycle-4/6/7 WPs below describe the dissolved architecture and migrate to the Completed Work Log at Cycle-8 BUILD). Prior: 2026-06-08 (Cycle 7 loop-back #6 BUILD — WP-LB-L added [remaining-work anchor, ADR-038]; ARCHITECT skipped)
+**Generated:** 2026-04-20; **last amended:** 2026-07-07 (Cycle 8 BUILD — WP-B8 complete; Cycle-8 Completed Work Log opened with WP-A8/D8/B8). Prior: 2026-07-02 (Cycle 8 ARCHITECT — additive Cycle-8 Work Packages WP-A8..F8 for the declarative-ensemble collapse; the Cycle-4/6/7 WPs below describe the dissolved architecture and migrate to the Completed Work Log at Cycle-8 BUILD). Prior: 2026-06-08 (Cycle 7 loop-back #6 BUILD — WP-LB-L added [remaining-work anchor, ADR-038]; ARCHITECT skipped)
 **Derived from:** `system-design.md` (v6.7, §Cycle 8), ADRs 044-048 (Cycle 8); prior bands from ADRs 001-043, scenarios.md, interaction-specs.md
 
 This roadmap expresses the sequencing landscape for building agentic serving — what depends on what, where the builder has a choice, and which coherent intermediates are worth pausing at. It does not prescribe a build order. Work package order within each dependency band is a build-time decision.
@@ -32,6 +32,8 @@ This roadmap expresses the sequencing landscape for building agentic serving —
 **Scenarios covered:** the "common I/O envelope container shape is unchanged" preservation scenario.
 
 **Dependencies:** None. **Hard prerequisite of WP-F8.**
+
+**Status: COMPLETE 2026-07-07** (commits `a69f4e0`, `fdb2acf`, `ee640a1`, `d43a0f2`, `09839ec`). Scope resolved at the WP gate to the **full survivor set (10 modules)**, not just the envelope: session substrate (registry, artifacts write-gate, artifact store, compaction, plexus adapter) → `core/session/`; AS-2 validator + ADR-017 guard → `core/validation/`; envelope → `models/`; serving contracts (chunks, session_start) → `web/serving/`. Old `agentic/` paths remain as re-export shims (deleted at WP-F8) so the dissolved chain and its tests are untouched. `sibling_interface_extractor` classified dissolving (ADR-039's re-home is a script-node re-implementation). Grounded through the live L3 endpoint (real gated build turn). See cycle-status §WP-B8 for the F8-facing details.
 
 ### WP-C8: Shape Catalog + registry reuse (parts + admission)
 
@@ -1187,6 +1189,16 @@ The Calibration Signal Channel is active; HTC trajectory features extracted at L
 ---
 
 ## Completed Work Log
+
+### Cycle 8: The declarative-ensemble collapse — in progress
+
+**Derived from:** ADRs 044-048, `system-design.md` §Cycle 8
+
+| WP | Title | Closed | Commits | Status |
+|----|-------|--------|---------|--------|
+| WP-A8 | Serving Ensemble skeleton (classify → seat → marshal) + explain seat + model-backed decider + preservation locks | 2026-07-02 | `f68c6b0`, `ec79b1b`, `64b8576`, `ef4dc7b` | Complete |
+| WP-D8 | Accept Gate (composed verification gate, default-on for build turns) + Grounding Reframe | 2026-07-03 | `d1b0f0d`, `0e93716`, `682da6b`, `9753d8f` | Complete |
+| WP-B8 | Envelope relocation — full survivor set (10 modules) out of `agentic/` | 2026-07-07 | `a69f4e0`, `fdb2acf`, `ee640a1`, `d43a0f2`, `09839ec` | Complete |
 
 ### Cycle 4: Cheap-orchestrator + ensembles support — in progress
 
