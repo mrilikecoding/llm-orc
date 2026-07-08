@@ -113,9 +113,6 @@ def serving_client(
     monkeypatch.setattr(
         v1_chat_completions, "get_serving_ensemble_caller", _caller, raising=False
     )
-    monkeypatch.setattr(
-        v1_chat_completions, "_serving_mode", lambda: "declarative-ensemble"
-    )
     return TestClient(create_app())
 
 
