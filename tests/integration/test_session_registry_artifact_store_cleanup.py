@@ -17,8 +17,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from llm_orc.agentic.session_artifact_store import SessionArtifactStore
-from llm_orc.agentic.session_registry import SessionIdentity, SessionRegistry
+from llm_orc.core.session.artifact_store import SessionArtifactStore
+from llm_orc.core.session.registry import SessionIdentity, SessionRegistry
 
 
 def test_session_close_drives_artifact_store_cleanup(tmp_path: Path) -> None:
