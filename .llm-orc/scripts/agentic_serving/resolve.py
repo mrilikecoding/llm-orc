@@ -16,6 +16,9 @@ from __future__ import annotations
 import json
 import re
 import sys
+from pathlib import Path
+
+from llm_orc.core.serving.shape_catalog import shape_catalog
 
 # The closed seat set the decider chooses from, and the build/kind each implies.
 # These are the semantic intents (code vs prose), not the serving shape.
@@ -23,12 +26,14 @@ _DERIVED = {
     "code-seat": ("python_module", True),
     "explainer": ("explanation", False),
 }
-# Intent -> serving shape. The default build shape is the gated accept shape
-# (WP-D8: the accept gate is default-on for build turns; ADR-048 §1 + the gate-
-# conversation synthesis). Explain stays a prose seat. WP-C8's registry will make
-# this mapping operator-curated; here it is the built-in default.
-_BUILD_SHAPE = "build-gated"
-_SHAPE = {"code-seat": _BUILD_SHAPE}
+# The intent -> serving shape mapping is now operator-curated (WP-C8): each shape
+# declares the intent it ``serves`` and the Shape Catalog derives the map from the
+# library, replacing the hardcoded default WP-D8 left here. ``build-gated`` serves
+# ``code-seat`` (the accept gate is default-on for build turns; WP-D8 + ADR-048),
+# ``explainer`` serves ``explainer``. An intent with no catalog shape passes
+# through unchanged, so an unresolved target still fails deterministically at
+# dispatch (determinism-over-carve-outs).
+_CATALOG_DIR = Path(__file__).resolve().parents[2] / "ensembles" / "agentic-serving"
 _JSON_RE = re.compile(r"\{[^{}]*\}")
 
 
@@ -85,10 +90,11 @@ def main() -> None:
         kind = classify.get("kind", "")
         build = bool(classify.get("build", False))
 
-    # Map the semantic intent to the serving shape the seat dispatches: a code
-    # intent resolves to the default gated build shape (unknown/empty and the
-    # prose seat pass through unchanged).
-    shape_target = _SHAPE.get(target, target)
+    # Map the semantic intent to the serving shape the seat dispatches, from the
+    # operator-curated Shape Catalog (WP-C8). An intent with no registered shape
+    # passes through unchanged (empty/unknown still fails deterministically).
+    catalog = shape_catalog(_CATALOG_DIR)
+    shape_target = catalog.get(target, target)
 
     print(
         json.dumps(

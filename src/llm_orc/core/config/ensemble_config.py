@@ -204,6 +204,19 @@ class EnsembleConfig:
     against the closed Topaz taxonomy at dispatch time.
     """
 
+    serves: str | None = None
+    """ADR-047 composition-shape routing metadata (Cycle 8 WP-C8).
+
+    Operator-authored YAML field naming the routing intent this shape
+    serves — the key the classify decider emits and the Shape Catalog
+    resolves to this shape. Present on composition shapes (``build-gated``
+    serves ``code-seat``; a solo prose shape serves ``explainer``);
+    ``None`` on capability parts and the serving handler, which are not
+    catalog shapes. Derived-scan metadata mirroring ``topaz_skill``: the
+    Shape Catalog reads this field to build the intent->shape map without
+    a parallel registry structure (AS-11).
+    """
+
     output_schema: dict[str, Any] | None = None
     """ADR-024 optional JSON-Schema-shaped description of the typed
     payload the synthesizer agent (or post-dispatch processing) writes
@@ -391,6 +404,9 @@ class EnsembleLoader:
             str(topaz_skill_raw) if topaz_skill_raw is not None else None
         )
 
+        serves_raw = data.get("serves")
+        serves: str | None = str(serves_raw) if serves_raw is not None else None
+
         output_schema_raw = data.get("output_schema")
         output_schema: dict[str, Any] | None = (
             dict(output_schema_raw) if isinstance(output_schema_raw, dict) else None
@@ -419,6 +435,7 @@ class EnsembleLoader:
             test_mode=data.get("test_mode"),
             raw_output=bool(data.get("raw_output", False)),
             topaz_skill=topaz_skill,
+            serves=serves,
             output_schema=output_schema,
             output_substrate=output_substrate,
             output_retention=output_retention,

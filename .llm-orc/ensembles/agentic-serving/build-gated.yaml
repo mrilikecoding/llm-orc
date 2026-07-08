@@ -24,6 +24,9 @@ description: |
   operator-curated catalog work at WP-C8.
 
 topaz_skill: code_generation
+# The intent this shape serves (WP-C8 Shape Catalog): the classify decider's
+# ``code-seat`` intent routes here. Operator-curated; derived by the catalog scan.
+serves: code-seat
 
 agents:
   - name: test_writer
