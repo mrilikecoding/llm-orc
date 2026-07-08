@@ -25,8 +25,11 @@ agents:
 # I/O-facing assertions via a wired ValidationEvaluator.evaluate. Black-box: no
 # structural layer (no required_agents), so the contract does not couple to the
 # candidate's internal agents and any code_generation ensemble can fill the seat.
-# The seat's output is adapted under the canonical key ``seat``.
-validation:
+# The seat's output is adapted under the canonical key ``seat``. This is a
+# distinct field from the engine's ``validation:`` (which the engine auto-runs
+# against the ensemble's own agents at execution) — the admission contract
+# references the skeleton's ``seat`` adapter key, not this seat's internal agents.
+seat_contract:
   behavioral:
     - name: envelope-status-success
       description: "the seat produced a success envelope"

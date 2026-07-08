@@ -22,7 +22,9 @@ from llm_orc.core.validation.models import ValidationConfig
 REPO = Path(__file__).resolve().parents[3]
 SEAT_CONTRACT = REPO / ".llm-orc" / "scripts" / "agentic_serving" / "seat_contract.py"
 EMIT = REPO / ".llm-orc" / "scripts" / "agentic_serving" / "emit.py"
-CODE_SEAT_YAML = REPO / ".llm-orc" / "ensembles" / "agentic-serving" / "code-seat.yaml"
+AGENTIC = REPO / ".llm-orc" / "ensembles" / "agentic-serving"
+CODE_SEAT_YAML = AGENTIC / "code-seat.yaml"
+BUILD_GATED_YAML = AGENTIC / "build-gated.yaml"
 
 CODE = "def add(a, b):\n    return a + b\n"
 SUCCESS_ENVELOPE: dict[str, Any] = {
@@ -110,9 +112,23 @@ def test_code_seat_contract_uses_only_io_facing_layers() -> None:
     # Fitness (system-design §Cycle 8): the contract names no internal agents
     # (no structural required_agents coupling) — black-box interchangeability.
     raw = yaml.safe_load(CODE_SEAT_YAML.read_text())
-    contract = ValidationConfig.model_validate(raw.get("validation") or {})
+    contract = ValidationConfig.model_validate(raw.get("seat_contract") or {})
     assert contract.structural is None
     assert contract.behavioral  # the contract does gate on I/O-facing output
+
+
+def test_seat_contract_is_distinct_from_the_engine_validation_field() -> None:
+    # Regression: the seat-admission contract must NOT live in the engine's
+    # ``validation:`` field. The engine auto-runs ``validation:`` against the
+    # ensemble's own agents at execution — the admission contract references the
+    # skeleton's ``seat`` adapter key, so reusing ``validation:`` fails a dispatched
+    # seat (caught by real-client grounding, WP-E8).
+    for seat_yaml in (CODE_SEAT_YAML, BUILD_GATED_YAML):
+        raw = yaml.safe_load(seat_yaml.read_text())
+        assert raw.get("seat_contract"), f"{seat_yaml.name} declares no seat_contract"
+        assert raw.get("validation") is None, (
+            f"{seat_yaml.name} sets the engine-auto-run validation field"
+        )
 
 
 # --- preservation: per-seat admission composes with the loop-level accept gate ---
