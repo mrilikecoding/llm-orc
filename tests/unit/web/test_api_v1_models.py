@@ -15,8 +15,8 @@ import pytest
 import yaml
 from fastapi.testclient import TestClient
 
-from llm_orc.agentic.orchestrator_config import OrchestratorConfigResolver
 from llm_orc.core.config.config_manager import ConfigurationManager
+from llm_orc.core.config.model_profile_allowlist import ModelProfileAllowlist
 from llm_orc.web.api import v1_models
 from llm_orc.web.server import create_app
 
@@ -53,9 +53,9 @@ def _build_client(
     (llm_orc_dir / "config.yaml").write_text(yaml.safe_dump(config_body))
 
     cm = ConfigurationManager(project_dir=project_dir, provision=False)
-    resolver = OrchestratorConfigResolver(cm)
+    allowlist = ModelProfileAllowlist(cm)
 
-    monkeypatch.setattr(v1_models, "get_orchestrator_config_resolver", lambda: resolver)
+    monkeypatch.setattr(v1_models, "get_model_profile_allowlist", lambda: allowlist)
     return TestClient(create_app())
 
 
