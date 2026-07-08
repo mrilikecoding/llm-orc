@@ -1011,3 +1011,44 @@ Same ensembles, same upstream data, same Iceland-population prompt. The orchestr
 | 16 | Single-callee, no decompose/synthesize; plan has no path into the loop | New question + missing capability | **RESEARCH + ARCHITECT** — the task-orchestration layer (ties to spike δ / candidate ADR-027) |
 
 **Balancing note (per the susceptibility snapshot).** The split above routes the positives (#3, #10, #15) to SYNTHESIS and the frictions to DECIDE/RESEARCH/ARCHITECT. That mapping follows the RDD destinations (delights → SYNTHESIS), but the asymmetry can read as "all problems, no wins." Two alternative readings are preserved explicitly so SYNTHESIZE weighs them: (a) **#5 is also a positive** — the same Probe T that took ~18 min produced five coherent files via cheap-tier delegation (`rate=0.833`), i.e. the greenfield-write thesis *confirmed*, not just a latency cost; (b) **#8 carries a mitigating qualifier** — inlining a small survey instead of spawning a sub-agent may be appropriate, so the `task` non-emission is not unambiguously a defect. The roadmap framing (working vs. underdeveloped vs. not-yet-undertaken) in the reflection above is the intended lens, not the friction-weighted table alone.
+
+---
+
+# Play session: 2026-07-08 (Cycle 8 — post-WP-F8 real-client run)
+
+**System state at play:** Cycle-8 BUILD complete (WP-F8 shipped; `src/llm_orc/agentic/` deleted; the declarative Serving Ensemble is the only serving path). Branch `agentic-serving`. `llm-orc serve` with a seat model set to `qwen3.6-plus` via OpenCode Go per `.llm-orc` config (the `explainer` seat still resolves to `agentic-tier-cheap-general` / qwen3:8b per its own YAML).
+**Client:** real OpenCode TUI, one multi-turn session.
+**Stakeholder inhabited:** Pure Tool User.
+**Trigger:** a three-turn conversation — "hello" → "Tell me about the llm-orc agentic serving architecture" → "Did you see my previous query?". All three turns returned a meta-narration about "hello" being resolved by a previous agent. Evidence retained: `.llm-orc/artifacts/serving/20260708-155155-079/`, `-155752-694/`, `-155829-572/` (each `execution.json` records the exact seat input and output per turn).
+
+**Honest framing.** This session shows the declarative serve does not handle a real multi-turn conversation. The single-turn happy-path grounding at WP-F8 close (one curl + one canned `opencode` explain) could not have surfaced any of the three findings below: #1 needs 2+ turns, #2 needs conversational (not instruction-shaped) input, #3 needs a follow-up referencing a prior turn. The [[feedback_validate_against_real_client]] failure mode, recorded plainly — the "build + explain grounded" claim at WP-F8 was over-stated.
+
+## Stakeholder: Pure Tool User
+
+### 1. Every turn re-processes the first user message ("hello")
+**Symptom.** Turns 2 and 3 (different questions) both produced responses about "hello". The retained artifacts show `{"task": "hello"}` as the seat input on all three turns.
+**Root cause.** `src/llm_orc/web/serving/serving_ensemble_caller.py::_task_from()` iterates the message history forward and returns the FIRST user message. OpenCode sends the full history every turn, so the first user message is always turn 1 ("hello"). The sibling `_aux_reply()` in the same file correctly uses `reversed()`.
+**Fix sketch (clear, safe).** Return the LAST user message (iterate `reversed(messages)`, mirroring `_aux_reply`). Add a multi-turn regression test driving a 3-message history and asserting the latest turn reaches the ensemble — the test that would have caught this.
+**Destination: BUILD.**
+
+### 2. The seat narrates about "the previous agent" instead of answering
+**Symptom.** Even turn 1 ("hello") returned "The task 'hello' was successfully resolved by the previous agent, resulting in the output 'hello'..." — a meta-report, not a greeting.
+**Root cause.** The `seat` node dispatches the child ensemble, and because `seat depends_on [resolve]` the L0 engine wraps the child's input in its dependency-fan-out template: "take into account the results from the previous agents in the dependency chain... Previous Agent Results: Agent resolve: hello... build upon the previous results" (verbatim in the retained `execution.json` seat input). The child model comments on "the previous agent." The `seat` node sets `input_key: dispatch_input`, but the dependency-wrapping still applies. A strong instruction overrides the framing, which is why the WP-F8 explain grounding ("Explain the difference between a list and a tuple") passed and a bare "hello" fails.
+**Fix sketch (needs tracing first).** The seat's dispatched child should receive the clean turn, not the dependency-composed "previous agent results" input. The exact seam (input composition in the dynamic-dispatch runner vs. the ensemble config) needs tracing before a change. **Recurrence:** this is the narration-instead-of-action pattern from Cycle-1 PLAY #4 and Cycle-7 PLAY #4 — a third instance.
+**Destination: BUILD** (dynamic-dispatch input composition).
+
+### 3. No conversation memory — the serve is single-turn by construction
+**Symptom.** "Did you see my previous query?" is unanswerable; the serve has no prior turn.
+**Root cause.** `ServingEnsembleCaller._serve()` passes a single `{"task": <one string>}` to a fresh ensemble execution (`serving_ensemble_caller.py:134`). The conversation history is discarded; there is no cross-turn state. ADR-046 deferred cross-turn state to the substrate ("the client owns the loop"), but the serve currently threads none of it into the ensemble.
+**Design question (not a quick patch).** Does the north-star "full model-parity via composition, no degradation" require conversation memory in the serve? If so, where does it live — the session substrate (Session Registry, ADR-013) that ADR-046 named, or in what the caller threads into the ensemble input? This is the multi-turn / axis-2 continuity concern that was a named BUILD/PLAY validation target (domain-model OQ #27; AS-9 axis-2 sequential-composition).
+**Destination: DECIDE / ARCHITECT** (loop-back, not a BUILD patch).
+
+## Field-note routing summary
+
+| # | Finding | Category | Destination |
+|---|---------|----------|-------------|
+| 1 | First-message-not-latest; every turn re-runs "hello" | Build defect | **BUILD** — `_task_from` reversed + multi-turn regression test |
+| 2 | Seat narrates "previous agent" instead of answering (recurs: C1 #4, C7 #4) | Interaction defect | **BUILD** — dynamic-dispatch input composition; deliver the clean turn to the seat |
+| 3 | No conversation memory; single-turn by construction | Missing capability | **DECIDE/ARCHITECT** — cross-turn state (substrate per ADR-046 / axis-2 OQ #27) |
+
+**Meta-observation.** The three findings are one experience: the serve works as a single-shot task handler on a strong instruction, not as a conversational assistant. A multi-turn real-client battery is a prerequisite before any "parity" claim; the greenfield-build grounding is necessary but not sufficient. Deferred by the practitioner to a new session (2026-07-08).
