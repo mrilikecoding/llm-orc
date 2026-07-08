@@ -74,11 +74,8 @@ from llm_orc.agentic.orchestrator_tool_dispatch import (
     EnsembleConfigSubstrateReader,
     OrchestratorToolDispatch,
 )
-from llm_orc.agentic.plexus_adapter import PlexusAdapter
 from llm_orc.agentic.result_summarizer_harness import ResultSummarizerHarness
 from llm_orc.agentic.session_action_record import SessionActionRecord
-from llm_orc.agentic.session_artifact_store import SessionArtifactStore
-from llm_orc.agentic.session_registry import SessionRegistry
 from llm_orc.agentic.session_start import ChatMessage, SessionContext, SessionStartCache
 from llm_orc.agentic.single_step_enforcer import SingleStepEnforcer
 from llm_orc.agentic.tier_router import (
@@ -89,6 +86,9 @@ from llm_orc.agentic.tier_router import (
 from llm_orc.agentic.tier_router_audit import TierEscalationAuditor
 from llm_orc.core.auth.authentication import CredentialStorage
 from llm_orc.core.models.model_factory import ModelFactory
+from llm_orc.core.session.artifact_store import SessionArtifactStore
+from llm_orc.core.session.plexus_adapter import PlexusAdapter
+from llm_orc.core.session.registry import SessionRegistry
 from llm_orc.models.base import ModelInterface
 from llm_orc.web.api import get_orchestra_service
 from llm_orc.web.api.sse_format import OpenAiSseFormatter, encode_tool_call_for_message
@@ -172,7 +172,7 @@ def get_session_artifact_store() -> SessionArtifactStore:
     operator overrides flow through.
 
     On first construction the store registers its
-    :meth:`~llm_orc.agentic.session_artifact_store.SessionArtifactStore.cleanup_session`
+    :meth:`~llm_orc.core.session.artifact_store.SessionArtifactStore.cleanup_session`
     bound method as a close callback on the shared Session Registry
     per ADR-025 §"Cleanup" + ``system-design.agents.md`` §"Session
     Registry → Session Artifact Store" — session close drives

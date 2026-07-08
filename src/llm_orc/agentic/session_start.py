@@ -16,38 +16,17 @@ both edges.
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
-from llm_orc.agentic.session_registry import (
+# ChatMessage relocated to the session substrate at Cycle-8 WP-B8;
+# re-exported here so this module remains the serving-layer contract
+# surface its consumers import from.
+from llm_orc.core.session.messages import ChatMessage as ChatMessage
+from llm_orc.core.session.registry import (
     SessionIdentity,
     SessionState,
 )
-
-
-@dataclass(frozen=True)
-class ChatMessage:
-    """An OpenAI-compatible chat message flowing through the Serving Layer.
-
-    Defined here because ChatMessage is a *contract type* on the Serving
-    Layer → Orchestrator Runtime edge (it rides inside ``SessionContext``
-    below) — it is not Session Registry's internal concern. Locating it in
-    this module keeps FC-4 intact: the Runtime imports ChatMessage from
-    ``session_start`` (allow-listed) rather than reaching into
-    ``session_registry`` (forbidden).
-
-    Tool-round-trip fields (``tool_call_id``, ``tool_calls``) are populated
-    when the client echoes back the orchestrator's prior delegations under
-    Option C (Client Tool Surface Commitment) — ``role: assistant``
-    messages carry ``tool_calls`` and ``role: tool`` messages carry
-    ``tool_call_id``. ``content`` is nullable to match OpenAI's shape for
-    an assistant message whose turn carried only tool calls.
-    """
-
-    role: str
-    content: str | None = None
-    tool_call_id: str | None = None
-    tool_calls: tuple[dict[str, Any], ...] = field(default_factory=tuple)
 
 
 @dataclass(frozen=True)
