@@ -47,11 +47,6 @@ from llm_orc.agentic.calibration_gate import (
     EnsembleBackedChecker,
 )
 from llm_orc.agentic.client_tool_action_terminal import ClientToolActionTerminal
-from llm_orc.agentic.composition_validator import (
-    CompositionValidator,
-    ConfigManagerEnsembleWriter,
-    ConfigManagerPrimitiveRegistry,
-)
 from llm_orc.agentic.dispatch_event_substrate import DispatchEventSubstrate
 from llm_orc.agentic.inference_wait_heartbeat import (
     InferenceWaitHeartbeatScheduler,
@@ -89,6 +84,11 @@ from llm_orc.core.models.model_factory import ModelFactory
 from llm_orc.core.session.artifact_store import SessionArtifactStore
 from llm_orc.core.session.plexus_adapter import PlexusAdapter
 from llm_orc.core.session.registry import SessionRegistry
+from llm_orc.core.validation.composition_validator import (
+    CompositionValidator,
+    ConfigManagerEnsembleWriter,
+    ConfigManagerPrimitiveRegistry,
+)
 from llm_orc.models.base import ModelInterface
 from llm_orc.web.api import get_orchestra_service
 from llm_orc.web.api.sse_format import OpenAiSseFormatter, encode_tool_call_for_message
