@@ -1,8 +1,10 @@
 # System Design Companion: Agentic Serving — Agent Context
 
 **Version:** 4.1
-**Status:** Current
+**Status:** Historical record — superseded by `system-design.md` §Cycle 8 (Cycle-8 declarative collapse, ADR-045/046; `agentic/` deleted at WP-F8, 2026-07-08)
 **Last amended:** 2026-06-18 (Cycle 7 loop-back #9 BUILD Design Amendment — ADR-043 collapse to one serving surface; the Dispatch Pipeline module is retired). Prior: 2026-05-15 (Cycle 6 ARCHITECT)
+
+> **Cycle-8 supersession (WP-F8, 2026-07-08).** This companion describes the pre-Cycle-8 imperative orchestrator-actor serving architecture (Loop Driver, Orchestrator Runtime / Tool Dispatch, the Calibration subsystem, the Tier-Escalation Router, the Result Summarizer Harness, etc.), whose code (`src/llm_orc/agentic/`) was deleted in the clean-slate collapse. It is **retained as historical record only**. The current architecture is `system-design.md` §Cycle 8; the current module→code map is `field-guide.md`. The ADR-002 layering rule described throughout — the "narrow ADR-016 L0→L1 exception" — is reverted: the current rule is no-exception, edges never upward (domain-model Amendment #23).
 **Companion to:** [system-design.md](./system-design.md) (slim human-facing surface)
 **Scope:** Scoped RDD cycle at `docs/agentic-serving/`. Inherits the project-level domain model (Invariants 1-14) and existing system architecture.
 

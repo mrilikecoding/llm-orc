@@ -1,5 +1,7 @@
 # Agentic Serving — Architecture Map (multi-fidelity)
 
+> **SUPERSEDED, historical record (Cycle-8 declarative collapse, WP-F8 2026-07-08).** The "ACTIVE" turn loop described below (`ClientToolActionTerminal` → `LoopDriver.decide()`, and the DORMANT `OrchestratorRuntime`) has been DELETED: the entire `src/llm_orc/agentic/` layer was removed in the clean-slate collapse (ADR-045/046). The current architecture is ONE declarative Serving Ensemble (classify → seat → marshal), in `system-design.md` §Cycle 8, with the current module-to-code map in `field-guide.md`. This map is retained as an 8-cycle historical orientation; do not read its file:line citations as current.
+
 **Purpose:** a step-back orientation after 8 cycles. Four diagrams at graduated zoom (system → layers → orchestration core → one turn), reconciled against the actual code and the 44-ADR trail, with a drift section and the open questions pinned to components/ADRs.
 
 **Built 2026-06-25** from three grounding reads: the design docs (`system-design.md`, `ORIENTATION.md`, `domain-model.md`), the code (`src/llm_orc/agentic/`), and the ADRs (`decisions/adr-001 … adr-043`).
