@@ -328,9 +328,10 @@ class TestSharedValidatorSameBothPaths:
         # both reach :func:`validate_ensemble_reference_graph` through
         # the single canonical module. Grep the validator module for
         # the import — it is the function-by-name in the composition
-        # path, identical to the load path.
-        import llm_orc.agentic.composition_validator as cv_module
+        # path, identical to the load path. (Canonical module relocated
+        # to core/validation at Cycle-8 WP-B8.)
         import llm_orc.core.config.ensemble_config as ec
+        import llm_orc.core.validation.composition_validator as cv_module
 
         cv_source = Path(cv_module.__file__).read_text()
         assert "validate_ensemble_reference_graph" in cv_source
