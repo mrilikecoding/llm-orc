@@ -5,7 +5,11 @@ from collections.abc import Callable
 from typing import Any
 
 from llm_orc.core.execution.utils import dep_name
-from llm_orc.schemas.agent_config import AgentConfig, ScriptAgentConfig
+from llm_orc.schemas.agent_config import (
+    AgentConfig,
+    DynamicDispatchAgentConfig,
+    ScriptAgentConfig,
+)
 
 
 class DependencyResolver:
@@ -81,6 +85,11 @@ class DependencyResolver:
         if is_script_agent:
             return self._build_script_input(agent_name, base_input, dep_results_dict)
 
+        if isinstance(agent_config, DynamicDispatchAgentConfig):
+            return self._dispatch_child_input(
+                agent_config, base_input, effective_results
+            )
+
         dependency_results = self._extract_successful_dependency_results(
             dependencies, effective_results
         )
@@ -89,6 +98,26 @@ class DependencyResolver:
                 agent_name, base_input, dependency_results
             )
         return self._build_enhanced_input_no_dependencies(agent_name, base_input)
+
+    def _dispatch_child_input(
+        self,
+        agent_config: DynamicDispatchAgentConfig,
+        base_input: str,
+        effective_results: dict[str, Any],
+    ) -> str:
+        """Input for a dynamic-dispatch node's child ensemble.
+
+        The child is a fresh execution, not an agent in the dependency chain:
+        it receives the input_key-selected value verbatim (already applied to
+        the first dependency's response), or the original ensemble input —
+        never the LLM dependency prose wrapper.
+        """
+        if agent_config.input_key and agent_config.depends_on:
+            first_dep = dep_name(agent_config.depends_on[0])
+            dep_result = effective_results.get(first_dep, {})
+            if dep_result.get("status") == "success":
+                return str(dep_result.get("response", ""))
+        return base_input
 
     def _apply_input_key_selection(
         self,
