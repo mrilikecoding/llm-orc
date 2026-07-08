@@ -71,6 +71,41 @@ class TestPartRegistration:
 
         assert parts == {}
 
+    def test_a_shape_is_not_offered_as_a_fillable_part(self, tmp_path: Path) -> None:
+        """A composition shape may advertise its ``topaz_skill`` but is a catalog
+        entry, not a building block a slot can fill (ADR-047 §1 parts-vs-shapes).
+        Only the non-shape capability ensemble is a fillable part under the key."""
+        ensembles_dir = tmp_path / "ensembles"
+        _write_ensemble_file(
+            ensembles_dir,
+            "build-gated",
+            """
+            name: build-gated
+            description: a code_generation composition SHAPE
+            topaz_skill: code_generation
+            serves: code-seat
+            agents:
+              - name: only
+                model_profile: default
+            """,
+        )
+        _write_ensemble_file(
+            ensembles_dir,
+            "code-generator",
+            """
+            name: code-generator
+            description: a code_generation building-block PART
+            topaz_skill: code_generation
+            agents:
+              - name: only
+                model_profile: default
+            """,
+        )
+
+        parts = capability_parts(ensembles_dir)
+
+        assert parts.get("code_generation") == ["code-generator"]
+
 
 class TestAS2Admission:
     """AS-2 (validate-before-load) is the registration admission gate."""

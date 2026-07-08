@@ -1,0 +1,31 @@
+name: gen-review
+description: |
+  Exemplar composition shape (WP-C8; ADR-047 §1-2): gen -> review, with BOTH slots
+  filled by dynamic dispatch resolving REGISTERED parts from the Topaz registry,
+  not static ensemble refs. This is the ADR-047 §2 default binding made concrete:
+  classify selects the shape, dynamic dispatch binds runtime-chosen parts into its
+  slots, load-time-first, on shipped primitives (feasibility spike).
+
+  select_parts (deterministic script) reads the capability registry and picks the
+  registered building-block part for each slot's capability (gen=code_generation,
+  review=logical_reasoning); the gen/review nodes dispatch ${select_parts.gen} and
+  ${select_parts.review} onto those parts. The part-selection is declarative and
+  external to the parts (Strategy A) — no capability ensemble self-routes. Swapping
+  which part fills a slot is a registry change, never a skeleton edit (AS-11).
+
+  serves: the "review" routing intent. Registered in the Shape Catalog; an operator
+  extends the serving surface by adding this shape + its selector, never the engine.
+serves: review
+
+agents:
+  - name: select_parts
+    script: scripts/agentic_serving/select_parts.py
+
+  - name: gen
+    dispatch: ${select_parts.gen}
+    input_key: task
+    depends_on: [select_parts]
+
+  - name: review
+    dispatch: ${select_parts.review}
+    depends_on: [select_parts, gen]

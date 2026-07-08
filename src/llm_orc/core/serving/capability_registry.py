@@ -32,5 +32,11 @@ def capability_parts(
         skill = config.topaz_skill
         if not skill:
             continue
+        # A shape (declares ``serves``) is a composition, not a building-block
+        # part a slot can fill — its ``topaz_skill`` advertises the capability it
+        # produces, but it is a catalog entry, not fillable. Parts are the
+        # non-shape capability ensembles (ADR-047 §1 parts-vs-shapes).
+        if config.serves:
+            continue
         parts.setdefault(skill, []).append(config.name)
     return {skill: sorted(names) for skill, names in sorted(parts.items())}
