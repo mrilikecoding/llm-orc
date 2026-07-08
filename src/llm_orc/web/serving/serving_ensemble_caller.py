@@ -21,22 +21,22 @@ from collections.abc import AsyncIterator, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from llm_orc.agentic.orchestrator_chunk import (
+from llm_orc.core.config.ensemble_config import EnsembleLoader
+from llm_orc.core.execution.executor_factory import ExecutorFactory
+from llm_orc.web.serving.chunks import (
     ClientToolCall,
     Completion,
     ContentDelta,
     OrchestratorChunk,
     ToolCallInvocation,
 )
-from llm_orc.core.config.ensemble_config import EnsembleLoader
-from llm_orc.core.execution.executor_factory import ExecutorFactory
 from llm_orc.web.serving.turn_trace import emit_turn_trace
 
 if TYPE_CHECKING:
     # A surviving ADR-013 container that still lives under agentic/ during the
     # parity window; WP-B8 relocates it. Imported for typing only — the caller
     # accesses messages/tools structurally, with no runtime agentic/ coupling.
-    from llm_orc.agentic.session_start import SessionContext
+    from llm_orc.web.serving.session_start import SessionContext
 
 _WRITE_TOOL = "write"
 

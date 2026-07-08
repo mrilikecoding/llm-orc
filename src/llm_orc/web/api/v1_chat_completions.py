@@ -53,12 +53,6 @@ from llm_orc.agentic.inference_wait_heartbeat import (
 )
 from llm_orc.agentic.loop_driver import LoopDriver
 from llm_orc.agentic.operator_terminal_event_sink import OperatorTerminalEventSink
-from llm_orc.agentic.orchestrator_chunk import (
-    ClientToolCall,
-    Completion,
-    ContentDelta,
-    OrchestratorChunk,
-)
 from llm_orc.agentic.orchestrator_config import OrchestratorConfig
 from llm_orc.agentic.orchestrator_context_event_sink import (
     OrchestratorContextEventSink,
@@ -71,7 +65,6 @@ from llm_orc.agentic.orchestrator_tool_dispatch import (
 )
 from llm_orc.agentic.result_summarizer_harness import ResultSummarizerHarness
 from llm_orc.agentic.session_action_record import SessionActionRecord
-from llm_orc.agentic.session_start import ChatMessage, SessionContext, SessionStartCache
 from llm_orc.agentic.single_step_enforcer import SingleStepEnforcer
 from llm_orc.agentic.tier_router import (
     EnsembleConfigTopazSkillReader,
@@ -93,7 +86,18 @@ from llm_orc.models.base import ModelInterface
 from llm_orc.web.api import get_orchestra_service
 from llm_orc.web.api.sse_format import OpenAiSseFormatter, encode_tool_call_for_message
 from llm_orc.web.api.v1_models import get_orchestrator_config_resolver
+from llm_orc.web.serving.chunks import (
+    ClientToolCall,
+    Completion,
+    ContentDelta,
+    OrchestratorChunk,
+)
 from llm_orc.web.serving.serving_ensemble_caller import ServingEnsembleCaller
+from llm_orc.web.serving.session_start import (
+    ChatMessage,
+    SessionContext,
+    SessionStartCache,
+)
 
 router = APIRouter(prefix="/v1", tags=["openai-compat"])
 

@@ -12,7 +12,8 @@ payload back to JSON so assertions live at the observable boundary
 import json
 from typing import Any
 
-from llm_orc.agentic.orchestrator_chunk import (
+from llm_orc.web.api.sse_format import OpenAiSseFormatter
+from llm_orc.web.serving.chunks import (
     ClientToolCall,
     Completion,
     ContentDelta,
@@ -22,7 +23,6 @@ from llm_orc.agentic.orchestrator_chunk import (
     ToolCallInvocation,
     VisibilityEvent,
 )
-from llm_orc.web.api.sse_format import OpenAiSseFormatter
 
 
 def _parse_sse_data(raw: bytes) -> dict[str, Any]:

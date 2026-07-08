@@ -14,7 +14,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from llm_orc.agentic.orchestrator_chunk import (
+from llm_orc.web.serving.chunks import (
     ClientToolCall,
     Completion,
     ContentDelta,
