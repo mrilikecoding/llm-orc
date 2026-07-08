@@ -72,3 +72,21 @@ agents:
   - name: envelope
     script: scripts/agentic_serving/build_gated_envelope.py
     depends_on: [code_writer, accept_gate]
+
+# Seat-owned admission contract (ADR-046 §2; WP-E8). The default build seat's
+# output is admitted by the serving skeleton's seat_contract node via a wired
+# ValidationEvaluator. Black-box (no structural required_agents) so the gate does
+# not couple to this shape's internal pipeline. Envelope well-formedness is a
+# different granularity from the accept verdict this shape carries in diagnostics:
+# an accept-rejected turn still emits a well-formed envelope (the code is present),
+# so the seat contract admits it and the loop-level accept gate handles the reject.
+# Distinct from the engine's ``validation:`` field (auto-run against this shape's
+# own agents) — the admission references the skeleton's ``seat`` adapter key.
+seat_contract:
+  behavioral:
+    - name: envelope-status-success
+      description: "the seat produced a success envelope"
+      assertion: "results['seat']['status'] == 'success'"
+    - name: envelope-carries-artifact
+      description: "the seat envelope carries a deliverable artifact"
+      assertion: "len(results['seat']['artifacts']) > 0"

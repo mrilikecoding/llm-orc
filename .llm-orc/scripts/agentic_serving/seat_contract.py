@@ -83,15 +83,20 @@ def _seat_output(seat_terminal: str) -> dict[str, Any]:
 
 
 def _contract_for(target: str) -> ValidationConfig:
-    """Load the resolved seat's seat-owned contract (its ``validation:`` block).
-    An unknown or contract-less seat yields an empty (vacuously-admitting) contract."""
+    """Load the resolved seat's seat-owned contract (its ``seat_contract:`` block).
+
+    This is a distinct field from the engine's ``validation:`` — the engine
+    auto-runs ``validation:`` against the ensemble's own agents at execution,
+    whereas the admission contract references the skeleton's ``seat`` adapter key.
+    An unknown or contract-less seat yields an empty (vacuously-admitting) contract.
+    """
     if not target:
         return ValidationConfig()
     for ext in ("yaml", "yml"):
         candidate = ENSEMBLES / f"{target}.{ext}"
         if candidate.exists():
             raw = yaml.safe_load(candidate.read_text()) or {}
-            return ValidationConfig.model_validate(raw.get("validation") or {})
+            return ValidationConfig.model_validate(raw.get("seat_contract") or {})
     return ValidationConfig()
 
 
