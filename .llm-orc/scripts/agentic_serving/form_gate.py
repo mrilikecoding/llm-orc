@@ -76,6 +76,10 @@ def main() -> None:
                 # build shape). ``None`` when the seat carries no verdict.
                 "accept": shaped.get("accept"),
                 "accept_reason": str(shaped.get("accept_reason", "")),
+                # Pass the per-seat admission verdict through unchanged (WP-E8;
+                # a different granularity from accept — the two compose).
+                "seat_admitted": shaped.get("seat_admitted"),
+                "seat_contract_reason": str(shaped.get("seat_contract_reason", "")),
             }
         )
     )
