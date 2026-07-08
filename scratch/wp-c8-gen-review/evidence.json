@@ -1,0 +1,15 @@
+{
+  "gen": {
+    "dispatched": "code-generator",
+    "status": "success"
+  },
+  "review": {
+    "dispatched": "argument-mapper",
+    "status": "success"
+  },
+  "select_parts": {
+    "gen": "code-generator",
+    "review": "argument-mapper",
+    "task": "a function that reverses a string"
+  }
+}

@@ -1,0 +1,134 @@
+Starting llm-orc agentic serving layer at http://127.0.0.1:8991
+Press Ctrl+C to stop
+INFO:     Started server process [43280]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8991 (Press CTRL+C to quit)
+INFO:     127.0.0.1:50127 - "GET /v1/models HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50128 - "GET /v1/models HTTP/1.1" 200 OK
+[serve-trace] serving: classify -> seat -> shape -> form_gate -> emit
+INFO:     127.0.0.1:50130 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50224 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50224 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+[serve-trace] serving: classify -> seat -> shape -> form_gate -> emit
+INFO:     127.0.0.1:50224 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+[serve-trace] serving: classify -> seat -> shape -> form_gate -> emit
+INFO:     127.0.0.1:50224 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+[serve-trace] serving: classify -> seat -> shape -> form_gate -> emit
+INFO:     127.0.0.1:50224 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+[serve-trace] serving: classify -> seat -> shape -> form_gate -> emit
+INFO:     127.0.0.1:50224 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+[serve-trace] serving: classify -> seat -> shape -> form_gate -> emit
+INFO:     127.0.0.1:50224 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+[serve-trace] serving: classify -> seat -> shape -> form_gate -> emit
+INFO:     127.0.0.1:50224 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+[serve-trace] serving: classify -> seat -> shape -> form_gate -> emit
+INFO:     127.0.0.1:50224 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+[serve-trace] serving: classify -> seat -> shape -> form_gate -> emit
+INFO:     127.0.0.1:50224 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+[serve-trace] serving: classify -> seat -> shape -> form_gate -> emit
+INFO:     127.0.0.1:50224 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+[serve-trace] serving: classify -> seat -> shape -> form_gate -> emit
+INFO:     127.0.0.1:50224 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+[serve-trace] serving: classify -> seat -> shape -> form_gate -> emit
+INFO:     127.0.0.1:50224 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+[serve-trace] serving: classify -> seat -> shape -> form_gate -> emit
+INFO:     127.0.0.1:50224 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+[serve-trace] serving: classify -> seat -> shape -> form_gate -> emit
+INFO:     127.0.0.1:50224 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+[serve-trace] serving: classify -> seat -> shape -> form_gate -> emit
+INFO:     127.0.0.1:50224 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+[serve-trace] serving: classify -> seat -> shape -> form_gate -> emit
+INFO:     127.0.0.1:50909 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50941 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50941 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+[serve-trace] serving: classify -> seat -> shape -> form_gate -> emit
+[serve-trace] serving: classify -> seat -> shape -> form_gate -> emit
+INFO:     127.0.0.1:50224 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+[serve-trace] serving: classify -> seat -> shape -> form_gate -> emit
+INFO:     127.0.0.1:50224 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+[serve-trace] serving: classify -> seat -> shape -> form_gate -> emit
+INFO:     127.0.0.1:50224 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+[serve-trace] serving: classify -> seat -> shape -> form_gate -> emit
+INFO:     127.0.0.1:50224 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+[serve-trace] serving: classify -> seat -> shape -> form_gate -> emit
+INFO:     127.0.0.1:50224 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+[serve-trace] serving: classify -> seat -> shape -> form_gate -> emit
+INFO:     127.0.0.1:50224 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+[serve-trace] serving: classify -> seat -> shape -> form_gate -> emit
+INFO:     127.0.0.1:50224 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+[serve-trace] serving: classify -> seat -> shape -> form_gate -> emit
+INFO:     127.0.0.1:50224 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+[serve-trace] serving: classify -> seat -> shape -> form_gate -> emit
+INFO:     127.0.0.1:50224 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+[serve-trace] serving: classify -> seat -> shape -> form_gate -> emit
+INFO:     127.0.0.1:50224 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+[serve-trace] serving: classify -> seat -> shape -> form_gate -> emit
+INFO:     127.0.0.1:50224 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+[serve-trace] serving: classify -> seat -> shape -> form_gate -> emit
+INFO:     127.0.0.1:50224 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+[serve-trace] serving: classify -> seat -> shape -> form_gate -> emit
+INFO:     127.0.0.1:50224 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+[serve-trace] serving: classify -> seat -> shape -> form_gate -> emit
+INFO:     127.0.0.1:50224 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+[serve-trace] serving: classify -> seat -> shape -> form_gate -> emit
+INFO:     127.0.0.1:50224 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+[serve-trace] serving: classify -> decide -> resolve -> seat -> shape -> form_gate -> emit
+INFO:     127.0.0.1:50224 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+[serve-trace] serving: classify -> decide -> resolve -> seat -> shape -> form_gate -> emit
+INFO:     127.0.0.1:51594 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+[serve-trace] serving: classify -> decide -> resolve -> seat -> shape -> form_gate -> emit
+INFO:     127.0.0.1:50224 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+[serve-trace] serving: classify -> decide -> resolve -> seat -> shape -> form_gate -> emit
+INFO:     127.0.0.1:50224 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+[serve-trace] serving: classify -> decide -> resolve -> seat -> shape -> form_gate -> emit
+INFO:     127.0.0.1:50224 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+[serve-trace] serving: classify -> decide -> resolve -> seat -> shape -> form_gate -> emit
+INFO:     127.0.0.1:51829 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+[serve-trace] serving: classify -> decide -> resolve -> seat -> shape -> form_gate -> emit
+INFO:     127.0.0.1:50224 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+[serve-trace] serving: classify -> decide -> resolve -> seat -> shape -> form_gate -> emit
+INFO:     127.0.0.1:51843 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+[serve-trace] serving: classify -> decide -> resolve -> seat -> shape -> form_gate -> emit
+INFO:     127.0.0.1:50224 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+[serve-trace] serving: classify -> decide -> resolve -> seat -> shape -> form_gate -> emit
+INFO:     127.0.0.1:51899 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+[serve-trace] serving: classify -> decide -> resolve -> seat -> shape -> form_gate -> emit
+INFO:     127.0.0.1:50224 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+[serve-trace] serving: classify -> decide -> resolve -> seat -> shape -> form_gate -> emit
+INFO:     127.0.0.1:50224 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+[serve-trace] serving: classify -> decide -> resolve -> seat -> shape -> form_gate -> emit
+INFO:     127.0.0.1:51989 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+[serve-trace] serving: classify -> decide -> resolve -> seat -> shape -> form_gate -> emit
+INFO:     127.0.0.1:50224 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+[serve-trace] serving: classify -> decide -> resolve -> seat -> shape -> form_gate -> emit
+INFO:     127.0.0.1:52029 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+[serve-trace] serving: classify -> decide -> resolve -> seat -> shape -> form_gate -> emit
+INFO:     127.0.0.1:50224 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52465 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52465 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+[serve-trace] serving: classify -> decide -> resolve -> seat -> shape -> form_gate -> emit
+INFO:     127.0.0.1:50224 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+[serve-trace] serving: classify -> decide -> resolve -> seat -> shape -> form_gate -> emit
+INFO:     127.0.0.1:52465 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+[serve-trace] serving: classify -> decide -> resolve -> seat -> shape -> form_gate -> emit
+INFO:     127.0.0.1:50224 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+[serve-trace] serving: classify -> decide -> resolve -> seat -> shape -> form_gate -> emit
+INFO:     127.0.0.1:52465 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+[serve-trace] serving: classify -> decide -> resolve -> seat -> shape -> form_gate -> emit
+INFO:     127.0.0.1:50224 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+[serve-trace] serving: classify -> decide -> resolve -> seat -> shape -> form_gate -> emit
+INFO:     127.0.0.1:52465 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+[serve-trace] serving: classify -> decide -> resolve -> seat -> shape -> form_gate -> emit
+INFO:     127.0.0.1:50224 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+[serve-trace] serving: classify -> decide -> resolve -> seat -> shape -> form_gate -> emit
+[serve-trace] serving: classify -> decide -> resolve -> seat -> shape -> form_gate -> emit
+INFO:     127.0.0.1:50224 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+[serve-trace] serving: classify -> decide -> resolve -> seat -> shape -> form_gate -> emit
+INFO:     127.0.0.1:50224 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+[serve-trace] serving: classify -> decide -> resolve -> seat -> shape -> form_gate -> emit
+INFO:     127.0.0.1:50224 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [43280]
