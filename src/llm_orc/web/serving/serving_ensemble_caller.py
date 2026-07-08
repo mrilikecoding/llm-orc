@@ -42,7 +42,8 @@ _WRITE_TOOL = "write"
 
 
 def _task_from(messages: Sequence[Any]) -> str:
-    for message in messages:
+    """The latest user message — clients send the full history every turn."""
+    for message in reversed(list(messages)):
         content = getattr(message, "content", None)
         if getattr(message, "role", None) == "user" and (content or "").strip():
             return content or ""
