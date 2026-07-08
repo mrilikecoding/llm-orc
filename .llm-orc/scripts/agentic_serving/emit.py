@@ -43,8 +43,16 @@ def main() -> None:
     build = bool(gated.get("build", False))
     content = str(gated.get("content", ""))
     accept = gated.get("accept")
+    seat_admitted = gated.get("seat_admitted")
 
-    if build and accept is False:
+    if seat_admitted is False:
+        # The seat's output did not meet its own seat-owned contract (WP-E8;
+        # ADR-046 §2). Refuse before shipping — a distinct, higher-priority gate
+        # than the loop-level accept below. Only an explicit False refuses; an
+        # ungated seat (None) or an admitted one falls through.
+        reason = gated.get("seat_contract_reason") or "seat contract not met"
+        outcome = {"finish": True, "content": f"Seat contract not met: {reason}"}
+    elif build and accept is False:
         # The accept gate rejected the deliverable: route another round rather
         # than ship it, even though it parses (ODP-2, the client owns the loop;
         # ADR-048 §1). Only an explicit False rejects — an ungated turn (accept

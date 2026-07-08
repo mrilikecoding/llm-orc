@@ -78,6 +78,21 @@ def _envelope_deliverable(seat_terminal: str) -> str | None:
     return primary if isinstance(primary, str) else None
 
 
+def _seat_verdict(dep: object) -> tuple[bool | None, str]:
+    """The per-seat admission verdict from the ``seat_contract`` node, or
+    ``(None, "")`` when no seat contract ran. ``None`` means "no per-seat gate";
+    emit treats only an explicit ``False`` as a refusal (WP-E8; ADR-046 §2). This
+    is a different granularity from the accept-gate verdict below and rides
+    alongside it."""
+    try:
+        verdict = json.loads(_response(dep))
+    except (json.JSONDecodeError, TypeError):
+        return None, ""
+    if not isinstance(verdict, dict) or "seat_admitted" not in verdict:
+        return None, ""
+    return bool(verdict["seat_admitted"]), str(verdict.get("seat_contract_reason", ""))
+
+
 def _envelope_verdict(seat_terminal: str) -> tuple[bool | None, str]:
     """The accept-gate verdict from a build-gated envelope's diagnostics, or
     ``(None, "")`` when the seat carries no verdict (an ungated code-seat or a
@@ -113,6 +128,7 @@ def main() -> None:
         deliverable = seat_terminal.strip()
 
     accept, accept_reason = _envelope_verdict(seat_terminal)
+    seat_admitted, seat_contract_reason = _seat_verdict(deps.get("seat_contract"))
 
     print(
         json.dumps(
@@ -124,6 +140,8 @@ def main() -> None:
                 "content": deliverable,
                 "accept": accept,
                 "accept_reason": accept_reason,
+                "seat_admitted": seat_admitted,
+                "seat_contract_reason": seat_contract_reason,
             }
         )
     )

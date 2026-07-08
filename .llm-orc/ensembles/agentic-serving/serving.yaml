@@ -16,8 +16,11 @@ description: |
 
   seat is filled by dynamic dispatch on ${resolve.target}, resolved at the phase
   layer (the shared ${dep.field} resolver), receiving dispatch_input via
-  input_key; the marshal sub-sequence (shape -> form-gate -> emit) turns the
-  seat's ADR-024 envelope into the serve outcome. shape reads the deliverable
+  input_key; seat_contract then admits or rejects the seat's output against the
+  resolved seat's seat-owned contract via a wired ValidationEvaluator (ADR-046
+  §2; black-box, deterministic-first — a different granularity from the loop-level
+  accept gate, the two compose); the marshal sub-sequence (shape -> form-gate ->
+  emit) turns the seat's ADR-024 envelope into the serve outcome. shape reads the deliverable
   from the envelope faithfully (content from the envelope, destination from the
   resolved decision); form-gate refuses a deliverable that does not parse as its
   path claims; emit shapes the client-seam outcome (a file write for a valid
@@ -68,9 +71,13 @@ agents:
     input_key: dispatch_input
     depends_on: [resolve]
 
+  - name: seat_contract
+    script: scripts/agentic_serving/seat_contract.py
+    depends_on: [resolve, seat]
+
   - name: shape
     script: scripts/agentic_serving/shape.py
-    depends_on: [resolve, seat]
+    depends_on: [resolve, seat, seat_contract]
 
   - name: form_gate
     script: scripts/agentic_serving/form_gate.py
