@@ -21,7 +21,7 @@ The split between this artifact and `system-design.agents.md` is the **companion
 
 ## Cycle 8 — Target Architecture (declarative serving)
 
-> **Cycle-8 supersession (ARCHITECT 2026-07-02).** This section is the current target architecture. The clean-slate collapse (ADR-045) and the target-architecture ADR (ADR-046) dissolved the imperative orchestrator-actor serving architecture that the sections below (**Architecture at a glance**, **Modules — brief**, the L2 Runtime cluster) and the companion `system-design.agents.md` describe. Those are **retained as historical record** and are swept to the collapsed form at Cycle-8 BUILD, landing with the `src/llm_orc/agentic/` code deletion (rewriting them before the code is removed documents an unbuilt architecture). This section is additive and self-contained enough for `/rdd-build` to work from; the full current-state sweep + the `system-design.agents.md` companion update are deferred to BUILD.
+> **Cycle-8 supersession (ARCHITECT 2026-07-02; collapse shipped Cycle-8 WP-F8, 2026-07-08).** This section is the current target architecture, and as of WP-F8 it is the *built* architecture: the clean-slate collapse (ADR-045) and the target-architecture ADR (ADR-046) dissolved the imperative orchestrator-actor serving layer, and `src/llm_orc/agentic/` has been deleted. The sections below (**Architecture at a glance**, **Modules — brief**, the L2 Runtime cluster) and the companion `system-design.agents.md` describe that dissolved architecture and are **retained as historical record only** — read `field-guide.md` for the current module→code map and `ORIENTATION.md` for the current-state entry point. The ADR-002 layering rule reverts to no-exception (edges never upward); the ADR-016 L0→L1 calibration-channel exception is struck (domain-model Amendment #23).
 
 The Cycle-8 collapse is mostly subtraction. The entire L2 imperative Runtime cluster dissolves, and its work is done by the surviving **L0 Ensemble Engine** executing ONE declarative ensemble through primitives that already ship (guard/branch, bounded `loop:`, and dynamic dispatch — `core/execution/phases/dispatch_resolver.py` + `core/execution/runners/dynamic_dispatch_runner.py`). ARCHITECT allocates a thin band of new/re-homed modules; it does not design a new layer.
 
@@ -218,6 +218,8 @@ The two DECIDE→ARCHITECT gate sub-questions are resolved: (a) gate applicabili
 ---
 
 ## Architecture at a glance
+
+> **Historical (superseded by §Cycle 8; dissolved at Cycle-8 WP-F8, 2026-07-08).** Everything from here to the end of this document describes the pre-Cycle-8 imperative orchestrator-actor architecture, whose code (`src/llm_orc/agentic/`) was deleted in the clean-slate collapse (ADR-045/046). It is retained as historical record only. For the current architecture read §Cycle 8 above; for the module→code map read `field-guide.md`. The ADR-002 layering rule stated below (the "narrow ADR-016 exception") is reverted — the current rule is no-exception, edges never upward (domain-model Amendment #23).
 
 ```
                        OpenAI-compatible client
