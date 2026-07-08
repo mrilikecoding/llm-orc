@@ -1,0 +1,10 @@
+{
+  "model": "agentic-orchestrator-qwen36-zen",
+  "stream": false,
+  "messages": [
+    {"role": "user", "content": "Write a function is_palindrome(s) that returns True if the string s reads the same forwards and backwards ignoring case, to palindrome.py"}
+  ],
+  "tools": [
+    {"type": "function", "function": {"name": "write", "description": "Write content to a file at a path", "parameters": {"type": "object", "properties": {"path": {"type": "string"}, "content": {"type": "string"}}, "required": ["path", "content"]}}}
+  ]
+}

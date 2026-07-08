@@ -1,0 +1,6 @@
+{
+  "model": "ensemble/ensemble-agent",
+  "messages": [{"role": "user", "content": "write a function is_perfect_square(n) that returns True iff n is a perfect square, in sq.py"}],
+  "tools": [{"type": "function", "function": {"name": "write", "description": "Write a file to disk", "parameters": {"type": "object", "properties": {"path": {"type": "string"}, "content": {"type": "string"}}, "required": ["path", "content"]}}}],
+  "stream": false
+}

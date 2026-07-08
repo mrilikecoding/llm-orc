@@ -1,0 +1,7 @@
+{
+  "finish_reason": "tool_calls",
+  "tool": "write",
+  "filePath": "sq.py",
+  "content_head": "# sq.py\nimport math\n\ndef is_perfect_square(n):\n    \"\"\"Return True if n is a perfect square (integer square root exists).",
+  "pipeline": "classify->decide->resolve(catalog)->seat->seat_contract->shape->form_gate->emit"
+}
