@@ -32,13 +32,6 @@ from llm_orc.agentic.budget_controller import BudgetController
 from llm_orc.agentic.client_tool_action_terminal import ClientToolActionTerminal
 from llm_orc.agentic.dispatch_event_substrate import DispatchEventSubstrate
 from llm_orc.agentic.loop_driver import LoopDriver, TurnDecision
-from llm_orc.agentic.orchestrator_chunk import (
-    ClientToolCall,
-    Completion,
-    ContentDelta,
-    OrchestratorChunk,
-    ToolCallInvocation,
-)
 from llm_orc.agentic.orchestrator_config import (
     BudgetDefaults,
     CalibrationDefaults,
@@ -51,11 +44,6 @@ from llm_orc.agentic.orchestrator_tool_dispatch import (
     ToolCallResult,
 )
 from llm_orc.agentic.session_action_record import SessionActionRecord
-from llm_orc.agentic.session_start import (
-    PromptFragment,
-    SessionContext,
-    SessionStartCache,
-)
 from llm_orc.agentic.single_step_enforcer import SingleStepEnforcer
 from llm_orc.agentic.tier_router import PerSkillTierDefaults, TopazSkill
 from llm_orc.core.session.artifact_store import SessionArtifactStore
@@ -63,6 +51,18 @@ from llm_orc.core.session.registry import SessionIdentity, SessionRegistry
 from llm_orc.models.base import ToolCallingResponse
 from llm_orc.web.api import v1_chat_completions
 from llm_orc.web.server import create_app
+from llm_orc.web.serving.chunks import (
+    ClientToolCall,
+    Completion,
+    ContentDelta,
+    OrchestratorChunk,
+    ToolCallInvocation,
+)
+from llm_orc.web.serving.session_start import (
+    PromptFragment,
+    SessionContext,
+    SessionStartCache,
+)
 
 
 class _StubCaller:

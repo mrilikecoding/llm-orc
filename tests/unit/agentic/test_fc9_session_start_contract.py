@@ -25,8 +25,8 @@ import inspect
 import typing
 from pathlib import Path
 
-from llm_orc.agentic import session_start
-from llm_orc.agentic.session_start import (
+from llm_orc.web.serving import session_start
+from llm_orc.web.serving.session_start import (
     PromptFragment,
     SessionContext,
     resolve_session_start_context,
@@ -92,7 +92,7 @@ class TestResolverHasExactlyOneProductionCallSite:
                 if isinstance(node, ast.FunctionDef) and node.name == _RESOLVER_NAME:
                     definitions.append(path)
 
-        assert definitions == [_SRC_ROOT / "agentic" / "session_start.py"]
+        assert definitions == [_SRC_ROOT / "web" / "serving" / "session_start.py"]
 
     def test_resolver_name_referenced_only_for_default_wiring(self) -> None:
         """Outside its definition, production code names the resolver once.
@@ -118,7 +118,7 @@ class TestResolverHasExactlyOneProductionCallSite:
                 if isinstance(node, ast.Name) and node.id == _RESOLVER_NAME:
                     references.append((path, node.lineno))
 
-        expected_path = _SRC_ROOT / "agentic" / "session_start.py"
+        expected_path = _SRC_ROOT / "web" / "serving" / "session_start.py"
         assert len(references) == 1, (
             f"Unexpected production references to {_RESOLVER_NAME}: {references}"
         )
