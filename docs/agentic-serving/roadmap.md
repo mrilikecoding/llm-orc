@@ -1,6 +1,6 @@
 # Roadmap: Agentic Serving
 
-**Generated:** 2026-04-20; **last amended:** 2026-07-07 (Cycle 8 BUILD — WP-B8 complete; Cycle-8 Completed Work Log opened with WP-A8/D8/B8). Prior: 2026-07-02 (Cycle 8 ARCHITECT — additive Cycle-8 Work Packages WP-A8..F8 for the declarative-ensemble collapse; the Cycle-4/6/7 WPs below describe the dissolved architecture and migrate to the Completed Work Log at Cycle-8 BUILD). Prior: 2026-06-08 (Cycle 7 loop-back #6 BUILD — WP-LB-L added [remaining-work anchor, ADR-038]; ARCHITECT skipped)
+**Generated:** 2026-04-20; **last amended:** 2026-07-08 (Cycle 8 BUILD — WP-E8 seat-contract wiring complete; next WP-C8, then WP-F8). Prior: 2026-07-07 (WP-B8 complete; Cycle-8 Completed Work Log opened with WP-A8/D8/B8). Prior: 2026-07-02 (Cycle 8 ARCHITECT — additive Cycle-8 Work Packages WP-A8..F8 for the declarative-ensemble collapse; the Cycle-4/6/7 WPs below describe the dissolved architecture and migrate to the Completed Work Log at Cycle-8 BUILD). Prior: 2026-06-08 (Cycle 7 loop-back #6 BUILD — WP-LB-L added [remaining-work anchor, ADR-038]; ARCHITECT skipped)
 **Derived from:** `system-design.md` (v6.7, §Cycle 8), ADRs 044-048 (Cycle 8); prior bands from ADRs 001-043, scenarios.md, interaction-specs.md
 
 This roadmap expresses the sequencing landscape for building agentic serving — what depends on what, where the builder has a choice, and which coherent intermediates are worth pausing at. It does not prescribe a build order. Work package order within each dependency band is a build-time decision.
@@ -64,6 +64,8 @@ This roadmap expresses the sequencing landscape for building agentic serving —
 **Scenarios covered:** the Cycle-8 acceptance-criteria-table "seat contract wired" entry; the seat-swap black-box fitness.
 
 **Dependencies:** WP-A8 (hard — wires the seat).
+
+**Status: COMPLETE 2026-07-08** (commits `5dbea09` policy, `dc4f2b5` skeleton wiring, `6d69c79` field-collision fix). New `core/validation/seat_contract.py` policy wraps `ValidationEvaluator` with the ADR-046 §2 conventions (black-box: drops the `structural`/`required_agents` layer; deterministic-first: drops the advisory `semantic` layer) and runs a real `evaluate()`. A `seat_contract` skeleton node (between `seat` and marshal) loads the resolved seat's seat-owned contract and admits/rejects the seat's envelope; the per-seat verdict rides alongside the loop-level accept verdict and refuses a rejected seat before the deliverable ships (the two gates compose, different granularities — preservation scenario). `code-seat` + `build-gated` declare black-box behavioral contracts. **Design finding (real-client-caught):** the contract must live in a distinct `seat_contract:` field, not the engine's `validation:` (which the engine auto-runs against the ensemble's own agents at execution) — reusing `validation:` failed the dispatched seat; locked by a regression test. Grounded end-to-end through the real L3 endpoint (classify → `build-gated` → `seat_contract {seat_admitted: true}` → `emit` a `write` tool_call with correct palindrome code). 2925 unit green (+14), 77/78 integration (1 pre-existing env failure), mypy/ruff clean, loop-driver untouched. See cycle-status §WP-E8.
 
 ### WP-F8: Clean-slate removal (the `agentic/` deletion + Cycle-7 serving-ADR supersession + current-state sweep)
 
