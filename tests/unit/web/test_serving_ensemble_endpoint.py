@@ -152,6 +152,38 @@ def test_build_turn_writes_deliverable_via_tool_call(
     assert args["content"].startswith("def add")
 
 
+def test_multi_turn_history_serves_the_latest_user_message(
+    serving_client: TestClient,
+) -> None:
+    """A real client (OpenCode) sends the FULL history every turn; the serve
+    must handle the latest user message, not re-run turn 1 (Cycle-8 PLAY
+    field note #1: every turn re-processed "hello").
+    """
+    resp = serving_client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "ensemble-agent",
+            "messages": [
+                {"role": "user", "content": "hello"},
+                {"role": "assistant", "content": "Hi! How can I help?"},
+                {
+                    "role": "user",
+                    "content": "write a function that adds two numbers in add.py",
+                },
+            ],
+            "tools": [_WRITE_TOOL],
+        },
+    )
+
+    assert resp.status_code == 200
+    choice = resp.json()["choices"][0]
+    # the latest turn is a build turn: the serve must emit the write tool_call
+    # for add.py, not respond to turn 1's "hello"
+    assert choice["finish_reason"] == "tool_calls"
+    args = json.loads(choice["message"]["tool_calls"][0]["function"]["arguments"])
+    assert args["filePath"] == "add.py"
+
+
 def test_explain_turn_returns_prose_not_a_tool_call(
     serving_client: TestClient,
 ) -> None:
