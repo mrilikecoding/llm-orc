@@ -19,9 +19,12 @@ description: |
   interactive on the 32GB rig (Q3; thinking-as-routing-dimension, ADR-046 §4).
 
 # ADR-015 per-skill metadata. Explaining/describing existing code is the
-# summarization capability; the registry (WP-C8) keys this seat under it. At
-# TS-1 the serving classify targets it by name.
+# summarization capability; the registry (WP-C8) keys this part under it.
 topaz_skill: summarization
+# The intent this shape serves (WP-C8 Shape Catalog): the classify decider's
+# ``explainer`` intent routes here. This ensemble is both a capability part
+# (summarization) and the solo shape for the explain intent (ADR-047 §1 "solo").
+serves: explainer
 
 agents:
   - name: explainer

@@ -116,3 +116,15 @@ def test_unrecognized_decider_target_leaves_target_empty() -> None:
     so the dispatch node fails deterministically (the closed-set discipline)."""
     resolved = _resolve(_ambiguous("???"), "I really cannot tell what this is")
     assert resolved["target"] == ""
+
+
+def test_intent_to_shape_routing_is_catalog_driven() -> None:
+    """WP-C8: the intent->shape mapping is the operator-curated Shape Catalog, not
+    a hardcoded map. resolve's code-seat routing matches the derived catalog, so
+    re-hardcoding (or an operator retagging the shape) would diverge and fail."""
+    from llm_orc.core.serving.shape_catalog import shape_catalog
+
+    catalog_dir = REPO / ".llm-orc" / "ensembles" / "agentic-serving"
+    catalog = shape_catalog(catalog_dir)
+    assert catalog.get("code-seat") == "build-gated"  # the shipped default lane
+    assert _resolve(_structural(target="code-seat"))["target"] == catalog["code-seat"]
