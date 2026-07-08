@@ -1,6 +1,6 @@
 """Tests for the Plexus Adapter no-op fallbacks (ADR-009, WP-I).
 
-Per ``docs/agentic-serving/system-design.md`` §Plexus Adapter (L1
+Per ``docs/serving.md`` §Plexus Adapter (L1
 Domain Policy). WP-I ships only the no-op fallbacks; the Plexus-active
 branches land in WP-K. These tests cover the shipped contract — what
 ``query_knowledge`` and ``record_outcome`` see when Plexus is absent.

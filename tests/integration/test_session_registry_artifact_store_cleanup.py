@@ -1,6 +1,6 @@
 """Integration: Session Registry close fires Session Artifact Store cleanup.
 
-Per ``docs/agentic-serving/system-design.agents.md`` §Session Registry
+Per ``docs/serving.md`` §Session Registry
 → Session Artifact Store integration contract (Cycle 6 WP-E, ADR-025):
 the L3 → L1 close hook drives ``cleanup_session(session_id)`` on the
 artifact store. The Registry owns the lifecycle hook; the Store owns

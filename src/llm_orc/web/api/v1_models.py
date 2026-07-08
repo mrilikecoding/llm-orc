@@ -1,7 +1,7 @@
 """Serving Layer ``/v1/models`` endpoint.
 
 OpenAI-compatible listing of the model-profile IDs an operator has
-exposed (per ``docs/agentic-serving/system-design.md`` §Serving Layer).
+exposed (per ``docs/serving.md`` §Serving Layer).
 The body shape mirrors ``https://api.openai.com/v1/models`` so agentic
 coding tools can populate their model picker from this endpoint without
 bespoke client code.

@@ -1,6 +1,6 @@
 """Tests for the Serving Layer ``/v1/models`` endpoint.
 
-Per ``docs/agentic-serving/system-design.md`` §Serving Layer (L3) — the
+Per ``docs/serving.md`` §Serving Layer (L3) — the
 endpoint enumerates orchestrator Model Profile IDs an operator has
 exposed, in the OpenAI-compatible shape. Covers the ``/v1/models`` side
 of ``scenarios.md`` §"Orchestrator tool set is exactly the committed

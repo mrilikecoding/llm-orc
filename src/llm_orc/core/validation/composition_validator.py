@@ -1,6 +1,6 @@
 """Composition Validator — gatekeeper on the ``compose_ensemble`` path.
 
-Per ``docs/agentic-serving/system-design.md`` §Composition Validator
+Per ``docs/serving.md`` §Composition Validator
 (L1) and §Integration Contracts (Orchestrator Tool Dispatch → Composition
 Validator, Composition Validator ↔ Ensemble Engine). Validates a
 proposed composed ensemble against AS-2, AS-6, and the project-level

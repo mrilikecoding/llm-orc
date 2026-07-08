@@ -1,6 +1,6 @@
 """Tests for the OpenAI-compatible SSE formatter.
 
-Per ``docs/agentic-serving/system-design.md`` §Serving Layer → Orchestrator
+Per ``docs/serving.md`` §Serving Layer → Orchestrator
 Runtime (Integration Contracts). The formatter translates
 ``OrchestratorChunk`` variants to OpenAI ``chat.completion.chunk``
 wire format, frames each chunk as ``data: {json}\\n\\n``, and terminates

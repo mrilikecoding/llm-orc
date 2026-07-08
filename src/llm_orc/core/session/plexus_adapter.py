@@ -1,6 +1,6 @@
 """Plexus Adapter — mediates knowledge-graph interaction (ADR-009, WP-I).
 
-Per ``docs/agentic-serving/system-design.md`` §Plexus Adapter (L1 Domain
+Per ``docs/serving.md`` §Plexus Adapter (L1 Domain
 Policy) and §Integration Contracts (Orchestrator Tool Dispatch → Plexus
 Adapter). Per ADR-009 and AS-8 the Adapter is the single place
 Plexus-aware code lives — Tool Dispatch and (WP-K) Calibration Gate see

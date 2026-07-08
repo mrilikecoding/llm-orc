@@ -1,6 +1,6 @@
 """Session Registry — identifies and continues multi-request Sessions.
 
-Per `docs/agentic-serving/system-design.md` §Session Registry (L3) and
+Per `docs/serving.md` §Session Registry (L3) and
 the Cycle 4 extension in `system-design.agents.md` §Session Registry
 (per ADR-013). Reconstructs orchestrator state from the
 OpenAI-compatible chat conversation; tracks cumulative turn and token

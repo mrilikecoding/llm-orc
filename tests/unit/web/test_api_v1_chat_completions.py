@@ -1,6 +1,6 @@
 """Tests for the Serving Layer ``/v1/chat/completions`` endpoint.
 
-Per ``docs/agentic-serving/system-design.md`` §Cycle 8 and ADR-046 §1.
+Per ``docs/serving.md`` §Cycle 8 and ADR-046 §1.
 Every request is handled by the declarative Serving Ensemble (classify ->
 seat -> marshal), executed by the L0 Ensemble Engine. The endpoint:
 
@@ -769,7 +769,7 @@ class TestSessionStartIntegration:
 class TestServingResolvesSessionIdentity:
     """Boundary integration: Serving Layer → Session Registry.
 
-    Per ``docs/agentic-serving/system-design.md`` Test Architecture
+    Per ``docs/serving.md`` Test Architecture
     table, edge ``Serving Layer → Session Registry``: an HTTP request
     with or without session continuity correlates to the correct
     ``SessionState``. Each HTTP request goes through ``_resolve_context``

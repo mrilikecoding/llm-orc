@@ -1,6 +1,6 @@
 """Typed ``DispatchEnvelope`` shared type (Cycle 6 WP-D, ADR-024).
 
-Per ``docs/agentic-serving/system-design.agents.md`` §Shared type:
+Per ``docs/serving.md`` §Shared type:
 ``DispatchEnvelope`` — *new in Cycle 6 per ADR-024*. Not a module — a
 shared type with the same cross-cutting status as
 ``LlmOrcStructuralError`` (Cycle 4 shared base class). Defined alongside

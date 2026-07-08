@@ -1,6 +1,6 @@
 """Tool-call structural validation guard (ADR-017, WP-C4).
 
-Per ``docs/agentic-serving/system-design.agents.md`` §Orchestrator Tool
+Per ``docs/serving.md`` §Orchestrator Tool
 Dispatch (extended in Cycle 4 per ADR-017). The guard is interposed
 between the orchestrator's response and the dispatch path: it scans
 response text for tool-call assertion patterns and rejects responses

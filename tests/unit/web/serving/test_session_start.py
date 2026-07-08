@@ -1,6 +1,6 @@
 """Tests for the session-start Serving Layer function.
 
-Per ``docs/agentic-serving/system-design.md`` §Serving Layer (L3) and
+Per ``docs/serving.md`` §Serving Layer (L3) and
 §Integration Contracts (Serving Layer → ``resolve_session_start_context``).
 Phase 1 of ADR-009's structural reservation: the typed function and its
 call site exist; the body returns ``[]`` unconditionally so Phase 2 can
