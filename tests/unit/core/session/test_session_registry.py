@@ -1,6 +1,6 @@
 """Tests for the Session Registry module.
 
-Per `docs/agentic-serving/system-design.md` §Session Registry (L3) and
+Per `docs/serving.md` §Session Registry (L3) and
 §Integration Contracts (Serving Layer → Session Registry; consumers →
 Session Registry).
 """

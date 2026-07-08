@@ -3,7 +3,7 @@
 WP-A8: the per-turn handler is ONE declarative ensemble (classify -> seat ->
 marshal), invoked by the L3 Serving Layer through
 :class:`ServingEnsembleCaller` behind the ``_ChatCompletionsCaller`` Protocol
-(``docs/agentic-serving/system-design.md`` §Cycle 8; scenarios.md "Per-Turn
+(``docs/serving.md`` §Cycle 8; scenarios.md "Per-Turn
 Serving Handler"; ADR-046 §1).
 
 These tests drive the REAL serving ensemble through the HTTP boundary with a

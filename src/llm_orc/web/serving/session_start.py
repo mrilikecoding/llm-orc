@@ -1,6 +1,6 @@
 """Serving Layer session-start function.
 
-Per ``docs/agentic-serving/system-design.md`` §Serving Layer (L3) and
+Per ``docs/serving.md`` §Serving Layer (L3) and
 §Integration Contracts (Serving Layer → ``resolve_session_start_context``).
 ADR-009's Phase 2 hook is structurally reserved by a typed function —
 signature and call site are the commitment. Phase 1 returns ``[]``

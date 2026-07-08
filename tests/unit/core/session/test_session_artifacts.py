@@ -1,6 +1,6 @@
 """Tests for the Session Registry structured-handoff artifacts (WP-D4).
 
-Per ``docs/agentic-serving/system-design.agents.md`` §Session Registry
+Per ``docs/serving.md`` §Session Registry
 (extended in Cycle 4 per ADR-013) and ``docs/agentic-serving/scenarios.md``
 §"Feature: Session Registry Initializer-then-Resume (ADR-013)".
 

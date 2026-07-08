@@ -1,6 +1,6 @@
 """Tests for Conversation Compaction five-layer pipeline (WP-E4, ADR-012).
 
-Per ``docs/agentic-serving/system-design.agents.md`` §Module:
+Per ``docs/serving.md`` §Module:
 Conversation Compaction.
 
 The pipeline applies five layers in strict cheapest-first order at every

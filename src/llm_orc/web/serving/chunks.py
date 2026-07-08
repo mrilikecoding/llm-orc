@@ -1,6 +1,6 @@
 """Orchestrator Runtime → Serving Layer chunk type contract.
 
-Per ``docs/agentic-serving/system-design.md`` §Serving Layer →
+Per ``docs/serving.md`` §Serving Layer →
 Orchestrator Runtime (Integration Contracts). The Runtime yields an
 async iterator of ``OrchestratorChunk`` values; the Serving Layer
 translates each variant to an OpenAI-compatible SSE chunk via the

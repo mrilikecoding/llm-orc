@@ -1,6 +1,6 @@
 """Session Artifact Store — substrate-routing for capability-ensemble deliverables.
 
-Per ``docs/agentic-serving/system-design.agents.md`` §Session Artifact
+Per ``docs/serving.md`` §Session Artifact
 Store (L1, *new in Cycle 6 per ADR-025*). Owns:
 
 * The ``.llm-orc/agentic-sessions/<session_id>/<dispatch_id>/<deliverable>.<ext>``

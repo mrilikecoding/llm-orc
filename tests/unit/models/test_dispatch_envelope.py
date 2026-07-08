@@ -1,6 +1,6 @@
 """Tests for the ``DispatchEnvelope`` shared type (Cycle 6 WP-D, ADR-024).
 
-Per ``docs/agentic-serving/system-design.agents.md`` §Shared type:
+Per ``docs/serving.md`` §Shared type:
 ``DispatchEnvelope`` — *new in Cycle 6 per ADR-024*. The envelope is the
 typed return shape of ``invoke_ensemble`` consumed by the Runtime and the
 skill framework's chat-completion response. Lives alongside

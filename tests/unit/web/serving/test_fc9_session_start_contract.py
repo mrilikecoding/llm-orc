@@ -1,6 +1,6 @@
 """Static inspection tests for Fitness Criterion FC-9.
 
-Per ``docs/agentic-serving/system-design.md`` §Fitness Criteria, FC-9:
+Per ``docs/serving.md`` §Fitness Criteria, FC-9:
 
     Session-start flow calls ``resolve_session_start_context`` exactly
     once; the function has a typed signature returning

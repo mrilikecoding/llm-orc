@@ -1,6 +1,6 @@
 """Serving Layer ``/v1/chat/completions`` endpoint.
 
-Per ``docs/agentic-serving/system-design.md`` §Cycle 8 and ADR-046 §1.
+Per ``docs/serving.md`` §Cycle 8 and ADR-046 §1.
 Every chat-completions request is handled by the declarative Serving
 Ensemble (classify -> seat -> marshal), executed by the L0 Ensemble
 Engine. The endpoint:

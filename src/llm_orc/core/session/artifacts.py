@@ -1,6 +1,6 @@
 """Session Registry structured-handoff artifacts (ADR-013, WP-D4).
 
-Per ``docs/agentic-serving/system-design.agents.md`` §Session Registry
+Per ``docs/serving.md`` §Session Registry
 (extended in Cycle 4). Owns the three artifact components plus the
 write-gate validation surface:
 

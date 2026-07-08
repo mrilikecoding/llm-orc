@@ -1,6 +1,6 @@
 """OpenAI-compatible SSE formatter for ``OrchestratorChunk`` variants.
 
-Per ``docs/agentic-serving/system-design.md`` §Serving Layer (L3) and
+Per ``docs/serving.md`` §Serving Layer (L3) and
 §Integration Contracts (Serving Layer → Orchestrator Runtime). The
 formatter owns the protocol translation from the neutral
 ``OrchestratorChunk`` type surface to the OpenAI ``chat.completion.chunk``

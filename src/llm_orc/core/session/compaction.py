@@ -1,6 +1,6 @@
 """Conversation Compaction five-layer pipeline (WP-E4, ADR-012).
 
-Per ``docs/agentic-serving/system-design.agents.md`` §Module:
+Per ``docs/serving.md`` §Module:
 Conversation Compaction (L2; new in Cycle 4).
 
 The pipeline runs at every orchestrator turn boundary and applies five
