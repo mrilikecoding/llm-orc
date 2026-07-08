@@ -21,6 +21,7 @@ Mix expensive cloud models with free local models. Use Claude for strategic synt
 ## Key Features
 
 - **Multi-Agent Ensembles**: Coordinate specialized agents with flexible dependency graphs
+- **Agentic Serving**: `llm-orc serve` exposes OpenAI-compatible endpoints so coding tools (OpenCode, Aider, Cline) can use composed ensembles as their model backend — see [docs/serving.md](docs/serving.md)
 - **Ensemble Agents**: Compose ensembles hierarchically — agents can reference and execute other ensembles
 - **Input Key Routing**: Select specific keys from upstream JSON output for classify → route → fan-out patterns
 - **Agent Dependencies**: Define which agents depend on others for sophisticated orchestration patterns
