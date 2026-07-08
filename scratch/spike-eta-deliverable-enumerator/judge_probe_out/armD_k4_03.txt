@@ -1,2 +1,0 @@
-VERDICT: REMAINING
-The README.md file has not been produced yet.

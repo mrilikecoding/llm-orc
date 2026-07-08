@@ -1,2 +1,0 @@
-VERDICT: REMAINING  
-The deliverables for full test coverage and documentation have not been produced.

@@ -1,8 +1,0 @@
-Build a small temperature-conversion library in this directory. Create these five files:
-1. converters.py with three functions: celsius_to_fahrenheit, fahrenheit_to_celsius, celsius_to_kelvin
-2. test_converters.py with unit tests for converters.py
-3. cli.py, a command-line tool that imports converters.py and converts a value given as command-line arguments
-4. test_cli.py with tests for cli.py
-5. README.md documenting how to use the CLI
-
-The tests must import the real module under test, cli.py must call the real functions in converters.py, and the README must document the real CLI usage.

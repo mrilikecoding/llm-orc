@@ -1,2 +1,0 @@
-VERDICT: REMAINING  
-The deliverables not yet produced include unit tests for the storage module and task model, as well as a README documenting the commands.

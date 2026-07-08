@@ -1,6 +1,0 @@
-  README.md	SKIP_md
-  cli.py	FAIL:invalid character '→' (U+2192)
-  converters.py	PASS
-  test_cli.py	FAIL:invalid syntax
-  test_converters.py	FAIL:invalid syntax
-SUMMARY	files=5	present5=True	checkable=4	invalid=3	all_valid=False

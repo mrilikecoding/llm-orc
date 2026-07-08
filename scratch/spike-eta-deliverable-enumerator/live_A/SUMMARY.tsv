@@ -1,6 +1,0 @@
-A	run=1	cls=PREMATURE	nfiles=3	writes=5	files=[README.md,temperature_cli.py,temperature.py,]	last=[turn=6 tail_kind=trailing_tool_result judgment_verdict=COMPLETE action=finish shape=carry delegated=- carry_held=false replanned=false anchor=false dispatch_id=03c67482b752d6d149a43724329193b5310e37caa25b81c3313a74a2c0787eeb-dispatch-0011]	
-A	run=2	cls=PREMATURE	nfiles=3	writes=5	files=[README.md,temperature.py,test_temperature.py,]	last=[turn=6 tail_kind=trailing_tool_result judgment_verdict=COMPLETE action=finish shape=carry delegated=- carry_held=false replanned=false anchor=false dispatch_id=94f2c2811f85251b9b9a8f969dc261995fc97e39ba5e34774d74882864d0be3f-dispatch-0011]	
-A	run=3	cls=PREMATURE	nfiles=2	writes=5	files=[cli.py,temp_convert.py,]	last=[turn=6 tail_kind=trailing_tool_result judgment_verdict=COMPLETE action=finish shape=carry delegated=- carry_held=false replanned=false anchor=false dispatch_id=deac774a147541db91dab7c6721d244387f7b04c0f1b91a7c26c29aff99e5eb5-dispatch-0011]	
-A	run=4	cls=PREMATURE	nfiles=2	writes=5	files=[cli.py,temperature_conversion.py,]	last=[turn=6 tail_kind=trailing_tool_result judgment_verdict=COMPLETE action=finish shape=carry delegated=- carry_held=false replanned=false anchor=false dispatch_id=0dbb663dca6c2aa5be49c67b623e6dfd3ff9cd8939f30f8f1848ae75bc8fd1f0-dispatch-0011]	
-=== A DONE ===
-PREMATURE: 4

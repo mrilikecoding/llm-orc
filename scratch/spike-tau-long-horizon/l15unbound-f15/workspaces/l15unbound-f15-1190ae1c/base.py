@@ -1,1 +1,0 @@
-b'def start(x):\n    return x + 1\n'

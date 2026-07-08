@@ -1,5 +1,0 @@
-arm=B-mmx files=5 timeout=1800s
-serve READY on port 8770
-TAU B-mmx files=5: converged=False produced=0/5 wall=1800s timed_out=True turns=1 median_turn_wall=0s slope=0.0 form=True conv=False coh=True term=False
-  per_turn_walls=[]
-  dispatch_durations=[]

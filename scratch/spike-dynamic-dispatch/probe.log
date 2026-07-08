@@ -1,5 +1,0 @@
-model=qwen3:8b
-
-1 default              wall= 101.7s  out_tokens=2975  gen= 101.3s   29.4 tok/s  thinking_field=yes
-2 think=false param    wall=   3.1s  out_tokens=85    gen=   2.8s   30.8 tok/s  thinking_field=no
-3 /no_think prompt     wall=  59.6s  out_tokens=1778  gen=  59.4s   29.9 tok/s  thinking_field=yes

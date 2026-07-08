@@ -1,5 +1,0 @@
-arm=A files=5 timeout=1800s
-serve READY on port 8770
-TAU A files=5: converged=False produced=3/5 wall=1800s timed_out=True turns=4 median_turn_wall=249s slope=-63.2 form=True conv=False coh=True term=False
-  per_turn_walls=[324, 249, 198]
-  dispatch_durations=[204, 79, 104, 59, 335, 185]

@@ -1,2 +1,0 @@
-turn=1 tail_kind=first_turn judgment_verdict=? action=write shape=generation delegated=- carry_held=true replanned=true anchor=false dispatch_id=205bad4f6813ee4eb21497ed8ff1fca8571f56139ffb7cadf905938994564c41-dispatch-0012
-turn=2 tail_kind=trailing_tool_result judgment_verdict=COMPLETE action=finish shape=carry delegated=- carry_held=false replanned=false anchor=false dispatch_id=205bad4f6813ee4eb21497ed8ff1fca8571f56139ffb7cadf905938994564c41-dispatch-0013

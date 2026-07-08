@@ -1,5 +1,0 @@
-VERDICT: REMAINING  
-The deliverables for test coverage and documentation have not been produced.  
-
-VERDICT: REMAINING  
-Tests and documentation remain unaddressed in the action record.

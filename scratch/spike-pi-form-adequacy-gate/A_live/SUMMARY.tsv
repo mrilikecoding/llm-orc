@@ -1,8 +1,0 @@
-A_live	run=1	files=5	present5=True	checkable=4	invalid=2	all_valid=False	refusals=0
-A_live	run=2	files=5	present5=True	checkable=4	invalid=0	all_valid=True	refusals=0
-A_live	run=3	files=5	present5=True	checkable=4	invalid=0	all_valid=True	refusals=0
-A_live	run=4	files=5	present5=True	checkable=4	invalid=3	all_valid=False	refusals=0
-A_live	run=5	files=5	present5=True	checkable=4	invalid=1	all_valid=False	refusals=0
-=== A_live DONE ===
-all_valid=False: 3
-all_valid=True: 2

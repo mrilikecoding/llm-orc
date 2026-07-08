@@ -1,8 +1,0 @@
-Starting llm-orc agentic serving layer at http://127.0.0.1:8765
-Press Ctrl+C to stop
-INFO:     Started server process [26369]
-INFO:     Waiting for application startup.
-INFO:     Application startup complete.
-ERROR:    [Errno 48] error while attempting to bind on address ('127.0.0.1', 8765): [errno 48] address already in use
-INFO:     Waiting for application shutdown.
-INFO:     Application shutdown complete.
