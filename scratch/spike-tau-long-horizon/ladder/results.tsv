@@ -1,7 +1,0 @@
-gate-a	files=5	converged=True	produced=5/5	wall=735s	timed_out=False	turns=8	med_turn=87s	form=True	conv=True	coh=True	term=True	notes=[]
-gate-b	files=5	converged=True	produced=5/5	wall=731s	timed_out=False	turns=7	med_turn=146s	form=True	conv=True	coh=True	term=True	notes=[]
-gate-c	files=5	converged=True	produced=5/5	wall=864s	timed_out=False	turns=8	med_turn=87s	form=True	conv=True	coh=True	term=True	notes=[]
-l8	files=8	converged=True	produced=8/8	wall=669s	timed_out=False	turns=10	med_turn=84s	form=True	conv=True	coh=True	term=True	notes=[]
-l10	files=10	converged=True	produced=10/10	wall=946s	timed_out=False	turns=11	med_turn=70s	form=True	conv=True	coh=True	term=True	notes=[]
-l15	files=15	converged=False	produced=12/15	wall=1567s	timed_out=False	turns=13	med_turn=87s	form=True	conv=False	coh=True	term=False	notes=[]
-l20cap	files=20	converged=False	produced=21/20	wall=2188s	timed_out=False	turns=22	med_turn=86s	form=True	conv=True	coh=False	term=True	notes=["coherence: step10.py references undefined step9.['step9']", "coherence: base.py references undefined step9.['step9']"]

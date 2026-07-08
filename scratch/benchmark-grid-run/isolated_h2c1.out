@@ -1,3 +1,0 @@
-isolated run: h2c1 (files=2) timeout=2400s
-serve READY on port 8770
-ISOLATED h2c1: wall=399s timed_out=False produced=['demo.py', 'stringutils.py'] passed=True form=True conv=True coh=True term=True

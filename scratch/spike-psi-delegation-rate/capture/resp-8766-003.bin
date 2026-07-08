@@ -1,6 +1,0 @@
-data: {"id": "chatcmpl-16e6129f38b847aaad2e29664a684171", "object": "chat.completion.chunk", "created": 1780529331, "model": "agentic", "choices": [{"index": 0, "delta": {"role": "assistant"}, "finish_reason": null}]}
-
-data: {"id": "chatcmpl-16e6129f38b847aaad2e29664a684171", "object": "chat.completion.chunk", "created": 1780529331, "model": "agentic", "choices": [{"index": 0, "delta": {"tool_calls": [{"index": 0, "id": "call_ie0rreas", "type": "function", "function": {"name": "write", "arguments": "{\"content\":\"def reverse_sentence(sentence):\\n    words = sentence.split()\\n    reversed_words = reversed(words)\\n    return ' '.join(reversed_words)\\n\\ndef count_vowels(s):\\n    vowels = 'aeiou'\\n    count = 0\\n    for char in s.lower():\\n        if char in vowels:\\n            count += 1\\n    return count\",\"filePath\":\"/Users/nathangreen/Development/eddi-lab/llm-orc/scratch/spike-psi-delegation-rate/workspace/string_utils.py\"}"}}]}, "finish_reason": "tool_calls"}]}
-
-data: [DONE]
-

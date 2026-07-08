@@ -1,5 +1,0 @@
-arm=l15cap files=15 timeout=4500s
-serve READY on port 8770
-TAU l15cap files=15: converged=True produced=16/15 wall=1688s timed_out=False turns=18 median_turn_wall=82s slope=-11.5 form=True conv=True coh=True term=True
-  per_turn_walls=[184, 326, 102, 106, 80, 85, 75, 82, 122, 117, 63, 12, 108, 65, 52, 56, 1]
-  dispatch_durations=[164, 317, 64, 75, 51, 55, 42, 59, 100, 97, 41, 96, 53, 43, 50]

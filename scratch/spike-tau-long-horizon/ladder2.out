@@ -1,6 +1,0 @@
-[2026-06-17 10:46:29] === LADDER CAMPAIGN START === 3 runs
-[2026-06-17 10:46:29] --- l15 files=15 timeout=4500s: reboot + serve ---
-serve READY on port 8770
-[2026-06-17 11:13:06] RESULT l15	files=15	converged=False	produced=12/15	wall=1567s	timed_out=False	turns=13	med_turn=87s	form=True	conv=False	coh=True	term=False	notes=[]
-[2026-06-17 11:13:06] --- l20 files=20 timeout=6000s: reboot + serve ---
-serve READY on port 8770

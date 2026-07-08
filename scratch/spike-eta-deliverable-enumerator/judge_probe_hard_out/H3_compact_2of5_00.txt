@@ -1,1 +1,0 @@
-VERDICT: COMPLETE — Created temperature.py and test_temperature.py files for the temperature-conversion library.

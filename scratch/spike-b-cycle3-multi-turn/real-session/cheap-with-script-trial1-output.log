@@ -1,7 +1,0 @@
-Both files created and tested:
-- **Valid haiku** (Basho): `success: true` - 5-7-5 correctly counted
-- **Invalid haiku**: `success: false` - detects wrong syllable counts
-
-Files at:
-- `scratch/spike-b-cycle3-multi-turn/real-session/cheap-with-script-trial1/haiku-generator.yaml`
-- `scratch/spike-b-cycle3-multi-turn/real-session/cheap-with-script-trial1/haiku_syllables.py`

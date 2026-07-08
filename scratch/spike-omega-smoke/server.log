@@ -1,5 +1,0 @@
-[smoke] agent-turn-omega1 adapter on http://127.0.0.1:8099
-[smoke] "GET /v1/models HTTP/1.1" 200 -
-[smoke] "GET /v1/models HTTP/1.1" 200 -
-[smoke] turn: task='Write converters.py with a function celsius_to_fahrenheit(c)' ...
-[smoke] "POST /v1/chat/completions HTTP/1.1" 200 -

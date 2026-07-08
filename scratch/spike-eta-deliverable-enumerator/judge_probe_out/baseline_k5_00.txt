@@ -1,2 +1,0 @@
-VERDICT: COMPLETE
-The task was completed by creating a converters module with three functions, unit tests for the converters, a CLI tool in cli.py, tests for the CLI, and a README.md documenting the CLI usage.

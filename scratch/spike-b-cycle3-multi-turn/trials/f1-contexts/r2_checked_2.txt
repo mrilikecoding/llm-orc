@@ -1,8 +1,0 @@
-The hold was placed successfully. Now I need to send the response to the patron confirming the hold details.
-
-```json
-{
-  "content": "",
-  "tool_calls": [{"name": "send_response", "arguments": {"message": "Hi Bob, I've placed a hold on '1984' by George Orwell for you. You're number 3 in the queue. The current copy is due back on May 15, 2026, so you should expect it to become available around that date. We'll notify you when it's ready for pickup."}}]
-}
-```

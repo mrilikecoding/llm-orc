@@ -1,8 +1,0 @@
-[serve] ensemble-agent on http://127.0.0.1:8099 (decompose=decompose-8b, decide=agent-turn-omega4-8b)
-[serve] request stream=True model=ensemble-agent messages=3 tools=0
-[serve]   shape=[{"role": "system", "content_type": "str", "snippet": "You are a title generator. You output ONLY a thread title. Nothing else.\n\n<task>\nGenerate a brief title that would help "}, {"role": "user", "content_type": "str", "snippet": "Generate a title for this conversation:\n"}, {"role": "user", "content_type": "str", "snippet": "\"Create a small Python package: a module stringcase.py with two functions snake_to_camel(s: str) -> str and camel_to_sna"}]
-[serve]   -> aux (toolless) reply: 'Create a small Python package: a'
-[serve] request stream=True model=ensemble-agent messages=2 tools=6
-[serve]   shape=[{"role": "system", "content_type": "str", "snippet": "You are opencode, an interactive CLI tool that helps users with software engineering tasks. Use the instructions below a"}, {"role": "user", "content_type": "str", "snippet": "\"Create a small Python package: a module stringcase.py with two functions snake_to_camel(s: str) -> str and camel_to_sna"}]
-[serve 35c3d39bc1739501] decomposed -> ['stringcase.py', 'test_stringcase.py']
-[serve 35c3d39bc1739501] turn -> stringcase.py (python_module) ok after 1 attempt(s), 449B; remaining ['test_stringcase.py']

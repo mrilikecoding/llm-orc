@@ -1,2 +1,0 @@
-data: {"id": "chatcmpl-fb3e436685a24c4eb8b5635e4a221c7c", "object": "chat.completion.chunk", "created": 1780529331, "model": "agentic", "choices": [{"index": 0, "delta": {"role": "assistant"}, "finish_reason": null}]}
-

@@ -1,5 +1,0 @@
-{"id":"chatcmpl-0fabb7f75a0f4ef8af03525b79b691cd","object":"chat.completion","created":1779336559,"model":"agentic-orchestrator","choices":[{"index":0,"message":{"role":"assistant","content":null,"tool_calls":[{"id":"chatcmpl-tool-c36bc1100bcf4769bd887678eef015fe","type":"function","function":{"name":"read_file","arguments":"{\"path\": \"agentic-sessions/ade03c0d43a42f896c85e33ea4bf7dbaa8b6874ef9ab1bfe411cae47ded4fe79/ade03c0d43a42f896c85e33ea4bf7dbaa8b6874ef9ab1bfe411cae47ded4fe79-dispatch-0001/code-generator.py\"}"}}]},"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":0,"completion_tokens":17791,"total_tokens":17791}}
-
----CURL_META---
-http_code: 200
-time_total: 75.681203

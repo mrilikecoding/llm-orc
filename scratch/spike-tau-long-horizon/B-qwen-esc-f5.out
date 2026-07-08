@@ -1,5 +1,0 @@
-arm=B-qwen-esc files=5 timeout=1800s
-serve READY on port 8770
-TAU B-qwen-esc files=5: converged=False produced=5/5 wall=775s timed_out=False turns=6 median_turn_wall=145s slope=-36.0 form=True conv=True coh=False term=True
-  per_turn_walls=[145, 191, 315, 49, 1]
-  dispatch_durations=[68, 127, 179, 145, 163, 40]

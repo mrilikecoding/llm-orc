@@ -1,7 +1,0 @@
-  README.md	SKIP_md
-  cli.py	PASS
-  converter.py	PASS
-  converters.py	PASS
-  test_cli.py	PASS
-  test_converters.py	PASS
-SUMMARY	files=6	present5=True	checkable=5	invalid=0	all_valid=True

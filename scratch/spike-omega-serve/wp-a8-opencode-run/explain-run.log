@@ -1,6 +1,0 @@
-[0m
-> build · ensemble-agent
-[0m
-A Python generator is a special type of iterable that generates items on the fly, rather than storing all items in memory at once like a list. This makes generators more memory-efficient, especially when dealing with large datasets. Generators are created using functions with `yield` statements, which pause the function's execution and resume it later, allowing for sequential item generation.
-
-In contrast, a list is a concrete data structure that stores all elements in memory from the start. While lists offer fast access to elements and allow for random indexing, they can be inefficient for large data because they require upfront memory allocation. Generators, on the other hand, are ideal for scenarios where you need to process data in a streaming fashion or when memory usage is a concern.

@@ -1,6 +1,0 @@
-```json
-{
-  "content": "",
-  "tool_calls": [{"name": "send_response", "arguments": {"message": "Hi Bob! Unfortunately, '1984' by George Orwell is currently checked out and due back on May 15, 2026. I've placed a hold for you — you're 3rd in the queue. We'll notify you when it's ready for pickup. Is there anything else I can help you with?"}}]
-}
-```

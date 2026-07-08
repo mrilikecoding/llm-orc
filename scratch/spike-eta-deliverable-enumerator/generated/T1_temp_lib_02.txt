@@ -1,5 +1,0 @@
-temperature.py
-test_temperature.py
-cli.py
-test_cli.py
-README.md

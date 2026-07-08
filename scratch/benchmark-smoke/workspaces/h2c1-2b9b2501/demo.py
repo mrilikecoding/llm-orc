@@ -1,1 +1,0 @@
-b'import stringutils\nprint(shout(\'Hello\'))\nprint(whisper(\'Hello\'))\n'

@@ -1,2 +1,0 @@
-VERDICT: REMAINING  
-The deliverables README.md, cli.py, test_cli.py, and test_converters.py have not been produced based on the action record.

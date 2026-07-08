@@ -1,8 +1,0 @@
-=== RC0 (repair engage + boundary_excluded) ===
-  RC0 1/1: {'action': 'write:module', 'target': 'module', 'advanced': True, 'churn': False, 'delegated': True, 'verdict': None, 'turn_shape': 'boundary_excluded'}
-
-state RC0: actions={'write': 1} advance=1/1 churn=0 delegated=1 verdict={None: 1} turn_shape={'boundary_excluded': 1} -> results_RC0.json
-=== RC1 (judge accounting of repair) ===
-  RC1 1/1: {'action': 'write:test', 'target': 'test', 'advanced': True, 'churn': False, 'delegated': True, 'verdict': 'REMAINING', 'turn_shape': 'carry'}
-
-state RC1: actions={'write': 1} advance=1/1 churn=0 delegated=1 verdict={'REMAINING': 1} turn_shape={'carry': 1} -> results_RC1.json

@@ -1,1 +1,0 @@
-{"error":"Internal server error","detail":"Orchestrator model_profile 'agentic-orchestrator-offline' resolves to 'ollama-qwen3:14b' which does not support tool calling. Configure a profile with an OpenAI-compatible provider (Ollama, OpenAI, OpenRouter, LM Studio, vLLM, etc.)."}
