@@ -1,0 +1,40 @@
+name: write-tests
+description: |
+  The test-writing shape (#98): classify routes a test-primary turn
+  (tests as the OBJECT of the request, or a named test_*.py file) here via
+  the tests-seat intent. The engine's loop primitive re-runs
+  write-tests-round until the accept verdict holds or the bound trips; a
+  reject carries a fresh-regeneration retry_input (no held mode — tests
+  are the moving side by definition, and the executor's real-workspace
+  failure report is the retry evidence). unwrap peels the loop wrapper
+  back to the bare ADR-024 envelope for the serving marshal. Deterministic
+  control: closed bound, predicates over deterministic verdicts.
+
+topaz_skill: code_generation
+serves: tests-seat
+
+agents:
+  - name: round
+    timeout_seconds: 660
+    loop:
+      body: write-tests-round
+      until: "${diagnostics.accept}"
+      max_iterations: 2
+      carry: "${diagnostics.retry_input}"
+
+  - name: unwrap
+    script: scripts/agentic_serving/loop_unwrap.py
+    depends_on: [round]
+
+# Seat-owned admission contract (ADR-046 §2): black-box, same granularity
+# as the default build seat's — an accept-rejected turn still emits a
+# well-formed envelope (the tests are present), so the seat contract admits
+# it and the loop-level accept verdict rides in diagnostics.
+seat_contract:
+  behavioral:
+    - name: envelope-status-success
+      description: "the seat produced a success envelope"
+      assertion: "results['seat']['status'] == 'success'"
+    - name: envelope-carries-artifact
+      description: "the seat envelope carries a deliverable artifact"
+      assertion: "len(results['seat']['artifacts']) > 0"

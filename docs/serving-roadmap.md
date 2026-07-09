@@ -144,10 +144,20 @@ after the swap: test-writer quality (reflection-style relapses now get
 correctly rejected instead of stochastically judged) — which is #98's
 territory.
 
-**#98 (next):** test-writing turns validate a shadowed composite in the
-shared exec namespace — route "write tests" to a dedicated shape (the
-deliverable IS the test file, run against the materialized workspace
-alone), reusing the deterministic adequacy checker.
+**#98 (shipped, write-tests-shape branch):** test-primary turns route via
+the new tests-seat intent to the write-tests shape — one test source, the
+deliverable executed against the materialized workspace alone, the
+deterministic checker and gate reused, the executor-echoed tests shipped
+as the artifact. The shadowed-composite wrong accept is structurally
+impossible. Live status (real OpenCode, storage.py session): routing,
+workspace execution, and honest rejection all verified — the shape
+refused exactly the broken-test class the old path shipped (store.list
+AttributeError, message-text assertions). Per-turn convergence is bounded
+by test-writer seat quality: the dominant residual is spec-free
+exception-MESSAGE assertions the 8b seat keeps regenerating despite
+prompt bans and line-level failure reports (both shipped here). Next
+lever is structural — escalation-on-signal seat tiering or a
+deterministic test sanitizer (path item 4), not more prompt rules.
 
 ### 4. Shapes and seat tiering
 

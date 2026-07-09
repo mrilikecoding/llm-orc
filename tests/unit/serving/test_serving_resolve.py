@@ -128,3 +128,13 @@ def test_intent_to_shape_routing_is_catalog_driven() -> None:
     catalog = shape_catalog(catalog_dir)
     assert catalog.get("code-seat") == "build-gated"  # the shipped default lane
     assert _resolve(_structural(target="code-seat"))["target"] == catalog["code-seat"]
+
+
+def test_decider_tests_seat_derives_python_tests_build() -> None:
+    """tests-seat joins the decider's closed set (#98)."""
+    out = _resolve(
+        {"needs_decider": True, "file": "test_x.py", "dispatch_input": "t"},
+        '{"target": "tests-seat"}',
+    )
+    assert out["kind"] == "python_tests"
+    assert out["build"] is True

@@ -42,5 +42,12 @@ agents:
         reflection-style checks — no hasattr, callable, or isinstance
         tests. They pass wrong implementations and fail right ones (a
         dataclass field with no default is not a class attribute).
+      - For an expected exception, use try/except with `assert False,
+        "expected <Error>"` after the call. NEVER call assertRaises or
+        assertRaisesRegex bare — they are unittest METHODS and do not
+        exist as functions (NameError at runtime).
+      - Assert the exception TYPE only; NEVER assert exception message
+        text (the task does not specify messages, and str(KeyError(x))
+        adds quotes).
       - Output ONLY the test code: a series of `def test_*():` functions, with
         no prose and no markdown code fences.

@@ -1,0 +1,45 @@
+name: write-tests-round
+description: |
+  One write-tests round (#98): the deliverable IS the test file, executed
+  against the materialized workspace alone. One test source — no
+  code_writer, so the shadowed-composite wrong-accept (issue #98: the gate
+  validated a composite while the shipped test file carried a broken test)
+  is structurally impossible; the artifact that ships is the artifact that
+  ran.
+
+  Pipeline:
+    test_writer   tests for the workspace code, from the turn's criteria
+    gather        {requirement, code: "", tests, workspace}; deterministic
+                  workspace-import injection; no target_file (no shadow)
+    executor      deterministic, sandboxed: runs the tests against the
+                  materialized workspace
+    judge         deterministic: value-bearing-assert analysis (#84)
+    accept_gate   accept = tests_pass AND tests_adequate
+    envelope      the executor-echoed tests as the ADR-024 primary
+
+# The retry-loop body — not registry-facing (no topaz_skill, no serves);
+# resolved only by write-tests' loop node.
+
+agents:
+  - name: test_writer
+    ensemble: test-writer
+
+  - name: gather
+    script: scripts/agentic_serving/tests_gather.py
+    depends_on: [test_writer]
+
+  - name: executor
+    script: scripts/agentic_serving/accept_executor.py
+    depends_on: [gather]
+
+  - name: judge
+    script: scripts/agentic_serving/adequacy_check.py
+    depends_on: [executor]
+
+  - name: accept_gate
+    script: scripts/agentic_serving/accept_gate.py
+    depends_on: [executor, judge]
+
+  - name: envelope
+    script: scripts/agentic_serving/tests_envelope.py
+    depends_on: [executor, accept_gate]

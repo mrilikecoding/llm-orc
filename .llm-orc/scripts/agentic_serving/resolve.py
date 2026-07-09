@@ -25,6 +25,7 @@ from llm_orc.core.serving.shape_catalog import shape_catalog
 _DERIVED = {
     "code-seat": ("python_module", True),
     "explainer": ("explanation", False),
+    "tests-seat": ("python_tests", True),
 }
 # The intent -> serving shape mapping is now operator-curated (WP-C8): each shape
 # declares the intent it ``serves`` and the Shape Catalog derives the map from the

@@ -378,6 +378,22 @@ def test_passing_async_tests_pass() -> None:
     assert result["tests_pass"] is True
 
 
+def test_failure_report_names_the_failing_source_line() -> None:
+    """A bare 'AssertionError()' gives the retry round nothing to move on
+    (live finding 2026-07-09: the same wrong expectation regenerated across
+    rounds). The report carries the failing line so the next round sees
+    WHICH expectation disagreed with the workspace."""
+    gathered = {
+        "requirement": "is_even",
+        "code": "def is_even(n):\n    return n % 2 == 0",
+        "tests": ("def test_wrong_expectation():\n    assert is_even(3) is True\n"),
+        "workspace": {},
+    }
+    result = _executor_from_gather(gathered)
+    assert result["tests_pass"] is False
+    assert "assert is_even(3) is True" in result["report"]
+
+
 def test_executor_reports_unittest_class_failures() -> None:
     gathered = {
         "requirement": "is_even",
