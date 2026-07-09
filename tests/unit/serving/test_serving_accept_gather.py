@@ -114,6 +114,18 @@ def test_gather_strips_conversation_context_from_the_requirement() -> None:
     assert out["requirement"] == "Write is_even(n)."
 
 
+def test_gather_skips_shell_fences_when_extracting_code() -> None:
+    """Seat models often append a '```bash pytest ...```' usage block; joining
+    it into the Python deliverable is a SyntaxError at the executor (battery
+    finding 2026-07-08). Only python/untagged fences are code."""
+    chatty = (
+        "Here is the code:\n```python\n" + CODE + "\n```\n"
+        "Run it with:\n```bash\npytest test_even.py\n```\n"
+    )
+    out = _gather("Write is_even(n).", TESTS, chatty)
+    assert out["code"] == CODE
+
+
 def test_gather_extracts_conversation_written_files_as_workspace() -> None:
     """Files written earlier in the conversation render as '[wrote <path>]'
     blocks in the context; gather extracts them so the executor can
