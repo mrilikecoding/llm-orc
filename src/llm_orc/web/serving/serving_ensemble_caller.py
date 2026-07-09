@@ -126,10 +126,27 @@ def _render_context(messages: Sequence[Any]) -> str:
         if line.startswith("assistant: [wrote ")
     }
     blocks = [block for path, block in selected if path not in tail_paths]
-    if blocks:
-        selected_text = "\n".join(blocks)[:_CTX_SELECTED_CAP]
+    kept = _whole_blocks_within_cap(blocks)
+    if kept:
+        selected_text = "\n".join(kept)
         rendered = f"{selected_text}\n{rendered}" if rendered else selected_text
     return rendered
+
+
+def _whole_blocks_within_cap(blocks: list[str]) -> list[str]:
+    """Whole blocks up to ``_CTX_SELECTED_CAP`` — cap pressure drops whole
+    blocks (referenced-first ordering puts the least relevant last), never a
+    mid-block cut: an intact ``[wrote path]`` header over a silently cut body
+    would make gather materialize a corrupted file."""
+    kept: list[str] = []
+    size = 0
+    for block in blocks:
+        cost = len(block) + (1 if kept else 0)
+        if size + cost > _CTX_SELECTED_CAP:
+            break
+        kept.append(block)
+        size += cost
+    return kept
 
 
 def _select_written_files(older: Sequence[Any], task: str) -> list[tuple[str, str]]:

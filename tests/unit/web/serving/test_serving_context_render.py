@@ -238,6 +238,36 @@ def test_only_the_latest_version_of_a_rewritten_file_is_selected() -> None:
     assert "VERSION = 1" not in rendered
 
 
+def test_selected_cap_drops_whole_blocks_never_cuts_mid_block() -> None:
+    """Cap pressure on selected blocks must drop whole blocks (least relevant
+    last), never slice one mid-body — an intact '[wrote path]' header over a
+    silently cut body would make gather materialize a corrupted file."""
+
+    def body(name: str) -> str:
+        return ("x = 1\n" * 290) + f"# END {name}"
+
+    messages = [
+        ChatMessage(
+            role="assistant",
+            content=None,
+            tool_calls=(_write_call(f"f{i}.py", body(f"f{i}.py")),),
+        )
+        for i in (1, 2, 3)
+    ] + [
+        *_turnish(8),
+        ChatMessage(role="user", content="combine f1.py f2.py f3.py"),
+    ]
+
+    rendered = _render_context(messages)
+
+    included = [
+        name for name in ("f1.py", "f2.py", "f3.py") if f"[wrote {name}]" in rendered
+    ]
+    assert included  # cap leaves room for at least one block
+    for name in included:
+        assert f"# END {name}" in rendered
+
+
 def test_selected_write_is_not_duplicated_when_already_in_the_tail() -> None:
     messages = [
         ChatMessage(
