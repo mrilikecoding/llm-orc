@@ -93,6 +93,8 @@ class DependencyResolver:
         dependency_results = self._extract_successful_dependency_results(
             dependencies, effective_results
         )
+        if agent_config.input_scope == "dependencies":
+            return "\n\n".join(dependency_results)
         if dependency_results:
             return self._build_enhanced_input_with_dependencies(
                 agent_name, base_input, dependency_results

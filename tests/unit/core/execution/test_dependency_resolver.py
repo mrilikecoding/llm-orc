@@ -554,6 +554,37 @@ class TestDependencyResolver:
         llm_input = enhanced["llm_agent"]
         assert "Previous Agent Results" in llm_input
 
+    def test_input_scope_dependencies_omits_base_input(self) -> None:
+        """A node with ``input_scope: dependencies`` receives ONLY its
+        dependency results — no ``Original Input`` section. Verifier seats
+        (the accept-gate judge) use this so conversation context threaded
+        into the shape's base input never reaches them (ADR-048 isolation).
+        """
+        resolver, _ = self.setup_resolver()
+
+        agents: list[AgentConfig] = [
+            LlmAgentConfig(
+                name="judge",
+                model_profile="test-profile",
+                depends_on=["executor"],
+                input_scope="dependencies",
+            ),
+        ]
+        results_dict = {
+            "executor": {
+                "status": "success",
+                "response": '{"requirement": "add two numbers", "tests_pass": true}',
+            },
+        }
+
+        enhanced = resolver.enhance_input_with_dependencies(
+            "SECRET CONVERSATION CONTEXT\n\nCurrent request: add", agents, results_dict
+        )
+
+        assert "SECRET CONVERSATION CONTEXT" not in enhanced["judge"]
+        assert "Original Input" not in enhanced["judge"]
+        assert '"requirement": "add two numbers"' in enhanced["judge"]
+
     def test_dispatch_agent_with_input_key_gets_clean_selected_value(self) -> None:
         """A dispatched child ensemble is a fresh execution: it receives the
         input_key-selected value verbatim, never the LLM dependency prose
