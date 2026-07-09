@@ -1,8 +1,0 @@
-name: dd-echo-solo
-description: |
-  Dynamic-dispatch spike: deterministic echo seat for the no-model smoke (solo
-  shape, one node). Stands in for dd-seat-code-solo so the smoke exercises
-  routing and marshal shaping without spending model tokens.
-agents:
-  - name: out
-    script: "echo 'x = 1  # SOLO-CODE'"

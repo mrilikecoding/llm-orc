@@ -93,3 +93,60 @@ def test_envelope_preserves_adr024_container_without_retired_subfields() -> None
         assert field in env
     assert "calibration_verdict" not in env["diagnostics"]
     assert "audit_findings" not in env["diagnostics"]
+
+
+def _envelope_with_input(
+    code_terminal: str,
+    gate_verdict: dict[str, Any],
+    base_input: str,
+    executor_report: str = "",
+) -> dict[str, Any]:
+    payload = json.dumps(
+        {
+            "input_data": base_input,
+            "dependencies": {
+                "code_writer": {"response": _sub_ensemble_response(code_terminal)},
+                "accept_gate": {"response": json.dumps(gate_verdict)},
+                "executor": {
+                    "response": json.dumps(
+                        {"tests_pass": False, "report": executor_report}
+                    )
+                },
+            },
+        }
+    )
+    out = subprocess.run(
+        [sys.executable, str(ENVELOPE)],
+        input=payload,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    result: dict[str, Any] = json.loads(out)
+    return result
+
+
+def test_reject_envelope_composes_a_retry_input_for_the_next_round() -> None:
+    """The bounded retry round (issue #89, ADR-048 §5): the loop primitive's
+    carry REPLACES the next iteration's input, so a rejected round's envelope
+    composes diagnostics.retry_input = the original turn plus the failure
+    report — the next round regenerates with the evidence in hand."""
+    env = _envelope_with_input(
+        "def f():\n    return 1",
+        {"accept": False, "tests_pass": False, "reason": "tests did not pass"},
+        base_input="Write f() in f.py",
+        executor_report="test_f: AssertionError()",
+    )
+    retry = env["diagnostics"]["retry_input"]
+    assert "Write f() in f.py" in retry
+    assert "test_f: AssertionError()" in retry
+
+
+def test_accept_envelope_has_no_retry_input() -> None:
+    env = _envelope_with_input(
+        "def f():\n    return 1",
+        {"accept": True, "tests_pass": True, "tests_adequate": True, "reason": "ok"},
+        base_input="Write f() in f.py",
+    )
+    assert env["diagnostics"]["accept"] is True
+    assert "retry_input" not in env["diagnostics"]

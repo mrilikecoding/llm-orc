@@ -1,9 +1,0 @@
-name: spike-d-fix-verifier
-description: |
-  Cycle 3 Spike D pilot — runs deterministic checks on a proposed fixed file
-  to verify which originally-known issues have been resolved. Single
-  script-agent; no LLMs. Output is structured JSON listing per-issue status.
-
-agents:
-  - name: verifier
-    script: .llm-orc/scripts/spike_d_fix_verifier.py

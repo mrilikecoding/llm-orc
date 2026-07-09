@@ -18,15 +18,25 @@ import re
 import sys
 
 
-def _deps(raw: str) -> dict[str, object]:
+def _payload(raw: str) -> dict[str, object]:
     try:
         data = json.loads(raw)
     except (json.JSONDecodeError, TypeError):
         return {}
-    if not isinstance(data, dict):
-        return {}
-    deps = data.get("dependencies", {})
+    return data if isinstance(data, dict) else {}
+
+
+def _deps(payload: dict[str, object]) -> dict[str, object]:
+    deps = payload.get("dependencies", {})
     return deps if isinstance(deps, dict) else {}
+
+
+def _executor_report(deps: dict[str, object]) -> str:
+    try:
+        parsed = json.loads(_response(deps.get("executor", {})))
+    except (json.JSONDecodeError, TypeError):
+        return ""
+    return str(parsed.get("report", "")) if isinstance(parsed, dict) else ""
 
 
 def _response(dep: object) -> str:
@@ -73,10 +83,29 @@ def _verdict(deps: dict[str, object]) -> dict[str, object]:
 
 
 def main() -> None:
-    deps = _deps(sys.stdin.read().strip())
+    payload = _payload(sys.stdin.read().strip())
+    deps = _deps(payload)
     code = _extract_code(_terminal(_response(deps.get("code_writer", {}))))
     verdict = _verdict(deps)
     summary = code.splitlines()[0][:80] if code.strip() else "code deliverable"
+
+    diagnostics = {
+        "ensemble": "build-gated",
+        "accept": bool(verdict.get("accept", False)),
+        "accept_reason": str(verdict.get("reason", "")),
+        "tests_pass": bool(verdict.get("tests_pass", False)),
+        "tests_adequate": bool(verdict.get("tests_adequate", False)),
+    }
+    if not diagnostics["accept"]:
+        # the bounded retry round's carry REPLACES the next iteration's
+        # input (loop primitive semantics), so compose turn + evidence here
+        report = _executor_report(deps)
+        diagnostics["retry_input"] = (
+            f"{payload.get('input_data', '')}\n\n"
+            f"[Previous round rejected: {diagnostics['accept_reason']}."
+            f" Executor report: {report}."
+            f" Regenerate, fixing the failing tests or wrong expectations.]"
+        )
 
     envelope = {
         "status": "success",
@@ -89,13 +118,7 @@ def main() -> None:
                 "summary": summary,
             }
         ],
-        "diagnostics": {
-            "ensemble": "build-gated",
-            "accept": bool(verdict.get("accept", False)),
-            "accept_reason": str(verdict.get("reason", "")),
-            "tests_pass": bool(verdict.get("tests_pass", False)),
-            "tests_adequate": bool(verdict.get("tests_adequate", False)),
-        },
+        "diagnostics": diagnostics,
     }
     print(json.dumps(envelope))
 
