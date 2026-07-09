@@ -27,16 +27,22 @@ reject on hard turns is judge conservatism — judge false-reject rate is now
 the measurement target (#84). The exit gate (ladder ≥ 7/8) is pending a
 full post-release ladder rerun.
 
-## Stage 2 — Memory rung 2′: lossless session record + selection (#82)
+## Stage 2 — Memory rung 2′: lossless selection (#82) — CORE SHIPPED (PR #99)
 
-Replace the rung-1 window with the lossless per-session record and
-deterministic referent selection (design:
-`docs/plans/2026-07-08-serving-conversation-memory-design.md`). Clears the
-cross-file/window-loss failure (turn 6: correct code, starved sandbox).
-Entry gate: observe OpenCode's compacted wire on one long session before
-hardening the divergence classifier (rebuild-from-wire is the interim
-fallback). Exit gate: the cross-file ladder turn passes; a 20+-turn session
-retains turn-1 referents.
+The entry-gate observation (real 9-turn multi-file session, wire-shape
+instrumentation): OpenCode's wire is append-only, prefix hashes stable, NO
+compaction through 30+ messages — so the lossless record is already on the
+wire. The core shipped as stateless deterministic selection over the full
+client-sent history: recency tail + every conversation-written file's
+latest version (task-referenced first). Exit-gate evidence: 8/9 on the
+long-horizon battery, including the previously-failing cross-file build and
+a precise turn-1 recall at turn 8. Remaining (kept on #82): the server-side
+record + divergence classifier, deferred until client compaction is
+actually observed; prose-turn retrieval beyond the tail. New stage-1
+refinement from the drive: #100 — the retry round should hold passing tests
+fixed and regenerate only the code (the TDD loop); spec-freedom
+disagreement between resampled tests and code is now the dominant
+hard-turn failure.
 
 ## Stage 3 — Client execution surface (#83)
 
