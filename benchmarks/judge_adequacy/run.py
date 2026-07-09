@@ -115,9 +115,7 @@ def summarize(samples: list[dict[str, Any]]) -> dict[str, Any]:
         accepted = [r for r in inadequate if r["tests_adequate"] is True]
         return {
             "samples": len(rows),
-            "false_reject_rate": (
-                len(rejected) / len(adequate) if adequate else None
-            ),
+            "false_reject_rate": (len(rejected) / len(adequate) if adequate else None),
             "false_accept_rate": (
                 len(accepted) / len(inadequate) if inadequate else None
             ),
@@ -135,9 +133,7 @@ def summarize(samples: list[dict[str, Any]]) -> dict[str, Any]:
         "fixtures": {
             name: {
                 "samples": len(rows),
-                "adequate_rate": sum(
-                    1 for r in rows if r["tests_adequate"] is True
-                )
+                "adequate_rate": sum(1 for r in rows if r["tests_adequate"] is True)
                 / len(rows),
             }
             for name, rows in sorted(fixtures.items())
