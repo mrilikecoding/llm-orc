@@ -424,30 +424,12 @@ model_profiles:
 agentic_serving:
 
   orchestrator:
-    # ADR-011: one Model Profile per Session; tool-call-capable.
-    #
-    # ACTIVE — hosted qwen seat (Spike τ winning config, 2026-06-17): hosted
-    # qwen3.6-plus on Zen (PAID) as the seat + local qwen3:8b coder. Validated to
-    # converge clean multi-file projects (up to ~10-12 files) on a 32GB machine,
-    # mostly local, with the paid frontier coder (below) firing only on rare
-    # persistent form bleeds (≈cents). Rationale + ladder evidence:
-    # essays/research-logs/cycle-7-spike-tau-long-horizon-32gb.md.
-    #
-    # >>> SWAP TO FULLY-LOCAL / FREE: set model_profile below to
-    #     `agentic-orchestrator-offline-tools` (local qwen3:14b seat) AND comment
-    #     out the `form_escalation:` block (else the coder escalates to the paid
-    #     frontier on bleeds). Trade-off: free, but the 8b coder + 14b seat swap
-    #     on a 32GB machine → ~3x slower per turn (Spike τ arm A vs B-qwen).
-    #     (An all-local-8b seat `agentic-orchestrator-offline-8b` is fastest but
-    #     too weak to orchestrate multi-file — Spike τ arm S.)
-    model_profile: agentic-orchestrator-qwen36-zen
-
-    # Coder-tier escalation frontier rung (ADR-041 §Decision 5): the ladder is
-    # cheap 8b -> escalated 14b -> this PAID frontier coder, firing ONLY on a
-    # persistent form bleed (the cli.py case). Comment this block out for a
-    # fully-free local stack (see the SWAP note above).
-    form_escalation:
-      frontier_profile: agentic-tier-frontier-coder-minimax
+    # The Model Profile advertised on /v1/models (the allowlist default —
+    # post-collapse this is the only thing this setting feeds). Local-first
+    # default; hosted/paid seats are an operator opt-in via gitignored
+    # `.llm-orc/profiles/*.local.yaml` overrides (see docs/serving.md
+    # §Operator seat configuration).
+    model_profile: agentic-tier-cheap-general
 
     # ADR-007/014 Calibration Gate (verdict producer + first-N post-hoc
     # result-check). Defaults: N=3 invocations before trust transition;

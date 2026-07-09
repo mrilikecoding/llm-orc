@@ -512,6 +512,42 @@ agents:
                 assert profiles["analyst-qwen"]["model"] == "qwen3:0.6b"
                 assert profiles["analyst-qwen"]["provider"] == "ollama"
 
+    def test_local_override_profile_wins_over_the_base_file(self) -> None:
+        """A ``*.local.yaml`` profile (operator-private, gitignored) wins over
+        a same-named profile from a checked-in base file — the seam that lets
+        an operator back any tier name with their own provider without
+        committing provider-specific config.
+        """
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            profiles_dir = temp_path / "profiles"
+            profiles_dir.mkdir()
+            with open(profiles_dir / "tier-general.yaml", "w") as f:
+                yaml.dump(
+                    {"name": "tier-general", "model": "qwen3:8b", "provider": "ollama"},
+                    f,
+                )
+            # sorts BEFORE the base file — precedence must not be glob-order
+            with open(profiles_dir / "aaa-mine.local.yaml", "w") as f:
+                yaml.dump(
+                    {
+                        "name": "tier-general",
+                        "model": "my-hosted-model",
+                        "provider": "openai-compatible/mine",
+                    },
+                    f,
+                )
+
+            with patch.object(
+                ConfigurationManager,
+                "_get_global_config_dir",
+                return_value=temp_path,
+            ):
+                config_manager = ConfigurationManager()
+                profiles = config_manager.get_model_profiles()
+
+                assert profiles["tier-general"]["model"] == "my-hosted-model"
+
     def test_resolve_model_profile_finds_profile_yaml_file(self) -> None:
         """resolve_model_profile works for profiles in profiles/ dir."""
         with tempfile.TemporaryDirectory() as temp_dir:

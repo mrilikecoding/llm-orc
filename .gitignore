@@ -93,3 +93,4 @@ credentials.enc
 CLAUDE.md
 .claude/settings.local.json
 .llm-orc/.serve-trace/
+.llm-orc/profiles/*.local.yaml
