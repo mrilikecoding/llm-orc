@@ -85,8 +85,13 @@ class TestServeCLI:
         # The two apps must share the same router surface — same
         # number of routes with the same paths. Exact-identity isn't
         # guaranteed because ``create_app`` constructs a fresh
-        # FastAPI instance each call.
-        assert {r.path for r in serve_app.routes} == {r.path for r in web_app.routes}
+        # FastAPI instance each call. Starlette >=1.3 mixes non-path
+        # router entries into .routes; compare path-bearing routes.
+        def paths(app: object) -> set[str]:
+            return {r.path for r in app.routes if hasattr(r, "path")}  # type: ignore[attr-defined]
+
+        assert paths(serve_app) == paths(web_app)
+        assert paths(serve_app)
 
     def test_serve_command_labels_output_as_agentic_serving(self) -> None:
         runner = CliRunner()
