@@ -73,13 +73,23 @@ def _resolve_serving_project_dir() -> Path:
     return local if local.exists() else Path.cwd()
 
 
+_SHARED_CALLERS: dict[Path, ServingEnsembleCaller] = {}
+
+
 def get_serving_ensemble_caller() -> ServingEnsembleCaller:
     """Return the Cycle-8 declarative Serving Ensemble caller (ADR-046 §1).
 
-    Tests override this factory to point at a hermetic project dir whose
+    Shared per project dir (like _SHARED_REGISTRY) so the caller's
+    ensemble-config cache survives across requests (issue #93). Tests
+    override this factory to point at a hermetic project dir whose
     ``code_generation`` seat is a deterministic echo (no model).
     """
-    return ServingEnsembleCaller(project_dir=_resolve_serving_project_dir())
+    project_dir = _resolve_serving_project_dir()
+    caller = _SHARED_CALLERS.get(project_dir)
+    if caller is None:
+        caller = ServingEnsembleCaller(project_dir=project_dir)
+        _SHARED_CALLERS[project_dir] = caller
+    return caller
 
 
 class _ChatCompletionMessage(BaseModel):
