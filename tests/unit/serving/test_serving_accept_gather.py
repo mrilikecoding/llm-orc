@@ -74,10 +74,83 @@ def _executor_from_gather(gather_out: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
+def _gather_code_only(criteria: str, code_terminal: str) -> dict[str, Any]:
+    """Drive gather as the held round wires it: no test_writer dependency."""
+    payload = json.dumps(
+        {
+            "input_data": criteria,
+            "dependencies": {
+                "code_writer": {"response": _sub_ensemble_response(code_terminal)},
+            },
+        }
+    )
+    out = subprocess.run(
+        [sys.executable, str(GATHER)],
+        input=payload,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    result: dict[str, Any] = json.loads(out)
+    return result
+
+
+_HELD_MARKER = "[HELD TESTS: round 1 spec; regenerate ONLY the code]"
+
+
+def test_gather_reads_held_tests_when_test_writer_is_absent() -> None:
+    """The TDD retry round (issue #100): build-code-round has no test_writer;
+    gather reads the held tests from the carry's sentinel block and marks the
+    contract held so the gate carries round 1's adequacy verdict."""
+    criteria = (
+        "Write is_even(n) in even.py\n\n"
+        "[Previous round rejected: tests did not pass."
+        " Executor report: test_even: AssertionError().]\n\n"
+        f"{_HELD_MARKER}\n```python\n{TESTS}\n```"
+    )
+    out = _gather_code_only(criteria, CODE)
+    assert out["tests"] == TESTS
+    assert out["code"] == CODE
+    assert out["held"] is True
+    assert "[HELD TESTS" not in out["requirement"]
+    assert "Write is_even(n) in even.py" in out["requirement"]
+
+
+def test_gather_with_test_writer_ignores_a_marker_in_the_turn_text() -> None:
+    """A fresh round whose turn text happens to contain the sentinel string
+    still takes its tests from test_writer (worst case is a rejected round,
+    never a wrong accept)."""
+    criteria = f"Write is_even(n). By the way: {_HELD_MARKER}"
+    out = _gather(criteria, TESTS, CODE)
+    assert out["tests"] == TESTS
+    assert out.get("held", False) is False
+
+
 def test_gather_assembles_requirement_code_tests_from_seats() -> None:
     out = _gather("Write is_even(n).", TESTS, CODE)
     assert out["requirement"] == "Write is_even(n)."
     assert out["code"] == CODE
+    assert out["tests"] == TESTS
+
+
+def test_gather_code_drops_a_seat_emitted_test_fence_from_the_deliverable() -> None:
+    """Seat models sometimes emit the code and a copy of the tests as two
+    fences; joining them pollutes the shipped file with embedded tests (live
+    finding 2026-07-09: models.py shipped with the test suite appended). The
+    CODE extraction drops pure-test blocks when a non-test block exists."""
+    chatty_code = (
+        "Here is the code:\n```python\n" + CODE + "\n```\n"
+        "And the tests:\n```python\n" + TESTS + "\n```\n"
+    )
+    out = _gather("Write is_even(n).", TESTS, chatty_code)
+    assert out["code"] == CODE
+    assert "def test_" not in out["code"]
+
+
+def test_gather_tests_keep_test_fences() -> None:
+    """The TESTS extraction must not drop test blocks (they are the point)."""
+    chatty_tests = "```python\n" + TESTS + "\n```"
+    out = _gather("Write is_even(n).", chatty_tests, CODE)
     assert out["tests"] == TESTS
 
 

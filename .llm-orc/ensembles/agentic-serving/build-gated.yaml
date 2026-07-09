@@ -1,16 +1,19 @@
 name: build-gated
 description: |
-  The gated build seat with a bounded retry round (issue #89; ADR-048 §5
-  round budget). The engine's loop primitive re-runs build-gated-round —
-  test-writer -> code-writer -> executor -> judge -> accept gate -> envelope —
-  until the accept verdict holds or the bound trips. On a reject, the round's
-  envelope composes diagnostics.retry_input (the original turn + the executor's
-  failure report); the loop carries it as the next round's input, so one flaky
-  generated assertion no longer kills the turn (the dominant failure class,
-  confirmed across seat tiers in the 2026-07-08 A/B). unwrap peels the loop
-  wrapper back to the bare ADR-024 envelope so the serving marshal and the
-  seat contract are unchanged. Deterministic control: closed bound, predicate
-  over the deterministic verdict, no model judgment in the loop decision.
+  The gated build seat with a bounded TDD retry round (issues #89, #100;
+  ADR-048 §5 round budget). The engine's loop primitive re-runs build-round —
+  a deterministic router over the fresh TDD round (test-writer -> code-writer
+  -> executor -> judge -> accept gate -> envelope) and the held code-only
+  round — until the accept verdict holds or the bound trips. On a reject,
+  the round's envelope composes diagnostics.retry_input (the original turn +
+  the executor's failure report, plus the round's tests under the HELD TESTS
+  sentinel when they collected and were judged adequate); the loop carries it
+  as the next round's input, so one flaky assertion no longer kills the turn
+  and round 2 no longer resamples both sides of a spec-free disagreement
+  (TDD's actual loop: the tests hold, only the code moves). unwrap peels the
+  loop wrapper back to the bare ADR-024 envelope so the serving marshal and
+  the seat contract are unchanged. Deterministic control: closed bound,
+  predicates over deterministic verdicts, no model judgment in loop or route.
 
 topaz_skill: code_generation
 serves: code-seat
@@ -19,7 +22,7 @@ agents:
   - name: round
     timeout_seconds: 660
     loop:
-      body: build-gated-round
+      body: build-round
       until: "${diagnostics.accept}"
       max_iterations: 2
       carry: "${diagnostics.retry_input}"
