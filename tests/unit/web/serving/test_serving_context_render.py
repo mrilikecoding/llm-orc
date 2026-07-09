@@ -72,3 +72,21 @@ def test_context_is_capped() -> None:
 
 def test_single_message_history_renders_empty() -> None:
     assert _render_context([ChatMessage(role="user", content="hello")]) == ""
+
+
+def test_system_messages_are_excluded() -> None:
+    """OpenCode sends its own system prompt as the first message; it is client
+    instruction, not conversation — seats have their own system prompts
+    (battery finding 2026-07-08: the system prompt ate the whole context cap).
+    """
+    messages = [
+        ChatMessage(role="system", content="You are opencode, an interactive CLI"),
+        ChatMessage(role="user", content="hello"),
+        ChatMessage(role="assistant", content="Hi!"),
+        ChatMessage(role="user", content="explain foo"),
+    ]
+
+    rendered = _render_context(messages)
+
+    assert "opencode" not in rendered
+    assert "user: hello" in rendered
