@@ -9,7 +9,9 @@ import yaml
 
 from llm_orc.schemas.agent_config import (
     AgentConfig,
+    DynamicDispatchAgentConfig,
     EnsembleAgentConfig,
+    LoopAgentConfig,
     parse_agent_config,
 )
 
@@ -675,7 +677,18 @@ def _build_reference_graph(
     if ensemble_name in graph:
         return
 
-    refs = [a.ensemble for a in agents if isinstance(a, EnsembleAgentConfig)]
+    # AS-2 covers every statically-known reference: ensemble-agent targets,
+    # loop bodies, and literal (non-templated) dispatch targets. Runtime-
+    # resolved ${...} dispatch cannot be followed statically (issue #94).
+    refs: list[str] = []
+    for agent in agents:
+        if isinstance(agent, EnsembleAgentConfig):
+            refs.append(agent.ensemble)
+        elif isinstance(agent, LoopAgentConfig):
+            refs.append(agent.loop.body)
+        elif isinstance(agent, DynamicDispatchAgentConfig):
+            if "${" not in agent.dispatch:
+                refs.append(agent.dispatch)
     graph[ensemble_name] = refs
 
     for ref_name in refs:
