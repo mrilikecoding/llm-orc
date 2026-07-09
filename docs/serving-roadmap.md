@@ -73,17 +73,21 @@ Two generalizations the upper rungs force (named 2026-07-09):
 
 ## Current state (2026-07-09)
 
-Released: **v0.18.0** (agentic serving) and **v0.18.1** (review-debt sweep).
-Merged and released: **PR #99** (Stage 2 core — wire observation +
-full-history selection + gate-runner TestCase support) as **v0.18.2**;
-**PR #101** (#100 TDD retry loop + the 2026-07-09 live-diagnosis fixes:
-reject-noise filter, deliverable test-fence pollution, reflection-test
-prompt ban, `held_round` + trace-depth observability) as **v0.18.3**.
+Released today, in order: **v0.18.2** (PR #99 — Stage 2 core: wire
+observation + full-history selection + gate-runner TestCase support),
+**v0.18.3** (PR #101 — #100 TDD retry loop + live-diagnosis fixes),
+**v0.18.4** (PR #102 — #84 judge measurement + deterministic adequacy
+checker), **v0.18.5** (PR #103 — #98 write-tests shape + line-level
+failure reports). Earlier: v0.18.0 (agentic serving), v0.18.1
+(review-debt sweep).
 
-Shipped capability: build (accept-gated, bounded retry), explain,
-edit-existing (conversation-written files), within-session memory with
-lossless file selection, deterministic routing with a guarded decider.
-All-local (qwen3:8b) by default; operator seat overrides via `*.local.yaml`.
+Shipped capability: build (accept-gated, bounded TDD retry with held
+tests), write-tests (deliverable executed against the workspace),
+explain, edit-existing (conversation-written files), within-session
+memory with lossless file selection, deterministic routing with a
+guarded decider, fully deterministic accept gate (executor + static
+adequacy). All-local (qwen3:8b) by default; operator seat overrides via
+`*.local.yaml`.
 
 Key empirical facts the next work builds on:
 
@@ -102,6 +106,12 @@ Key empirical facts the next work builds on:
   directly bound the retry's live win-rate. The 8b seat's reflection-test
   mode (hasattr/callable — fails right code, passes wrong code) was banned
   in the seat prompt; failures moved to ordinary code/test disagreements.
+- **Prompt rules saturate the 8b seat** (measured twice 2026-07-09: judge
+  prompt variants relocated FRR without removing it; the test-writer keeps
+  regenerating spec-free exception-message assertions despite bans and
+  line-level failure reports). When a failure class persists across two
+  prompt iterations, reach for a structural lever — deterministic checks,
+  shape changes, escalation-on-signal — not a third rule.
 
 ## The path, in order of leverage
 
@@ -128,7 +138,7 @@ pre-existing-file editing — the two biggest remaining parity holes — and is
 the enabler for both named upper battery rungs (the codebase meta-task
 needs real-repo retrieval; the fix-execution milestone needs edit + run).
 
-### 3. Gate integrity pair — #84 MEASURED AND CLOSED; #98 next
+### 3. Gate integrity pair (#84, #98) — DONE (v0.18.4, v0.18.5)
 
 **#84 (done, released in v0.18.4):** the fixtures harness
 (`benchmarks/judge_adequacy`, 16 labeled fixtures × 8 samples, live seat)
@@ -144,7 +154,7 @@ after the swap: test-writer quality (reflection-style relapses now get
 correctly rejected instead of stochastically judged) — which is #98's
 territory.
 
-**#98 (shipped, write-tests-shape branch):** test-primary turns route via
+**#98 (done, released in v0.18.5):** test-primary turns route via
 the new tests-seat intent to the write-tests shape — one test source, the
 deliverable executed against the materialized workspace alone, the
 deterministic checker and gate reused, the executor-echoed tests shipped
@@ -195,9 +205,11 @@ removal).
 
 ## Issue index
 
-Path: #98/#84 gate integrity (raised) · #83 client execution ·
-#82 memory remainder · #90 llama.cpp · #85 sandbox hardening ·
-#93/#95 remainders.
+Path: #83 client execution (NEXT — enabler for the realism rungs) ·
+seat tiering / test sanitizer (path item 4; the measured test-writer
+bottleneck) · #82 memory remainder · #90 llama.cpp · #85 sandbox
+hardening · #93/#95 remainders.
 Shipped: #87 #88 #89 (v0.18.0) · #86 #91 #92 #94 #96 (v0.18.1) ·
-#82-core + gate-runner TestCase support (v0.18.2, PR #99) ·
-#100 TDD retry + live-diagnosis fixes (v0.18.3, PR #101).
+#82-core (v0.18.2, PR #99) · #100 TDD retry (v0.18.3, PR #101) ·
+#84 deterministic adequacy (v0.18.4, PR #102) · #98 write-tests shape
+(v0.18.5, PR #103).
