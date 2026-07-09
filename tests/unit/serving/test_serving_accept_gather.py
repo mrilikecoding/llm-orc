@@ -133,6 +133,27 @@ def test_gather_assembles_requirement_code_tests_from_seats() -> None:
     assert out["tests"] == TESTS
 
 
+def test_gather_code_drops_a_seat_emitted_test_fence_from_the_deliverable() -> None:
+    """Seat models sometimes emit the code and a copy of the tests as two
+    fences; joining them pollutes the shipped file with embedded tests (live
+    finding 2026-07-09: models.py shipped with the test suite appended). The
+    CODE extraction drops pure-test blocks when a non-test block exists."""
+    chatty_code = (
+        "Here is the code:\n```python\n" + CODE + "\n```\n"
+        "And the tests:\n```python\n" + TESTS + "\n```\n"
+    )
+    out = _gather("Write is_even(n).", TESTS, chatty_code)
+    assert out["code"] == CODE
+    assert "def test_" not in out["code"]
+
+
+def test_gather_tests_keep_test_fences() -> None:
+    """The TESTS extraction must not drop test blocks (they are the point)."""
+    chatty_tests = "```python\n" + TESTS + "\n```"
+    out = _gather("Write is_even(n).", chatty_tests, CODE)
+    assert out["tests"] == TESTS
+
+
 def test_gather_strips_markdown_fences_from_seat_output() -> None:
     fenced_code = "Here you go:\n```python\n" + CODE + "\n```\n"
     fenced_tests = "```python\n" + TESTS + "\n```"

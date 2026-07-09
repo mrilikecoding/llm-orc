@@ -40,7 +40,7 @@ def main() -> None:
     deps_map = __payload(sys.stdin.read().strip()).get("dependencies", {})
     deps = deps_map if isinstance(deps_map, dict) else {}
     generated = _terminal(_response(deps.get("generate", {})))
-    code = _extract_code(generated)
+    code = _extract_code(generated, drop_test_blocks=True)
     summary = code.splitlines()[0][:80] if code.strip() else "code deliverable"
 
     envelope = {

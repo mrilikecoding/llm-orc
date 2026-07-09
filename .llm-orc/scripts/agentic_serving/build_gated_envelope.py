@@ -63,7 +63,9 @@ def _held_round(deps: dict[str, object]) -> bool:
 def main() -> None:
     payload = _payload(sys.stdin.read().strip())
     deps = _deps(payload)
-    code = _extract_code(_terminal(_response(deps.get("code_writer", {}))))
+    code = _extract_code(
+        _terminal(_response(deps.get("code_writer", {}))), drop_test_blocks=True
+    )
     verdict = _verdict(deps)
     summary = code.splitlines()[0][:80] if code.strip() else "code deliverable"
 

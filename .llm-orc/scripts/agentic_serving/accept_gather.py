@@ -50,7 +50,7 @@ def _trim_to_parse(code: str, max_drops: int = 10) -> str:
 
 
 def _extract_code(text: str) -> str:
-    return _trim_to_parse(_helpers.extract_code(text))
+    return _trim_to_parse(_helpers.extract_code(text, drop_test_blocks=True))
 
 
 def _extract_tests(text: str) -> str:

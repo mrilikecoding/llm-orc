@@ -87,6 +87,17 @@ def test_envelope_extracts_code_from_fenced_seat_output() -> None:
     assert env["artifacts"][0]["content"] == "x = 1"
 
 
+def test_envelope_drops_a_seat_emitted_test_fence_from_the_deliverable() -> None:
+    """The shipped artifact must be the code, not code + an embedded copy of
+    the tests (two-fence seat output; live finding 2026-07-09)."""
+    env = _envelope(
+        "Code:\n```python\nx = 1\n```\nTests:\n"
+        "```python\ndef test_x():\n    assert x == 1\n```",
+        {"accept": True, "reason": "ok"},
+    )
+    assert env["artifacts"][0]["content"] == "x = 1"
+
+
 def test_envelope_preserves_adr024_container_without_retired_subfields() -> None:
     env = _envelope("x = 1", {"accept": True, "reason": "ok"})
     for field in ("primary", "structured", "artifacts", "diagnostics"):
