@@ -93,3 +93,39 @@ def test_an_imperative_build_request_phrased_politely_still_builds() -> None:
     decision = _classify({"task": "Can you write a function to add numbers in add.py"})
     assert decision["build"] is True
     assert decision["target"] == "code-seat"
+
+
+def test_context_composes_into_dispatch_input_after_the_marker() -> None:
+    """With conversation context present, dispatch_input carries it ahead of
+    the deterministic 'Current request:' marker (rung 1, memory design)."""
+    decision = _classify(
+        {
+            "task": "add tests for it in test_even.py",
+            "context": "user: write is_even in even.py\nassistant: [wrote even.py]",
+        }
+    )
+    assert decision["dispatch_input"] == (
+        "Conversation so far:\n"
+        "user: write is_even in even.py\nassistant: [wrote even.py]"
+        "\n\nCurrent request: add tests for it in test_even.py"
+    )
+    # the clean turn stays available for consumers that must not see history
+    assert decision["task"] == "add tests for it in test_even.py"
+
+
+def test_routing_reads_the_task_never_the_context() -> None:
+    """A past build request in the context must not re-trigger a build; the
+    latest turn alone decides the route."""
+    decision = _classify(
+        {
+            "task": "What does the helper do?",
+            "context": "user: write a helper in util.py\nassistant: [wrote util.py]",
+        }
+    )
+    assert decision["build"] is False
+    assert decision["target"] == "explainer"
+
+
+def test_no_context_leaves_dispatch_input_as_the_bare_task() -> None:
+    decision = _classify({"task": "write a function that adds two numbers"})
+    assert decision["dispatch_input"] == "write a function that adds two numbers"

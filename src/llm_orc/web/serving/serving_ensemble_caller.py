@@ -40,6 +40,13 @@ if TYPE_CHECKING:
 
 _WRITE_TOOL = "write"
 
+# Rung-1 conversation-context caps (memory design §Rung 1): bounded render,
+# flat per-turn cost regardless of session length.
+_CTX_MAX_MESSAGES = 8
+_CTX_TEXT_CAP = 500
+_CTX_FILE_CAP = 2000
+_CTX_TOTAL_CAP = 4000
+
 
 def _task_from(messages: Sequence[Any]) -> str:
     """The latest user message — clients send the full history every turn.
@@ -67,6 +74,55 @@ def _aux_reply(messages: Sequence[Any]) -> str:
             words = content.strip().strip('"').split()
             return " ".join(words[:6]) if words else "Task"
     return "Task"
+
+
+def _render_context(messages: Sequence[Any]) -> str:
+    """Prior turns as a deterministic, capped transcript (rung-1 memory).
+
+    Everything before the latest user message renders as ``role: text``
+    lines; an assistant write tool_call renders as ``[wrote <path>]`` plus
+    the written body (that is what lets a later "add tests for it" see the
+    code it refers to); tool-result rows are skipped. Bounded by the module
+    caps so per-turn cost stays flat regardless of session length.
+    """
+    items = list(messages)
+    prior: list[Any] = []
+    for index in range(len(items) - 1, -1, -1):
+        content = getattr(items[index], "content", None)
+        if getattr(items[index], "role", None) == "user" and (content or "").strip():
+            prior = items[:index]
+            break
+    lines: list[str] = []
+    for message in prior[-_CTX_MAX_MESSAGES:]:
+        role = getattr(message, "role", "")
+        if role == "tool":
+            continue
+        line = _render_write(message) or _render_text(message, role)
+        if line:
+            lines.append(line)
+    rendered = "\n".join(lines)
+    return rendered[-_CTX_TOTAL_CAP:]
+
+
+def _render_write(message: Any) -> str | None:
+    """An assistant write tool_call as ``[wrote <path>]`` + capped body."""
+    for call in getattr(message, "tool_calls", ()) or ():
+        function = call.get("function", {}) if isinstance(call, dict) else {}
+        try:
+            arguments = json.loads(function.get("arguments", ""))
+        except (json.JSONDecodeError, TypeError):
+            continue
+        if isinstance(arguments, dict) and arguments.get("filePath"):
+            body = str(arguments.get("content", ""))[:_CTX_FILE_CAP]
+            return f"assistant: [wrote {arguments['filePath']}]\n{body}"
+    return None
+
+
+def _render_text(message: Any, role: str) -> str | None:
+    content = getattr(message, "content", None)
+    if isinstance(content, str) and content.strip():
+        return f"{role}: {content.strip()[:_CTX_TEXT_CAP]}"
+    return None
 
 
 def _tool_result_ack(messages: Sequence[Any]) -> str | None:
@@ -170,15 +226,19 @@ class ServingEnsembleCaller:
             yield ContentDelta(content=ack)
             yield Completion(finish_reason="stop")
             return
-        outcome = await self._serve(_task_from(context.messages))
+        outcome = await self._serve(
+            _task_from(context.messages), _render_context(context.messages)
+        )
         for chunk in _outcome_chunks(outcome):
             yield chunk
 
-    async def _serve(self, task: str) -> dict[str, Any]:
+    async def _serve(self, task: str, conversation: str = "") -> dict[str, Any]:
         config = EnsembleLoader().load_from_file(
             str(_find_ensemble(self._project_dir, self._ensemble))
         )
         executor = ExecutorFactory.create_root_executor(project_dir=self._project_dir)
-        result = await executor.execute(config, json.dumps({"task": task}))
+        result = await executor.execute(
+            config, json.dumps({"task": task, "context": conversation})
+        )
         emit_turn_trace(config.name, result, self._trace_root)
         return _serve_outcome(result)

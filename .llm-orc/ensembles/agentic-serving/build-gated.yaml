@@ -49,6 +49,10 @@ agents:
     options:
       think: false
     depends_on: [executor]
+    # verifier isolation (ADR-048): the judge reads the executor's echoed
+    # contract only, never the shape's base input (which may carry threaded
+    # conversation context)
+    input_scope: dependencies
     system_prompt: |
       You are an independent test-adequacy reviewer. You are given a coding
       REQUIREMENT, the produced CODE, the produced TESTS, and whether the tests

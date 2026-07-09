@@ -114,13 +114,26 @@ def main() -> None:
 
     file = named_file or "solution.py"
 
+    # Rung-1 conversation memory: context composes into dispatch_input behind
+    # the deterministic marker (generation seats resolve referents; verifier
+    # seats strip back to the clean turn at the marker). Routing above reads
+    # the task ALONE — a past build request must not re-trigger a build.
+    dispatch_input = task or str(turn.get("dispatch_input", ""))
+    conversation = str(turn.get("context", "")).strip()
+    if conversation:
+        dispatch_input = (
+            f"Conversation so far:\n{conversation}"
+            f"\n\nCurrent request: {dispatch_input}"
+        )
+
     print(
         json.dumps(
             {
                 "target": target,
                 "kind": kind,
                 "file": file,
-                "dispatch_input": task or turn.get("dispatch_input", ""),
+                "task": task,
+                "dispatch_input": dispatch_input,
                 "build": build,
                 "needs_decider": needs_decider,
             }

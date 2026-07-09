@@ -78,9 +78,17 @@ def _extract_tests(text: str) -> str:
     return text.strip()
 
 
+# The rung-1 context marker (classify composes it): everything before the
+# marker is conversation context for generation seats; the requirement the
+# verifier chain echoes is the clean turn after it (ADR-048 isolation).
+_REQUEST_MARKER = "\n\nCurrent request: "
+
+
 def main() -> None:
     payload = _payload(sys.stdin.read().strip())
     requirement = str(payload.get("input_data", ""))
+    if _REQUEST_MARKER in requirement:
+        requirement = requirement.rsplit(_REQUEST_MARKER, 1)[1]
     deps = payload.get("dependencies", {})
     if not isinstance(deps, dict):
         deps = {}
