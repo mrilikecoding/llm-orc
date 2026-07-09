@@ -7,6 +7,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.18.0] - 2026-07-09
+
+### Added
+- Agentic serving: `llm-orc serve` exposes OpenAI-compatible endpoints
+  (`/v1/models`, `/v1/chat/completions`) so agentic coding tools (OpenCode,
+  Aider, Cline) can use composed ensembles as their model backend
+- Declarative per-turn serving ensemble (classify, seat dispatch, marshal)
+  with an accept-gated build pipeline: test-writer, code-writer, sandboxed
+  executor, adequacy judge, and a bounded retry round
+- Engine control-flow primitives: guard/branch (`when:`), bounded `loop:`,
+  dynamic dispatch, `input_key` selection, and `input_scope: dependencies`
+  verifier isolation
+- Conversation memory: client-sent history threads into generation seats;
+  conversation-written files materialize into the verification sandbox
+- Topaz-keyed capability registry and shape catalog with validate-before-load
+  admission; per-seat admission contracts via the validation framework
+- Operator-private model profiles: gitignored `*.local.yaml` overrides load
+  last deterministically, backing any tier with any provider
+- Serving docs: `docs/serving.md`, `docs/serving-roadmap.md`,
+  `docs/adrs/serving/`, and `docs/cli-reference.md`
+
+### Changed
+- README rewritten around the serving feature and condensed; the full CLI
+  and configuration reference moved to `docs/cli-reference.md`
+- `/v1/models` defaults to the local `agentic-tier-cheap-general` profile;
+  hosted/paid seats are an operator opt-in
+- Dependency updates clearing all pip-audit advisories (starlette 1.3.1,
+  fastapi 0.139, cryptography 49, and others)
+
+### Removed
+- The bespoke imperative serving layer (`src/llm_orc/agentic/`, ~12.7K LOC),
+  replaced by the declarative serving ensemble
+- Spike-era ensembles, scripts, and profiles from the deployable config;
+  the research corpus lives on the `research/agentic-serving-corpus` branch
+
+### Fixed
+- Multi-turn serving defects found via real-client batteries: latest-message
+  selection, clean seat input, tool-result continuation, routing of
+  interrogative turns, quote-wrapped client content, and eight pre-merge
+  review findings (fail-closed routing, accept-gate boolean coercion,
+  reference-resolution crash containment, loop-carry handling, and more)
+
+
 ## [0.17.0] - 2026-04-06
 
 ### Removed
