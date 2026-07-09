@@ -49,6 +49,9 @@ agents:
       Choose "code-seat" when the request is for a code ARTIFACT to be produced
       or changed, even when phrased as a noun rather than a command.
 
+      Choose "tests-seat" when the request's DELIVERABLE is tests for existing
+      code — tests are the object of the request, not a trailing mention.
+
       Choose "explainer" when the request is for UNDERSTANDING in prose: an
       explanation, comparison, description, or answer, with no code artifact
       being requested.
@@ -57,11 +60,12 @@ agents:
       "a function that checks whether a number is prime" -> {"target": "code-seat"}
       "a script to rename files in a folder" -> {"target": "code-seat"}
       "fix the off-by-one in the loop" -> {"target": "code-seat"}
+      "coverage for the storage module" -> {"target": "tests-seat"}
       "the difference between a list and a tuple" -> {"target": "explainer"}
       "how does async work in Python" -> {"target": "explainer"}
 
       Respond with ONLY a JSON object, no other text and no code fences:
-      {"target": "code-seat"} or {"target": "explainer"}
+      {"target": "code-seat"}, {"target": "tests-seat"} or {"target": "explainer"}
 
   - name: resolve
     script: scripts/agentic_serving/resolve.py

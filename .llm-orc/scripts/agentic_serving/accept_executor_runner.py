@@ -18,7 +18,24 @@ from __future__ import annotations
 
 import json
 import sys
+import traceback
 from pathlib import Path
+
+
+def _failing_line(error: Exception, tests: str) -> str:
+    """The failing source line from the tests, when the last traceback frame
+    lands there — a bare 'AssertionError()' gives the retry round nothing to
+    move on; the offending expectation is the actionable evidence."""
+    tb = error.__traceback__
+    if tb is None:
+        return ""
+    frames = traceback.extract_tb(tb)
+    for frame in reversed(frames):
+        if frame.filename == "test_solution.py" and frame.lineno:
+            lines = tests.splitlines()
+            if 0 < frame.lineno <= len(lines):
+                return lines[frame.lineno - 1].strip()
+    return ""
 
 
 def run_tests(code: str, tests: str) -> tuple[bool, str, int]:
@@ -65,7 +82,11 @@ def run_tests(code: str, tests: str) -> tuple[bool, str, int]:
                 # uncollected it would count as a silent pass (wrong accept)
                 asyncio.run(result)
         except Exception as error:  # noqa: BLE001
-            failures.append(f"{name}: {error!r}")
+            line = _failing_line(error, tests)
+            detail = f"{name}: {error!r}"
+            if line:
+                detail += f" at: {line}"
+            failures.append(detail)
 
     if case_classes:
         loader = unittest.defaultTestLoader
