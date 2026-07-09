@@ -401,139 +401,16 @@ model_profiles:
     fallback_model_profile: "local-llama"
 
 # =====================================================================
-# Agentic-serving configuration (Cycle 5 / ADR-019)
+# Agentic-serving configuration
 # ---------------------------------------------------------------------
-# Wires ADR-011 (orchestrator Model Profile + session-boundary scope),
-# ADR-005 (Budget), ADR-008 (Autonomy), ADR-009 (Plexus enablement),
-# ADR-007/014 (Calibration Gate + verdict trichotomy), ADR-012
-# (Conversation Compaction five-layer pipeline), ADR-015 (per-skill
-# tier-escalation router), ADR-016 (cross-layer calibration channel —
-# active when present), ADR-017 (tool-call structural validation),
-# ADR-018 (tier-router (d)-analog audit dispatch), ADR-019
-# (skill-framework-agnostic orchestrator + operation-named capability
-# ensemble library), ADR-020 (`tool_use` script-agent web-searcher),
-# and ADR-021 (per-capability dispatch contract).
-#
-# Model Profiles named below are defined in
-# `.llm-orc/profiles/agentic-serving-profiles.yaml` (Cycle 5 / ADR-019)
-# — single-file model swaps. The 8-skill Topaz taxonomy and 16-slot
-# configuration surface are ADR-015's load-bearing structural choice;
-# the profile assignments are working defaults that meet the capability
-# floor on the installed Ollama model set.
+# Post-collapse (v0.18.0) only `orchestrator.model_profile` is read: it
+# names the Model Profile advertised on /v1/models (the allowlist
+# default). Seat models resolve through the tier profiles in
+# `.llm-orc/profiles/`; hosted/paid seats are an operator opt-in via
+# gitignored `*.local.yaml` overrides (docs/serving.md, "Operator seat
+# configuration"). Budget / autonomy / calibration / tier-router keys
+# from the pre-collapse architecture are no longer consumed.
 # =====================================================================
 agentic_serving:
-
   orchestrator:
-    # The Model Profile advertised on /v1/models (the allowlist default —
-    # post-collapse this is the only thing this setting feeds). Local-first
-    # default; hosted/paid seats are an operator opt-in via gitignored
-    # `.llm-orc/profiles/*.local.yaml` overrides (see docs/serving.md
-    # §Operator seat configuration).
     model_profile: agentic-tier-cheap-general
-
-    # ADR-007/014 Calibration Gate (verdict producer + first-N post-hoc
-    # result-check). Defaults: N=3 invocations before trust transition;
-    # checker ensemble shipped with the project. AUQ threshold and
-    # entropy-collapse parameters are L1-internal and not exposed here.
-    calibration:
-      default_n: 3
-      checker_ensemble: agentic-calibration-checker
-
-    # ADR-012 Conversation Compaction (five-layer cheapest-first pipeline).
-    # Defaults match Anthropic's published values; operationally tunable.
-    # Layer 4 summarizer is unconfigured — operator opts in once they
-    # have a high-quality semantic summarizer ensemble to point it at.
-    compaction:
-      persist_threshold_chars: 50000        # Layer 0
-      idle_window_minutes: 60               # Layer 2
-      session_notes_token_cap: 12000        # Layer 3
-      layer_4_circuit_breaker_threshold: 3  # Layer 4
-      trigger_token_count: 100000
-
-    # ADR-015 per-skill tier defaults. All 8 Topaz skills MUST be present
-    # (the resolver raises at session start otherwise). Profiles can be
-    # shared across slots — that is the legitimate "collapse to shared
-    # Model Profiles" pattern from ADR-015 §Consequences §Negative for
-    # deployments concentrated in a sub-taxonomy.
-    per_skill_tier_defaults:
-      code_generation:
-        cheap_tier: agentic-tier-cheap-general  # SPIKE-τ arm B-mmx (8b coder)
-        escalated_tier: agentic-tier-escalated-general
-      tool_use:
-        # ADR-020: `tool_use` is satisfied by the `web-searcher`
-        # script-agent ensemble. Tier escalation is degenerate for
-        # script-agents (no Model Profile to swap), so cheap and
-        # escalated reference the same profile. The Calibration Gate's
-        # post-hoc result-check still fires.
-        cheap_tier: agentic-tier-cheap-general
-        escalated_tier: agentic-tier-cheap-general
-      mathematical_reasoning:
-        cheap_tier: agentic-tier-cheap-general
-        escalated_tier: agentic-tier-escalated-reasoning
-      logical_reasoning:
-        cheap_tier: agentic-tier-cheap-general
-        escalated_tier: agentic-tier-escalated-reasoning
-      factual_knowledge:
-        cheap_tier: agentic-tier-cheap-general
-        escalated_tier: agentic-tier-escalated-general
-      writing_quality:
-        cheap_tier: agentic-tier-cheap-general
-        escalated_tier: agentic-tier-escalated-general
-      instruction_following:
-        cheap_tier: agentic-tier-cheap-general
-        escalated_tier: agentic-tier-escalated-general
-      summarization:
-        cheap_tier: agentic-tier-cheap-summary
-        escalated_tier: agentic-tier-escalated-general
-
-    # ADR-018 (d)-analog audit dispatch — periodic out-of-band drift
-    # detection on the verdict→router edge. Defaults are the values
-    # specified in ADR-018 §"Drift criteria"; severe-drift multiplier 2x
-    # advisory; advisory diagnostics flow to the operator's review queue,
-    # severe drift trips fail-safe (force-Reflect until operator clears).
-    tier_router_audit:
-      trigger_count: 100
-      trigger_wall_clock_hours: 24
-      verdict_distribution_shift: 0.15
-      escalation_outcome_correlation_pp: 0.05
-      bypass_rate_increase: 0.25
-      severe_drift_multiplier: 2.0
-
-    # ADR-017 tool-call structural validation guard. Default pattern set
-    # ships with the guard module (minimal, conservative per spike
-    # evidence). Operators append deployment-specific phantom-tool-call
-    # regexes here; empty list keeps the defaults-only scan.
-    tool_call_validation_patterns: []
-
-  # Budget intentionally inherits from global config (~/.config/llm-orc/
-  # config.yaml — currently turn_limit: 100, token_limit: 1000000) since
-  # the cloud orchestrator's free-tier economics call for tighter caps
-  # than the 10M local-orchestration default. The local block here would
-  # override global if set; leaving it absent honors the global setting.
-  # If the session runs into the cap, this is the surface to raise it.
-
-  autonomy:
-    # ADR-008: operator-as-tool-user (the orchestrator does not autonomously
-    # take destructive actions; client tool delegation is gated by the
-    # tool user's agentic-coding client policy).
-    default_level: operator-as-tool-user
-
-  plexus:
-    # ADR-009: knowledge graph integration is opt-in. Leave disabled at
-    # this PLAY entry — Plexus enablement is a separate inhabitation
-    # surface and the ADR-016 cross-session value claim is Plexus-conditional.
-    enabled: false
-
-  overrides:
-    # Per-request override bounds (ADR-005). Bounds are in place so a
-    # later scenario group can wire the override path without revisiting.
-    allow_budget_override: true
-    max_turn_limit: 1000
-    max_token_limit: 50000000
-
-  summarizer:
-    # ADR-004 / WP-D: Orchestrator Tool Dispatch invokes this ensemble on
-    # invoke_ensemble's return path so the orchestrator's context carries
-    # natural-language summaries rather than raw JSON. Without it,
-    # context rot accumulates across multi-turn sessions (AS-7).
-    ensemble: agentic-result-summarizer
