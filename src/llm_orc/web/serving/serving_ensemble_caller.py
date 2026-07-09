@@ -41,6 +41,28 @@ if TYPE_CHECKING:
     from llm_orc.web.serving.session_start import SessionContext
 
 _WRITE_TOOL = "write"
+_READ_TOOL = "read"
+# issue #83 tool mapping: resolve emit outcomes against the client's
+# advertised tool names; candidates cover the common client vocabularies.
+_WRITE_TOOL_CANDIDATES = ("write", "write_file", "Write")
+_READ_TOOL_CANDIDATES = ("read", "read_file", "Read")
+
+
+def _client_tool(
+    tools: Sequence[Any], candidates: tuple[str, ...], fallback: str
+) -> str:
+    """The first advertised candidate tool name, else the fallback."""
+    advertised = set()
+    for tool in tools or ():
+        function = tool.get("function", {}) if isinstance(tool, dict) else {}
+        name = function.get("name")
+        if isinstance(name, str):
+            advertised.add(name)
+    for candidate in candidates:
+        if candidate in advertised:
+            return candidate
+    return fallback
+
 
 # Conversation-context caps (memory design §Rung 1/2'): bounded render,
 # flat per-turn cost regardless of session length. The tail carries recency;
@@ -327,14 +349,22 @@ def _tool_result_ack(messages: Sequence[Any]) -> str | None:
     """A short acknowledgment when the call is a tool-result continuation.
 
     After the serve emits a tool_call and the client performs it, the client
-    calls back with the tool result appended. That call continues the SAME
-    turn — re-running the pipeline would redo (and possibly re-judge) work
-    the client already applied. Returns None when the call is a fresh turn.
+    calls back with the tool result appended. A write continuation closes
+    the SAME turn — re-running the pipeline would redo (and possibly
+    re-judge) work the client already applied. A read continuation instead
+    RESUMES the turn (issue #83): the read result belongs in context for
+    another pipeline pass, so this returns None and ``run()`` falls through.
+    Also returns None when the call is a fresh turn.
     """
     last = messages[-1] if messages else None
     if getattr(last, "role", None) != "tool":
         return None
     for message in reversed(list(messages)):
+        for call in getattr(message, "tool_calls", ()) or ():
+            if _read_shaped_arguments(call) is not None:
+                # issue #83: a read continuation RESUMES the turn — fall
+                # through to the pipeline with the read result in context.
+                return None
         written = _written_file_path(getattr(message, "tool_calls", ()) or ())
         if written:
             return f"Wrote {written}."
@@ -386,12 +416,26 @@ def _serve_outcome(result: dict[str, Any]) -> dict[str, Any]:
     return {"finish": True, "content": str(outcome)}
 
 
-def _outcome_chunks(outcome: dict[str, Any]) -> list[OrchestratorChunk]:
+def _outcome_chunks(
+    outcome: dict[str, Any], tools: Sequence[Any]
+) -> list[OrchestratorChunk]:
     if outcome.get("finish"):
         return [
             ContentDelta(content=str(outcome.get("content", "Done."))),
             Completion(finish_reason="stop"),
         ]
+    reads = outcome.get("reads")
+    if reads:
+        read_tool = _client_tool(tools, _READ_TOOL_CANDIDATES, _READ_TOOL)
+        invocations = tuple(
+            ToolCallInvocation(
+                id=f"call_{uuid.uuid4().hex[:8]}",
+                name=read_tool,
+                arguments=json.dumps({"filePath": str(path)}),
+            )
+            for path in reads
+        )
+        return [ClientToolCall(tool_calls=invocations)]
     arguments = json.dumps(
         {
             "filePath": outcome.get("file", "solution.py"),
@@ -399,7 +443,9 @@ def _outcome_chunks(outcome: dict[str, Any]) -> list[OrchestratorChunk]:
         }
     )
     invocation = ToolCallInvocation(
-        id=f"call_{uuid.uuid4().hex[:8]}", name=_WRITE_TOOL, arguments=arguments
+        id=f"call_{uuid.uuid4().hex[:8]}",
+        name=_client_tool(tools, _WRITE_TOOL_CANDIDATES, _WRITE_TOOL),
+        arguments=arguments,
     )
     return [ClientToolCall(tool_calls=(invocation,))]
 
@@ -446,7 +492,7 @@ class ServingEnsembleCaller:
         outcome = await self._serve(
             _task_from(context.messages), _render_context(context.messages)
         )
-        for chunk in _outcome_chunks(outcome):
+        for chunk in _outcome_chunks(outcome, context.tools):
             yield chunk
 
     async def _serve(self, task: str, conversation: str = "") -> dict[str, Any]:

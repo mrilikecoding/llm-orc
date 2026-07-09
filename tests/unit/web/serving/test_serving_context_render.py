@@ -7,8 +7,15 @@ context string threaded to generation seats
 
 from __future__ import annotations
 
+import json
+
 from llm_orc.core.session.messages import ChatMessage
-from llm_orc.web.serving.serving_ensemble_caller import _render_context
+from llm_orc.web.serving.chunks import ClientToolCall
+from llm_orc.web.serving.serving_ensemble_caller import (
+    _outcome_chunks,
+    _render_context,
+    _tool_result_ack,
+)
 
 
 def _write_call(path: str, content: str) -> dict[str, object]:
@@ -457,3 +464,58 @@ def test_later_write_of_same_path_supersedes_earlier_read() -> None:
 
     assert "def new(): pass" in rendered
     assert "def old(): pass" not in rendered
+
+
+def test_reads_outcome_maps_to_read_tool_calls() -> None:
+    tools = [{"type": "function", "function": {"name": "read"}}]
+    chunks = _outcome_chunks({"finish": False, "reads": ["a.py", "b.py"]}, tools)
+
+    assert len(chunks) == 1
+    call = chunks[0]
+    assert isinstance(call, ClientToolCall)
+    assert [c.name for c in call.tool_calls] == ["read", "read"]
+    assert [json.loads(c.arguments)["filePath"] for c in call.tool_calls] == [
+        "a.py",
+        "b.py",
+    ]
+
+
+def test_write_outcome_resolves_against_advertised_tool_names() -> None:
+    tools = [{"type": "function", "function": {"name": "write_file"}}]
+    chunks = _outcome_chunks(
+        {"finish": False, "file": "a.py", "content": "pass"}, tools
+    )
+    call = chunks[0]
+    assert isinstance(call, ClientToolCall)
+    assert call.tool_calls[0].name == "write_file"
+
+
+def test_write_outcome_falls_back_to_write_when_nothing_advertised() -> None:
+    chunks = _outcome_chunks({"finish": False, "file": "a.py", "content": "pass"}, [])
+    call = chunks[0]
+    assert isinstance(call, ClientToolCall)
+    assert call.tool_calls[0].name == "write"
+
+
+def test_read_continuation_is_not_acked() -> None:
+    messages = [
+        ChatMessage(role="user", content="fix calc.py"),
+        ChatMessage(
+            role="assistant", content=None, tool_calls=(_read_call("c1", "calc.py"),)
+        ),
+        ChatMessage(role="tool", tool_call_id="c1", content="def divide(a): return a"),
+    ]
+    assert _tool_result_ack(messages) is None
+
+
+def test_write_continuation_is_still_acked() -> None:
+    messages = [
+        ChatMessage(role="user", content="write add.py"),
+        ChatMessage(
+            role="assistant",
+            content=None,
+            tool_calls=(_write_call("add.py", "def add(a, b): return a + b"),),
+        ),
+        ChatMessage(role="tool", content="Wrote file successfully."),
+    ]
+    assert _tool_result_ack(messages) == "Wrote add.py."
