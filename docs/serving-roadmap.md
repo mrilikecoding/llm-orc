@@ -108,7 +108,7 @@ needs real-repo retrieval; the fix-execution milestone needs edit + run).
 
 ### 3. Gate integrity pair — #84 MEASURED AND CLOSED; #98 next
 
-**#84 (done, judge-adequacy-measurement branch):** the fixtures harness
+**#84 (done, released in v0.18.4):** the fixtures harness
 (`benchmarks/judge_adequacy`, 16 labeled fixtures × 8 samples, live seat)
 measured the model judge at FAR 0.0 (never accepts garbage tests) but FRR
 25–67% on adequate tests, near-deterministically per fixture; three prompt

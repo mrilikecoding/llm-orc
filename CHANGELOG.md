@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.18.4] - 2026-07-09
+
+### Added
+- Judge-adequacy measurement harness (`benchmarks/judge_adequacy`): 16
+  labeled fixtures through the real executor and judge seat, reporting
+  false-reject / false-accept rates per class and per-fixture flip
+  variance; run artifacts retained
+- `adequacy-judge` as a standalone seat ensemble (the measurement subject;
+  prompt lives in exactly one file)
+
+### Changed
+- The accept gate's adequacy signal is deterministic (`adequacy_check.py`,
+  value-bearing-assert analysis) — measured model-judge FRR of 25–67% on
+  adequate tests retired; FAR stays 0 by construction on value-free tests;
+  one less model call per round (ADR-048 amended with the evidence)
+
+### Fixed
+- Async `test_*` functions execute instead of silently passing (a
+  never-awaited coroutine counted as a pass — wrong-accept channel)
+- The accept gate reads verdicts through sub-ensemble judge envelopes
+- Adequacy checker review findings: loose try/except-pass no longer counts
+  as value-bearing; `with assertRaises` / `pytest.raises` idioms count;
+  test-unit collection matches the runner's TestCase dialect
+
 ## [0.18.3] - 2026-07-09
 
 ### Added
