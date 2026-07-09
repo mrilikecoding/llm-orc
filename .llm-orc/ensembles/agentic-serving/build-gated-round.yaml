@@ -44,32 +44,15 @@ agents:
     depends_on: [gather]
 
   - name: judge
-    model_profile: agentic-tier-cheap-general
-    options:
-      think: false
+    # the shared adequacy seat (#84): prompt and profile live in
+    # adequacy-judge.yaml, so the measurement harness (benchmarks/
+    # judge_adequacy) exercises the exact seat this round runs
+    ensemble: adequacy-judge
     depends_on: [executor]
     # verifier isolation (ADR-048): the judge reads the executor's echoed
     # contract only, never the shape's base input (which may carry threaded
     # conversation context)
     input_scope: dependencies
-    system_prompt: |
-      You are an independent test-adequacy reviewer. You are given a coding
-      REQUIREMENT, the produced CODE, the produced TESTS, and whether the tests
-      currently pass.
-
-      Judge ONLY whether the tests adequately verify that the code meets the
-      requirement. Tests are INADEQUATE if they are trivial: e.g. assert True,
-      only checking the function exists or is callable, or not checking actual
-      output values against the requirement. Tests are ADEQUATE if they check
-      the code's real behavior against the requirement with meaningful cases.
-
-      The test: would these tests CATCH a wrong implementation? If a subtly
-      broken version of the code would still pass them, they are inadequate.
-
-      Do not judge the code's correctness directly. Judge the tests.
-
-      Respond with ONLY a JSON object, no other text, no code fences:
-      {"tests_adequate": true or false, "reason": "<one sentence>"}
 
   - name: accept_gate
     script: scripts/agentic_serving/accept_gate.py
