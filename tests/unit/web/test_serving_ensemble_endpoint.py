@@ -234,6 +234,35 @@ def test_tool_result_callback_is_acknowledged_not_rerun(
     assert choice["message"]["content"]
 
 
+def test_quoted_message_content_is_normalized_before_classify(
+    serving_client: TestClient,
+) -> None:
+    """``opencode run -c`` (continued sessions) delivers the message content
+    wrapped in literal double quotes; the anchored interrogative routing then
+    misses and an explain question runs the gated build (battery finding
+    2026-07-08). The serve strips one symmetric surrounding quote pair.
+    """
+    resp = serving_client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "ensemble-agent",
+            "messages": [
+                {
+                    "role": "user",
+                    "content": '"What approach does foo.py take, briefly?"',
+                },
+            ],
+            "tools": [_WRITE_TOOL],
+        },
+    )
+
+    assert resp.status_code == 200
+    choice = resp.json()["choices"][0]
+    assert choice["finish_reason"] == "stop"
+    assert not choice["message"].get("tool_calls")
+    assert "foo.py" in choice["message"]["content"]
+
+
 def test_explain_turn_returns_prose_not_a_tool_call(
     serving_client: TestClient,
 ) -> None:

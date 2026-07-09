@@ -42,11 +42,19 @@ _WRITE_TOOL = "write"
 
 
 def _task_from(messages: Sequence[Any]) -> str:
-    """The latest user message — clients send the full history every turn."""
+    """The latest user message — clients send the full history every turn.
+
+    Strips one symmetric surrounding double-quote pair: ``opencode run -c``
+    (continued sessions) delivers the content as a quoted literal, which
+    breaks anchored routing signals in classify.
+    """
     for message in reversed(list(messages)):
         content = getattr(message, "content", None)
         if getattr(message, "role", None) == "user" and (content or "").strip():
-            return content or ""
+            task = (content or "").strip()
+            if len(task) >= 2 and task[0] == '"' and task[-1] == '"':
+                task = task[1:-1]
+            return task
     return ""
 
 
