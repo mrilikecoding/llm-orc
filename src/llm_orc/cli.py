@@ -326,6 +326,66 @@ def mcp() -> None:
     pass
 
 
+def _start_server(
+    *, host: str, port: int, label: str, open_browser: bool = False
+) -> None:
+    """Start the llm-orc HTTP server on ``host:port``.
+
+    Shared by the ``web`` and ``serve`` commands — both mount the
+    same FastAPI app (web UI + ensemble REST API + ``/v1/...``
+    OpenAI-compat surface). The two commands exist so the name
+    matches the operator's mental model: ``web`` for "browser UI"
+    and ``serve`` for "agentic endpoint behind an LLM client".
+    """
+    import logging
+    import sys
+
+    import uvicorn
+
+    from llm_orc.web.server import create_app
+
+    # Surface llm_orc.* INFO-level logs (orchestrator runtime, tool
+    # dispatch results-with-reason) to the operator terminal. Without
+    # this, child loggers inherit uvicorn's WARNING root level and the
+    # production dispatch logger is dormant. propagate=False insulates
+    # the llm_orc surface from future uvicorn config changes.
+    _orc_handler = logging.StreamHandler(sys.stderr)
+    _orc_handler.setFormatter(
+        logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+    )
+    _orc_logger = logging.getLogger("llm_orc")
+    _orc_logger.setLevel(logging.INFO)
+    if not any(isinstance(h, logging.StreamHandler) for h in _orc_logger.handlers):
+        _orc_logger.addHandler(_orc_handler)
+    _orc_logger.propagate = False
+
+    url = f"http://{host}:{port}"
+
+    if host == "0.0.0.0":  # noqa: S104 - operator opt-in
+        click.echo(
+            "WARNING: Binding to 0.0.0.0 exposes the server to your network",
+            err=True,
+        )
+
+    click.echo(f"Starting llm-orc {label} at {url}", err=True)
+    click.echo("Press Ctrl+C to stop", err=True)
+
+    if open_browser:
+        import threading
+        import webbrowser
+
+        def open_browser_delayed() -> None:
+            import time
+
+            time.sleep(1)
+            webbrowser.open(url)
+
+        threading.Thread(target=open_browser_delayed, daemon=True).start()
+
+    app = create_app()
+    uvicorn.run(app, host=host, port=port, log_level="info")
+
+
 @cli.command()
 @click.option("--port", default=8765, help="Port to run the web server on")
 @click.option(
@@ -342,38 +402,37 @@ def web(port: int, host: str, open_browser: bool) -> None:
     - Executing ensembles with real-time output
     - Viewing execution artifacts and metrics
     - Managing model profiles and scripts
+
+    The same server exposes the OpenAI-compatible ``/v1/...`` surface
+    that agentic coding tools (OpenCode, Roo Code, Cline, etc.)
+    consume. If you only need the agentic endpoint, ``llm-orc serve``
+    is a drop-in alternative that starts the same app without the
+    UI-oriented framing in the CLI output.
     """
-    import webbrowser
+    _start_server(host=host, port=port, label="web UI", open_browser=open_browser)
 
-    import uvicorn
 
-    from llm_orc.web.server import create_app
+@cli.command()
+@click.option("--port", default=8765, help="Port to run the server on")
+@click.option(
+    "--host",
+    default="127.0.0.1",
+    help="Host to bind to (use 0.0.0.0 for network access)",
+)
+def serve(port: int, host: str) -> None:
+    """Start the agentic serving layer for LLM-client consumption.
 
-    url = f"http://{host}:{port}"
+    Exposes the OpenAI-compatible ``/v1/models`` and
+    ``/v1/chat/completions`` endpoints (plus the ensemble management
+    REST API) on ``host:port`` so agentic coding tools (OpenCode,
+    Roo Code, Cline, etc.) can consume llm-orc as a backend.
 
-    if host == "0.0.0.0":
-        click.echo(
-            "WARNING: Binding to 0.0.0.0 exposes the server to your network",
-            err=True,
-        )
-
-    click.echo(f"Starting llm-orc web UI at {url}", err=True)
-    click.echo("Press Ctrl+C to stop", err=True)
-
-    if open_browser:
-        # Open browser after a short delay to let server start
-        import threading
-
-        def open_browser_delayed() -> None:
-            import time
-
-            time.sleep(1)
-            webbrowser.open(url)
-
-        threading.Thread(target=open_browser_delayed, daemon=True).start()
-
-    app = create_app()
-    uvicorn.run(app, host=host, port=port, log_level="warning")
+    The underlying app is identical to ``llm-orc web`` — this command
+    exists so the name matches the agentic-serving use case. Use
+    ``web`` when you also want the browser UI; use ``serve`` when you
+    are deploying behind an HTTP LLM client.
+    """
+    _start_server(host=host, port=port, label="agentic serving layer")
 
 
 @mcp.command("serve")

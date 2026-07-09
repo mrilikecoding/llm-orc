@@ -1,0 +1,78 @@
+name: claim-extractor
+description: |
+  Single-agent capability ensemble that extracts factual claims from
+  input text. Any skill framework whose workflow decomposes into a
+  claim-extraction sub-task can dispatch this ensemble via
+  `invoke_ensemble("claim-extractor", ...)`.
+
+  Output: a bulleted list of claims, each labeled as established
+  (widely-accepted, traceable to authoritative sources) or contested
+  (disputed, requires verification, or single-source).
+
+  Tagged `factual_knowledge` per the Topaz eight-skill taxonomy
+  (ADR-015). Cheap-tier defaults to qwen3:8b
+  (agentic-tier-cheap-general); the Calibration Gate routes escalation
+  to qwen3:14b (agentic-tier-escalated-general) on a Reflect verdict.
+
+  Distinct from `claim-verifier` (not in Cycle 5 minimum-viable set) —
+  this ensemble surfaces claims; verification of those claims (e.g., via
+  `web-searcher` cross-referencing) is a separate sub-task the consuming
+  skill framework dispatches separately.
+
+topaz_skill: factual_knowledge
+
+# ADR-025 §"Scope: always, for capability ensembles" — deliverable
+# routes through SessionArtifactStore; envelope.artifacts[0] carries
+# the typed reference. AS-7 amended: result-summarizer is skipped.
+output_substrate: artifact
+
+# ADR-024 (Cycle 6 WP-D): operator-declared shape for envelope.structured.
+# The dispatch site advisorily attempts to populate envelope.structured
+# from the synthesizer's response when the response parses as JSON. The
+# current default_task asks for prose bullets, so structured stays None
+# at dispatch time; the declaration documents the canonical typed shape
+# for operators who later migrate the task wording to request JSON
+# output (e.g., adding "Output as JSON matching the schema:" guidance).
+# Per Cycle 6 WP-E entry decision (WP-D snapshot moderate advisory 1 —
+# YAML default_task rewrite fork resolution): schema is preserved as
+# documentation; default_task remains unchanged. Spike β's reframing
+# of output-spec drift as orchestrator input.data override means
+# rewriting default_task to request JSON would address the wrong
+# mechanism (the drift is upstream at the orchestrator's reasoning
+# surface, not at the synthesizer's compliance). The structured field
+# populates only when the synthesizer naturally emits JSON.
+output_schema:
+  type: object
+  properties:
+    claims:
+      type: array
+      items:
+        type: object
+        required: [text, label]
+        properties:
+          text:
+            type: string
+          label:
+            type: string
+            enum: [established, contested]
+  required: [claims]
+
+default_task: |
+  Extract the factual claims from the provided text. List each claim
+  on its own line as a bullet. After each claim, label it in
+  parentheses as either:
+
+  - (established) — the claim is widely accepted, traceable to
+    authoritative sources, or is general background a reasonable
+    domain reader would not contest.
+  - (contested) — the claim is disputed, single-source, or requires
+    further verification to accept.
+
+  Output only the bulleted list — no preamble, no synthesis, no
+  conclusions. If the text contains no extractable factual claims
+  (e.g., it is purely procedural, fictional, or a question), output
+  the single line: "No factual claims extracted."
+
+agents:
+  - name: extractor
+    model_profile: agentic-tier-cheap-general

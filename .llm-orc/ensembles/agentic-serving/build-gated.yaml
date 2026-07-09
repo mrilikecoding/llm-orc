@@ -1,0 +1,47 @@
+name: build-gated
+description: |
+  The gated build seat with a bounded retry round (issue #89; ADR-048 §5
+  round budget). The engine's loop primitive re-runs build-gated-round —
+  test-writer -> code-writer -> executor -> judge -> accept gate -> envelope —
+  until the accept verdict holds or the bound trips. On a reject, the round's
+  envelope composes diagnostics.retry_input (the original turn + the executor's
+  failure report); the loop carries it as the next round's input, so one flaky
+  generated assertion no longer kills the turn (the dominant failure class,
+  confirmed across seat tiers in the 2026-07-08 A/B). unwrap peels the loop
+  wrapper back to the bare ADR-024 envelope so the serving marshal and the
+  seat contract are unchanged. Deterministic control: closed bound, predicate
+  over the deterministic verdict, no model judgment in the loop decision.
+
+topaz_skill: code_generation
+serves: code-seat
+
+agents:
+  - name: round
+    timeout_seconds: 660
+    loop:
+      body: build-gated-round
+      until: "${diagnostics.accept}"
+      max_iterations: 2
+      carry: "${diagnostics.retry_input}"
+
+  - name: unwrap
+    script: scripts/agentic_serving/loop_unwrap.py
+    depends_on: [round]
+
+# Seat-owned admission contract (ADR-046 §2; WP-E8). The default build seat's
+# output is admitted by the serving skeleton's seat_contract node via a wired
+# ValidationEvaluator. Black-box (no structural required_agents) so the gate does
+# not couple to this shape's internal pipeline. Envelope well-formedness is a
+# different granularity from the accept verdict this shape carries in diagnostics:
+# an accept-rejected turn still emits a well-formed envelope (the code is present),
+# so the seat contract admits it and the loop-level accept gate handles the reject.
+# Distinct from the engine's ``validation:`` field (auto-run against this shape's
+# own agents) — the admission references the skeleton's ``seat`` adapter key.
+seat_contract:
+  behavioral:
+    - name: envelope-status-success
+      description: "the seat produced a success envelope"
+      assertion: "results['seat']['status'] == 'success'"
+    - name: envelope-carries-artifact
+      description: "the seat envelope carries a deliverable artifact"
+      assertion: "len(results['seat']['artifacts']) > 0"

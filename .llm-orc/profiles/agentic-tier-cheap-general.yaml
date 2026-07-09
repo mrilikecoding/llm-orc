@@ -1,0 +1,15 @@
+# Agentic-serving — cheap-tier dispatch target for most Topaz skills
+# (Cycle 5 / ADR-015 per-skill tier defaults).
+#
+# Must meet the capability floor — Cycle 1 PLAY surfaced that sub-1B
+# profiles fabricate at this role; qwen3:8b is the smallest installed
+# model that holds tool-call structure reliably.
+name: agentic-tier-cheap-general
+model: qwen3:8b
+provider: ollama
+cost_per_token: 0.0
+# 300s matches agentic-tier-escalated-general; Cycle 5 PLAY probe 3
+# observed coder agent timing out at 180s on a moderate-complexity
+# code-generation task. Operator-tunable — bump higher on slower
+# hardware or lower on faster.
+timeout_seconds: 300

@@ -30,15 +30,22 @@ from llm_orc.core.execution.phases.agent_request_processor import (
 )
 from llm_orc.core.execution.phases.dependency_analyzer import DependencyAnalyzer
 from llm_orc.core.execution.phases.dependency_resolver import DependencyResolver
+from llm_orc.core.execution.phases.dispatch_resolver import DispatchResolver
+from llm_orc.core.execution.phases.guard_evaluator import GuardEvaluator
 from llm_orc.core.execution.phases.phase_result_processor import PhaseResultProcessor
 from llm_orc.core.execution.progress_controller import NoOpProgressController
 from llm_orc.core.execution.result_types import AgentResult, ExecutionResult
 from llm_orc.core.execution.results_processor import (
     create_initial_result,
     finalize_result,
+    resolve_deliverable,
+)
+from llm_orc.core.execution.runners.dynamic_dispatch_runner import (
+    DynamicDispatchRunner,
 )
 from llm_orc.core.execution.runners.ensemble_runner import EnsembleAgentRunner
 from llm_orc.core.execution.runners.llm_runner import LlmAgentRunner
+from llm_orc.core.execution.runners.loop_runner import LoopAgentRunner
 from llm_orc.core.execution.scripting.agent_runner import ScriptAgentRunner
 from llm_orc.core.execution.scripting.cache import ScriptCache, ScriptCacheConfig
 from llm_orc.core.execution.scripting.user_input_handler import (
@@ -54,8 +61,10 @@ from llm_orc.core.validation import (
 from llm_orc.models.base import ModelInterface
 from llm_orc.schemas.agent_config import (
     AgentConfig,
+    DynamicDispatchAgentConfig,
     EnsembleAgentConfig,
     LlmAgentConfig,
+    LoopAgentConfig,
     ScriptAgentConfig,
 )
 
@@ -231,6 +240,7 @@ class EnsembleExecutor:
         self._model_factory = _model_factory
         self._dependency_analyzer = DependencyAnalyzer()
         self._dependency_resolver = DependencyResolver(self._get_agent_role_description)
+        self._guard_evaluator = GuardEvaluator()
         self._usage_collector = UsageCollector()
 
         self._streaming_progress_tracker = StreamingProgressTracker()
@@ -277,6 +287,19 @@ class EnsembleExecutor:
             current_depth=self._depth,
             depth_limit=depth_limit,
         )
+        self._loop_agent_runner = LoopAgentRunner(
+            ensemble_loader=self._resolve_ensemble_reference,
+            parent_executor=self,
+            current_depth=self._depth,
+            depth_limit=depth_limit,
+        )
+        self._dynamic_dispatch_runner = DynamicDispatchRunner(
+            ensemble_loader=self._resolve_ensemble_reference,
+            parent_executor=self,
+            current_depth=self._depth,
+            depth_limit=depth_limit,
+        )
+        self._dispatch_resolver = DispatchResolver()
 
         # Initialize execution coordinator with agent executor function
         # Use a wrapper that goes through _execute_agent for test patchability
@@ -451,7 +474,9 @@ class EnsembleExecutor:
         if self._progress_controller:
             await self._progress_controller.complete_ensemble()
 
-        return final_result.to_dict()
+        result_dict = final_result.to_dict()
+
+        return result_dict
 
     def _detect_interactive_ensemble(self, config: EnsembleConfig) -> bool:
         """Detect if ensemble contains scripts that require user input.
@@ -517,6 +542,29 @@ class EnsembleExecutor:
         phases: list[list[AgentConfig]] = dependency_analysis["phases"]
         return phases
 
+    def _partition_by_guard(
+        self,
+        phase_agents: list[AgentConfig],
+        results_dict: dict[str, Any],
+    ) -> list[AgentConfig]:
+        """Drop nodes whose guard fails, recording each as skipped.
+
+        Guards are evaluated against accumulated upstream results, which are
+        complete for this phase's dependencies by topological ordering. A
+        skipped node is recorded so downstream guards and joins can see it.
+        """
+        active: list[AgentConfig] = []
+        for agent_config in phase_agents:
+            if self._guard_evaluator.should_run(agent_config, results_dict):
+                active.append(agent_config)
+            else:
+                results_dict[agent_config.name] = {
+                    "response": None,
+                    "status": "skipped",
+                    "model_substituted": False,
+                }
+        return active
+
     async def _execute_phase_with_monitoring(
         self,
         phase_index: int,
@@ -530,6 +578,11 @@ class EnsembleExecutor:
         Returns:
             Tuple of (has_errors, user_inputs_collected)
         """
+        phase_agents = self._partition_by_guard(phase_agents, results_dict)
+        phase_agents = self._dispatch_resolver.resolve_targets(
+            phase_agents, results_dict
+        )
+
         fan_out_agents = self._fan_out_coordinator.detect_in_phase(
             phase_agents, results_dict
         )
@@ -732,6 +785,14 @@ class EnsembleExecutor:
             result, agent_usage, has_errors, start_time, adaptive_stats
         )
 
+        # ADR-035 D1: resolve the single-deliverable contract here, where
+        # the config's depends_on graph is known — downstream consumers
+        # (substrate write, handler projections) read the field instead of
+        # reconstructing the terminal node from the results dict.
+        final_result.deliverable = resolve_deliverable(
+            final_result.results, config.agents
+        )
+
         # Run validation if config is present
         if config.validation is not None:
             validation_result = await _run_validation(config, final_result, start_time)
@@ -777,6 +838,10 @@ class EnsembleExecutor:
             return await self._llm_agent_runner.execute(agent_config, input_data)
         if isinstance(agent_config, EnsembleAgentConfig):
             return await self._ensemble_agent_runner.execute(agent_config, input_data)
+        if isinstance(agent_config, LoopAgentConfig):
+            return await self._loop_agent_runner.execute(agent_config, input_data)
+        if isinstance(agent_config, DynamicDispatchAgentConfig):
+            return await self._dynamic_dispatch_runner.execute(agent_config, input_data)
         raise ValueError(
             f"Agent '{agent_config.name}' has unknown type: "
             f"{type(agent_config).__name__}"

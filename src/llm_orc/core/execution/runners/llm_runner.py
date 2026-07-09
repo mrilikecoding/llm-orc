@@ -210,10 +210,10 @@ class LlmAgentRunner:
 
         enhanced_config = await self._resolve_model_profile_to_config(agent_config)
 
-        if "system_prompt" in enhanced_config:
-            prompt = enhanced_config["system_prompt"]
-        else:
-            prompt = f"You are a {agent_name}. Provide helpful analysis."
+        prompt = (
+            enhanced_config.get("system_prompt")
+            or f"You are a {agent_name}. Provide helpful analysis."
+        )
 
         return RoleDefinition(name=agent_name, prompt=prompt)
 

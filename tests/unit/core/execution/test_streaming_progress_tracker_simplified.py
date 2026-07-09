@@ -40,6 +40,7 @@ class TestStreamingProgressTrackerSimplified:
             "results": {"agent1": "result1", "agent2": "result2"},
             "metadata": {"duration": 1.0},
             "status": "completed",
+            "deliverable": "final output",
         }
 
         async def mock_execution() -> dict[str, Any]:
@@ -79,6 +80,8 @@ class TestStreamingProgressTrackerSimplified:
         assert completed_event["data"]["results"] == final_result["results"]
         assert completed_event["data"]["status"] == "completed"
         assert "duration" in completed_event["data"]
+        # ADR-035 D1: the deliverable contract rides the completion event
+        assert completed_event["data"]["deliverable"] == "final output"
 
     @pytest.mark.asyncio
     async def test_track_execution_progress_exception_handling(self) -> None:

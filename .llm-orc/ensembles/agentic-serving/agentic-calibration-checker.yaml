@@ -1,0 +1,47 @@
+name: agentic-calibration-checker
+description: |
+  Default calibration checker for agentic-serving's Calibration Gate
+  (ADR-007, WP-H). Consumes a JSON object shaped like
+  ``{"target_ensemble": "<name>", "output": <raw-invoke-result>}`` and
+  emits a Quality Signal so the Calibration Gate can decide whether a
+  newly composed ensemble is earning trust.
+
+  AS-5: stabilization is governed by quality signals, not frequency.
+  The check runs on the first N invocations of every composed ensemble
+  and feeds the gate's decision to transition the ensemble to trusted
+  or keep it in calibration.
+
+  Operators override this ensemble via
+  ``agentic_serving.orchestrator.calibration.checker_ensemble`` in
+  ``config.yaml`` when a domain-specific checker is appropriate. The
+  shipped default is minimal-but-real — it asks an LLM to classify
+  plausibility so WP-H has working coverage end-to-end; richer
+  checkers (rubric-based, domain-aware, hallucination-detecting) can
+  layer in without code changes.
+
+default_task: |
+  A composed ensemble produced the following output for a task. Evaluate
+  whether the output looks like a plausible, on-task response — not
+  whether you agree with it, and not whether you would have done better.
+  The question is observable quality: did the ensemble produce a
+  coherent result that addresses what was asked?
+
+  Respond in this exact shape (no prose before the ``signal:`` line):
+
+    signal: positive|negative|absent
+    reason: <one short sentence>
+
+  - ``positive``: the output is a coherent, on-task response. Accept
+    modest errors — this is a plausibility check, not a correctness
+    audit.
+  - ``negative``: the output is hallucinated (made up ensemble/agent
+    names, fabricated citations), off-task (ignores the request),
+    incoherent (contradicts itself or is unreadable), or clearly
+    low-quality.
+  - ``absent``: the output is empty, too short to evaluate, or the
+    payload is unparseable. When in doubt, prefer ``absent`` over
+    guessing.
+
+agents:
+  - name: checker
+    model_profile: agentic-summarizer

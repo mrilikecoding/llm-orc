@@ -36,10 +36,15 @@ class OllamaModel(ModelInterface):
         """Generate response using Ollama API."""
         start_time = time.time()
 
-        # Build options: generic options underlay, explicit fields overlay
-        options: dict[str, float | int] = {}
-        if self._options:
-            options.update(self._options)
+        # Build options: generic options underlay, explicit fields overlay.
+        # `think` is Ollama's native thinking toggle: a top-level chat field,
+        # not a sampling option, so lift it out of options. (The qwen3 /no_think
+        # prompt switch is not honored through the chat API; the native `think`
+        # param is, and it is a large interactive-latency lever.)
+        source_options = dict(self._options) if self._options else {}
+        think = source_options.pop("think", None)
+
+        options: dict[str, Any] = source_options
         if self.temperature is not None:
             options["temperature"] = self.temperature
         if self.max_tokens is not None:
@@ -53,6 +58,8 @@ class OllamaModel(ModelInterface):
             ],
             "options": options if options else None,
         }
+        if think is not None:
+            chat_kwargs["think"] = think
         if self._format is not None:
             chat_kwargs["format"] = self._format
 

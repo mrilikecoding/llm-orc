@@ -1,0 +1,92 @@
+name: serving
+description: |
+  The Cycle-8 declarative Serving Ensemble: the per-turn handler as ONE
+  ensemble (classify -> seat -> marshal) on the L0 engine (ADR-046 §1; AS-11 —
+  the agent's control flow lives in the ensemble, not an imperative driver).
+
+  classify (decider node) emits {target, kind, file, dispatch_input, build,
+  needs_decider}. It routes deterministically where the signal is structural
+  (explain markers -> explainer; a build verb or named file -> code-seat).
+  Where no structural signal resolves the turn it emits needs_decider=true and
+  leaves target empty; a guarded model-backed decide node then reads the turn
+  intent and picks a target from the closed seat set, and resolve merges the two
+  into the final routing (deterministic where structural, model-backed only on
+  the guarded ambiguous path; the model classifies, the control stays
+  deterministic).
+
+  seat is filled by dynamic dispatch on ${resolve.target}, resolved at the phase
+  layer (the shared ${dep.field} resolver), receiving dispatch_input via
+  input_key; seat_contract then admits or rejects the seat's output against the
+  resolved seat's seat-owned contract via a wired ValidationEvaluator (ADR-046
+  §2; black-box, deterministic-first — a different granularity from the loop-level
+  accept gate, the two compose); the marshal sub-sequence (shape -> form-gate ->
+  emit) turns the seat's ADR-024 envelope into the serve outcome. shape reads the deliverable
+  from the envelope faithfully (content from the envelope, destination from the
+  resolved decision); form-gate refuses a deliverable that does not parse as its
+  path claims; emit shapes the client-seam outcome (a file write for a valid
+  build, a prose finish otherwise). Swapping a seat strategy is a change to the
+  routing decision or the operator/registry default, never to this skeleton.
+
+  The registry the seat resolves against is stubbed at TS-1 (resolve-by-name);
+  WP-C8 builds the Topaz-keyed registry + shape catalog.
+
+agents:
+  - name: classify
+    script: scripts/agentic_serving/classify.py
+
+  - name: decide
+    model_profile: agentic-tier-cheap-general
+    options:
+      think: false
+    depends_on: [classify]
+    # the clean latest turn — routing must not read conversation context
+    input_key: task
+    when: ${classify.needs_decider}
+    system_prompt: |
+      You route a user's turn to the right serving seat. Read the request and
+      decide what it is asking for.
+
+      Choose "code-seat" when the request is for a code ARTIFACT to be produced
+      or changed, even when phrased as a noun rather than a command.
+
+      Choose "explainer" when the request is for UNDERSTANDING in prose: an
+      explanation, comparison, description, or answer, with no code artifact
+      being requested.
+
+      Examples:
+      "a function that checks whether a number is prime" -> {"target": "code-seat"}
+      "a script to rename files in a folder" -> {"target": "code-seat"}
+      "fix the off-by-one in the loop" -> {"target": "code-seat"}
+      "the difference between a list and a tuple" -> {"target": "explainer"}
+      "how does async work in Python" -> {"target": "explainer"}
+
+      Respond with ONLY a JSON object, no other text and no code fences:
+      {"target": "code-seat"} or {"target": "explainer"}
+
+  - name: resolve
+    script: scripts/agentic_serving/resolve.py
+    depends_on: [classify, decide]
+
+  - name: seat
+    dispatch: "${resolve.target}"
+    input_key: dispatch_input
+    depends_on: [resolve]
+    # a gated build may run a bounded retry round (issue #89) — two rounds
+    # on the 32GB rig need headroom past the 300s default
+    timeout_seconds: 720
+
+  - name: seat_contract
+    script: scripts/agentic_serving/seat_contract.py
+    depends_on: [resolve, seat]
+
+  - name: shape
+    script: scripts/agentic_serving/shape.py
+    depends_on: [resolve, seat, seat_contract]
+
+  - name: form_gate
+    script: scripts/agentic_serving/form_gate.py
+    depends_on: [shape]
+
+  - name: emit
+    script: scripts/agentic_serving/emit.py
+    depends_on: [form_gate]

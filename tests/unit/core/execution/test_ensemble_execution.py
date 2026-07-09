@@ -80,9 +80,7 @@ class TestEnsembleExecutor:
         assert "results" in result, "result missing 'results' field"
         assert "metadata" in result, "result missing 'metadata' field"
         # Synthesis field exists but is None in new architecture
-        assert result["synthesis"] is None, (
-            "synthesis should be None in dependency-based arch"
-        )
+        assert "synthesis" not in result, "no synthesis key in dependency-based arch"
 
         # Verify agent results
         agent_results = result["results"]
@@ -272,8 +270,8 @@ class TestEnsembleExecutor:
 
             result = await executor.execute(config, input_data="Test analysis")
 
-        # In dependency-based architecture, synthesis is None
-        assert result["synthesis"] is None
+        # In dependency-based architecture, there is no synthesis key
+        assert "synthesis" not in result
         assert result["results"]["agent1"]["response"] == "Detailed analysis result"
 
     @pytest.mark.asyncio
@@ -754,7 +752,7 @@ class TestEnsembleExecutor:
         assert result["results"]["synthesizer"]["status"] == "success"
 
         # Should not have old coordinator-style synthesis
-        assert result["synthesis"] is None
+        assert "synthesis" not in result
 
     @pytest.mark.asyncio
     async def test_execute_streaming_with_progress_updates(
@@ -1614,7 +1612,7 @@ class TestEnsembleExecutor:
                     "interactive_mode": True,
                     "user_inputs_collected": 1,
                 },
-                "synthesis": None,
+                "deliverable": None,
             }
 
             # Execute ensemble - this should automatically detect interactive mode
@@ -2237,6 +2235,49 @@ class TestEnsembleExecutor:
 
         # Verify artifacts were saved (mocked)
         # The real implementation should handle save errors gracefully
+
+    @pytest.mark.asyncio
+    async def test_finalize_resolves_deliverable_from_terminal_node(
+        self, mock_ensemble_executor: Any
+    ) -> None:
+        """Finalization populates the single-deliverable contract (ADR-035 D1).
+
+        The terminal node (no agent depends on it) provides the
+        deliverable; the raw multi-agent results dict is never the
+        ensemble's output surface.
+        """
+        config = EnsembleConfig(
+            name="capability_ensemble",
+            description="coder/critic feed a terminal synthesizer",
+            agents=[
+                LlmAgentConfig(name="coder", model_profile="test-tester"),
+                LlmAgentConfig(name="critic", model_profile="test-tester"),
+                LlmAgentConfig(
+                    name="synthesizer",
+                    model_profile="test-tester",
+                    depends_on=["coder", "critic"],
+                ),
+            ],
+        )
+        start_time = time.time() - 1.0
+        result = ExecutionResult(
+            ensemble="capability_ensemble",
+            status="running",
+            input={"data": "Test input"},
+            results={
+                "coder": {"response": "draft", "status": "success"},
+                "critic": {"response": "review", "status": "success"},
+                "synthesizer": {"response": "final code", "status": "success"},
+            },
+            metadata=ExecutionMetadata(agents_used=3, started_at=start_time),
+        )
+
+        final_result = await mock_ensemble_executor._finalize_execution_results(
+            config, result, False, start_time
+        )
+
+        assert final_result.deliverable == "final code"
+        assert final_result.to_dict()["deliverable"] == "final code"
 
     @pytest.mark.asyncio
     async def test_execute_with_validation_config(

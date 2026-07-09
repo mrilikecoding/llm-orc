@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
+import yaml
 
+from llm_orc.core.config.ensemble_config import EnsembleLoader
 from llm_orc.schemas.agent_config import LlmAgentConfig, ScriptAgentConfig
 from llm_orc.services.handlers.validation_handler import ValidationHandler
 
@@ -315,3 +318,91 @@ class TestSetProjectContext:
         handler.set_project_context(ctx)
 
         assert handler._config_manager is new_config
+
+
+# ---------------------------------------------------------------------------
+# _collect_validation_errors — cross-ensemble cycle detection
+# ---------------------------------------------------------------------------
+
+
+class TestCollectValidationErrorsCrossEnsembleCycle:
+    """WP-A scenario refactor 1: validate_ensemble surfaces cross-ensemble
+    cycles through the MCP/web paths by running the public validator with
+    real search_dirs from the config manager. Previously the handler only
+    checked intra-ensemble cycles (assert_no_cycles) and silently missed
+    cross-ensemble cycles.
+    """
+
+    async def test_cross_ensemble_cycle_is_surfaced(self, tmp_path: Path) -> None:
+        """A → B → A submitted via validate_ensemble returns valid=false
+        with a cycle error derived from the public validator.
+        """
+        (tmp_path / "cyc-x.yaml").write_text(
+            yaml.dump(
+                {
+                    "name": "cyc-x",
+                    "description": "X",
+                    "agents": [{"name": "step", "ensemble": "cyc-y"}],
+                }
+            )
+        )
+        (tmp_path / "cyc-y.yaml").write_text(
+            yaml.dump(
+                {
+                    "name": "cyc-y",
+                    "description": "Y",
+                    "agents": [{"name": "step", "ensemble": "cyc-x"}],
+                }
+            )
+        )
+
+        cyc_x_config = EnsembleLoader().load_from_file(str(tmp_path / "cyc-x.yaml"))
+
+        config_manager = MagicMock()
+        config_manager.get_ensembles_dirs.return_value = [tmp_path]
+
+        find_ensemble = MagicMock(return_value=cyc_x_config)
+        get_all_profiles_fn: Any = MagicMock(return_value={})
+
+        handler = ValidationHandler(config_manager, find_ensemble, get_all_profiles_fn)
+
+        result = await handler.validate_ensemble({"ensemble_name": "cyc-x"})
+
+        assert result["valid"] is False
+        assert any("cross-ensemble cycle" in e for e in result["details"]["errors"])
+
+    async def test_acyclic_ensemble_not_flagged(self, tmp_path: Path) -> None:
+        """An ensemble with a valid reference graph passes the new check."""
+        (tmp_path / "ok-x.yaml").write_text(
+            yaml.dump(
+                {
+                    "name": "ok-x",
+                    "description": "X",
+                    "agents": [{"name": "step", "ensemble": "ok-y"}],
+                }
+            )
+        )
+        (tmp_path / "ok-y.yaml").write_text(
+            yaml.dump(
+                {
+                    "name": "ok-y",
+                    "description": "Y",
+                    "agents": [{"name": "worker", "script": "echo ok"}],
+                }
+            )
+        )
+
+        ok_x_config = EnsembleLoader().load_from_file(str(tmp_path / "ok-x.yaml"))
+
+        config_manager = MagicMock()
+        config_manager.get_ensembles_dirs.return_value = [tmp_path]
+
+        find_ensemble = MagicMock(return_value=ok_x_config)
+        get_all_profiles_fn: Any = MagicMock(return_value={})
+
+        handler = ValidationHandler(config_manager, find_ensemble, get_all_profiles_fn)
+
+        result = await handler.validate_ensemble({"ensemble_name": "ok-x"})
+
+        errors = result["details"]["errors"]
+        assert not any("cross-ensemble cycle" in e for e in errors)

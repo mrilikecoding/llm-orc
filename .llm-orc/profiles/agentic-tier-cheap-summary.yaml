@@ -1,0 +1,11 @@
+# Agentic-serving — cheap-tier dispatch target for `summarization`
+# (Cycle 5 / ADR-015 per-skill tier defaults).
+#
+# Smaller/faster than agentic-tier-cheap-general — summarization is the
+# workload Spike α (research-log 005g) classified as the library's
+# largest single skill share but does not require deep reasoning.
+name: agentic-tier-cheap-summary
+model: qwen3:1.7b
+provider: ollama
+cost_per_token: 0.0
+timeout_seconds: 90

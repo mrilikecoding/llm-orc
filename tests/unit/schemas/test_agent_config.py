@@ -177,6 +177,21 @@ class TestBaseAgentConfigFields:
         config = parse_agent_config(data)
         assert config.fan_out is True
 
+    def test_when_guard_predicate_accepted(self) -> None:
+        data: dict[str, Any] = {
+            "name": "build",
+            "model_profile": "gpt4",
+            "depends_on": ["gate"],
+            "when": "${gate.ok}",
+        }
+        config = parse_agent_config(data)
+        assert config.when == "${gate.ok}"
+
+    def test_when_defaults_to_none(self) -> None:
+        data: dict[str, Any] = {"name": "test", "model_profile": "gpt4"}
+        config = parse_agent_config(data)
+        assert config.when is None
+
 
 class TestEnsembleLoaderProducesPydanticConfigs:
     """Scenario 7: EnsembleLoader produces list[AgentConfig]."""
@@ -390,6 +405,65 @@ class TestEnsembleAgentDispatchedByAgentDispatcher:
         config = EnsembleAgentConfig(name="review", ensemble="code-review")
         result = AgentDispatcher._determine_agent_type(None, config)  # type: ignore[arg-type]
         assert result == "ensemble"
+
+
+class TestDynamicDispatchAgentConfigParsing:
+    """Scenario: Dynamic-dispatch agent config parsed from a `dispatch:` key.
+
+    The target ensemble is chosen at runtime from an upstream stage's output
+    (a `${ref}` template), unlike EnsembleAgentConfig's load-time `ensemble`.
+    """
+
+    def test_dynamic_dispatch_agent_parsed(self) -> None:
+        from llm_orc.schemas.agent_config import DynamicDispatchAgentConfig
+
+        data: dict[str, Any] = {
+            "name": "seat",
+            "dispatch": "${capability}",
+        }
+        config = parse_agent_config(data)
+        assert isinstance(config, DynamicDispatchAgentConfig)
+        assert config.dispatch == "${capability}"
+
+
+class TestDynamicDispatchDispatchedByAgentDispatcher:
+    """AgentDispatcher routes DynamicDispatchAgentConfig to 'dynamic_dispatch'."""
+
+    def test_isinstance_dispatch_for_dynamic_dispatch_agent(self) -> None:
+        from llm_orc.core.execution.phases.agent_dispatcher import (
+            AgentDispatcher,
+        )
+        from llm_orc.schemas.agent_config import DynamicDispatchAgentConfig
+
+        config = DynamicDispatchAgentConfig(name="seat", dispatch="${capability}")
+        result = AgentDispatcher._determine_agent_type(None, config)  # type: ignore[arg-type]
+        assert result == "dynamic_dispatch"
+
+
+class TestLoopAgentConfigParsing:
+    """Scenario: Loop agent config parsed from a `loop:` block."""
+
+    def test_loop_agent_parsed(self) -> None:
+        from llm_orc.schemas.agent_config import LoopAgentConfig
+
+        data: dict[str, Any] = {
+            "name": "resolve",
+            "loop": {"body": "attempt", "until": "${ok}", "max_iterations": 2},
+        }
+        config = parse_agent_config(data)
+        assert isinstance(config, LoopAgentConfig)
+        assert config.loop.body == "attempt"
+        assert config.loop.until == "${ok}"
+        assert config.loop.max_iterations == 2
+        assert config.loop.carry is None
+
+    def test_loop_requires_positive_max_iterations(self) -> None:
+        data: dict[str, Any] = {
+            "name": "resolve",
+            "loop": {"body": "attempt", "until": "${ok}", "max_iterations": 0},
+        }
+        with pytest.raises(ValidationError):
+            parse_agent_config(data)
 
 
 class TestOptionsFieldAccepted:

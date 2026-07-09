@@ -8,6 +8,7 @@ from typing import Any
 from llm_orc.core.config.ensemble_config import (
     EnsembleConfig,
     assert_no_cycles,
+    validate_ensemble_reference_graph,
 )
 from llm_orc.mcp.project_context import ProjectContext
 from llm_orc.mcp.utils import get_agent_attr as _get_agent_attr
@@ -65,6 +66,12 @@ class ValidationHandler:
 
         try:
             assert_no_cycles(config.agents)
+        except ValueError as e:
+            validation_errors.append(str(e))
+
+        search_dirs = [str(p) for p in self._config_manager.get_ensembles_dirs()]
+        try:
+            validate_ensemble_reference_graph(config.name, config.agents, search_dirs)
         except ValueError as e:
             validation_errors.append(str(e))
 

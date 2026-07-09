@@ -1,6 +1,13 @@
 name: code-review
 description: Comprehensive code review ensemble mixing local and cloud expertise for thorough analysis
 
+# ADR-015 per-skill metadata. Spike α (research log 005g, 2026-05-11)
+# classified this ensemble's primary Topaz skill as instruction_following
+# — the multi-agent flow demands structured output discipline more than
+# raw code generation. The synthesizer agent (senior-reviewer → tech-lead)
+# routes through the cheap-cloud-tier by default per per_skill_tier_defaults.
+topaz_skill: instruction_following
+
 default_task: |
   Review this code submission for a production system. Provide a thorough analysis covering:
 

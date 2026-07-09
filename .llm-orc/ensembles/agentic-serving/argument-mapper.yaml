@@ -1,0 +1,53 @@
+name: argument-mapper
+description: |
+  Single-agent capability ensemble that maps the logical structure of
+  an argument — premises, intermediate conclusions, final claim, and
+  logical gaps. Any skill framework whose workflow decomposes into an
+  argument-analysis sub-task can dispatch this ensemble via
+  `invoke_ensemble("argument-mapper", ...)`.
+
+  Output: a structured analysis with sections for premises,
+  intermediate conclusions, final claim, and logical gaps (where the
+  argument relies on unstated assumptions or makes leaps the premises
+  do not support).
+
+  Tagged `logical_reasoning` per the Topaz eight-skill taxonomy
+  (ADR-015). Cheap-tier defaults to qwen3:8b
+  (agentic-tier-cheap-general); on a Reflect verdict the Tier-Escalation
+  Router routes the next dispatch to deepseek-r1:8b
+  (agentic-tier-escalated-reasoning) — a reasoning-tuned model
+  appropriate to the logical-analysis workload.
+
+topaz_skill: logical_reasoning
+
+# ADR-025 §"Scope: always, for capability ensembles" — deliverable
+# routes through SessionArtifactStore; envelope.artifacts[0] carries
+# the typed reference. AS-7 amended: result-summarizer is skipped.
+output_substrate: artifact
+
+default_task: |
+  Map the logical structure of the argument in the provided text.
+  Produce a structured analysis with these sections (in this order):
+
+  **Premises** — the stated assumptions or starting points the
+  argument builds on. Quote or paraphrase each, one per bullet.
+
+  **Intermediate conclusions** — claims the argument derives from the
+  premises that are not themselves the final claim. List each with the
+  premises it draws on.
+
+  **Final claim** — the conclusion the argument is making. State it
+  clearly.
+
+  **Logical gaps** — points where the argument relies on unstated
+  assumptions, makes leaps the premises do not support, or contains
+  inferential weaknesses. Be specific: name what is missing rather
+  than vaguely flagging "weakness."
+
+  Output only the four sections. If the text does not contain a
+  discernible argument, output the single line: "No argument
+  structure detected."
+
+agents:
+  - name: mapper
+    model_profile: agentic-tier-cheap-general

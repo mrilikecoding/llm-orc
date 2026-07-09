@@ -1,0 +1,34 @@
+name: agentic-result-summarizer
+description: |
+  Default summarizer for agentic-serving's Orchestrator Tool Dispatch.
+  Consumes a JSON-encoded ensemble result (the full invoke_ensemble return
+  dict) and produces a short natural-language summary that enters the
+  orchestrator's context in place of the raw result. Per ADR-004 and AS-7,
+  summarization is a correctness requirement — without it, the orchestrator
+  accumulates context rot across multi-turn sessions.
+
+  This is a single-agent ensemble: the agent's response is the summary.
+  Operators can point `agentic_serving.summarizer.ensemble` at a different
+  ensemble to tune quality/cost tradeoffs.
+
+default_task: |
+  Summarize the provided JSON-encoded ensemble execution result.
+
+  Standard shape — summarize in two or three sentences. Capture the key
+  finding, any notable caveats, and the execution status. Output plain
+  text only.
+
+  Exception: the ``needs_client_tool`` retry-signal convention. If the
+  result contains a JSON object of the shape
+  ``{"needs_client_tool": {"tool": "<name>", "args": {...}}}`` — whether
+  as the top-level result, inside an agent's response, or nested under
+  ``synthesis`` — you MUST preserve that object verbatim in your output.
+  Emit it as valid JSON (not prose, not paraphrased) so the orchestrator
+  can parse and route it to the client tool at the turn boundary. If the
+  result carries both a ``needs_client_tool`` object and other content,
+  emit the JSON object alone — the signal is what the orchestrator
+  needs; prose around it confuses the routing.
+
+agents:
+  - name: summarizer
+    model_profile: agentic-summarizer

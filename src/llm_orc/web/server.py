@@ -15,7 +15,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from llm_orc.web.api import artifacts, ensembles, profiles, scripts
+from llm_orc.web.api import (
+    artifacts,
+    ensembles,
+    profiles,
+    scripts,
+    v1_chat_completions,
+    v1_models,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +85,8 @@ def create_app() -> FastAPI:
     app.include_router(profiles.router)
     app.include_router(scripts.router)
     app.include_router(artifacts.router)
+    app.include_router(v1_models.router)
+    app.include_router(v1_chat_completions.router)
 
     @app.get("/health")
     async def health() -> dict[str, str]:
