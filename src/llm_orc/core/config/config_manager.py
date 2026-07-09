@@ -373,10 +373,14 @@ class ConfigurationManager:
         }
 
         global_config = self._load_global_config()
-        global_section = global_config.get("agentic_serving", {})
+        global_section = global_config.get("agentic_serving") or {}
+        if not isinstance(global_section, dict):
+            global_section = {}
 
         local_config = self.load_project_config()
-        local_section = local_config.get("agentic_serving", {})
+        local_section = local_config.get("agentic_serving") or {}
+        if not isinstance(local_section, dict):
+            local_section = {}
 
         self._deep_merge_dict(defaults, global_section)
         self._deep_merge_dict(defaults, local_section)

@@ -573,3 +573,22 @@ agents:
 
                 assert model == "qwen3:0.6b"
                 assert provider == "ollama"
+
+    def test_agentic_serving_section_tolerates_a_bare_yaml_key(self) -> None:
+        """A bare `agentic_serving:` header (YAML null) or scalar value must
+        not crash config loading (it 500'd /v1/models)."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            with open(temp_path / "config.yaml", "w") as f:
+                f.write("agentic_serving:\n")
+
+            with patch.object(
+                ConfigurationManager,
+                "_get_global_config_dir",
+                return_value=temp_path,
+            ):
+                config_manager = ConfigurationManager()
+                config = config_manager.load_agentic_serving_config()
+
+                assert isinstance(config, dict)
+                assert "orchestrator" in config

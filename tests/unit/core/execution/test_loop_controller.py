@@ -63,3 +63,25 @@ class TestLoopTermination:
         assert seen == ["start", "fix"]
         assert outcome.iterations == 2
         assert outcome.terminated == "until"
+
+
+async def test_carry_returning_none_keeps_the_previous_input() -> None:
+    """A missing carry field must not feed a stringified None into the next
+    iteration — the previous input is retried instead."""
+    inputs: list[str] = []
+
+    async def body(inp: str) -> dict[str, object]:
+        inputs.append(inp)
+        return {"done": False}
+
+    controller = LoopController()
+    outcome = await controller.run(
+        body,
+        until=lambda output: bool(output.get("done")),
+        max_iterations=2,
+        carry=lambda output: None,
+        base_input="original",
+    )
+
+    assert inputs == ["original", "original"]
+    assert outcome.terminated == "exhausted"

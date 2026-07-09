@@ -24,9 +24,8 @@ description: |
   operator-curated catalog work at WP-C8.
 
 # The retry-loop body (issue #89): one gated round. Not registry-facing —
-# the OUTER build-gated shape serves the code-seat intent; this body is
-# resolved only by its loop node.
-topaz_skill: code_generation
+# no topaz_skill (it must not register as a capability part) and no serves
+# (it is not a catalog shape); it is resolved only by its loop node.
 
 agents:
   - name: test_writer

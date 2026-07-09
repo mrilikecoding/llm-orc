@@ -106,3 +106,11 @@ def test_shape_has_no_verdict_for_an_ungated_seat_envelope() -> None:
         {"results": {"envelope": {"response": json.dumps(envelope)}}},
     )
     assert shaped["accept"] is None
+
+
+def test_unreadable_routing_decision_fails_closed_to_prose() -> None:
+    """An empty/unparseable routing decision must not default the turn onto
+    the build path (a lost decision would otherwise emit an unrequested
+    file write when the seat prose happens to parse as Python)."""
+    out = _shape({}, {"results": {"out": {"response": "x = 1", "status": "success"}}})
+    assert out["build"] is False

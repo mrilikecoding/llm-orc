@@ -690,3 +690,19 @@ class TestLayer4LlmSummary:
 
         assert compaction.circuit_breaker_failures_for("s1") == 0
         assert compaction.circuit_breaker_suspended_for("s1") is False
+
+    def test_zero_worklog_budget_empties_the_worklog(self, tmp_path: Path) -> None:
+        """worklog[-0:] is the WHOLE string in Python — when the other
+        sections already consume the cap, the worklog must be emptied, not
+        kept unbounded."""
+        compaction = ConversationCompaction(
+            defaults=_defaults(session_notes_token_cap=10),
+            persistence_root=tmp_path,
+        )
+        notes = compaction.session_notes_for("s1")
+        notes.sections["current_state"] = "x" * 400  # >= the whole cap
+        notes.sections["worklog"] = "old entry\n" * 50
+
+        compaction._enforce_session_notes_cap(notes)
+
+        assert notes.sections["worklog"] == ""

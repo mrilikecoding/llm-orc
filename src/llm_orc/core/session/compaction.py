@@ -643,7 +643,8 @@ class ConversationCompaction:
         if len(worklog) > budget_for_worklog:
             # Keep the tail (most recent entries) within budget; clip
             # to a line boundary for readability.
-            tail = worklog[-budget_for_worklog:]
+            # worklog[-0:] is the WHOLE string — a zero budget means no tail
+            tail = worklog[-budget_for_worklog:] if budget_for_worklog > 0 else ""
             newline_at = tail.find("\n")
             if newline_at >= 0:
                 tail = tail[newline_at + 1 :]

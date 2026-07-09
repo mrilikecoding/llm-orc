@@ -102,7 +102,13 @@ def _render_context(messages: Sequence[Any]) -> str:
         if line:
             lines.append(line)
     rendered = "\n".join(lines)
-    return rendered[-_CTX_TOTAL_CAP:]
+    if len(rendered) > _CTX_TOTAL_CAP:
+        rendered = rendered[-_CTX_TOTAL_CAP:]
+        # drop the decapitated first line — gather's workspace extraction is
+        # line-anchored, and a partial '[wrote ...]' header corrupts it
+        cut = rendered.find("\n")
+        rendered = rendered[cut + 1 :] if cut >= 0 else rendered
+    return rendered
 
 
 def _render_write(message: Any) -> str | None:

@@ -229,3 +229,16 @@ class TestSingleAS2Routine:
         scan_admitted(ensembles_dir)
 
         assert "leaf-part" in calls
+
+
+def test_real_config_loop_body_is_not_a_registered_part() -> None:
+    """build-gated-round (the retry-loop body, issue #89) sorts BEFORE
+    code-generator; if it registered as a code_generation part, select_parts
+    would fill generation slots with the whole gated pipeline."""
+    from pathlib import Path
+
+    repo = Path(__file__).resolve().parents[3]
+    parts = capability_parts(repo / ".llm-orc" / "ensembles" / "agentic-serving")
+    gen = parts.get("code_generation", [])
+    assert "build-gated-round" not in gen
+    assert "code-generator" in gen
