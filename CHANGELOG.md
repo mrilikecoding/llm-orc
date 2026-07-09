@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.18.1] - 2026-07-09
+
+### Fixed
+- Web UI reads the renamed `deliverable` result key (with a `synthesis`
+  fallback for historical artifacts)
+- Test-suite flake: per-test global-config isolation stops pytest-xdist
+  workers racing on the real `~/.config/llm-orc`
+- Validate-before-load covers loop bodies and literal dispatch targets;
+  loop cycles reject at load instead of at the runtime depth limit
+- Ensemble reference failures name the malformed referenced sibling
+  instead of discrediting the valid root
+- The accept gate and emit now share one fence extractor (three divergent
+  copies could let the gate judge different code than shipped)
+- An explicitly empty `system_prompt` suppresses the generic fallback again
+
+### Changed
+- Serving hot path: shared per-project caller, mtime-keyed serving-ensemble
+  config cache, and turn-trace I/O off the event loop
+- Shared `_helpers` module for the agentic-serving script nodes
+- Tracked `agentic_serving:` config trimmed to the one consumed key;
+  defaults for unenforced budget/autonomy keys no longer ship
+
+
 ## [0.18.0] - 2026-07-09
 
 ### Added
