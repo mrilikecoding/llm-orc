@@ -119,37 +119,52 @@ def _render_context(messages: Sequence[Any]) -> str:
         rendered = rendered[cut + 1 :] if cut >= 0 else rendered
 
     task = _task_from(messages)
-    selected = _select_referenced_writes(conversational[: -len(tail) or None], task)
-    selected = [block for block in selected if block.splitlines()[0] not in rendered]
-    if selected:
-        selected_text = "\n".join(selected)[:_CTX_SELECTED_CAP]
+    selected = _select_written_files(conversational[: -len(tail) or None], task)
+    tail_paths = {
+        line.split("[wrote ", 1)[1].split("]", 1)[0].removesuffix(" (truncated)")
+        for line in rendered.splitlines()
+        if line.startswith("assistant: [wrote ")
+    }
+    blocks = [block for path, block in selected if path not in tail_paths]
+    if blocks:
+        selected_text = "\n".join(blocks)[:_CTX_SELECTED_CAP]
         rendered = f"{selected_text}\n{rendered}" if rendered else selected_text
     return rendered
 
 
-def _select_referenced_writes(older: Sequence[Any], task: str) -> list[str]:
-    """Older write blocks the latest task refers to (Stage 2, issue #82).
+def _select_written_files(older: Sequence[Any], task: str) -> list[tuple[str, str]]:
+    """Every conversation-written file's latest version, referenced-first
+    (Stage 2, issue #82).
 
     The client sends the full history every turn, so nothing is lost — only
-    windowed out. Selection is deterministic: a write is retrieved when the
-    task names its file, or names a class/def its body defines.
+    windowed out. Files are the workspace state generated code may import
+    (observed live: a build spuriously imported an un-referenced module), so
+    ALL of them are carried, ordered task-referenced first so cap pressure
+    drops the least relevant.
     """
     file_refs = {m.group(0).rsplit("/", 1)[-1] for m in _CTX_FILE_RE.finditer(task)}
     tokens = set(_CTX_TOKEN_RE.findall(task))
-    selected: list[str] = []
+    latest: dict[str, str] = {}
     for message in older:
         block = _render_write(message)
         if block is None:
             continue
         header = block.splitlines()[0]
+        path = header.split("[wrote ", 1)[1].split("]", 1)[0]
+        path = path.removesuffix(" (truncated)")
+        latest[path] = block  # later writes replace earlier versions
+
+    def referenced(item: tuple[str, str]) -> bool:
+        path, block = item
+        if path.rsplit("/", 1)[-1] in file_refs:
+            return True
         body = "\n".join(block.splitlines()[1:])
-        name_match = any(ref in header for ref in file_refs)
-        symbol_match = any(
+        return any(
             re.search(rf"\b(?:class|def)\s+{re.escape(t)}\b", body) for t in tokens
         )
-        if name_match or symbol_match:
-            selected.append(block)
-    return selected
+
+    items = list(latest.items())
+    return sorted(items, key=lambda item: (not referenced(item),))
 
 
 def _render_write(message: Any) -> str | None:

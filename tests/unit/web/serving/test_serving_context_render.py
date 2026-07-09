@@ -196,7 +196,10 @@ def test_out_of_tail_write_is_selected_by_symbol_match() -> None:
     assert "[wrote storage.py]" in rendered
 
 
-def test_unrelated_old_write_is_not_selected() -> None:
+def test_all_written_files_are_carried_as_workspace_state() -> None:
+    """Generated code may import ANY conversation file (observed live:
+    formatting.py spuriously imported storage), so every written file's
+    latest version is carried, not just task-referenced ones."""
     messages = [
         ChatMessage(
             role="assistant",
@@ -209,7 +212,30 @@ def test_unrelated_old_write_is_not_selected() -> None:
 
     rendered = _render_context(messages)
 
-    assert "[wrote unrelated.py]" not in rendered
+    assert "[wrote unrelated.py]" in rendered
+
+
+def test_only_the_latest_version_of_a_rewritten_file_is_selected() -> None:
+    messages = [
+        ChatMessage(
+            role="assistant",
+            content=None,
+            tool_calls=(_write_call("mod.py", "VERSION = 1"),),
+        ),
+        ChatMessage(
+            role="assistant",
+            content=None,
+            tool_calls=(_write_call("mod.py", "VERSION = 2"),),
+        ),
+        *_turnish(8),
+        ChatMessage(role="user", content="add a helper to mod.py"),
+    ]
+
+    rendered = _render_context(messages)
+
+    assert rendered.count("[wrote mod.py]") == 1
+    assert "VERSION = 2" in rendered
+    assert "VERSION = 1" not in rendered
 
 
 def test_selected_write_is_not_duplicated_when_already_in_the_tail() -> None:
