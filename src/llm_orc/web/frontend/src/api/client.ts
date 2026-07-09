@@ -83,12 +83,14 @@ export interface ArtifactDetail {
     error?: string
     duration_ms?: number
   }[]
+  deliverable?: string
   synthesis?: string
 }
 
 export interface ExecutionResult {
   status: string
   results: Record<string, { response?: string; error?: string }>
+  deliverable?: string
   synthesis?: string
 }
 

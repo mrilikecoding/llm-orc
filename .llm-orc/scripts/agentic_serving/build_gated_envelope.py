@@ -14,21 +14,17 @@ collapse preservation).
 from __future__ import annotations
 
 import json
-import re
 import sys
 
-
-def _payload(raw: str) -> dict[str, object]:
-    try:
-        data = json.loads(raw)
-    except (json.JSONDecodeError, TypeError):
-        return {}
-    return data if isinstance(data, dict) else {}
+from _helpers import deps as _deps
+from _helpers import extract_code as _extract_code
+from _helpers import payload as _payload
+from _helpers import response as _response
+from _helpers import terminal as _terminal
 
 
-def _deps(payload: dict[str, object]) -> dict[str, object]:
-    deps = payload.get("dependencies", {})
-    return deps if isinstance(deps, dict) else {}
+
+
 
 
 def _executor_report(deps: dict[str, object]) -> str:
@@ -39,39 +35,9 @@ def _executor_report(deps: dict[str, object]) -> str:
     return str(parsed.get("report", "")) if isinstance(parsed, dict) else ""
 
 
-def _response(dep: object) -> str:
-    return dep.get("response", "") if isinstance(dep, dict) else ""
 
 
-def _terminal(text: str) -> str:
-    current = text
-    for _ in range(6):
-        try:
-            obj = json.loads(current)
-        except (json.JSONDecodeError, TypeError):
-            return current
-        if not isinstance(obj, dict):
-            return current
-        if isinstance(obj.get("deliverable"), str):
-            current = obj["deliverable"]
-            continue
-        if isinstance(obj.get("output"), str):
-            current = obj["output"]
-            continue
-        results = obj.get("results")
-        if isinstance(results, dict) and results:
-            node = results[list(results.keys())[-1]]
-            current = node.get("response", "") if isinstance(node, dict) else str(node)
-            continue
-        return current
-    return current
 
-
-def _extract_code(text: str) -> str:
-    blocks = re.findall(r"```(?:[a-zA-Z0-9_+-]+)?\n(.*?)```", text, re.DOTALL)
-    if blocks:
-        return "\n".join(block.strip() for block in blocks)
-    return text.strip()
 
 
 def _verdict(deps: dict[str, object]) -> dict[str, object]:

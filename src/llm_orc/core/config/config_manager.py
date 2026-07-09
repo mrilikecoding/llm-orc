@@ -360,16 +360,12 @@ class ConfigurationManager:
         Global ``config.yaml`` overlays defaults; local project
         ``config.yaml`` overlays global.
         """
+        # Post-collapse only the orchestrator key is consumed (the /v1/models
+        # allowlist default). Shipping defaults for budget/autonomy/plexus
+        # keys nothing enforces invited operators to set ceilings that were
+        # silently ignored (issue #95).
         defaults: dict[str, Any] = {
             "orchestrator": {"model_profile": "default"},
-            "budget": {"turn_limit": 500, "token_limit": 10_000_000},
-            "autonomy": {"default_level": "operator-as-tool-user"},
-            "plexus": {"enabled": False},
-            "overrides": {
-                "allow_budget_override": True,
-                "max_turn_limit": 1_000,
-                "max_token_limit": 50_000_000,
-            },
         }
 
         global_config = self._load_global_config()

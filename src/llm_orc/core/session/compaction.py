@@ -1,5 +1,9 @@
 """Conversation Compaction five-layer pipeline (WP-E4, ADR-012).
 
+NOT YET WIRED into the serving path: reserved for roadmap
+Stage 2 (lossless session record, issue #82) -- see
+docs/serving-roadmap.md (issue #95 marker).
+
 Per ``docs/serving.md`` §Module:
 Conversation Compaction (L2; new in Cycle 4).
 

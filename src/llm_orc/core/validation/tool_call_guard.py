@@ -1,5 +1,9 @@
 """Tool-call structural validation guard (ADR-017, WP-C4).
 
+NOT YET WIRED into the serving path: reserved for roadmap
+Stage 3 (client execution surface, issue #83) -- see
+docs/serving-roadmap.md (issue #95 marker).
+
 Per ``docs/serving.md`` §Orchestrator Tool
 Dispatch (extended in Cycle 4 per ADR-017). The guard is interposed
 between the orchestrator's response and the dispatch path: it scans

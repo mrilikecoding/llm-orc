@@ -13,6 +13,11 @@ CONTENT; the serving classify owns the DESTINATION path — shape combines them.
 from __future__ import annotations
 
 import json
+
+from _helpers import extract_code as _extract_code
+from _helpers import payload as __payload
+from _helpers import response as _response
+from _helpers import terminal as _terminal
 import re
 import sys
 
@@ -25,51 +30,15 @@ def _deps(raw: str) -> dict:
     return data.get("dependencies", {}) if isinstance(data, dict) else {}
 
 
-def _response(dep: object) -> str:
-    return dep.get("response", "") if isinstance(dep, dict) else ""
 
 
-def _terminal(text: str) -> str:
-    """The child ensemble's deliverable, unwrapping the layers the engine adds.
-
-    A child ensemble result carries ``deliverable`` (the terminal node's output);
-    an inline-shell script node wraps its stdout as ``{"success", "output"}``; a
-    nested result carries ``results``. Peel these until a plain deliverable
-    string remains (a model seat's raw text, or a script seat's output).
-    """
-    current = text
-    for _ in range(6):
-        try:
-            obj = json.loads(current)
-        except (json.JSONDecodeError, TypeError):
-            return current
-        if not isinstance(obj, dict):
-            return current
-        if isinstance(obj.get("deliverable"), str):
-            current = obj["deliverable"]
-            continue
-        if isinstance(obj.get("output"), str):
-            current = obj["output"]
-            continue
-        results = obj.get("results")
-        if isinstance(results, dict) and results:
-            node = results[list(results.keys())[-1]]
-            current = node.get("response", "") if isinstance(node, dict) else str(node)
-            continue
-        return current
-    return current
 
 
-def _extract_code(text: str) -> str:
-    stripped = text.strip()
-    match = re.search(r"```(?:[a-zA-Z0-9_+-]+)?\n(.*?)```", stripped, re.DOTALL)
-    if match:
-        return match.group(1).strip()
-    return stripped
 
 
 def main() -> None:
-    deps = _deps(sys.stdin.read().strip())
+    deps_map = __payload(sys.stdin.read().strip()).get("dependencies", {})
+    deps = deps_map if isinstance(deps_map, dict) else {}
     generated = _terminal(_response(deps.get("generate", {})))
     code = _extract_code(generated)
     summary = code.splitlines()[0][:80] if code.strip() else "code deliverable"

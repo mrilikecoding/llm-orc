@@ -18,6 +18,20 @@ _project_root = Path(__file__).resolve().parent.parent
 
 
 @pytest.fixture(autouse=True)
+def _isolated_global_config(
+    tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Point the global config at a per-test temp dir (issue #86).
+
+    Tests that construct ConfigurationManager without mocking otherwise
+    provision the REAL ~/.config/llm-orc — a shared-state race under
+    pytest-xdist workers and a mutation of the developer's machine. Tests
+    that assert on specific XDG behavior override the env themselves.
+    """
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path_factory.mktemp("xdg")))
+
+
+@pytest.fixture(autouse=True)
 def _reset_http_connection_pool() -> Generator[None, None, None]:
     """Reset HTTPConnectionPool singleton between tests.
 

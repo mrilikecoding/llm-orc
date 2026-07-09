@@ -15,6 +15,7 @@ the ensemble.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import uuid
 from collections.abc import AsyncIterator, Sequence
@@ -229,6 +230,21 @@ class ServingEnsembleCaller:
         self._project_dir = Path(project_dir)
         self._ensemble = ensemble
         self._trace_root = trace_root or (self._project_dir / ".serve-trace")
+        # (path, mtime) -> loaded config: skips the YAML reload (and the
+        # rglob fallback walk) on every turn while still picking up live
+        # edits to the serving ensemble (issue #93)
+        self._config_cache: tuple[Path, float, Any] | None = None
+
+    def _load_config(self) -> Any:
+        path = _find_ensemble(self._project_dir, self._ensemble)
+        mtime = path.stat().st_mtime
+        if self._config_cache is not None:
+            cached_path, cached_mtime, cached = self._config_cache
+            if cached_path == path and cached_mtime == mtime:
+                return cached
+        config = EnsembleLoader().load_from_file(str(path))
+        self._config_cache = (path, mtime, config)
+        return config
 
     async def run(self, context: SessionContext) -> AsyncIterator[OrchestratorChunk]:
         if not context.tools:
@@ -247,12 +263,12 @@ class ServingEnsembleCaller:
             yield chunk
 
     async def _serve(self, task: str, conversation: str = "") -> dict[str, Any]:
-        config = EnsembleLoader().load_from_file(
-            str(_find_ensemble(self._project_dir, self._ensemble))
-        )
+        config = self._load_config()
         executor = ExecutorFactory.create_root_executor(project_dir=self._project_dir)
         result = await executor.execute(
             config, json.dumps({"task": task, "context": conversation})
         )
-        emit_turn_trace(config.name, result, self._trace_root)
+        # blocking file I/O off the event loop so concurrent SSE streams
+        # never stall on the trace flush (issue #93)
+        await asyncio.to_thread(emit_turn_trace, config.name, result, self._trace_root)
         return _serve_outcome(result)

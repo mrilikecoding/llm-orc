@@ -69,7 +69,7 @@ async function executeEnsemble() {
     executeResult.value = {
       status: 'error',
       results: {},
-      synthesis: e instanceof Error ? e.message : 'Unknown error',
+      deliverable: e instanceof Error ? e.message : 'Unknown error',
     }
   } finally {
     executing.value = false
@@ -253,10 +253,10 @@ function ExecuteTab() {
             ))}
           </div>
 
-          {executeResult.value.synthesis && (
+          {(executeResult.value.deliverable ?? executeResult.value.synthesis) && (
             <article style={{ borderColor: 'var(--pico-primary)', marginTop: '0.75rem' }}>
               <header><small className="muted-label">Synthesis</small></header>
-              <p>{executeResult.value.synthesis}</p>
+              <p>{executeResult.value.deliverable ?? executeResult.value.synthesis}</p>
             </article>
           )}
         </div>
