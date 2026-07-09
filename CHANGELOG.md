@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.18.2] - 2026-07-09
+
+### Added
+- Referent selection over the full wire history (issue #82, Stage 2 core):
+  every conversation-written file's latest version is carried into the
+  turn context, task-referenced files first under an independent cap
+- `LLM_ORC_SERVE_WIRE_LOG=<path>`: per-request message-shape JSONL (roles,
+  lengths, rolling prefix hashes; never content) for observing client-side
+  history rewrites on the wire
+
+### Fixed
+- The accept-gate runner collects `unittest.TestCase` classes, not just
+  `test_*` functions ("no test_* functions found" rejected good rounds)
+- Selected write blocks are dropped whole under cap pressure instead of
+  sliced mid-body, so gather never materializes a corrupted file
+- A write sliced off the front of the tail render by the tail char cap is
+  selected back into context instead of lost
+
 ## [0.18.1] - 2026-07-09
 
 ### Fixed
