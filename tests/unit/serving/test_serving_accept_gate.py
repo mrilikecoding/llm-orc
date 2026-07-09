@@ -123,6 +123,50 @@ def test_gate_rejects_when_executor_fails() -> None:
     assert g["accept"] is False
 
 
+def _gate_no_judge(
+    executor_resp: dict[str, Any], gather_resp: dict[str, Any] | None = None
+) -> dict[str, Any]:
+    """Drive the gate as the held round wires it: executor + gather, no judge."""
+    deps: dict[str, Any] = {"executor": {"response": json.dumps(executor_resp)}}
+    if gather_resp is not None:
+        deps["gather"] = {"response": json.dumps(gather_resp)}
+    out = subprocess.run(
+        [sys.executable, str(GATE)],
+        input=json.dumps({"dependencies": deps}),
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    result: dict[str, Any] = json.loads(out)
+    return result
+
+
+def test_gate_carries_round1_adequacy_on_a_held_round() -> None:
+    """The TDD retry round (issue #100): the held path only fires when round
+    1's judge passed the tests, so with no judge seat the gate carries that
+    verdict deterministically — the executor stays the live ground truth."""
+    g = _gate_no_judge({"tests_pass": True}, {"held": True})
+    assert g["tests_adequate"] is True
+    assert g["accept"] is True
+    assert "carried" in g["reason"]
+
+
+def test_gate_held_round_still_rejects_when_tests_fail() -> None:
+    g = _gate_no_judge({"tests_pass": False}, {"held": True})
+    assert g["accept"] is False
+    assert g["tests_adequate"] is True
+    # the carried verdict must not mask the live failure cause
+    assert "tests did not pass" in g["reason"]
+
+
+def test_gate_without_judge_and_not_held_rejects() -> None:
+    """No judge and no held flag is a miswired shape, not a free pass."""
+    g = _gate_no_judge({"tests_pass": True}, {"held": False})
+    assert g["accept"] is False
+    g2 = _gate_no_judge({"tests_pass": True})
+    assert g2["accept"] is False
+
+
 def test_quoted_string_false_from_the_judge_does_not_pass_the_gate() -> None:
     """Small models sometimes quote booleans; bool("false") is True in
     Python, which would wave inadequate tests through the gate."""

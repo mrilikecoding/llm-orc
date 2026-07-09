@@ -37,8 +37,11 @@ parity-percentage arm (Haiku 4.5 / Sonnet 5 behind OpenCode as baseline).
 ## Current state (2026-07-09)
 
 Released: **v0.18.0** (agentic serving) and **v0.18.1** (review-debt sweep).
-Pending review: **PR #99** — Stage 2 core (wire observation + full-history
-selection + gate-runner TestCase support).
+Merged: **PR #99** — Stage 2 core (wire observation + full-history
+selection + gate-runner TestCase support), released as **v0.18.2**.
+In flight: the `tdd-retry-loop` branch — #100 shipped plus the 2026-07-09
+live-diagnosis fixes (reject-noise filter, deliverable test-fence pollution,
+reflection-test prompt ban, `held_round` + trace-depth observability).
 
 Shipped capability: build (accept-gated, bounded retry), explain,
 edit-existing (conversation-written files), within-session memory with
@@ -56,17 +59,26 @@ Key empirical facts the next work builds on:
 - The dominant hard-turn failure is now **spec-freedom divergence**:
   independently resampled tests and code disagree on choices the spec
   leaves open.
+- **Round-1 test quality gates everything** (2026-07-09 live diagnosis):
+  the held TDD retry fires only when round 1's tests collected AND were
+  judged adequate, so judge adequacy (#84) and test-writer quality (#98)
+  directly bound the retry's live win-rate. The 8b seat's reflection-test
+  mode (hasattr/callable — fails right code, passes wrong code) was banned
+  in the seat prompt; failures moved to ordinary code/test disagreements.
 
 ## The path, in order of leverage
 
-### 1. TDD retry loop (#100) — next up
+### 1. TDD retry loop (#100) — SHIPPED (tdd-retry-loop branch)
 
-On a gate reject where round 1's tests loaded and ran, hold those tests
-fixed as the spec and regenerate only the code (regenerate tests only when
-they failed to collect). Directly attacks the spec-freedom failure (the one
-lost turn in the 9-turn battery) and strengthens ADR-048's
-criteria-primacy: round 1's tests become round 2's concrete criteria.
-Exit gate: the cli.py-style integration turn passes; ladder ≥ 9/9.
+The loop body is now a deterministic router: a reject whose tests collected
+and were judged adequate carries them under a HELD TESTS sentinel, and
+round 2 dispatches to `build-code-round` — code only, adequacy carried,
+executor as the live gate. Proven hermetically (the real graph through the
+real engine) and live (route → held round → qwen3:8b regenerated code →
+accept, `held_round: true`). Remaining exit gate: a full clean-session
+ladder rerun once the #84/#98 bottleneck stops masking it — live diagnosis
+showed the held path's entry condition is judge adequacy on round 1, which
+moves the gate integrity pair up in leverage.
 
 ### 2. Client execution surface (#83)
 
@@ -77,14 +89,17 @@ the tool-mapping step (resolve emit outcomes against the client's
 advertised tools instead of the hardcoded `write`). Closes run-tests and
 pre-existing-file editing — the two biggest remaining parity holes.
 
-### 3. Gate integrity pair (#98, #84)
+### 3. Gate integrity pair (#98, #84) — raised in leverage
 
 #98: test-writing turns validate a shadowed composite in the shared exec
 namespace — route "write tests" to a dedicated shape (the deliverable IS
 the test file, run against the materialized workspace alone). #84: measure
 judge false-reject rate on fixtures (with retries wired, judge conservatism
 is the visible bottleneck on hard turns) and revisit ADR-048 §5's
-AND-vs-weighted composition with data.
+AND-vs-weighted composition with data. The 2026-07-09 diagnosis makes this
+pair the TDD loop's gatekeeper: round-1 adequacy is the held path's entry
+condition, so measuring and tuning it is what converts #100 from
+mechanism-proven to ladder-visible.
 
 ### 4. Shapes and seat tiering
 
@@ -122,8 +137,9 @@ removal).
 
 ## Issue index
 
-Path: #100 TDD retry · #83 client execution · #98 test-shape gate ·
-#84 judge measurement · #82 memory remainder · #90 llama.cpp ·
-#85 sandbox hardening · #93/#95 remainders.
+Path: #98/#84 gate integrity (raised) · #83 client execution ·
+#82 memory remainder · #90 llama.cpp · #85 sandbox hardening ·
+#93/#95 remainders.
 Shipped: #87 #88 #89 (v0.18.0) · #86 #91 #92 #94 #96 (v0.18.1) ·
-#82-core + gate-runner TestCase support (PR #99).
+#82-core + gate-runner TestCase support (v0.18.2, PR #99) ·
+#100 TDD retry + live-diagnosis fixes (tdd-retry-loop branch).

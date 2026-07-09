@@ -55,6 +55,11 @@ _CTX_SELECTED_CAP = 4000
 _CTX_FILE_RE = re.compile(r"\b[\w./-]+\.(?:py|js|ts|json|md|txt|ya?ml|sh|go|rs)\b")
 _CTX_TOKEN_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]{2,}")
 
+# The serve's own reject-status surface (emit.py composes it). In-session
+# rejects accumulate on the append-only wire; rendered back into generation
+# seats they are noise, not conversation (live finding 2026-07-09).
+_SERVE_STATUS_PREFIX = "Another round needed:"
+
 
 def _task_from(messages: Sequence[Any]) -> str:
     """The latest user message — clients send the full history every turn.
@@ -210,6 +215,8 @@ def _render_text(message: Any, role: str) -> str | None:
     content, keeping the transcript line-anchored for workspace extraction."""
     content = getattr(message, "content", None)
     if isinstance(content, str) and content.strip():
+        if role == "assistant" and content.strip().startswith(_SERVE_STATUS_PREFIX):
+            return None
         flat = " ".join(content.strip().split())
         return f"{role}: {flat[:_CTX_TEXT_CAP]}"
     return None

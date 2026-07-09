@@ -1,0 +1,31 @@
+name: build-round
+description: |
+  The retry loop's body (issue #100): a deterministic router over the two
+  round shapes. route reads the loop-carried input — round 1 is the bare
+  turn (fresh TDD round); a rejected round whose tests collected and were
+  judged adequate carries them under the HELD TESTS sentinel, and the held
+  round holds those tests as the spec and regenerates only the code.
+  dispatch fills the chosen round; unwrap peels the dispatch wrapper so the
+  loop's until/carry predicates keep reading the bare ADR-024 round
+  envelope. Deterministic control: the route is a substring check on a
+  sentinel only the envelope composes — no model judgment in the decision.
+
+# Not registry-facing — no topaz_skill (it must not register as a capability
+# part) and no serves (it is not a catalog shape); it is resolved only by
+# build-gated's loop node.
+
+agents:
+  - name: route
+    script: scripts/agentic_serving/route_round.py
+
+  - name: dispatch
+    dispatch: "${route.target}"
+    input_key: round_input
+    depends_on: [route]
+    # one full gated round (3 model calls on the 32GB rig) needs headroom
+    # past the 300s default; the outer loop node bounds the total
+    timeout_seconds: 600
+
+  - name: unwrap
+    script: scripts/agentic_serving/dispatch_unwrap.py
+    depends_on: [dispatch]

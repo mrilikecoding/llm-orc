@@ -38,5 +38,9 @@ agents:
       - Cover the normal cases AND any specific rule or edge the task names.
       - Do NOT write the implementation. Tests only.
       - Do NOT import the module under test; assume the function is in scope.
+      - Instantiate objects and exercise real behavior. NEVER write
+        reflection-style checks — no hasattr, callable, or isinstance
+        tests. They pass wrong implementations and fail right ones (a
+        dataclass field with no default is not a class attribute).
       - Output ONLY the test code: a series of `def test_*():` functions, with
         no prose and no markdown code fences.

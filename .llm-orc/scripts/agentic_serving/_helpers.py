@@ -11,12 +11,19 @@ different code than emit shipped.
 
 from __future__ import annotations
 
+import ast
 import json
 import re
 from typing import Any
 
 # Fences tagged with a shell-ish language are usage examples, not code.
 SHELL_LANGS = {"bash", "sh", "shell", "console", "zsh", "text"}
+
+# The TDD retry sentinel (issue #100): a rejected round whose tests collected
+# and were judged adequate carries them under this marker; route dispatches
+# the held round on it, and gather reads the tests back out. One constant —
+# the envelope writes it, route and gather read it.
+HELD_TESTS_MARKER = "[HELD TESTS: round 1 spec; regenerate ONLY the code]"
 
 _FENCE_RE = re.compile(r"```([a-zA-Z0-9_+-]*)\n(.*?)```", re.DOTALL)
 
@@ -70,18 +77,47 @@ def terminal(text: str) -> str:
     return current
 
 
-def extract_code(text: str) -> str:
+def extract_code(text: str, *, drop_test_blocks: bool = False) -> str:
     """The code deliverable from a (possibly chatty) seat response.
 
     Non-shell fenced blocks joined; falls back to all fences, then to the
     raw text. The ONE set of semantics for the gate, the envelope, and
     emit — divergent copies meant the gate could approve code that was not
     the code shipped.
+
+    ``drop_test_blocks`` is for the CODE consumers only: seat models
+    sometimes emit the code and a copy of the tests as two fences, and
+    joining them ships a file with the test suite embedded. Pure-test
+    blocks are dropped when a non-test block exists; the tests extraction
+    never sets this (test blocks are its point).
     """
     tagged = _FENCE_RE.findall(text)
     blocks = [
         body for lang, body in tagged if lang.lower() not in SHELL_LANGS
     ] or [body for _, body in tagged]
+    if drop_test_blocks and len(blocks) > 1:
+        non_test = [block for block in blocks if not _is_pure_test_block(block)]
+        blocks = non_test or blocks
     if blocks:
         return "\n".join(block.strip() for block in blocks)
     return text.strip()
+
+
+def _is_pure_test_block(block: str) -> bool:
+    """A parsed block whose top-level defs/classes are all test-named
+    (imports and docstrings allowed). Non-parsing blocks are kept."""
+    try:
+        tree = ast.parse(block)
+    except SyntaxError:
+        return False
+    named = [
+        node
+        for node in tree.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+    ]
+    if not named:
+        return False
+    return all(
+        node.name.startswith("test_") or node.name.startswith("Test")
+        for node in named
+    )

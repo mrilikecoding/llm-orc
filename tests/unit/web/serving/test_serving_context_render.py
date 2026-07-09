@@ -283,6 +283,26 @@ def test_selected_write_is_not_duplicated_when_already_in_the_tail() -> None:
     assert rendered.count("[wrote models.py]") == 1
 
 
+def test_serve_reject_status_messages_are_excluded_from_the_render() -> None:
+    """'Another round needed: ...' is the serve's own reject-status surface
+    (emit.py), not conversation content — in-session rejects accumulate on
+    the append-only wire and feed generation seats as noise (live finding
+    2026-07-09: three consecutive storage.py rejects in-session while the
+    same task accepted via direct invoke without the noise)."""
+    messages = [
+        ChatMessage(role="user", content="Create storage.py with TaskStore"),
+        ChatMessage(
+            role="assistant", content="Another round needed: tests did not pass"
+        ),
+        ChatMessage(role="user", content="try again"),
+    ]
+
+    rendered = _render_context(messages)
+
+    assert "Another round needed" not in rendered
+    assert "user: Create storage.py with TaskStore" in rendered
+
+
 def test_write_truncated_out_of_the_tail_render_is_still_selected() -> None:
     """A write inside the 8-message tail window can still be sliced off the
     FRONT of the tail render by the tail char cap — it must then be selected
