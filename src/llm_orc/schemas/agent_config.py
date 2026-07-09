@@ -5,7 +5,7 @@ Discriminated union for agent configurations: LLM, Script, and
 with validated, typed models.
 """
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -19,6 +19,12 @@ class BaseAgentConfig(BaseModel):
     depends_on: list[str | dict[str, Any]] = Field(default_factory=list)
     fan_out: bool = False
     input_key: str | None = None
+
+    # Input-scoping (isolation primitive): "dependencies" composes the node's
+    # input from its dependency results only, omitting the ensemble base input.
+    # Verifier seats use this so context threaded into a shape's base input
+    # never reaches them. None (default) keeps the full composition.
+    input_scope: Literal["dependencies"] | None = None
 
     # Guard predicate (control-flow primitive): the node is skipped at
     # execution time when this evaluates false against upstream results.
