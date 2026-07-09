@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.18.5] - 2026-07-09
+
+### Added
+- The write-tests shape (issue #98): test-primary turns route via the new
+  `tests-seat` intent to a dedicated shape — one test source, the
+  deliverable executed against the materialized workspace alone, the
+  executor-echoed tests shipped as the artifact. The shadowed-composite
+  wrong accept (the gate validating a composite while the shipped test
+  file carried a broken test) is structurally impossible
+- Executor failure reports carry the failing source line, so retry rounds
+  see which expectation disagreed with the workspace
+
+### Changed
+- test-writer seat prompt: bans bare assertRaises/assertRaisesRegex calls
+  (unittest methods that NameError outside a class) and exception-message
+  assertions (spec-free; the str(KeyError) quoting gotcha)
+
 ## [0.18.4] - 2026-07-09
 
 ### Added
