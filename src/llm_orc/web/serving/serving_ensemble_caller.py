@@ -55,6 +55,16 @@ _CTX_SELECTED_CAP = 4000
 _CTX_FILE_RE = re.compile(r"\b[\w./-]+\.(?:py|js|ts|json|md|txt|ya?ml|sh|go|rs)\b")
 _CTX_TOKEN_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]{2,}")
 
+# Client-read file blocks (issue #83): whole-file-or-refuse — a truncated
+# module fails imports in the sandbox, so an over-cap read refuses honestly
+# instead of materializing a corrupted file.
+_READ_FILE_CAP = 24576
+_READ_FAIL_REASON_CAP = 200
+# OpenCode's read tool returns a line-number gutter ("00001| ..."); strip it
+# only when every non-empty line carries one (assumption to verify against
+# the captured wire — see the live-validation task).
+_LINE_NUM_GUTTER_RE = re.compile(r"^\s*\d+\| ?")
+
 # The serve's own reject-status surface (emit.py composes it). In-session
 # rejects accumulate on the append-only wire; rendered back into generation
 # seats they are noise, not conversation (live finding 2026-07-09).
@@ -133,12 +143,28 @@ def _render_context(messages: Sequence[Any]) -> str:
         for line in rendered.splitlines()
         if line.startswith("assistant: [wrote ")
     }
-    blocks = [block for path, block in selected if path not in tail_paths]
-    kept = _whole_blocks_within_cap(blocks)
+    write_blocks = [block for path, block in selected if path not in tail_paths]
+    kept = _whole_blocks_within_cap(write_blocks)
+    kept = _select_read_blocks(messages, task, tail_paths) + kept
+
     if kept:
         selected_text = "\n".join(kept)
         rendered = f"{selected_text}\n{rendered}" if rendered else selected_text
     return rendered
+
+
+def _select_read_blocks(
+    messages: Sequence[Any], task: str, tail_paths: set[str]
+) -> list[str]:
+    """Latest read block per path (issue #83), joined from the FULL history —
+    exempt from the selected-block cap: dropping one would make classify
+    re-request it (a read loop). A later write of the same path supersedes."""
+    written_paths = {path for path, _ in _select_written_files(list(messages), task)}
+    latest_reads: dict[str, str] = {}
+    for path, block in _read_blocks(messages):
+        if path not in written_paths and path not in tail_paths:
+            latest_reads[path] = block
+    return list(latest_reads.values())
 
 
 def _whole_blocks_within_cap(blocks: list[str]) -> list[str]:
@@ -200,7 +226,11 @@ def _render_write(message: Any) -> str | None:
             arguments = json.loads(function.get("arguments", ""))
         except (json.JSONDecodeError, TypeError):
             continue
-        if isinstance(arguments, dict) and arguments.get("filePath"):
+        if (
+            isinstance(arguments, dict)
+            and arguments.get("filePath")
+            and "content" in arguments
+        ):
             body = str(arguments.get("content", ""))
             if len(body) > _CTX_FILE_CAP:
                 # marked so gather never materializes a corrupted file
@@ -208,6 +238,77 @@ def _render_write(message: Any) -> str | None:
                 return f"{header}\n{body[:_CTX_FILE_CAP]}"
             return f"assistant: [wrote {arguments['filePath']}]\n{body}"
     return None
+
+
+def _read_shaped_arguments(call: Any) -> dict[str, Any] | None:
+    """Parsed arguments of a read-shaped tool call (filePath, no content)."""
+    function = call.get("function", {}) if isinstance(call, dict) else {}
+    try:
+        arguments = json.loads(function.get("arguments", ""))
+    except (json.JSONDecodeError, TypeError):
+        return None
+    if (
+        isinstance(arguments, dict)
+        and arguments.get("filePath")
+        and "content" not in arguments
+    ):
+        return arguments
+    return None
+
+
+def _read_call_paths(messages: Sequence[Any]) -> dict[str, str]:
+    """tool_call_id -> filePath for every read-shaped call in the history."""
+    paths: dict[str, str] = {}
+    for message in messages:
+        for call in getattr(message, "tool_calls", ()) or ():
+            arguments = _read_shaped_arguments(call)
+            if arguments is not None and isinstance(call, dict) and call.get("id"):
+                paths[str(call["id"])] = str(arguments["filePath"])
+    return paths
+
+
+def _normalize_read(content: str) -> str:
+    """Client read output as plain source: strip a <file> wrapper and a
+    uniform line-number gutter when present."""
+    lines = content.strip().splitlines()
+    if lines and lines[0].strip() == "<file>":
+        lines = lines[1:]
+    if lines and lines[-1].strip() == "</file>":
+        lines = lines[:-1]
+    non_empty = [line for line in lines if line.strip()]
+    if non_empty and all(_LINE_NUM_GUTTER_RE.match(line) for line in non_empty):
+        lines = [_LINE_NUM_GUTTER_RE.sub("", line, count=1) for line in lines]
+    return "\n".join(lines).strip()
+
+
+def _render_read_block(path: str, raw: str) -> str:
+    """A read result as a context block (issue #83 grammar). Failure and
+    oversize variants are single header lines so gather never materializes
+    them and classify can refuse instead of re-requesting (one-round bound)."""
+    flat = " ".join((raw or "").strip().split())
+    if not flat or flat.lower().startswith("error"):
+        reason = flat[:_READ_FAIL_REASON_CAP] or "empty read result"
+        return f"assistant: [read {path} (failed)] {reason}"
+    normalized = _normalize_read(raw)
+    if len(normalized) > _READ_FILE_CAP:
+        return f"assistant: [read {path} (oversize)]"
+    return f"assistant: [read {path}]\n{normalized}"
+
+
+def _read_blocks(messages: Sequence[Any]) -> list[tuple[str, str]]:
+    """(path, block) for every tool result answering a read-shaped call,
+    in wire order. Selected from the FULL history: on the resume pass the
+    read result sits after the last user message."""
+    call_paths = _read_call_paths(messages)
+    blocks: list[tuple[str, str]] = []
+    for message in messages:
+        if getattr(message, "role", None) != "tool":
+            continue
+        path = call_paths.get(getattr(message, "tool_call_id", None) or "")
+        if path:
+            content = getattr(message, "content", None)
+            blocks.append((path, _render_read_block(path, content or "")))
+    return blocks
 
 
 def _render_text(message: Any, role: str) -> str | None:
@@ -251,7 +352,11 @@ def _written_file_path(tool_calls: Sequence[Any]) -> str | None:
             arguments = json.loads(function.get("arguments", ""))
         except (json.JSONDecodeError, TypeError):
             continue
-        if isinstance(arguments, dict) and arguments.get("filePath"):
+        if (
+            isinstance(arguments, dict)
+            and arguments.get("filePath")
+            and "content" in arguments
+        ):
             return str(arguments["filePath"])
     return None
 

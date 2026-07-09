@@ -332,3 +332,128 @@ def test_write_truncated_out_of_the_tail_render_is_still_selected() -> None:
 
     assert rendered.count("[wrote models.py]") == 1
     assert "class Task" in rendered
+
+
+def _read_call(call_id: str, path: str) -> dict[str, object]:
+    return {
+        "id": call_id,
+        "type": "function",
+        "function": {"name": "read", "arguments": f'{{"filePath": "{path}"}}'},
+    }
+
+
+def test_read_result_renders_as_read_block() -> None:
+    messages = [
+        ChatMessage(role="user", content="write tests for existing calc.py"),
+        ChatMessage(
+            role="assistant", content=None, tool_calls=(_read_call("c1", "calc.py"),)
+        ),
+        ChatMessage(
+            role="tool", tool_call_id="c1", content="def divide(a, b): return a / b"
+        ),
+    ]
+
+    rendered = _render_context(messages)
+
+    assert "[read calc.py]" in rendered
+    assert "def divide" in rendered
+
+
+def test_read_call_never_renders_as_an_empty_write_block() -> None:
+    messages = [
+        ChatMessage(role="user", content="fix calc.py"),
+        ChatMessage(
+            role="assistant", content=None, tool_calls=(_read_call("c1", "calc.py"),)
+        ),
+        ChatMessage(role="tool", tool_call_id="c1", content="def divide(a): return a"),
+        ChatMessage(role="user", content="thanks, now fix the docstring"),
+    ]
+
+    rendered = _render_context(messages)
+
+    assert "[wrote calc.py]" not in rendered
+    assert "[read calc.py]" in rendered
+
+
+def test_empty_read_result_renders_as_failed_single_line() -> None:
+    messages = [
+        ChatMessage(role="user", content="fix calc.py"),
+        ChatMessage(
+            role="assistant", content=None, tool_calls=(_read_call("c1", "calc.py"),)
+        ),
+        ChatMessage(role="tool", tool_call_id="c1", content=""),
+    ]
+
+    rendered = _render_context(messages)
+
+    assert "[read calc.py (failed)]" in rendered
+
+
+def test_error_read_result_renders_as_failed_single_line() -> None:
+    messages = [
+        ChatMessage(role="user", content="fix calc.py"),
+        ChatMessage(
+            role="assistant", content=None, tool_calls=(_read_call("c1", "calc.py"),)
+        ),
+        ChatMessage(role="tool", tool_call_id="c1", content="Error: ENOENT calc.py"),
+    ]
+
+    rendered = _render_context(messages)
+
+    assert "[read calc.py (failed)] Error: ENOENT calc.py" in rendered
+
+
+def test_oversize_read_result_renders_header_only() -> None:
+    from llm_orc.web.serving.serving_ensemble_caller import _READ_FILE_CAP
+
+    messages = [
+        ChatMessage(role="user", content="fix calc.py"),
+        ChatMessage(
+            role="assistant", content=None, tool_calls=(_read_call("c1", "calc.py"),)
+        ),
+        ChatMessage(role="tool", tool_call_id="c1", content="x" * (_READ_FILE_CAP + 1)),
+    ]
+
+    rendered = _render_context(messages)
+
+    assert "[read calc.py (oversize)]" in rendered
+    assert "xxxx" not in rendered
+
+
+def test_line_number_gutter_is_stripped_from_read_content() -> None:
+    body = "00001| def divide(a, b):\n00002|     return a / b"
+    messages = [
+        ChatMessage(role="user", content="fix calc.py"),
+        ChatMessage(
+            role="assistant", content=None, tool_calls=(_read_call("c1", "calc.py"),)
+        ),
+        ChatMessage(role="tool", tool_call_id="c1", content=body),
+    ]
+
+    rendered = _render_context(messages)
+
+    assert "def divide(a, b):" in rendered
+    assert "    return a / b" in rendered
+    assert "00001|" not in rendered
+
+
+def test_later_write_of_same_path_supersedes_earlier_read() -> None:
+    messages = [
+        ChatMessage(role="user", content="fix calc.py"),
+        ChatMessage(
+            role="assistant", content=None, tool_calls=(_read_call("c1", "calc.py"),)
+        ),
+        ChatMessage(role="tool", tool_call_id="c1", content="def old(): pass"),
+        ChatMessage(
+            role="assistant",
+            content=None,
+            tool_calls=(_write_call("calc.py", "def new(): pass"),),
+        ),
+        ChatMessage(role="tool", content="Wrote file successfully."),
+        ChatMessage(role="user", content="now add tests"),
+    ]
+
+    rendered = _render_context(messages)
+
+    assert "def new(): pass" in rendered
+    assert "def old(): pass" not in rendered
