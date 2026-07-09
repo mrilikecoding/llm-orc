@@ -41,8 +41,13 @@ the llm-orc codebase itself (or plexus, or their interaction) through the
 serve, which exercises retrieval over a real repository rather than
 conversation-written files; (b) the **fix-execution milestone** — the
 serving layer executing a fix on a real codebase end-to-end (locate, edit,
-run tests, verify). Both hang off the client execution surface (#83);
-intermediate rungs get designed from run evidence, not pre-specified.
+run tests, verify); (c) the apex — the serve improving ITSELF
+(self-hosting development: planning, chunking work, web search, fix
+execution on its own repo). Rungs (a) and (b) hang off the client
+execution surface (#83). Evaluation method for (c): an agent driving the
+serve through the OpenCode CLI judges the serve's decisions against what
+it would do itself — a shadow-comparison judge. Intermediate rungs get
+designed from run evidence, not pre-specified.
 
 ## Current state (2026-07-09)
 

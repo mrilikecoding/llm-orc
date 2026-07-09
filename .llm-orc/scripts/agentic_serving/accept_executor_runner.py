@@ -54,10 +54,16 @@ def run_tests(code: str, tests: str) -> tuple[bool, str, int]:
     failures: list[str] = []
     n_tests = 0
 
+    import asyncio
+
     for name, fn in test_fns:
         n_tests += 1
         try:
-            fn()
+            result = fn()
+            if asyncio.iscoroutine(result):
+                # an async test returns a coroutine that raised nothing yet —
+                # uncollected it would count as a silent pass (wrong accept)
+                asyncio.run(result)
         except Exception as error:  # noqa: BLE001
             failures.append(f"{name}: {error!r}")
 
