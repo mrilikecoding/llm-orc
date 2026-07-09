@@ -114,6 +114,11 @@ client-file threading or client-delegated execution. Context older than the
 render window is dropped until the lossless session record (design §Rung 2′)
 lands.
 
+## Roadmap
+
+The staged path to the north star, with per-stage exit gates and the
+ladder-based parity measurement: [`docs/serving-roadmap.md`](serving-roadmap.md).
+
 ## History
 
 This design is the product of an 8-cycle research process (2026-04 → 2026-07).
