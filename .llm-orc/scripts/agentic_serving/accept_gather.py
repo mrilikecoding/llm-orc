@@ -83,12 +83,40 @@ def _extract_tests(text: str) -> str:
 # verifier chain echoes is the clean turn after it (ADR-048 isolation).
 _REQUEST_MARKER = "\n\nCurrent request: "
 
+# A conversation-written file block in the rendered context. Text lines are
+# newline-collapsed by the renderer, so a write body runs until the next
+# 'user:'/'assistant:' line. '(truncated)' blocks are never materialized.
+_WRITE_HEADER_RE = re.compile(r"^assistant: \[wrote ([^\]]+?)( \(truncated\))?\]$")
+_SPEAKER_RE = re.compile(r"^(user|assistant): ")
+
+
+def _workspace(context: str) -> dict[str, str]:
+    """Conversation-written files as {basename: body} for the sandbox."""
+    files: dict[str, str] = {}
+    lines = context.splitlines()
+    index = 0
+    while index < len(lines):
+        header = _WRITE_HEADER_RE.match(lines[index])
+        index += 1
+        if not header:
+            continue
+        body_lines = []
+        while index < len(lines) and not _SPEAKER_RE.match(lines[index]):
+            body_lines.append(lines[index])
+            index += 1
+        if not header.group(2):
+            name = header.group(1).rsplit("/", 1)[-1]
+            files[name] = "\n".join(body_lines).strip()
+    return files
+
 
 def main() -> None:
     payload = _payload(sys.stdin.read().strip())
     requirement = str(payload.get("input_data", ""))
+    workspace: dict[str, str] = {}
     if _REQUEST_MARKER in requirement:
-        requirement = requirement.rsplit(_REQUEST_MARKER, 1)[1]
+        context, requirement = requirement.rsplit(_REQUEST_MARKER, 1)
+        workspace = _workspace(context)
     deps = payload.get("dependencies", {})
     if not isinstance(deps, dict):
         deps = {}
@@ -96,7 +124,16 @@ def main() -> None:
     tests = _extract_tests(_terminal(_response(deps.get("test_writer", {}))))
     code = _extract_code(_terminal(_response(deps.get("code_writer", {}))))
 
-    print(json.dumps({"requirement": requirement, "code": code, "tests": tests}))
+    print(
+        json.dumps(
+            {
+                "requirement": requirement,
+                "code": code,
+                "tests": tests,
+                "workspace": workspace,
+            }
+        )
+    )
 
 
 if __name__ == "__main__":

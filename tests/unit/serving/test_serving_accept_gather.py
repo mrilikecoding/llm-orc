@@ -112,3 +112,48 @@ def test_gather_strips_conversation_context_from_the_requirement() -> None:
     )
     out = _gather(criteria, TESTS, CODE)
     assert out["requirement"] == "Write is_even(n)."
+
+
+def test_gather_extracts_conversation_written_files_as_workspace() -> None:
+    """Files written earlier in the conversation render as '[wrote <path>]'
+    blocks in the context; gather extracts them so the executor can
+    materialize them in the sandbox ("add tests for it" imports the module
+    the conversation built)."""
+    criteria = (
+        "Conversation so far:\n"
+        "user: write is_even in even.py\n"
+        "assistant: [wrote even.py]\n"
+        "def is_even(n):\n"
+        "    return n % 2 == 0\n"
+        "user: thanks\n"
+        "\n\nCurrent request: add tests for it in test_even.py"
+    )
+    out = _gather(criteria, TESTS, CODE)
+    assert out["workspace"] == {"even.py": "def is_even(n):\n    return n % 2 == 0"}
+
+
+def test_gather_skips_truncated_write_blocks() -> None:
+    criteria = (
+        "Conversation so far:\n"
+        "assistant: [wrote big.py (truncated)]\n"
+        "xxxx\n"
+        "\n\nCurrent request: add tests"
+    )
+    out = _gather(criteria, TESTS, CODE)
+    assert out["workspace"] == {}
+
+
+def test_executor_materializes_workspace_files_in_the_sandbox() -> None:
+    """Tests that import a conversation-built module pass when the workspace
+    carries it — the sandbox is no longer blind to conversation-known files."""
+    gathered = {
+        "requirement": "add tests for is_even",
+        "code": "from even import is_even\n\ndef helper():\n    return is_even(2)",
+        "tests": (
+            "from even import is_even\n\n"
+            "def test_even():\n    assert is_even(4) is True\n"
+        ),
+        "workspace": {"even.py": "def is_even(n):\n    return n % 2 == 0"},
+    }
+    result = _executor_from_gather(gathered)
+    assert result["tests_pass"] is True

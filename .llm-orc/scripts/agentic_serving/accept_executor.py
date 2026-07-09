@@ -73,9 +73,17 @@ def _timeout() -> float:
         return DEFAULT_TIMEOUT
 
 
-def _run_sandboxed(code: str, tests: str) -> tuple[bool, str, int]:
+def _run_sandboxed(
+    code: str, tests: str, workspace: dict[str, str] | None = None
+) -> tuple[bool, str, int]:
     timeout = _timeout()
     with tempfile.TemporaryDirectory() as tmp:
+        # conversation-written files (gather's workspace) so tests can import
+        # modules the conversation built; basenames only, no path traversal
+        for name, body in (workspace or {}).items():
+            safe = Path(name).name
+            if safe and safe not in ("solution.py", "tests.py"):
+                (Path(tmp) / safe).write_text(str(body), encoding="utf-8")
         code_path = Path(tmp) / "solution.py"
         tests_path = Path(tmp) / "tests.py"
         code_path.write_text(code, encoding="utf-8")
@@ -118,8 +126,14 @@ def main() -> None:
     requirement = str(data.get("requirement", ""))
     code = str(data.get("code", ""))
     tests = str(data.get("tests", ""))
+    raw_workspace = data.get("workspace")
+    workspace = (
+        {str(k): str(v) for k, v in raw_workspace.items()}
+        if isinstance(raw_workspace, dict)
+        else {}
+    )
 
-    tests_pass, report, n_tests = _run_sandboxed(code, tests)
+    tests_pass, report, n_tests = _run_sandboxed(code, tests, workspace)
 
     print(
         json.dumps(
