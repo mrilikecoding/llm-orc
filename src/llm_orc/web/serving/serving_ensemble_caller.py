@@ -61,6 +61,40 @@ def _aux_reply(messages: Sequence[Any]) -> str:
     return "Task"
 
 
+def _tool_result_ack(messages: Sequence[Any]) -> str | None:
+    """A short acknowledgment when the call is a tool-result continuation.
+
+    After the serve emits a tool_call and the client performs it, the client
+    calls back with the tool result appended. That call continues the SAME
+    turn — re-running the pipeline would redo (and possibly re-judge) work
+    the client already applied. Returns None when the call is a fresh turn.
+    """
+    last = messages[-1] if messages else None
+    if getattr(last, "role", None) != "tool":
+        return None
+    for message in reversed(list(messages)):
+        written = _written_file_path(getattr(message, "tool_calls", ()) or ())
+        if written:
+            return f"Wrote {written}."
+        if getattr(message, "role", None) == "user":
+            break
+    content = getattr(last, "content", None)
+    return content if isinstance(content, str) and content.strip() else "Done."
+
+
+def _written_file_path(tool_calls: Sequence[Any]) -> str | None:
+    """The filePath of the first write-shaped tool call, if any."""
+    for call in tool_calls:
+        function = call.get("function", {}) if isinstance(call, dict) else {}
+        try:
+            arguments = json.loads(function.get("arguments", ""))
+        except (json.JSONDecodeError, TypeError):
+            continue
+        if isinstance(arguments, dict) and arguments.get("filePath"):
+            return str(arguments["filePath"])
+    return None
+
+
 def _find_ensemble(project_dir: Path, name: str) -> Path:
     direct = project_dir / "ensembles" / f"{name}.yaml"
     if direct.exists():
@@ -121,6 +155,11 @@ class ServingEnsembleCaller:
     async def run(self, context: SessionContext) -> AsyncIterator[OrchestratorChunk]:
         if not context.tools:
             yield ContentDelta(content=_aux_reply(context.messages))
+            yield Completion(finish_reason="stop")
+            return
+        ack = _tool_result_ack(context.messages)
+        if ack is not None:
+            yield ContentDelta(content=ack)
             yield Completion(finish_reason="stop")
             return
         outcome = await self._serve(_task_from(context.messages))

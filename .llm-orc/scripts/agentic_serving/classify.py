@@ -41,6 +41,10 @@ _EXPLAIN_MARKERS = (
     "what is",
     "tell me",
 )
+# An interrogative-shaped turn asks for understanding; it outranks the
+# named-file build signal ("What approach does palindrome.py use?" is an
+# explain turn, not a build).
+_INTERROGATIVE_RE = re.compile(r"^(what|why|how|when|where|which|who)\b", re.IGNORECASE)
 _DEFAULT_CODE_SEAT = "code-seat"
 _EXPLAIN_SEAT = "explainer"
 _FILE_RE = re.compile(
@@ -92,7 +96,9 @@ def _turn(raw: str) -> dict:
 def main() -> None:
     turn = _turn(sys.stdin.read().strip())
     task = str(turn.get("task", "")).strip()
-    is_explain = any(marker in task.lower() for marker in _EXPLAIN_MARKERS)
+    is_explain = any(
+        marker in task.lower() for marker in _EXPLAIN_MARKERS
+    ) or bool(_INTERROGATIVE_RE.match(task))
     named_file = turn.get("file") or _extract_file(task)
     has_build_signal = bool(named_file) or bool(_BUILD_RE.search(task))
 

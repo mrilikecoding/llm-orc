@@ -184,6 +184,56 @@ def test_multi_turn_history_serves_the_latest_user_message(
     assert args["filePath"] == "add.py"
 
 
+def test_tool_result_callback_is_acknowledged_not_rerun(
+    serving_client: TestClient,
+) -> None:
+    """After the serve emits a write tool_call and the client performs it, the
+    client calls back with the tool result appended. That call is a
+    CONTINUATION of the same turn — the serve must acknowledge and finish,
+    not re-run the whole build pipeline (battery finding 2026-07-08: the
+    second pass re-ran the gated build and returned a spurious reject after
+    the file was already written).
+    """
+    resp = serving_client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "ensemble-agent",
+            "messages": [
+                {
+                    "role": "user",
+                    "content": "write a function that adds two numbers in add.py",
+                },
+                {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "id": "call_abc123",
+                            "type": "function",
+                            "function": {
+                                "name": "write",
+                                "arguments": '{"filePath": "add.py", "content": "..."}',
+                            },
+                        }
+                    ],
+                },
+                {
+                    "role": "tool",
+                    "tool_call_id": "call_abc123",
+                    "content": "Wrote file successfully.",
+                },
+            ],
+            "tools": [_WRITE_TOOL],
+        },
+    )
+
+    assert resp.status_code == 200
+    choice = resp.json()["choices"][0]
+    assert choice["finish_reason"] == "stop"
+    assert not choice["message"].get("tool_calls")
+    assert choice["message"]["content"]
+
+
 def test_explain_turn_returns_prose_not_a_tool_call(
     serving_client: TestClient,
 ) -> None:
