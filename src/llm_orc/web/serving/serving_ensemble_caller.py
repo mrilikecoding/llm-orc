@@ -93,10 +93,11 @@ def _render_context(messages: Sequence[Any]) -> str:
             prior = items[:index]
             break
     lines: list[str] = []
-    for message in prior[-_CTX_MAX_MESSAGES:]:
+    conversational = [
+        m for m in prior if getattr(m, "role", "") in ("user", "assistant")
+    ]
+    for message in conversational[-_CTX_MAX_MESSAGES:]:
         role = getattr(message, "role", "")
-        if role == "tool":
-            continue
         line = _render_write(message) or _render_text(message, role)
         if line:
             lines.append(line)
