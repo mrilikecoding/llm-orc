@@ -73,9 +73,7 @@ def _signature(node: ast.AST, assigned: dict[str, str]) -> str:
     return ast.dump(node)
 
 
-def _compare_is_value_bearing(
-    node: ast.Compare, assigned: dict[str, str]
-) -> bool:
+def _compare_is_value_bearing(node: ast.Compare, assigned: dict[str, str]) -> bool:
     if not _real_calls(node):
         return False
     if len(node.comparators) == 1:
@@ -85,9 +83,7 @@ def _compare_is_value_bearing(
     return True
 
 
-def _unittest_assert_is_value_bearing(
-    node: ast.Call, assigned: dict[str, str]
-) -> bool:
+def _unittest_assert_is_value_bearing(node: ast.Call, assigned: dict[str, str]) -> bool:
     name = _call_name(node)
     if not name.startswith("assert"):
         return False
@@ -113,6 +109,36 @@ def _assigned_call_signatures(unit: ast.AST) -> dict[str, str]:
     return assigned
 
 
+def _has_failure_signal(statements: list[ast.stmt]) -> bool:
+    """A failure marker inside an expect-raise try body: ``assert False``,
+    a bare ``raise``, or ``self.fail()`` — without one, a try/except-pass
+    swallows everything and passes any implementation (a wrong-accept
+    channel, PR #102 review)."""
+    for stmt in statements:
+        for node in ast.walk(stmt):
+            if isinstance(node, ast.Assert):
+                test = node.test
+                if isinstance(test, ast.Constant) and test.value is False:
+                    return True
+            elif isinstance(node, ast.Raise):
+                return True
+            elif isinstance(node, ast.Call) and _call_name(node) == "fail":
+                return True
+    return False
+
+
+def _expect_raise_with(node: ast.With | ast.AsyncWith) -> bool:
+    """``with self.assertRaises(...):`` / ``with pytest.raises(...):`` — the
+    canonical exception-expectation idioms."""
+    for item in node.items:
+        expr = item.context_expr
+        if isinstance(expr, ast.Call):
+            name = _call_name(expr)
+            if name.startswith("assertRaises") or name == "raises":
+                return True
+    return False
+
+
 def _value_bearing_asserts(unit: ast.AST) -> int:
     """Value-bearing asserts within one test unit (function or class)."""
     assigned = _assigned_call_signatures(unit)
@@ -123,18 +149,39 @@ def _value_bearing_asserts(unit: ast.AST) -> int:
             if isinstance(test, ast.Compare):
                 if _compare_is_value_bearing(test, assigned):
                     count += 1
-            elif isinstance(test, ast.Call) and _call_name(
-                test
-            ) not in _EXCLUDED_CALLS:
+            elif isinstance(test, ast.Call) and _call_name(test) not in _EXCLUDED_CALLS:
                 count += 1
         elif isinstance(node, ast.Expr) and isinstance(node.value, ast.Call):
             if _unittest_assert_is_value_bearing(node.value, assigned):
                 count += 1
+        elif isinstance(node, (ast.With, ast.AsyncWith)):
+            if _expect_raise_with(node) and any(
+                _real_calls(stmt) for stmt in node.body
+            ):
+                count += 1
         elif isinstance(node, ast.Try):
             specific = any(handler.type is not None for handler in node.handlers)
-            if specific and any(_real_calls(stmt) for stmt in node.body):
+            if (
+                specific
+                and any(_real_calls(stmt) for stmt in node.body)
+                and _has_failure_signal(node.body)
+            ):
                 count += 1
     return count
+
+
+def _is_test_class(node: ast.ClassDef) -> bool:
+    """Match the runner's dialect: Test*-named classes OR any
+    unittest.TestCase subclass regardless of name."""
+    if node.name.startswith("Test"):
+        return True
+    for base in node.bases:
+        base_name = base.attr if isinstance(base, ast.Attribute) else ""
+        if isinstance(base, ast.Name):
+            base_name = base.id
+        if "TestCase" in base_name:
+            return True
+    return False
 
 
 def _test_units(tree: ast.Module) -> list[ast.AST]:
@@ -143,7 +190,7 @@ def _test_units(tree: ast.Module) -> list[ast.AST]:
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             if node.name.startswith("test_"):
                 units.append(node)
-        elif isinstance(node, ast.ClassDef) and node.name.startswith("Test"):
+        elif isinstance(node, ast.ClassDef) and _is_test_class(node):
             units.append(node)
     return units
 

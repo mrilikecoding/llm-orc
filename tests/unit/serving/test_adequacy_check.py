@@ -111,6 +111,63 @@ def test_exception_expectation_tests_are_value_bearing() -> None:
     assert verdict["tests_adequate"] is True
 
 
+def test_loose_try_except_pass_is_not_value_bearing() -> None:
+    """``try: f(2) / except Exception: pass`` asserts nothing and passes any
+    implementation — counting it adequate is a wrong-accept channel (review
+    finding, PR #102). An exception expectation needs a failure signal after
+    the call (assert False / raise / self.fail())."""
+    verdict = _check(
+        "f",
+        "def f(n):\n    return n",
+        "def test_swallows_everything():\n"
+        "    try:\n"
+        "        f(2)\n"
+        "    except Exception:\n"
+        "        pass",
+    )
+    assert verdict["tests_adequate"] is False
+
+
+def test_with_assert_raises_is_value_bearing() -> None:
+    """The canonical unittest raises idiom must count."""
+    verdict = _check(
+        "remove",
+        "class Store:\n    def remove(self, k):\n        raise KeyError(k)",
+        "import unittest\n\n"
+        "class TestStore(unittest.TestCase):\n"
+        "    def test_remove_missing(self):\n"
+        "        with self.assertRaises(KeyError):\n"
+        "            Store().remove(99)\n",
+    )
+    assert verdict["tests_adequate"] is True
+
+
+def test_with_pytest_raises_is_value_bearing() -> None:
+    verdict = _check(
+        "remove",
+        "class Store:\n    def remove(self, k):\n        raise KeyError(k)",
+        "import pytest\n\n"
+        "def test_remove_missing():\n"
+        "    with pytest.raises(KeyError):\n"
+        "        Store().remove(99)\n",
+    )
+    assert verdict["tests_adequate"] is True
+
+
+def test_testcase_subclass_without_test_prefix_is_a_test_unit() -> None:
+    """The runner collects ANY unittest.TestCase subclass; the checker must
+    see the same dialect or it rejects suites the executor happily runs."""
+    verdict = _check(
+        "add",
+        "def add(a, b):\n    return a + b",
+        "import unittest\n\n"
+        "class MyStoreTests(unittest.TestCase):\n"
+        "    def test_add(self):\n"
+        "        self.assertEqual(add(2, 3), 5)\n",
+    )
+    assert verdict["tests_adequate"] is True
+
+
 def test_unparseable_tests_are_inadequate_not_a_crash() -> None:
     verdict = _check("f", "def f():\n    return 1", "def test_(:\n    broken")
     assert verdict["tests_adequate"] is False
