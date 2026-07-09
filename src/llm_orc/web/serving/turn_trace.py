@@ -16,6 +16,7 @@ is later adopted. No new dependency, no infra.
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Any
@@ -23,10 +24,21 @@ from typing import Any
 _SNIPPET = 280
 
 
+def _snippet_cap() -> int:
+    """The response clip length: readable-short by default,
+    ``LLM_ORC_SERVE_TRACE_SNIPPET`` raises it for live diagnosis."""
+    raw = os.environ.get("LLM_ORC_SERVE_TRACE_SNIPPET", "")
+    try:
+        return int(raw) if raw else _SNIPPET
+    except ValueError:
+        return _SNIPPET
+
+
 def _snippet(value: Any) -> str:
+    cap = _snippet_cap()
     text = value if isinstance(value, str) else json.dumps(value)
     text = " ".join(text.split())
-    return text if len(text) <= _SNIPPET else text[:_SNIPPET] + "…"
+    return text if len(text) <= cap else text[:cap] + "…"
 
 
 def _child_results(response: Any) -> dict[str, Any] | None:
