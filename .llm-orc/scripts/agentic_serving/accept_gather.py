@@ -55,8 +55,15 @@ def _terminal(text: str) -> str:
     return current
 
 
+_SHELL_LANGS = {"bash", "sh", "shell", "console", "zsh", "text"}
+
+
 def _fenced(text: str) -> str | None:
-    blocks = re.findall(r"```(?:[a-zA-Z0-9_+-]+)?\n(.*?)```", text, re.DOTALL)
+    tagged = re.findall(r"```([a-zA-Z0-9_+-]*)\n(.*?)```", text, re.DOTALL)
+    # only python/untagged fences are code — models append shell usage blocks
+    blocks = [
+        body for lang, body in tagged if lang.lower() not in _SHELL_LANGS
+    ] or [body for _, body in tagged]
     if blocks:
         return "\n".join(block.strip() for block in blocks)
     return None
