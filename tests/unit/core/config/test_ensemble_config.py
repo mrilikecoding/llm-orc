@@ -1671,3 +1671,85 @@ class TestEnsembleLoaderValidateOnceAtLoad:
         results = loader.validation_results()
         assert len(results) == 1
         assert "bad_a.yaml" in results[0].yaml_path
+
+
+class TestLoopAndDispatchReferenceCoverage:
+    """Issue #94: AS-2 must cover loop bodies and static dispatch targets."""
+
+    def _write(self, tmp_path: Path, specs: dict[str, dict[str, Any]]) -> None:
+        for spec_name, spec in specs.items():
+            (tmp_path / f"{spec_name}.yaml").write_text(yaml.dump(spec))
+
+    def test_raises_on_loop_body_cycle(self, tmp_path: Path) -> None:
+        """A loop whose body re-enters its parent is rejected at load, not
+        left to burn nested executions until the runtime depth limit."""
+        self._write(
+            tmp_path,
+            {
+                "ens-a": {
+                    "name": "ens-a",
+                    "description": "A",
+                    "agents": [
+                        {
+                            "name": "round",
+                            "loop": {
+                                "body": "ens-a",
+                                "until": "${done}",
+                                "max_iterations": 2,
+                            },
+                        }
+                    ],
+                },
+            },
+        )
+        agents = EnsembleLoader().load_from_file(str(tmp_path / "ens-a.yaml")).agents
+
+        with pytest.raises(ValueError, match="cross-ensemble cycle"):
+            validate_ensemble_reference_graph("ens-a", agents, [str(tmp_path)])
+
+    def test_raises_on_static_dispatch_cycle(self, tmp_path: Path) -> None:
+        """A literal (non-templated) dispatch target participates in the
+        reference graph; runtime-resolved ${...} targets cannot."""
+        self._write(
+            tmp_path,
+            {
+                "ens-a": {
+                    "name": "ens-a",
+                    "description": "A",
+                    "agents": [{"name": "seat", "dispatch": "ens-b"}],
+                },
+                "ens-b": {
+                    "name": "ens-b",
+                    "description": "B",
+                    "agents": [{"name": "step", "ensemble": "ens-a"}],
+                },
+            },
+        )
+        agents = EnsembleLoader().load_from_file(str(tmp_path / "ens-a.yaml")).agents
+
+        with pytest.raises(ValueError, match="cross-ensemble cycle"):
+            validate_ensemble_reference_graph("ens-a", agents, [str(tmp_path)])
+
+    def test_templated_dispatch_is_not_statically_followed(
+        self, tmp_path: Path
+    ) -> None:
+        self._write(
+            tmp_path,
+            {
+                "ens-a": {
+                    "name": "ens-a",
+                    "description": "A",
+                    "agents": [
+                        {"name": "pick", "script": "echo x"},
+                        {
+                            "name": "seat",
+                            "dispatch": "${pick.target}",
+                            "depends_on": ["pick"],
+                        },
+                    ],
+                },
+            },
+        )
+        agents = EnsembleLoader().load_from_file(str(tmp_path / "ens-a.yaml")).agents
+
+        validate_ensemble_reference_graph("ens-a", agents, [str(tmp_path)])
