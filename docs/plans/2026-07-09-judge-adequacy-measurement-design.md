@@ -72,3 +72,17 @@ The fuller ADR-048 adversarial harness (artifact-influence channel,
 builder/judge weight correlation) stays on #84 for a later increment;
 this measures the false-reject bottleneck specifically. The #98 shape is
 the next increment, on the tuned judge.
+
+## Outcome (2026-07-09, post-measurement)
+
+The tuning loop ran and the data overruled §4's lever order: three prompt
+variants held FAR at 0.0 but moved FRR between 25% and 67% per class
+without converging (per-fixture verdicts near-deterministic, 0/8 or 8/8 —
+miscalibration, not noise). Every inadequate class proved statically
+detectable, so the gate's adequacy signal became the deterministic
+value-bearing-assert checker (`adequacy_check.py`); the measurement
+fixtures are its CI truth table (22 hermetic tests, all classes labeled
+correctly — which no prompt variant achieved). ADR-048 amended; the model
+seat survives as `adequacy-judge` for the harness. Approved fork
+(2026-07-09): deterministic check over AST-floor-plus-model-veto and over
+further prompt tuning.

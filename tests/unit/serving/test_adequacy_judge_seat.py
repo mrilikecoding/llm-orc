@@ -1,12 +1,10 @@
-"""Wiring tests for the extracted adequacy-judge seat (#84).
+"""Wiring tests for the adequacy seats (#84).
 
-The adequacy judge lives in ONE ensemble (`adequacy-judge`), referenced by
-build-gated-round the way test-writer / code-generator are — so the fixtures
-harness (benchmarks/judge_adequacy) and the future #98 test-writing shape
-exercise the exact seat the round runs, and prompt tuning happens in one
-file. Isolation is preserved: the round's reference keeps
-``input_scope: dependencies`` (the judge reads the executor's echoed
-contract only, never the shape's context-threaded base input).
+After the 2026-07-09 measurement, the gated round's adequacy signal is the
+DETERMINISTIC checker script (adequacy_check.py) — the model seat it
+replaced stays defined in ONE ensemble (`adequacy-judge`) as the harness's
+measurement subject and a catalog seat, with its prompt in exactly one
+file.
 """
 
 from __future__ import annotations
@@ -34,12 +32,11 @@ def test_adequacy_judge_is_its_own_ensemble_with_the_prompt() -> None:
     assert "tests_adequate" in judge.system_prompt
 
 
-def test_round_references_the_judge_ensemble_with_isolation() -> None:
+def test_round_fills_the_judge_seat_with_the_deterministic_checker() -> None:
     config = _load("build-gated-round")
     assert config is not None
     judge = next(a for a in config.agents if a.name == "judge")
-    assert judge.ensemble == "adequacy-judge"
-    assert judge.input_scope == "dependencies"
+    assert judge.script == "scripts/agentic_serving/adequacy_check.py"
     assert judge.depends_on == ["executor"]
 
 

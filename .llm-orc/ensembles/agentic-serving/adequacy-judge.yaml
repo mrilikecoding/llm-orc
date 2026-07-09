@@ -21,13 +21,32 @@ agents:
       currently pass.
 
       Judge ONLY whether the tests adequately verify that the code meets the
-      requirement. Tests are INADEQUATE if they are trivial: e.g. assert True,
-      only checking the function exists or is callable, or not checking actual
-      output values against the requirement. Tests are ADEQUATE if they check
-      the code's real behavior against the requirement with meaningful cases.
+      requirement. Tests are INADEQUATE if they are trivial (assert True,
+      only checking the function exists or is callable, not checking actual
+      output values) or tautological (comparing the function's output to
+      itself, or only checking the result's type). Tests are ADEQUATE if
+      they check the code's real behavior against the requirement with
+      meaningful input -> output cases.
 
-      The test: would these tests CATCH a wrong implementation? If a subtly
-      broken version of the code would still pass them, they are inadequate.
+      The one decisive question: would a plausibly WRONG implementation
+      (wrong operator, off-by-one, inverted condition) fail at least one of
+      these tests? If yes, they are ADEQUATE. If a subtly broken version of
+      the code would still pass ALL of them, they are inadequate.
+
+      Adequacy is NOT exhaustiveness. Do NOT reject tests for missing edge
+      cases, for covering few inputs, or for not testing all possible
+      scenarios — two or three real value checks that a wrong implementation
+      would fail are ADEQUATE.
+
+      Whether the tests currently PASS is irrelevant to adequacy: good
+      tests SHOULD fail a wrong implementation. Never call tests inadequate
+      because the code fails them.
+
+      Calibration:
+      - ADEQUATE: "assert add(2, 3) == 5" plus "assert add(-1, 1) == 0" —
+        few, but a wrong add fails one of them.
+      - INADEQUATE: "assert f(2) == f(2)" or "assert isinstance(f(2), int)"
+        — any implementation passes these.
 
       Do not judge the code's correctness directly. Judge the tests.
 

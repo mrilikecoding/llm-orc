@@ -101,17 +101,26 @@ pre-existing-file editing — the two biggest remaining parity holes — and is
 the enabler for both named upper battery rungs (the codebase meta-task
 needs real-repo retrieval; the fix-execution milestone needs edit + run).
 
-### 3. Gate integrity pair (#98, #84) — raised in leverage
+### 3. Gate integrity pair — #84 MEASURED AND CLOSED; #98 next
 
-#98: test-writing turns validate a shadowed composite in the shared exec
-namespace — route "write tests" to a dedicated shape (the deliverable IS
-the test file, run against the materialized workspace alone). #84: measure
-judge false-reject rate on fixtures (with retries wired, judge conservatism
-is the visible bottleneck on hard turns) and revisit ADR-048 §5's
-AND-vs-weighted composition with data. The 2026-07-09 diagnosis makes this
-pair the TDD loop's gatekeeper: round-1 adequacy is the held path's entry
-condition, so measuring and tuning it is what converts #100 from
-mechanism-proven to ladder-visible.
+**#84 (done, judge-adequacy-measurement branch):** the fixtures harness
+(`benchmarks/judge_adequacy`, 16 labeled fixtures × 8 samples, live seat)
+measured the model judge at FAR 0.0 (never accepts garbage tests) but FRR
+25–67% on adequate tests, near-deterministically per fixture; three prompt
+variants moved the miscalibration around without removing it. Every
+inadequate class has a static signature, so the gate's adequacy signal is
+now the deterministic value-bearing-assert checker (`adequacy_check.py`) —
+FRR/FAR both 0 on all 16 fixtures by construction, one less model call per
+round, judge conservatism retired as a failure class (ADR-048 amended).
+The model seat survives as `adequacy-judge` for the harness. Live residual
+after the swap: test-writer quality (reflection-style relapses now get
+correctly rejected instead of stochastically judged) — which is #98's
+territory.
+
+**#98 (next):** test-writing turns validate a shadowed composite in the
+shared exec namespace — route "write tests" to a dedicated shape (the
+deliverable IS the test file, run against the materialized workspace
+alone), reusing the deterministic adequacy checker.
 
 ### 4. Shapes and seat tiering
 
