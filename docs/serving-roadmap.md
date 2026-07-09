@@ -49,6 +49,28 @@ serve through the OpenCode CLI judges the serve's decisions against what
 it would do itself — a shadow-comparison judge. Intermediate rungs get
 designed from run evidence, not pre-specified.
 
+Two generalizations the upper rungs force (named 2026-07-09):
+
+- **Languages.** The verified-build gate is Python-scoped today (executor
+  sandbox + adequacy checker), failing closed on everything else — and
+  plexus is RUST, so the meta-task rung's plexus half is the first
+  concrete non-Python need. Generalization is seat swaps behind the same
+  `{requirement, code, tests}` contract: a per-language sandboxed executor
+  and a per-language adequacy checker; the round, router, held carry, and
+  gate composition are unchanged. Built when a rung demands a language,
+  not speculatively.
+- **Task shapes.** Fable-parity means evaluating a task's shape and
+  deciding how to proceed — up to and including **an ensemble that designs
+  other ensembles to suit the task at hand**. That is ADR-047's deferred
+  composer-ensemble path, re-elevated from named-forward-direction to
+  north-star mechanism: catalog growth is the manual rung
+  (operator-curated shapes, deterministic selection via classify +
+  registry), the compose-at-runtime primitive (ADR-047's four named engine
+  gaps) is the enabling rung, and composer ensembles — composing from the
+  registry's validated parts, output structurally validated before it
+  registers, the composer itself a verified ensemble rather than a lone
+  model — are the generative rung.
+
 ## Current state (2026-07-09)
 
 Released: **v0.18.0** (agentic serving) and **v0.18.1** (review-debt sweep).
