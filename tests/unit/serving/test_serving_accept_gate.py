@@ -167,6 +167,45 @@ def test_gate_without_judge_and_not_held_rejects() -> None:
     assert g2["accept"] is False
 
 
+def test_gate_reads_the_verdict_through_a_sub_ensemble_judge_envelope() -> None:
+    """With the judge extracted to its own ensemble (#84), the judge dep's
+    response is the nested sub-ensemble result envelope, not bare model
+    JSON — the gate must peel it (the escaped nesting also defeats the
+    regex fallback, which silently rejected every round)."""
+    judge_child = json.dumps(
+        {
+            "ensemble": "adequacy-judge",
+            "status": "completed",
+            "results": {
+                "judge": {
+                    "response": json.dumps(
+                        {"tests_adequate": True, "reason": "real behavior checks"}
+                    ),
+                    "status": "success",
+                }
+            },
+        }
+    )
+    payload = json.dumps(
+        {
+            "dependencies": {
+                "executor": {"response": json.dumps({"tests_pass": True})},
+                "judge": {"response": judge_child},
+            }
+        }
+    )
+    out = subprocess.run(
+        [sys.executable, str(GATE)],
+        input=payload,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    verdict = json.loads(out)
+    assert verdict["tests_adequate"] is True
+    assert verdict["accept"] is True
+
+
 def test_quoted_string_false_from_the_judge_does_not_pass_the_gate() -> None:
     """Small models sometimes quote booleans; bool("false") is True in
     Python, which would wave inadequate tests through the gate."""

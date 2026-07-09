@@ -34,6 +34,21 @@ The Cycle-7 benchmark harness (`research/agentic-serving-corpus` branch,
 `benchmark-runs/`) is the automation to revive for a standing
 parity-percentage arm (Haiku 4.5 / Sonnet 5 behind OpenCode as baseline).
 
+**Battery realism ladder (named 2026-07-09):** the todo app is a toy.
+Daily-driver parity means real complexity, and the ladder's upper rungs are
+named: (a) the **self-referential meta-task** — answering questions about
+the llm-orc codebase itself (or plexus, or their interaction) through the
+serve, which exercises retrieval over a real repository rather than
+conversation-written files; (b) the **fix-execution milestone** — the
+serving layer executing a fix on a real codebase end-to-end (locate, edit,
+run tests, verify); (c) the apex — the serve improving ITSELF
+(self-hosting development: planning, chunking work, web search, fix
+execution on its own repo). Rungs (a) and (b) hang off the client
+execution surface (#83). Evaluation method for (c): an agent driving the
+serve through the OpenCode CLI judges the serve's decisions against what
+it would do itself — a shadow-comparison judge. Intermediate rungs get
+designed from run evidence, not pre-specified.
+
 ## Current state (2026-07-09)
 
 Released: **v0.18.0** (agentic serving) and **v0.18.1** (review-debt sweep).
@@ -87,19 +102,30 @@ read-tool results into the turn and/or client-delegated execution (emit's
 permission seam reused for a test-run tool_call — ADR-048 ODP-1). Includes
 the tool-mapping step (resolve emit outcomes against the client's
 advertised tools instead of the hardcoded `write`). Closes run-tests and
-pre-existing-file editing — the two biggest remaining parity holes.
+pre-existing-file editing — the two biggest remaining parity holes — and is
+the enabler for both named upper battery rungs (the codebase meta-task
+needs real-repo retrieval; the fix-execution milestone needs edit + run).
 
-### 3. Gate integrity pair (#98, #84) — raised in leverage
+### 3. Gate integrity pair — #84 MEASURED AND CLOSED; #98 next
 
-#98: test-writing turns validate a shadowed composite in the shared exec
-namespace — route "write tests" to a dedicated shape (the deliverable IS
-the test file, run against the materialized workspace alone). #84: measure
-judge false-reject rate on fixtures (with retries wired, judge conservatism
-is the visible bottleneck on hard turns) and revisit ADR-048 §5's
-AND-vs-weighted composition with data. The 2026-07-09 diagnosis makes this
-pair the TDD loop's gatekeeper: round-1 adequacy is the held path's entry
-condition, so measuring and tuning it is what converts #100 from
-mechanism-proven to ladder-visible.
+**#84 (done, judge-adequacy-measurement branch):** the fixtures harness
+(`benchmarks/judge_adequacy`, 16 labeled fixtures × 8 samples, live seat)
+measured the model judge at FAR 0.0 (never accepts garbage tests) but FRR
+25–67% on adequate tests, near-deterministically per fixture; three prompt
+variants moved the miscalibration around without removing it. Every
+inadequate class has a static signature, so the gate's adequacy signal is
+now the deterministic value-bearing-assert checker (`adequacy_check.py`) —
+FRR/FAR both 0 on all 16 fixtures by construction, one less model call per
+round, judge conservatism retired as a failure class (ADR-048 amended).
+The model seat survives as `adequacy-judge` for the harness. Live residual
+after the swap: test-writer quality (reflection-style relapses now get
+correctly rejected instead of stochastically judged) — which is #98's
+territory.
+
+**#98 (next):** test-writing turns validate a shadowed composite in the
+shared exec namespace — route "write tests" to a dedicated shape (the
+deliverable IS the test file, run against the materialized workspace
+alone), reusing the deterministic adequacy checker.
 
 ### 4. Shapes and seat tiering
 

@@ -11,14 +11,15 @@ description: |
     code_writer   code-generator, builds code that passes those tests
     gather        assemble {requirement, code, tests} for the executor
     executor      deterministic, sandboxed: runs the tests against the code
-    judge         isolated: are the tests adequate to verify the criteria?
+    judge         deterministic: value-bearing-assert analysis of the tests
     accept_gate   accept = tests_pass AND tests_adequate (orthogonal catches)
     envelope      ADR-024 deliverable + accept verdict in diagnostics
 
   Independence (ADR-048 §3): the verifier seats (executor, judge) receive only
   {criteria, produced code, produced tests, execution result}, never builder
-  reasoning. The executor is deterministic ground truth; the judge is a
-  fresh-context reviewer. Composed from shipped primitives + seats (AS-11).
+  reasoning. Both verifiers are deterministic since #84: the executor is
+  ground truth for the code, the adequacy check is a static analysis of the
+  tests. Composed from shipped primitives + seats (AS-11).
 
   Richer shapes (elicitation-first, oracle rungs, per-round budgets) are
   operator-curated catalog work at WP-C8.
@@ -44,32 +45,15 @@ agents:
     depends_on: [gather]
 
   - name: judge
-    model_profile: agentic-tier-cheap-general
-    options:
-      think: false
+    # deterministic adequacy check (#84): the measured model seat held
+    # FAR 0 but FRR 25-67% on adequate tests (benchmarks/judge_adequacy,
+    # 2026-07-09), and every inadequate class has a static signature —
+    # value-bearing-assert analysis decides, no model call. The script
+    # reads the executor's echoed contract from its dependency envelope
+    # (same isolation: never the shape's context-threaded base input).
+    # The retired model seat stays in adequacy-judge.yaml for the harness.
+    script: scripts/agentic_serving/adequacy_check.py
     depends_on: [executor]
-    # verifier isolation (ADR-048): the judge reads the executor's echoed
-    # contract only, never the shape's base input (which may carry threaded
-    # conversation context)
-    input_scope: dependencies
-    system_prompt: |
-      You are an independent test-adequacy reviewer. You are given a coding
-      REQUIREMENT, the produced CODE, the produced TESTS, and whether the tests
-      currently pass.
-
-      Judge ONLY whether the tests adequately verify that the code meets the
-      requirement. Tests are INADEQUATE if they are trivial: e.g. assert True,
-      only checking the function exists or is callable, or not checking actual
-      output values against the requirement. Tests are ADEQUATE if they check
-      the code's real behavior against the requirement with meaningful cases.
-
-      The test: would these tests CATCH a wrong implementation? If a subtly
-      broken version of the code would still pass them, they are inadequate.
-
-      Do not judge the code's correctness directly. Judge the tests.
-
-      Respond with ONLY a JSON object, no other text, no code fences:
-      {"tests_adequate": true or false, "reason": "<one sentence>"}
 
   - name: accept_gate
     script: scripts/agentic_serving/accept_gate.py
