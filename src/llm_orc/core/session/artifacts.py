@@ -1,5 +1,9 @@
 """Session Registry structured-handoff artifacts (ADR-013, WP-D4).
 
+NOT YET WIRED into the serving path: reserved for roadmap
+Stage 2 (lossless session record, issue #82) -- see
+docs/serving-roadmap.md (issue #95 marker).
+
 Per ``docs/serving.md`` §Session Registry
 (extended in Cycle 4). Owns the three artifact components plus the
 write-gate validation surface:

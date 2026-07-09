@@ -1,5 +1,9 @@
 """Plexus Adapter — mediates knowledge-graph interaction (ADR-009, WP-I).
 
+NOT YET WIRED into the serving path: reserved for roadmap
+Stage 5 (plexus lenses) -- see
+docs/serving-roadmap.md (issue #95 marker).
+
 Per ``docs/serving.md`` §Plexus Adapter (L1 Domain
 Policy) and §Integration Contracts (Orchestrator Tool Dispatch → Plexus
 Adapter). Per ADR-009 and AS-8 the Adapter is the single place

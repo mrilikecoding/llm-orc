@@ -210,9 +210,13 @@ class LlmAgentRunner:
 
         enhanced_config = await self._resolve_model_profile_to_config(agent_config)
 
+        configured = enhanced_config.get("system_prompt")
+        # key-presence, not truthiness: an explicitly-empty system_prompt
+        # suppresses the generic fallback (issue #95)
         prompt = (
-            enhanced_config.get("system_prompt")
-            or f"You are a {agent_name}. Provide helpful analysis."
+            configured
+            if configured is not None
+            else f"You are a {agent_name}. Provide helpful analysis."
         )
 
         return RoleDefinition(name=agent_name, prompt=prompt)
