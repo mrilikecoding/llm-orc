@@ -190,12 +190,9 @@ error rather than crashing the session.
   Descriptive registry mapping known skill frameworks to their
   capability-ensemble requirements.
 - **`.llm-orc/profiles/agentic-*.yaml`** — One file per agentic-serving
-  Model Profile. To swap a model in any role, edit the `model:` (and
-  optionally `provider:` / `base_url:`) field in the corresponding file
-  — no `.llm-orc/config.yaml` edit required. The seven profile files
-  are: `agentic-orchestrator.yaml` (default, cheap-cloud via Zen),
-  `agentic-orchestrator-offline.yaml` (local fallback),
-  `agentic-tier-cheap-general.yaml`, `agentic-tier-cheap-summary.yaml`,
-  `agentic-tier-escalated-general.yaml`,
-  `agentic-tier-escalated-reasoning.yaml`, and `agentic-summarizer.yaml`
-  (backing profile for the system ensembles).
+  Model Profile tier: `agentic-tier-cheap-general.yaml`,
+  `agentic-tier-cheap-summary.yaml`, `agentic-tier-escalated-general.yaml`,
+  `agentic-tier-escalated-reasoning.yaml`, and `agentic-summarizer.yaml`.
+  All local-first. To back any tier with your own provider, create a
+  gitignored `*.local.yaml` override (see docs/serving.md §Operator seat
+  configuration) rather than editing the tracked files.
