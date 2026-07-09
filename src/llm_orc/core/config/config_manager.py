@@ -515,10 +515,19 @@ class ConfigurationManager:
         profiles_dir: Path,
         target: dict[str, dict[str, str]],
     ) -> None:
-        """Load individual profile YAML files from a directory."""
+        """Load individual profile YAML files from a directory.
+
+        ``*.local.yaml`` files load last (each group sorted), so an
+        operator-private override of a checked-in profile name wins
+        deterministically — the seam for backing a tier with a private
+        provider without committing provider-specific config.
+        """
         if not profiles_dir.exists():
             return
-        for yaml_file in profiles_dir.glob("*.yaml"):
+        all_files = sorted(profiles_dir.glob("*.yaml"))
+        base = [f for f in all_files if not f.name.endswith(".local.yaml")]
+        overrides = [f for f in all_files if f.name.endswith(".local.yaml")]
+        for yaml_file in base + overrides:
             try:
                 with open(yaml_file) as f:
                     data = yaml.safe_load(f) or {}

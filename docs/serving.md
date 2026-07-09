@@ -90,6 +90,29 @@ ADR-046 (the target architecture and the orchestrator-actor dissolution),
 ADR-047 (extensibility: registry + shape catalog), and ADR-048 (grounded
 acceptance).
 
+## Operator seat configuration
+
+Seat models resolve through **tier profile names** (`agentic-tier-cheap-general`
+and friends in `.llm-orc/profiles/`) — the tier name is the stable operator
+surface; which model/provider backs it is deployment-specific. The shipped
+defaults are all local (Ollama). To back any tier with your own provider —
+a paid API, a hosted endpoint, a bigger local model — create a gitignored
+override:
+
+```yaml
+# .llm-orc/profiles/my-paid-seat.local.yaml   (never committed)
+name: agentic-tier-cheap-general   # the tier name to override
+model: your-hosted-model
+provider: openai-compatible/yourprovider
+cost_per_token: 0.0
+```
+
+`*.local.yaml` files load last (deterministically), so they win over the
+checked-in profile of the same name. Nothing provider-specific belongs in
+tracked config. Empirical note (2026-07-08 A/B): a hosted frontier seat did
+not change the dominant failure class — reach for structure (retry rounds,
+shapes) before bigger models.
+
 ## Conversation memory
 
 The serve threads conversation context from the client-sent history into
