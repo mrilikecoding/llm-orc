@@ -170,6 +170,45 @@ def test_gather_skips_truncated_write_blocks() -> None:
     assert out["workspace"] == {}
 
 
+def test_edit_turn_deliverable_shadows_the_stale_workspace_copy() -> None:
+    """An edit turn ('add min() to the Stack class in stack.py') produces code
+    destined for stack.py, but the sandbox also materializes the OLD stack.py
+    from the conversation — and tests importing 'from stack import ...' hit
+    the stale copy (arm-A rerun finding 2026-07-08: AttributeError('min')).
+    gather names the target file; the executor writes the code there,
+    shadowing the stale copy, mirroring what the client's write will do.
+    """
+    criteria = (
+        "Conversation so far:\n"
+        "assistant: [wrote stack.py]\n"
+        "class Stack:\n"
+        "    def push(self, item):\n"
+        "        pass\n"
+        "\n\nCurrent request: Add a min() method to the Stack class in stack.py"
+    )
+    new_code = (
+        "class Stack:\n"
+        "    def __init__(self):\n"
+        "        self.items = []\n"
+        "    def push(self, item):\n"
+        "        self.items.append(item)\n"
+        "    def min(self):\n"
+        "        return min(self.items) if self.items else None\n"
+    )
+    tests = (
+        "from stack import Stack\n\n"
+        "def test_min():\n"
+        "    s = Stack()\n"
+        "    s.push(3)\n"
+        "    s.push(1)\n"
+        "    assert s.min() == 1\n"
+    )
+    gathered = _gather(criteria, tests, new_code)
+    assert gathered["target_file"] == "stack.py"
+    result = _executor_from_gather(gathered)
+    assert result["tests_pass"] is True
+
+
 def test_gather_injects_missing_workspace_imports() -> None:
     """Generated tests sometimes use a workspace module's names without
     importing them (ladder finding 2026-07-08: NameError('Stack') on every
