@@ -11,18 +11,21 @@ driven through real OpenCode, scored per-turn against the same ladder run
 with an Anthropic model (Haiku 4.5 / Sonnet 5) as the backend. The Cycle-7
 benchmark harness on `research/agentic-serving-corpus` (`benchmark-runs/`)
 is the automation to revive for this. Baseline 2026-07-08: 4/8 → 5/8 after
-this round's fixes; ~55–60% of the Haiku-backed experience.
+the pre-release fixes; ~55–60% of the Haiku-backed experience.
+**Released as v0.18.0 (2026-07-09)** after an 8-angle review pass (8
+correctness findings fixed pre-merge; deferred findings tracked as #91–#96).
 
-## Stage 1 — Reliability: the accept-gate retry round (#89)
+## Stage 1 — Reliability: the accept-gate retry round (#89) — SHIPPED in v0.18.0
 
 The dominant failure class — confirmed on BOTH seat tiers (local qwen3:8b
-and qwen3.6-plus via Zen) — is one wrong expectation among ~5 generated
-tests killing an otherwise-correct turn, because the gate is one-shot and
-the client never retries. Wrap the gated build in the engine's shipped
-`loop:` primitive (bounded, `carry:` = the executor's failure report), per
-ADR-048 §5's round budget. **Key finding from the A/B: structure is the
-lever here, not model size** — a seat upgrade did not change the failure.
-Exit gate: ladder ≥ 7/8 with the retry wired.
+and qwen3.6-plus via Zen) — was one wrong expectation among ~5 generated
+tests killing an otherwise-correct turn. Shipped: build-gated wraps
+build-gated-round in the engine's `loop:` primitive (bounded, carry = the
+executor's failure report). **Key finding from the A/B: structure is the
+lever, not model size.** Live observation with retries wired: the residual
+reject on hard turns is judge conservatism — judge false-reject rate is now
+the measurement target (#84). The exit gate (ladder ≥ 7/8) is pending a
+full post-release ladder rerun.
 
 ## Stage 2 — Memory rung 2′: lossless session record + selection (#82)
 
@@ -72,6 +75,11 @@ hierarchy (assume-guarantee direction noted at Cycle-8 close).
 
 ## Issue index
 
-#89 retry round · #82 lossless record · #83 client execution ·
-#84 accept-gate adversarial harness · #85 sandbox hardening ·
-#86 flaky auth test.
+Roadmap stages: #82 lossless record (Stage 2) · #83 client execution
+(Stage 3) · #84 accept-gate harness + judge false-reject measurement ·
+#85 sandbox hardening · #90 llama.cpp backend (bootstrapping).
+Review debt (v0.18.0 pre-merge pass): #91 web-UI deliverable key ·
+#92 shared script helpers / single fence extractor · #93 serving hot-path
+caching · #94 AS-2 loop/dispatch reference coverage · #95 post-collapse
+dead-surface sweep · #96 list_ensembles transitive fragility.
+Misc: #86 flaky auth test. Shipped: #87, #88, #89 (v0.18.0).
