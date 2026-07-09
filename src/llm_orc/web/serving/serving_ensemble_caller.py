@@ -119,7 +119,10 @@ def _render_context(messages: Sequence[Any]) -> str:
         rendered = rendered[cut + 1 :] if cut >= 0 else rendered
 
     task = _task_from(messages)
-    selected = _select_written_files(conversational[: -len(tail) or None], task)
+    # select over the FULL prior history, not just pre-tail messages: the
+    # tail char cap can slice a write off the front of the tail render, and
+    # the tail_paths dedup below already filters whatever survived in it
+    selected = _select_written_files(conversational, task)
     tail_paths = {
         line.split("[wrote ", 1)[1].split("]", 1)[0].removesuffix(" (truncated)")
         for line in rendered.splitlines()
@@ -149,7 +152,7 @@ def _whole_blocks_within_cap(blocks: list[str]) -> list[str]:
     return kept
 
 
-def _select_written_files(older: Sequence[Any], task: str) -> list[tuple[str, str]]:
+def _select_written_files(history: Sequence[Any], task: str) -> list[tuple[str, str]]:
     """Every conversation-written file's latest version, referenced-first
     (Stage 2, issue #82).
 
@@ -162,7 +165,7 @@ def _select_written_files(older: Sequence[Any], task: str) -> list[tuple[str, st
     file_refs = {m.group(0).rsplit("/", 1)[-1] for m in _CTX_FILE_RE.finditer(task)}
     tokens = set(_CTX_TOKEN_RE.findall(task))
     latest: dict[str, str] = {}
-    for message in older:
+    for message in history:
         block = _render_write(message)
         if block is None:
             continue

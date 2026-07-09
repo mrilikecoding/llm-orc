@@ -281,3 +281,34 @@ def test_selected_write_is_not_duplicated_when_already_in_the_tail() -> None:
     rendered = _render_context(messages)
 
     assert rendered.count("[wrote models.py]") == 1
+
+
+def test_write_truncated_out_of_the_tail_render_is_still_selected() -> None:
+    """A write inside the 8-message tail window can still be sliced off the
+    FRONT of the tail render by the tail char cap — it must then be selected
+    like any out-of-tail write, not lost entirely."""
+    body = "class Task:\n" + ("    x = 1\n" * 100)
+    messages = [
+        ChatMessage(
+            role="assistant",
+            content=None,
+            tool_calls=(_write_call("models.py", body),),
+        ),
+        # 7 long text messages: with the write these fill the tail window and
+        # overflow the tail char cap, slicing the write off the front
+        *[
+            ChatMessage(role="user", content="p" * 600),
+            ChatMessage(role="assistant", content="q" * 600),
+            ChatMessage(role="user", content="p" * 600),
+            ChatMessage(role="assistant", content="q" * 600),
+            ChatMessage(role="user", content="p" * 600),
+            ChatMessage(role="assistant", content="q" * 600),
+            ChatMessage(role="user", content="p" * 600),
+        ],
+        ChatMessage(role="user", content="Add a field to models.py"),
+    ]
+
+    rendered = _render_context(messages)
+
+    assert rendered.count("[wrote models.py]") == 1
+    assert "class Task" in rendered
