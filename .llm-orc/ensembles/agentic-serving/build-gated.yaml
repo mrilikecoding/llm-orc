@@ -17,6 +17,7 @@ serves: code-seat
 
 agents:
   - name: round
+    timeout_seconds: 660
     loop:
       body: build-gated-round
       until: "${diagnostics.accept}"

@@ -71,6 +71,9 @@ agents:
     dispatch: "${resolve.target}"
     input_key: dispatch_input
     depends_on: [resolve]
+    # a gated build may run a bounded retry round (issue #89) — two rounds
+    # on the 32GB rig need headroom past the 300s default
+    timeout_seconds: 720
 
   - name: seat_contract
     script: scripts/agentic_serving/seat_contract.py
