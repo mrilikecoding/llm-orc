@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import uuid
 from collections.abc import AsyncIterator, Sequence
 from pathlib import Path
@@ -41,12 +42,18 @@ if TYPE_CHECKING:
 
 _WRITE_TOOL = "write"
 
-# Rung-1 conversation-context caps (memory design §Rung 1): bounded render,
-# flat per-turn cost regardless of session length.
+# Conversation-context caps (memory design §Rung 1/2'): bounded render,
+# flat per-turn cost regardless of session length. The tail carries recency;
+# referent selection retrieves older write blocks the task names from the
+# full wire history (the client sends it every turn — issue #82).
 _CTX_MAX_MESSAGES = 8
 _CTX_TEXT_CAP = 500
 _CTX_FILE_CAP = 2000
-_CTX_TOTAL_CAP = 4000
+_CTX_TAIL_CAP = 4000
+_CTX_SELECTED_CAP = 4000
+
+_CTX_FILE_RE = re.compile(r"\b[\w./-]+\.(?:py|js|ts|json|md|txt|ya?ml|sh|go|rs)\b")
+_CTX_TOKEN_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]{2,}")
 
 
 def _task_from(messages: Sequence[Any]) -> str:
@@ -97,19 +104,52 @@ def _render_context(messages: Sequence[Any]) -> str:
     conversational = [
         m for m in prior if getattr(m, "role", "") in ("user", "assistant")
     ]
-    for message in conversational[-_CTX_MAX_MESSAGES:]:
+    tail = conversational[-_CTX_MAX_MESSAGES:]
+    for message in tail:
         role = getattr(message, "role", "")
         line = _render_write(message) or _render_text(message, role)
         if line:
             lines.append(line)
     rendered = "\n".join(lines)
-    if len(rendered) > _CTX_TOTAL_CAP:
-        rendered = rendered[-_CTX_TOTAL_CAP:]
+    if len(rendered) > _CTX_TAIL_CAP:
+        rendered = rendered[-_CTX_TAIL_CAP:]
         # drop the decapitated first line — gather's workspace extraction is
         # line-anchored, and a partial '[wrote ...]' header corrupts it
         cut = rendered.find("\n")
         rendered = rendered[cut + 1 :] if cut >= 0 else rendered
+
+    task = _task_from(messages)
+    selected = _select_referenced_writes(conversational[: -len(tail) or None], task)
+    selected = [block for block in selected if block.splitlines()[0] not in rendered]
+    if selected:
+        selected_text = "\n".join(selected)[:_CTX_SELECTED_CAP]
+        rendered = f"{selected_text}\n{rendered}" if rendered else selected_text
     return rendered
+
+
+def _select_referenced_writes(older: Sequence[Any], task: str) -> list[str]:
+    """Older write blocks the latest task refers to (Stage 2, issue #82).
+
+    The client sends the full history every turn, so nothing is lost — only
+    windowed out. Selection is deterministic: a write is retrieved when the
+    task names its file, or names a class/def its body defines.
+    """
+    file_refs = {m.group(0).rsplit("/", 1)[-1] for m in _CTX_FILE_RE.finditer(task)}
+    tokens = set(_CTX_TOKEN_RE.findall(task))
+    selected: list[str] = []
+    for message in older:
+        block = _render_write(message)
+        if block is None:
+            continue
+        header = block.splitlines()[0]
+        body = "\n".join(block.splitlines()[1:])
+        name_match = any(ref in header for ref in file_refs)
+        symbol_match = any(
+            re.search(rf"\b(?:class|def)\s+{re.escape(t)}\b", body) for t in tokens
+        )
+        if name_match or symbol_match:
+            selected.append(block)
+    return selected
 
 
 def _render_write(message: Any) -> str | None:

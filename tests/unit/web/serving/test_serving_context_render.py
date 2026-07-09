@@ -144,3 +144,84 @@ def test_truncation_lands_on_a_line_boundary() -> None:
     for line in rendered.splitlines():
         if "[wrote" in line:
             assert line.startswith("assistant: [wrote ")
+
+
+def _turnish(n: int) -> list[ChatMessage]:
+    """n filler turns (user + assistant) to push earlier content out of
+    the recency tail."""
+    out: list[ChatMessage] = []
+    for i in range(n):
+        out.append(ChatMessage(role="user", content=f"filler question {i}"))
+        out.append(ChatMessage(role="assistant", content=f"filler answer {i}"))
+    return out
+
+
+def test_out_of_tail_write_is_selected_when_the_task_names_its_file() -> None:
+    """Stage 2 (issue #82): the client sends the FULL history, so a write
+    older than the recency tail is retrievable — when the latest task names
+    its file, the write block is selected back into the context."""
+    messages = [
+        ChatMessage(
+            role="assistant",
+            content=None,
+            tool_calls=(_write_call("models.py", "class Task:\n    pass"),),
+        ),
+        *_turnish(8),
+        ChatMessage(
+            role="user", content="Create formatting.py; import Task from models.py"
+        ),
+    ]
+
+    rendered = _render_context(messages)
+
+    assert "[wrote models.py]" in rendered
+    assert "class Task" in rendered
+
+
+def test_out_of_tail_write_is_selected_by_symbol_match() -> None:
+    """A task naming a class/function defined in an old write selects that
+    write even without naming the file."""
+    messages = [
+        ChatMessage(
+            role="assistant",
+            content=None,
+            tool_calls=(_write_call("storage.py", "class TaskStore:\n    pass"),),
+        ),
+        *_turnish(8),
+        ChatMessage(role="user", content="Add a clear() method to TaskStore"),
+    ]
+
+    rendered = _render_context(messages)
+
+    assert "[wrote storage.py]" in rendered
+
+
+def test_unrelated_old_write_is_not_selected() -> None:
+    messages = [
+        ChatMessage(
+            role="assistant",
+            content=None,
+            tool_calls=(_write_call("unrelated.py", "def nothing():\n    pass"),),
+        ),
+        *_turnish(8),
+        ChatMessage(role="user", content="explain what a decorator is"),
+    ]
+
+    rendered = _render_context(messages)
+
+    assert "[wrote unrelated.py]" not in rendered
+
+
+def test_selected_write_is_not_duplicated_when_already_in_the_tail() -> None:
+    messages = [
+        ChatMessage(
+            role="assistant",
+            content=None,
+            tool_calls=(_write_call("models.py", "class Task:\n    pass"),),
+        ),
+        ChatMessage(role="user", content="Add a field to models.py"),
+    ]
+
+    rendered = _render_context(messages)
+
+    assert rendered.count("[wrote models.py]") == 1
