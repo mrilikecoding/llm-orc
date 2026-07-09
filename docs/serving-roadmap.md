@@ -34,6 +34,16 @@ The Cycle-7 benchmark harness (`research/agentic-serving-corpus` branch,
 `benchmark-runs/`) is the automation to revive for a standing
 parity-percentage arm (Haiku 4.5 / Sonnet 5 behind OpenCode as baseline).
 
+**Battery realism ladder (named 2026-07-09):** the todo app is a toy.
+Daily-driver parity means real complexity, and the ladder's upper rungs are
+named: (a) the **self-referential meta-task** — answering questions about
+the llm-orc codebase itself (or plexus, or their interaction) through the
+serve, which exercises retrieval over a real repository rather than
+conversation-written files; (b) the **fix-execution milestone** — the
+serving layer executing a fix on a real codebase end-to-end (locate, edit,
+run tests, verify). Both hang off the client execution surface (#83);
+intermediate rungs get designed from run evidence, not pre-specified.
+
 ## Current state (2026-07-09)
 
 Released: **v0.18.0** (agentic serving) and **v0.18.1** (review-debt sweep).
@@ -87,7 +97,9 @@ read-tool results into the turn and/or client-delegated execution (emit's
 permission seam reused for a test-run tool_call — ADR-048 ODP-1). Includes
 the tool-mapping step (resolve emit outcomes against the client's
 advertised tools instead of the hardcoded `write`). Closes run-tests and
-pre-existing-file editing — the two biggest remaining parity holes.
+pre-existing-file editing — the two biggest remaining parity holes — and is
+the enabler for both named upper battery rungs (the codebase meta-task
+needs real-repo retrieval; the fix-execution milestone needs edit + run).
 
 ### 3. Gate integrity pair (#98, #84) — raised in leverage
 
