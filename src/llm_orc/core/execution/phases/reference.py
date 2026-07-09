@@ -26,8 +26,16 @@ def resolve_reference(token: str, results_dict: dict[str, Any]) -> Any:
         return token
     dep, field = match.group(1), match.group(2)
     result = results_dict.get(dep, {})
-    parsed = json.loads(result.get("response", ""))
+    try:
+        parsed = json.loads(result.get("response") or "")
+    except (json.JSONDecodeError, TypeError):
+        # a failed/skipped/prose upstream resolves to None (guard skips the
+        # node; dispatch surfaces its unresolved-target error) instead of
+        # crashing the whole ensemble run
+        return None
     value: Any = parsed
     for part in field.split("."):
+        if not isinstance(value, dict) or part not in value:
+            return None
         value = value[part]
     return value

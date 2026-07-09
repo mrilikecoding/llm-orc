@@ -133,9 +133,13 @@ def main() -> None:
     print(
         json.dumps(
             {
+                # fail CLOSED: an unreadable routing decision must not
+                # default a turn onto the build path
                 "build": bool(
                     decision.get("build", decision.get("kind") != "explanation")
-                ),
+                )
+                if decision
+                else False,
                 "file": decision.get("file", "solution.py"),
                 "content": deliverable,
                 "accept": accept,

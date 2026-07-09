@@ -112,7 +112,12 @@ class LoopAgentRunner:
     def _compile_carry(self, carry: str | None) -> Carry | None:
         if carry is None:
             return None
-        return lambda output: self._stringify(self._resolve_output(carry, output))
+
+        def _carry(output: dict[str, Any]) -> str | None:
+            value = self._resolve_output(carry, output)
+            return None if value is None else self._stringify(value)
+
+        return _carry
 
     @staticmethod
     def _resolve_output(token: str, output: dict[str, Any]) -> Any:

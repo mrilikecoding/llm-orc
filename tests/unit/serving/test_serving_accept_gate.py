@@ -121,3 +121,14 @@ def test_gate_rejects_when_judge_inadequate() -> None:
 def test_gate_rejects_when_executor_fails() -> None:
     g = _gate({"tests_pass": False}, {"tests_adequate": True})
     assert g["accept"] is False
+
+
+def test_quoted_string_false_from_the_judge_does_not_pass_the_gate() -> None:
+    """Small models sometimes quote booleans; bool("false") is True in
+    Python, which would wave inadequate tests through the gate."""
+    verdict = _gate(
+        {"tests_pass": True, "report": "all passed"},
+        {"tests_adequate": "false", "reason": "trivial asserts"},
+    )
+    assert verdict["tests_adequate"] is False
+    assert verdict["accept"] is False

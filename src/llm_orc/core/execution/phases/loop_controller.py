@@ -14,7 +14,7 @@ from typing import Any
 
 BodyExecutor = Callable[[str], Awaitable[dict[str, Any]]]
 Predicate = Callable[[dict[str, Any]], bool]
-Carry = Callable[[dict[str, Any]], str]
+Carry = Callable[[dict[str, Any]], str | None]
 
 
 @dataclass
@@ -44,5 +44,9 @@ class LoopController:
             if until(output):
                 return LoopOutcome(output, iteration + 1, "until")
             if carry is not None:
-                current_input = carry(output)
+                carried = carry(output)
+                # a missing carry field keeps the previous input — never
+                # feed a stringified None into the next iteration
+                if carried is not None:
+                    current_input = carried
         return LoopOutcome(output, max_iterations, "exhausted")

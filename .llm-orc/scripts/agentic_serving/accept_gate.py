@@ -39,7 +39,12 @@ def _extract_bool(resp: str, key: str) -> bool | None:
     try:
         obj = json.loads(resp)
         if isinstance(obj, dict) and key in obj:
-            return bool(obj[key])
+            value = obj[key]
+            if isinstance(value, str):
+                # small models sometimes quote booleans; "false" must not
+                # truthy its way through the gate
+                return value.strip().lower() == "true"
+            return bool(value)
     except (json.JSONDecodeError, TypeError):
         pass
     match = re.search(rf'"{key}"\s*:\s*(true|false)', resp, re.IGNORECASE)

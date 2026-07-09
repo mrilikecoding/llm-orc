@@ -120,3 +120,27 @@ def test_system_messages_are_excluded() -> None:
 
     assert "opencode" not in rendered
     assert "user: hello" in rendered
+
+
+def test_truncation_lands_on_a_line_boundary() -> None:
+    """Front-truncation must not decapitate a '[wrote ...]' header —
+    gather's workspace extraction is line-anchored."""
+    messages = [
+        ChatMessage(role="user", content="u" * 3000),
+        ChatMessage(
+            role="assistant",
+            content=None,
+            tool_calls=(_write_call("mod.py", "def f():\n    return 1"),),
+        ),
+        ChatMessage(role="user", content="latest"),
+    ]
+
+    rendered = _render_context(messages)
+
+    assert len(rendered) <= 4000
+    # every remaining line is intact: the write header survives whole or
+    # not at all
+    assert not rendered.startswith("ser: ")  # no decapitated 'user: ' line
+    for line in rendered.splitlines():
+        if "[wrote" in line:
+            assert line.startswith("assistant: [wrote ")

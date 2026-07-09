@@ -87,3 +87,17 @@ class TestDispatchResolver:
         guard_value = resolve_reference("${classify.target}", results)
 
         assert resolved_seat.dispatch_resolved == guard_value == "seat-a"
+
+
+def test_resolve_reference_returns_none_for_unparseable_upstream() -> None:
+    """A failed/skipped/prose upstream must resolve to None (guard skips,
+    dispatch surfaces its typed error) — not crash the whole ensemble run."""
+    from llm_orc.core.execution.phases.reference import resolve_reference
+
+    assert resolve_reference("${dep.field}", {"dep": {"response": "not json"}}) is None
+    assert resolve_reference("${dep.field}", {"dep": {"response": None}}) is None
+    assert resolve_reference("${dep.field}", {}) is None
+    assert (
+        resolve_reference("${dep.missing}", {"dep": {"response": '{"other": 1}'}})
+        is None
+    )
