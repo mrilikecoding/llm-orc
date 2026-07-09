@@ -54,6 +54,9 @@ def run_tests(code: str, tests: str) -> tuple[bool, str, int]:
 
 
 def main() -> None:
+    # sandbox dir on sys.path so tests can import materialized workspace
+    # modules (conversation-written files) as siblings
+    sys.path.insert(0, str(Path(sys.argv[1]).resolve().parent))
     code = Path(sys.argv[1]).read_text(encoding="utf-8")
     tests = Path(sys.argv[2]).read_text(encoding="utf-8")
     tests_pass, report, n_tests = run_tests(code, tests)

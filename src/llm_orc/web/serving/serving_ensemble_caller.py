@@ -114,15 +114,22 @@ def _render_write(message: Any) -> str | None:
         except (json.JSONDecodeError, TypeError):
             continue
         if isinstance(arguments, dict) and arguments.get("filePath"):
-            body = str(arguments.get("content", ""))[:_CTX_FILE_CAP]
+            body = str(arguments.get("content", ""))
+            if len(body) > _CTX_FILE_CAP:
+                # marked so gather never materializes a corrupted file
+                header = f"assistant: [wrote {arguments['filePath']} (truncated)]"
+                return f"{header}\n{body[:_CTX_FILE_CAP]}"
             return f"assistant: [wrote {arguments['filePath']}]\n{body}"
     return None
 
 
 def _render_text(message: Any, role: str) -> str | None:
+    """One line per message — write-block bodies stay the only multi-line
+    content, keeping the transcript line-anchored for workspace extraction."""
     content = getattr(message, "content", None)
     if isinstance(content, str) and content.strip():
-        return f"{role}: {content.strip()[:_CTX_TEXT_CAP]}"
+        flat = " ".join(content.strip().split())
+        return f"{role}: {flat[:_CTX_TEXT_CAP]}"
     return None
 
 

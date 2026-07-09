@@ -74,6 +74,36 @@ def test_single_message_history_renders_empty() -> None:
     assert _render_context([ChatMessage(role="user", content="hello")]) == ""
 
 
+def test_text_lines_collapse_newlines_for_line_anchored_parsing() -> None:
+    """Text renders one line per message so write-block bodies stay the only
+    multi-line content — that is what makes workspace extraction (gather)
+    line-anchored and deterministic."""
+    messages = [
+        ChatMessage(role="user", content="first line\nsecond line"),
+        ChatMessage(role="user", content="latest"),
+    ]
+
+    rendered = _render_context(messages)
+
+    assert "user: first line second line" in rendered
+
+
+def test_truncated_write_body_is_marked_so_it_is_never_materialized() -> None:
+    big_body = "x" * 5000
+    messages = [
+        ChatMessage(
+            role="assistant",
+            content=None,
+            tool_calls=(_write_call("big.py", big_body),),
+        ),
+        ChatMessage(role="user", content="latest"),
+    ]
+
+    rendered = _render_context(messages)
+
+    assert "[wrote big.py (truncated)]" in rendered
+
+
 def test_system_messages_are_excluded() -> None:
     """OpenCode sends its own system prompt as the first message; it is client
     instruction, not conversation — seats have their own system prompts
