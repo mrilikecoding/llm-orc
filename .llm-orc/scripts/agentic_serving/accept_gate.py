@@ -68,12 +68,21 @@ def main() -> None:
     tests_adequate = _extract_bool(_dep_response(deps, "judge"), "tests_adequate")
 
     reasons: list[str] = []
+    carried = False
     if tests_pass is None:
         tests_pass = False
         reasons.append("executor verdict unreadable")
     if tests_adequate is None:
-        tests_adequate = False
-        reasons.append("judge verdict unreadable")
+        # held round (issue #100): no judge seat — the held path only fires
+        # when round 1's judge passed these exact tests, so the verdict
+        # carries deterministically; the executor stays the live gate.
+        # No judge AND no held flag is a miswired shape, not a free pass.
+        if _extract_bool(_dep_response(deps, "gather"), "held"):
+            tests_adequate = True
+            carried = True
+        else:
+            tests_adequate = False
+            reasons.append("judge verdict unreadable")
 
     accept = bool(tests_pass and tests_adequate)
     if not accept and not reasons:
@@ -82,7 +91,12 @@ def main() -> None:
         if not tests_adequate:
             reasons.append("tests inadequate to verify the requirement")
 
-    reason = "; ".join(reasons) if reasons else "tests pass and are adequate"
+    if reasons:
+        reason = "; ".join(reasons)
+    elif carried:
+        reason = "tests pass; adequacy carried from round 1"
+    else:
+        reason = "tests pass and are adequate"
     print(
         json.dumps(
             {

@@ -1,0 +1,35 @@
+name: build-code-round
+description: |
+  The held TDD retry round (issue #100): round 1's tests — collected, run,
+  and judged adequate — ARE the spec, so this round regenerates only the
+  code against them (TDD's actual loop; both sides resampling made
+  convergence luck on spec-free choices). gather reads the tests from the
+  carry's HELD TESTS sentinel block (no test_writer seat); accept_gate
+  carries round 1's adequacy verdict from gather's held flag (no judge
+  seat — re-judging identical tests only risks a stochastic flip, #84);
+  the executor stays the live deterministic ground truth. Strengthens
+  ADR-048 criteria-primacy: round 1's tests become round 2's concrete
+  criteria.
+
+# Not registry-facing — no topaz_skill and no serves; it is resolved only
+# by build-round's dispatch.
+
+agents:
+  - name: code_writer
+    ensemble: code-generator
+
+  - name: gather
+    script: scripts/agentic_serving/accept_gather.py
+    depends_on: [code_writer]
+
+  - name: executor
+    script: scripts/agentic_serving/accept_executor.py
+    depends_on: [gather]
+
+  - name: accept_gate
+    script: scripts/agentic_serving/accept_gate.py
+    depends_on: [executor, gather]
+
+  - name: envelope
+    script: scripts/agentic_serving/build_gated_envelope.py
+    depends_on: [code_writer, executor, accept_gate]

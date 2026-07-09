@@ -18,6 +18,7 @@ import re
 import sys
 
 import _helpers
+from _helpers import HELD_TESTS_MARKER as _HELD_MARKER
 from _helpers import payload as _payload
 from _helpers import response as _response
 from _helpers import terminal as _terminal
@@ -147,7 +148,18 @@ def main() -> None:
     if not isinstance(deps, dict):
         deps = {}
 
-    tests = _extract_tests(_terminal(_response(deps.get("test_writer", {}))))
+    # held round (issue #100): no test_writer seat — the carry's sentinel
+    # block IS the spec; strip it from the requirement the verifiers echo.
+    # A fresh round with test_writer output never takes this path, so a
+    # sentinel in user text worst-cases into a reject, never a wrong accept.
+    tests_terminal = _terminal(_response(deps.get("test_writer", {})))
+    held = not tests_terminal.strip() and _HELD_MARKER in requirement
+    if held:
+        requirement, _, held_block = requirement.partition(_HELD_MARKER)
+        requirement = requirement.strip()
+        tests = _extract_tests(held_block)
+    else:
+        tests = _extract_tests(tests_terminal)
     code = _extract_code(_terminal(_response(deps.get("code_writer", {}))))
     tests = _inject_workspace_imports(tests, workspace)
     code = _inject_workspace_imports(code, workspace)
@@ -161,6 +173,7 @@ def main() -> None:
                 "requirement": requirement,
                 "code": code,
                 "tests": tests,
+                "held": held,
                 "workspace": workspace,
                 "target_file": target_file,
             }

@@ -18,6 +18,12 @@ from typing import Any
 # Fences tagged with a shell-ish language are usage examples, not code.
 SHELL_LANGS = {"bash", "sh", "shell", "console", "zsh", "text"}
 
+# The TDD retry sentinel (issue #100): a rejected round whose tests collected
+# and were judged adequate carries them under this marker; route dispatches
+# the held round on it, and gather reads the tests back out. One constant —
+# the envelope writes it, route and gather read it.
+HELD_TESTS_MARKER = "[HELD TESTS: round 1 spec; regenerate ONLY the code]"
+
 _FENCE_RE = re.compile(r"```([a-zA-Z0-9_+-]*)\n(.*?)```", re.DOTALL)
 
 

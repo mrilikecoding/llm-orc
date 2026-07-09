@@ -100,18 +100,20 @@ def _envelope_with_input(
     gate_verdict: dict[str, Any],
     base_input: str,
     executor_report: str = "",
+    executor_extra: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    executor_result: dict[str, Any] = {
+        "tests_pass": False,
+        "report": executor_report,
+    }
+    executor_result.update(executor_extra or {})
     payload = json.dumps(
         {
             "input_data": base_input,
             "dependencies": {
                 "code_writer": {"response": _sub_ensemble_response(code_terminal)},
                 "accept_gate": {"response": json.dumps(gate_verdict)},
-                "executor": {
-                    "response": json.dumps(
-                        {"tests_pass": False, "report": executor_report}
-                    )
-                },
+                "executor": {"response": json.dumps(executor_result)},
             },
         }
     )
@@ -140,6 +142,65 @@ def test_reject_envelope_composes_a_retry_input_for_the_next_round() -> None:
     retry = env["diagnostics"]["retry_input"]
     assert "Write f() in f.py" in retry
     assert "test_f: AssertionError()" in retry
+
+
+def test_reject_with_ran_adequate_tests_carries_them_held_in_retry_input() -> None:
+    """The TDD retry loop (issue #100): when the round's tests collected and
+    ran (n_tests > 0) and the judge passed them, the reject carry embeds the
+    tests under the HELD TESTS sentinel — round 2 holds them as the spec and
+    regenerates only the code."""
+    env = _envelope_with_input(
+        "def f():\n    return 2",
+        {
+            "accept": False,
+            "tests_pass": False,
+            "tests_adequate": True,
+            "reason": "tests did not pass",
+        },
+        base_input="Write f() in f.py",
+        executor_report="test_f: AssertionError()",
+        executor_extra={"n_tests": 2, "tests": "def test_f():\n    assert f() == 1"},
+    )
+    retry = env["diagnostics"]["retry_input"]
+    assert "Write f() in f.py" in retry
+    assert "[HELD TESTS" in retry
+    assert "def test_f():\n    assert f() == 1" in retry
+
+
+def test_reject_with_uncollected_tests_regenerates_fresh() -> None:
+    """Tests that never collected (n_tests == 0) are not a spec — the carry
+    stays the fresh-regeneration form."""
+    env = _envelope_with_input(
+        "def f():\n    return 2",
+        {
+            "accept": False,
+            "tests_pass": False,
+            "tests_adequate": True,
+            "reason": "tests did not pass",
+        },
+        base_input="Write f() in f.py",
+        executor_report="no test_* functions or TestCase classes found",
+        executor_extra={"n_tests": 0, "tests": "garbage"},
+    )
+    retry = env["diagnostics"]["retry_input"]
+    assert "[HELD TESTS" not in retry
+    assert "Write f() in f.py" in retry
+
+
+def test_reject_with_inadequate_tests_regenerates_fresh() -> None:
+    """Judge-rejected tests are not a spec worth holding."""
+    env = _envelope_with_input(
+        "def f():\n    return 2",
+        {
+            "accept": False,
+            "tests_pass": True,
+            "tests_adequate": False,
+            "reason": "tests inadequate to verify the requirement",
+        },
+        base_input="Write f() in f.py",
+        executor_extra={"n_tests": 2, "tests": "def test_f():\n    assert True"},
+    )
+    assert "[HELD TESTS" not in env["diagnostics"]["retry_input"]
 
 
 def test_accept_envelope_has_no_retry_input() -> None:
