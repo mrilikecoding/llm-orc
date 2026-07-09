@@ -23,6 +23,9 @@ WP-F8; the declarative Serving Ensemble is the only path.
 
 from __future__ import annotations
 
+import hashlib
+import json
+import os
 import time
 import uuid
 from collections.abc import AsyncIterator
@@ -66,6 +69,43 @@ def get_session_registry() -> SessionRegistry:
 def get_session_start_cache() -> SessionStartCache:
     """Return the process-scoped session-start cache."""
     return _SHARED_SESSION_START_CACHE
+
+
+def _log_wire_shape(request: _ChatCompletionsRequest) -> None:
+    """Append one JSONL row describing the request's message shape.
+
+    Enabled by ``LLM_ORC_SERVE_WIRE_LOG=<path>`` — the issue #82 entry-gate
+    instrumentation for observing client-side history rewrites (compaction,
+    forks) on the wire. Records roles, content lengths, and a rolling
+    prefix-hash chain; never the content itself. The prefix hashes make a
+    client rewrite visible as a divergence point between requests.
+    """
+    log_path = os.environ.get("LLM_ORC_SERVE_WIRE_LOG")
+    if not log_path:
+        return
+    rows = []
+    digest = hashlib.sha256()
+    for message in request.messages:
+        content = message.content or ""
+        digest.update(f"{message.role}\x00{content}\x00".encode())
+        rows.append(
+            {
+                "role": message.role,
+                "content_len": len(content),
+                "tool_calls": len(message.tool_calls or []),
+                "prefix_hash": digest.hexdigest()[:12],
+            }
+        )
+    row = {
+        "ts": time.time(),
+        "message_count": len(request.messages),
+        "messages": rows,
+    }
+    try:
+        with open(log_path, "a", encoding="utf-8") as f:
+            f.write(json.dumps(row) + "\n")
+    except OSError:  # observation must never break serving
+        pass
 
 
 def _resolve_serving_project_dir() -> Path:
@@ -133,6 +173,7 @@ async def chat_completions(
     introspection is the vendor-neutral turn trace.
     """
     context = _resolve_context(request)
+    _log_wire_shape(request)
     serving_caller: _ChatCompletionsCaller = get_serving_ensemble_caller()
     if request.stream:
         return StreamingResponse(

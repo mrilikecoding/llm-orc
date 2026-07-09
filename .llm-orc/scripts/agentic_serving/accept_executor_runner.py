@@ -36,21 +36,47 @@ def run_tests(code: str, tests: str) -> tuple[bool, str, int]:
     test_fns = [
         (name, fn)
         for name, fn in namespace.items()
-        if name.startswith("test_") and callable(fn)
+        if name.startswith("test_") and callable(fn) and not isinstance(fn, type)
     ]
-    if not test_fns:
-        return False, "no test_* functions found", 0
+
+    # unittest.TestCase classes are the other common seat-model dialect
+    # ('no test_* functions found' otherwise rejects perfectly good tests)
+    import unittest
+
+    case_classes = [
+        obj
+        for obj in namespace.values()
+        if isinstance(obj, type)
+        and issubclass(obj, unittest.TestCase)
+        and obj is not unittest.TestCase
+    ]
 
     failures: list[str] = []
+    n_tests = 0
+
     for name, fn in test_fns:
+        n_tests += 1
         try:
             fn()
         except Exception as error:  # noqa: BLE001
             failures.append(f"{name}: {error!r}")
 
+    if case_classes:
+        loader = unittest.defaultTestLoader
+        suite = unittest.TestSuite(
+            loader.loadTestsFromTestCase(case) for case in case_classes
+        )
+        result = unittest.TestResult()
+        suite.run(result)
+        n_tests += result.testsRun
+        for test, trace in result.failures + result.errors:
+            failures.append(f"{test}: {trace.strip().splitlines()[-1]}")
+
+    if n_tests == 0:
+        return False, "no test_* functions or TestCase classes found", 0
     if failures:
-        return False, "; ".join(failures), len(test_fns)
-    return True, "all passed", len(test_fns)
+        return False, "; ".join(failures), n_tests
+    return True, "all passed", n_tests
 
 
 def main() -> None:

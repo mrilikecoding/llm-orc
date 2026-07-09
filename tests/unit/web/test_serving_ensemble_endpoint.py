@@ -322,3 +322,39 @@ def test_explain_turn_returns_prose_not_a_tool_call(
     content = choice["message"]["content"]
     assert content
     assert "foo.py" in content
+
+
+def test_wire_log_records_message_shape_when_enabled(
+    serving_project: Path,
+    serving_client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """LLM_ORC_SERVE_WIRE_LOG=<path> appends one JSONL row per request with
+    the message shape (roles, content lengths, rolling prefix hashes) — the
+    issue #82 entry-gate instrumentation for observing client-side
+    compaction on the wire. Content itself is never logged."""
+    wire_log = tmp_path / "wire.jsonl"
+    monkeypatch.setenv("LLM_ORC_SERVE_WIRE_LOG", str(wire_log))
+
+    resp = serving_client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "ensemble-agent",
+            "messages": [
+                {"role": "user", "content": "hello"},
+                {"role": "assistant", "content": "Hi!"},
+                {"role": "user", "content": "explain what foo.py does"},
+            ],
+            "tools": [_WRITE_TOOL],
+        },
+    )
+
+    assert resp.status_code == 200
+    row = json.loads(wire_log.read_text().strip().splitlines()[-1])
+    assert row["message_count"] == 3
+    assert [m["role"] for m in row["messages"]] == ["user", "assistant", "user"]
+    assert row["messages"][0]["content_len"] == len("hello")
+    # rolling prefix hash chain: same prefix -> same hashes across requests
+    assert len(row["messages"][0]["prefix_hash"]) == 12
+    assert "hello" not in wire_log.read_text()

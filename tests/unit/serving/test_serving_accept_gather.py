@@ -254,3 +254,41 @@ def test_executor_materializes_workspace_files_in_the_sandbox() -> None:
     }
     result = _executor_from_gather(gathered)
     assert result["tests_pass"] is True
+
+
+def test_executor_runs_unittest_class_style_tests() -> None:
+    """Seat models often emit unittest.TestCase classes; the runner must
+    collect and run those, not just top-level test_* functions (long-horizon
+    drive finding 2026-07-09: 'no test_* functions found')."""
+    gathered = {
+        "requirement": "is_even",
+        "code": "def is_even(n):\n    return n % 2 == 0",
+        "tests": (
+            "import unittest\n\n"
+            "class TestIsEven(unittest.TestCase):\n"
+            "    def test_even(self):\n"
+            "        self.assertTrue(is_even(4))\n"
+            "    def test_odd(self):\n"
+            "        self.assertFalse(is_even(3))\n"
+        ),
+        "workspace": {},
+    }
+    result = _executor_from_gather(gathered)
+    assert result["tests_pass"] is True
+    assert result["n_tests"] == 2
+
+
+def test_executor_reports_unittest_class_failures() -> None:
+    gathered = {
+        "requirement": "is_even",
+        "code": "def is_even(n):\n    return n % 2 == 1",  # wrong
+        "tests": (
+            "import unittest\n\n"
+            "class TestIsEven(unittest.TestCase):\n"
+            "    def test_even(self):\n"
+            "        self.assertTrue(is_even(4))\n"
+        ),
+        "workspace": {},
+    }
+    result = _executor_from_gather(gathered)
+    assert result["tests_pass"] is False

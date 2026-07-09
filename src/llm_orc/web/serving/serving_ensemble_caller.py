@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import uuid
 from collections.abc import AsyncIterator, Sequence
 from pathlib import Path
@@ -41,12 +42,18 @@ if TYPE_CHECKING:
 
 _WRITE_TOOL = "write"
 
-# Rung-1 conversation-context caps (memory design §Rung 1): bounded render,
-# flat per-turn cost regardless of session length.
+# Conversation-context caps (memory design §Rung 1/2'): bounded render,
+# flat per-turn cost regardless of session length. The tail carries recency;
+# referent selection retrieves older write blocks the task names from the
+# full wire history (the client sends it every turn — issue #82).
 _CTX_MAX_MESSAGES = 8
 _CTX_TEXT_CAP = 500
 _CTX_FILE_CAP = 2000
-_CTX_TOTAL_CAP = 4000
+_CTX_TAIL_CAP = 4000
+_CTX_SELECTED_CAP = 4000
+
+_CTX_FILE_RE = re.compile(r"\b[\w./-]+\.(?:py|js|ts|json|md|txt|ya?ml|sh|go|rs)\b")
+_CTX_TOKEN_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]{2,}")
 
 
 def _task_from(messages: Sequence[Any]) -> str:
@@ -97,19 +104,87 @@ def _render_context(messages: Sequence[Any]) -> str:
     conversational = [
         m for m in prior if getattr(m, "role", "") in ("user", "assistant")
     ]
-    for message in conversational[-_CTX_MAX_MESSAGES:]:
+    tail = conversational[-_CTX_MAX_MESSAGES:]
+    for message in tail:
         role = getattr(message, "role", "")
         line = _render_write(message) or _render_text(message, role)
         if line:
             lines.append(line)
     rendered = "\n".join(lines)
-    if len(rendered) > _CTX_TOTAL_CAP:
-        rendered = rendered[-_CTX_TOTAL_CAP:]
+    if len(rendered) > _CTX_TAIL_CAP:
+        rendered = rendered[-_CTX_TAIL_CAP:]
         # drop the decapitated first line — gather's workspace extraction is
         # line-anchored, and a partial '[wrote ...]' header corrupts it
         cut = rendered.find("\n")
         rendered = rendered[cut + 1 :] if cut >= 0 else rendered
+
+    task = _task_from(messages)
+    # select over the FULL prior history, not just pre-tail messages: the
+    # tail char cap can slice a write off the front of the tail render, and
+    # the tail_paths dedup below already filters whatever survived in it
+    selected = _select_written_files(conversational, task)
+    tail_paths = {
+        line.split("[wrote ", 1)[1].split("]", 1)[0].removesuffix(" (truncated)")
+        for line in rendered.splitlines()
+        if line.startswith("assistant: [wrote ")
+    }
+    blocks = [block for path, block in selected if path not in tail_paths]
+    kept = _whole_blocks_within_cap(blocks)
+    if kept:
+        selected_text = "\n".join(kept)
+        rendered = f"{selected_text}\n{rendered}" if rendered else selected_text
     return rendered
+
+
+def _whole_blocks_within_cap(blocks: list[str]) -> list[str]:
+    """Whole blocks up to ``_CTX_SELECTED_CAP`` — cap pressure drops whole
+    blocks (referenced-first ordering puts the least relevant last), never a
+    mid-block cut: an intact ``[wrote path]`` header over a silently cut body
+    would make gather materialize a corrupted file."""
+    kept: list[str] = []
+    size = 0
+    for block in blocks:
+        cost = len(block) + (1 if kept else 0)
+        if size + cost > _CTX_SELECTED_CAP:
+            break
+        kept.append(block)
+        size += cost
+    return kept
+
+
+def _select_written_files(history: Sequence[Any], task: str) -> list[tuple[str, str]]:
+    """Every conversation-written file's latest version, referenced-first
+    (Stage 2, issue #82).
+
+    The client sends the full history every turn, so nothing is lost — only
+    windowed out. Files are the workspace state generated code may import
+    (observed live: a build spuriously imported an un-referenced module), so
+    ALL of them are carried, ordered task-referenced first so cap pressure
+    drops the least relevant.
+    """
+    file_refs = {m.group(0).rsplit("/", 1)[-1] for m in _CTX_FILE_RE.finditer(task)}
+    tokens = set(_CTX_TOKEN_RE.findall(task))
+    latest: dict[str, str] = {}
+    for message in history:
+        block = _render_write(message)
+        if block is None:
+            continue
+        header = block.splitlines()[0]
+        path = header.split("[wrote ", 1)[1].split("]", 1)[0]
+        path = path.removesuffix(" (truncated)")
+        latest[path] = block  # later writes replace earlier versions
+
+    def referenced(item: tuple[str, str]) -> bool:
+        path, block = item
+        if path.rsplit("/", 1)[-1] in file_refs:
+            return True
+        body = "\n".join(block.splitlines()[1:])
+        return any(
+            re.search(rf"\b(?:class|def)\s+{re.escape(t)}\b", body) for t in tokens
+        )
+
+    items = list(latest.items())
+    return sorted(items, key=lambda item: (not referenced(item),))
 
 
 def _render_write(message: Any) -> str | None:
