@@ -74,7 +74,10 @@ def _timeout() -> float:
 
 
 def _run_sandboxed(
-    code: str, tests: str, workspace: dict[str, str] | None = None
+    code: str,
+    tests: str,
+    workspace: dict[str, str] | None = None,
+    target_file: str = "",
 ) -> tuple[bool, str, int]:
     timeout = _timeout()
     with tempfile.TemporaryDirectory() as tmp:
@@ -84,6 +87,11 @@ def _run_sandboxed(
             safe = Path(name).name
             if safe and safe not in ("solution.py", "tests.py"):
                 (Path(tmp) / safe).write_text(str(body), encoding="utf-8")
+        # an edit turn's deliverable shadows the stale workspace copy at its
+        # destination — mirroring what the client's write will do on accept
+        safe_target = Path(target_file).name if target_file else ""
+        if safe_target and safe_target not in ("solution.py", "tests.py"):
+            (Path(tmp) / safe_target).write_text(code, encoding="utf-8")
         code_path = Path(tmp) / "solution.py"
         tests_path = Path(tmp) / "tests.py"
         code_path.write_text(code, encoding="utf-8")
@@ -133,7 +141,9 @@ def main() -> None:
         else {}
     )
 
-    tests_pass, report, n_tests = _run_sandboxed(code, tests, workspace)
+    target_file = str(data.get("target_file", ""))
+
+    tests_pass, report, n_tests = _run_sandboxed(code, tests, workspace, target_file)
 
     print(
         json.dumps(

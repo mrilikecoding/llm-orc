@@ -109,6 +109,12 @@ def _extract_tests(text: str) -> str:
 # verifier chain echoes is the clean turn after it (ADR-048 isolation).
 _REQUEST_MARKER = "\n\nCurrent request: "
 
+# The deliverable's destination named in the turn (mirrors classify's file
+# extraction) — the executor shadows a stale workspace copy at this name.
+_FILE_RE = re.compile(
+    r"\b([\w./-]+\.(?:py|js|ts|jsx|tsx|json|md|txt|ya?ml|sh|go|rs|java|c|cpp|h))\b"
+)
+
 # A conversation-written file block in the rendered context. Text lines are
 # newline-collapsed by the renderer, so a write body runs until the next
 # 'user:'/'assistant:' line. '(truncated)' blocks are never materialized.
@@ -187,6 +193,9 @@ def main() -> None:
     tests = _inject_workspace_imports(tests, workspace)
     code = _inject_workspace_imports(code, workspace)
 
+    file_match = _FILE_RE.search(requirement)
+    target_file = file_match.group(1).rsplit("/", 1)[-1] if file_match else ""
+
     print(
         json.dumps(
             {
@@ -194,6 +203,7 @@ def main() -> None:
                 "code": code,
                 "tests": tests,
                 "workspace": workspace,
+                "target_file": target_file,
             }
         )
     )
