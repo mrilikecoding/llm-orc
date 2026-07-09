@@ -263,6 +263,40 @@ def test_quoted_message_content_is_normalized_before_classify(
     assert "foo.py" in choice["message"]["content"]
 
 
+def test_prior_turns_reach_the_seat_via_dispatch_input(
+    serving_project: Path, serving_client: TestClient
+) -> None:
+    """Rung-1 conversation memory: prior turns render into the context and
+    reach the seat behind the 'Current request:' marker, so generation seats
+    can resolve referents like "it" (memory design §Rung 1). The explainer is
+    swapped for an input-echo script so the response reveals the seat input.
+    """
+    (serving_project / "ensembles" / "explainer.yaml").write_text(
+        "name: explainer\n"
+        "description: input-echo explain seat for the context thread-through\n"
+        "agents:\n"
+        "  - name: out\n"
+        '    script: "cat"\n'
+    )
+    resp = serving_client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "ensemble-agent",
+            "messages": [
+                {"role": "user", "content": "write is_even in even.py"},
+                {"role": "assistant", "content": "Done - is_even is in even.py."},
+                {"role": "user", "content": "explain what foo.py does"},
+            ],
+            "tools": [_WRITE_TOOL],
+        },
+    )
+
+    assert resp.status_code == 200
+    content = resp.json()["choices"][0]["message"]["content"]
+    assert "user: write is_even in even.py" in content
+    assert "Current request: explain what foo.py does" in content
+
+
 def test_explain_turn_returns_prose_not_a_tool_call(
     serving_client: TestClient,
 ) -> None:

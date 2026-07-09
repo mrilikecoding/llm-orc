@@ -97,3 +97,18 @@ def test_executor_reads_contract_from_gather_dependency() -> None:
     # passthrough carries the contract + artifact to the judge
     assert result["code"] == CODE
     assert result["tests"] == TESTS
+
+
+def test_gather_strips_conversation_context_from_the_requirement() -> None:
+    """With rung-1 context threading, the shape's base input carries the
+    conversation ahead of the 'Current request:' marker. The requirement the
+    verifier chain echoes (and the judge reads) is the clean turn only —
+    conversation context must not reach verifier seats (ADR-048 isolation).
+    """
+    criteria = (
+        "Conversation so far:\n"
+        "user: write is_even in even.py\nassistant: [wrote even.py]"
+        "\n\nCurrent request: Write is_even(n)."
+    )
+    out = _gather(criteria, TESTS, CODE)
+    assert out["requirement"] == "Write is_even(n)."

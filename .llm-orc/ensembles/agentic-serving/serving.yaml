@@ -39,7 +39,8 @@ agents:
     options:
       think: false
     depends_on: [classify]
-    input_key: dispatch_input
+    # the clean latest turn — routing must not read conversation context
+    input_key: task
     when: ${classify.needs_decider}
     system_prompt: |
       You route a user's turn to the right serving seat. Read the request and
