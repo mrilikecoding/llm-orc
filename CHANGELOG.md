@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.18.3] - 2026-07-09
+
+### Added
+- TDD retry loop (issue #100): the accept-gate retry round holds round 1's
+  tests fixed as the spec when they collected and were judged adequate, and
+  regenerates only the code (`build-round` router + `build-code-round`,
+  pure composition on the loop/dispatch primitives)
+- `diagnostics.held_round` marks each round's mode in the build envelope;
+  `LLM_ORC_SERVE_TRACE_SNIPPET` raises the turn-trace clip for live
+  diagnosis
+
+### Fixed
+- The serve's own "Another round needed" status turns are filtered from
+  the rendered conversation context (they accumulate on the append-only
+  wire and fed generation seats as noise)
+- Code extraction drops seat-emitted test fences, so deliverables no
+  longer ship with the test suite embedded
+- The test-writer seat prompt bans reflection-style tests
+  (hasattr/callable), which fail correct implementations and pass wrong
+  ones
+
 ## [0.18.2] - 2026-07-09
 
 ### Added
