@@ -123,13 +123,14 @@ function AgentResults({ execution }: { execution: ArtifactDetailType }) {
 }
 
 function SynthesisResult({ execution }: { execution: ArtifactDetailType }) {
-  if (!execution.synthesis) return null
+  const text = execution.deliverable ?? execution.synthesis
+  if (!text) return null
 
   return (
     <div style={{ marginTop: '1rem' }}>
       <p className="muted-label">Synthesis</p>
       <article style={{ borderColor: 'var(--pico-primary)' }}>
-        <pre style={{ whiteSpace: 'pre-wrap' }}><code>{execution.synthesis}</code></pre>
+        <pre style={{ whiteSpace: 'pre-wrap' }}><code>{text}</code></pre>
       </article>
     </div>
   )
