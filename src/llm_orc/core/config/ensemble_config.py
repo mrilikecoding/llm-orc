@@ -667,6 +667,25 @@ def compute_reference_graph_depth(
     return depth_of(name)
 
 
+def _static_ensemble_refs(agents: list[AgentConfig]) -> list[str]:
+    """Every statically-known ensemble reference an agent list carries.
+
+    AS-2 covers ensemble-agent targets, loop bodies, and literal
+    (non-templated) dispatch targets; runtime-resolved ``${...}`` dispatch
+    cannot be followed statically (issue #94).
+    """
+    refs: list[str] = []
+    for agent in agents:
+        if isinstance(agent, EnsembleAgentConfig):
+            refs.append(agent.ensemble)
+        elif isinstance(agent, LoopAgentConfig):
+            refs.append(agent.loop.body)
+        elif isinstance(agent, DynamicDispatchAgentConfig):
+            if "${" not in agent.dispatch:
+                refs.append(agent.dispatch)
+    return refs
+
+
 def _build_reference_graph(
     ensemble_name: str,
     agents: list[AgentConfig],
@@ -677,24 +696,21 @@ def _build_reference_graph(
     if ensemble_name in graph:
         return
 
-    # AS-2 covers every statically-known reference: ensemble-agent targets,
-    # loop bodies, and literal (non-templated) dispatch targets. Runtime-
-    # resolved ${...} dispatch cannot be followed statically (issue #94).
-    refs: list[str] = []
-    for agent in agents:
-        if isinstance(agent, EnsembleAgentConfig):
-            refs.append(agent.ensemble)
-        elif isinstance(agent, LoopAgentConfig):
-            refs.append(agent.loop.body)
-        elif isinstance(agent, DynamicDispatchAgentConfig):
-            if "${" not in agent.dispatch:
-                refs.append(agent.dispatch)
+    refs = _static_ensemble_refs(agents)
     graph[ensemble_name] = refs
 
     for ref_name in refs:
         if ref_name in graph:
             continue
-        ref_config = _find_ensemble_in_dirs(ref_name, search_dirs)
+        try:
+            ref_config = _find_ensemble_in_dirs(ref_name, search_dirs)
+        except Exception as exc:
+            # name the actual culprit — otherwise a malformed referenced
+            # sibling silently discredits the valid root (issue #96)
+            raise ValueError(
+                f"Ensemble '{ensemble_name}' references '{ref_name}', "
+                f"which failed to load: {exc}"
+            ) from exc
         if ref_config:
             _build_reference_graph(
                 ref_name,

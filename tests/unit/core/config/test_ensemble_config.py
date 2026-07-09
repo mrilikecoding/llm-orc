@@ -1753,3 +1753,26 @@ class TestLoopAndDispatchReferenceCoverage:
         agents = EnsembleLoader().load_from_file(str(tmp_path / "ens-a.yaml")).agents
 
         validate_ensemble_reference_graph("ens-a", agents, [str(tmp_path)])
+
+
+class TestReferencedEnsembleFailureAttribution:
+    """Issue #96: a malformed referenced sibling must be named as the cause,
+    not silently blamed on the valid root ensemble."""
+
+    def test_failure_names_the_broken_referenced_ensemble(self, tmp_path: Path) -> None:
+        (tmp_path / "ens-a.yaml").write_text(
+            yaml.dump(
+                {
+                    "name": "ens-a",
+                    "description": "valid root",
+                    "agents": [{"name": "step", "ensemble": "ens-b"}],
+                }
+            )
+        )
+        (tmp_path / "ens-b.yaml").write_text("agents: [\nmangled yaml")
+
+        loader = EnsembleLoader()
+        with pytest.raises(ValueError, match="references 'ens-b'"):
+            loader.load_from_file(
+                str(tmp_path / "ens-a.yaml"), search_dirs=[str(tmp_path)]
+            )
