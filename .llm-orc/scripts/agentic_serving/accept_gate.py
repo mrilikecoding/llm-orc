@@ -25,6 +25,8 @@ import json
 import re
 import sys
 
+from _helpers import terminal as _terminal
+
 
 def _dep_response(deps: dict[str, object], name: str) -> str:
     node = deps.get(name, {})
@@ -65,7 +67,12 @@ def main() -> None:
         deps = {}
 
     tests_pass = _extract_bool(_dep_response(deps, "executor"), "tests_pass")
-    tests_adequate = _extract_bool(_dep_response(deps, "judge"), "tests_adequate")
+    # the judge is a sub-ensemble seat (#84): its dep response is the nested
+    # child-result envelope — peel to the model's raw verdict (terminal() is
+    # a no-op on a bare verdict, so both shapes read)
+    tests_adequate = _extract_bool(
+        _terminal(_dep_response(deps, "judge")), "tests_adequate"
+    )
 
     reasons: list[str] = []
     carried = False

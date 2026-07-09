@@ -351,6 +351,33 @@ def test_executor_runs_unittest_class_style_tests() -> None:
     assert result["n_tests"] == 2
 
 
+def test_async_test_functions_are_executed_not_silently_passed() -> None:
+    """An async def test_* returns a coroutine when called; uncollected, it
+    raised nothing and counted as a PASS — a wrong-accept channel (found
+    2026-07-09 during the cross-task adequacy scan). The runner must await
+    it and report its real verdict."""
+    gathered = {
+        "requirement": "is_even",
+        "code": "def is_even(n):\n    return n % 2 == 0",
+        "tests": ("async def test_wrong_expectation():\n    assert is_even(3) is True"),
+        "workspace": {},
+    }
+    result = _executor_from_gather(gathered)
+    assert result["tests_pass"] is False
+    assert result["n_tests"] == 1
+
+
+def test_passing_async_tests_pass() -> None:
+    gathered = {
+        "requirement": "is_even",
+        "code": "def is_even(n):\n    return n % 2 == 0",
+        "tests": "async def test_even():\n    assert is_even(4) is True",
+        "workspace": {},
+    }
+    result = _executor_from_gather(gathered)
+    assert result["tests_pass"] is True
+
+
 def test_executor_reports_unittest_class_failures() -> None:
     gathered = {
         "requirement": "is_even",

@@ -1,0 +1,276 @@
+# Labeled fixtures for the judge false-reject measurement (#84).
+#
+# Each entry is an executor contract {requirement, code, tests} plus ground
+# truth: expected_adequate (would these tests catch a wrong implementation?)
+# and expected_tests_pass (what the sandboxed executor reports — verified in
+# CI by tests/unit/benchmarks/test_judge_adequacy_harness.py, so a broken
+# fixture cannot poison the measurement).
+#
+# Classes:
+#   adequate-clear          behavior tests with real values — must accept
+#   adequate-terse          short but catching — the false-reject bait class
+#   inadequate-trivial      assert-True / existence checks — must reject
+#   inadequate-tautological pass ANY implementation — must reject
+#   failing-but-adequate    wrong code, good tests — adequacy is a property
+#                           of the tests, independent of pass status
+
+fixtures:
+  - name: celsius-clear
+    class: adequate-clear
+    expected_adequate: true
+    expected_tests_pass: true
+    requirement: "Write celsius_to_fahrenheit(c) converting Celsius to Fahrenheit."
+    code: |
+      def celsius_to_fahrenheit(c):
+          return c * 9 / 5 + 32
+    tests: |
+      def test_freezing():
+          assert celsius_to_fahrenheit(0) == 32
+
+      def test_boiling():
+          assert celsius_to_fahrenheit(100) == 212
+
+      def test_negative():
+          assert celsius_to_fahrenheit(-40) == -40
+
+  - name: is-even-clear
+    class: adequate-clear
+    expected_adequate: true
+    expected_tests_pass: true
+    requirement: "Write is_even(n) returning True when n is even."
+    code: |
+      def is_even(n):
+          return n % 2 == 0
+    tests: |
+      def test_even():
+          assert is_even(4) is True
+
+      def test_odd():
+          assert is_even(3) is False
+
+      def test_zero():
+          assert is_even(0) is True
+
+      def test_negative_even():
+          assert is_even(-2) is True
+
+  - name: reverse-string-clear
+    class: adequate-clear
+    expected_adequate: true
+    expected_tests_pass: true
+    requirement: "Write reverse_string(s) returning the reversed string."
+    code: |
+      def reverse_string(s):
+          return s[::-1]
+    tests: |
+      def test_word():
+          assert reverse_string("abc") == "cba"
+
+      def test_empty():
+          assert reverse_string("") == ""
+
+      def test_palindrome():
+          assert reverse_string("aba") == "aba"
+
+  - name: unique-sorted-clear
+    class: adequate-clear
+    expected_adequate: true
+    expected_tests_pass: true
+    requirement: "Write unique_sorted(items) returning sorted unique values."
+    code: |
+      def unique_sorted(items):
+          return sorted(set(items))
+    tests: |
+      def test_dedupes_and_sorts():
+          assert unique_sorted([3, 1, 3, 2]) == [1, 2, 3]
+
+      def test_empty():
+          assert unique_sorted([]) == []
+
+      def test_already_unique():
+          assert unique_sorted([2, 1]) == [1, 2]
+
+  - name: factorial-terse
+    class: adequate-terse
+    expected_adequate: true
+    expected_tests_pass: true
+    requirement: "Write factorial(n) for non-negative n."
+    code: |
+      def factorial(n):
+          result = 1
+          for i in range(2, n + 1):
+              result *= i
+          return result
+    tests: |
+      def test_base():
+          assert factorial(0) == 1
+
+      def test_value():
+          assert factorial(4) == 24
+
+  - name: palindrome-terse
+    class: adequate-terse
+    expected_adequate: true
+    expected_tests_pass: true
+    requirement: "Write is_palindrome(s) returning True when s reads the same reversed."
+    code: |
+      def is_palindrome(s):
+          return s == s[::-1]
+    tests: |
+      def test_yes():
+          assert is_palindrome("level") is True
+
+      def test_no():
+          assert is_palindrome("apple") is False
+
+  - name: max-of-three-terse
+    class: adequate-terse
+    expected_adequate: true
+    expected_tests_pass: true
+    requirement: "Write max_of_three(a, b, c) returning the largest of the three."
+    code: |
+      def max_of_three(a, b, c):
+          return max(a, b, c)
+    tests: |
+      def test_middle_arg():
+          assert max_of_three(1, 9, 3) == 9
+
+      def test_negative():
+          assert max_of_three(-5, -2, -9) == -2
+
+  - name: assert-true-trivial
+    class: inadequate-trivial
+    expected_adequate: false
+    expected_tests_pass: true
+    requirement: "Write add(a, b) returning the sum."
+    code: |
+      def add(a, b):
+          return a + b
+    tests: |
+      def test_add_exists():
+          assert True
+
+      def test_add_works():
+          assert True
+
+  - name: callable-check-trivial
+    class: inadequate-trivial
+    expected_adequate: false
+    expected_tests_pass: true
+    requirement: "Write multiply(a, b) returning the product."
+    code: |
+      def multiply(a, b):
+          return a * b
+    tests: |
+      def test_is_callable():
+          assert callable(multiply)
+
+      def test_is_defined():
+          assert multiply is not None
+
+  - name: no-exception-trivial
+    class: inadequate-trivial
+    expected_adequate: false
+    expected_tests_pass: true
+    requirement: "Write square(n) returning n squared."
+    code: |
+      def square(n):
+          return n * n
+    tests: |
+      def test_runs_without_error():
+          square(3)
+          assert True
+
+  - name: hasattr-trivial
+    class: inadequate-trivial
+    expected_adequate: false
+    expected_tests_pass: true
+    requirement: "Write a Counter class with an increment() method and a count attribute."
+    code: |
+      class Counter:
+          def __init__(self):
+              self.count = 0
+
+          def increment(self):
+              self.count += 1
+    tests: |
+      def test_has_increment():
+          assert hasattr(Counter, "increment")
+
+      def test_instantiates():
+          Counter()
+          assert True
+
+  - name: self-equality-tautological
+    class: inadequate-tautological
+    expected_adequate: false
+    expected_tests_pass: true
+    requirement: "Write double(n) returning n times two."
+    code: |
+      def double(n):
+          return n * 2
+    tests: |
+      def test_consistent():
+          assert double(2) == double(2)
+
+      def test_result_equals_itself():
+          result = double(5)
+          assert result == result
+
+  - name: type-only-tautological
+    class: inadequate-tautological
+    expected_adequate: false
+    expected_tests_pass: true
+    requirement: "Write count_vowels(s) returning the number of vowels in s."
+    code: |
+      def count_vowels(s):
+          return sum(1 for ch in s if ch in "aeiou")
+    tests: |
+      def test_returns_int():
+          assert isinstance(count_vowels("abc"), int)
+
+      def test_returns_int_for_empty():
+          assert isinstance(count_vowels(""), int)
+
+  - name: echo-impl-tautological
+    class: inadequate-tautological
+    expected_adequate: false
+    expected_tests_pass: true
+    requirement: "Write clamp(n, low, high) limiting n to the range [low, high]."
+    code: |
+      def clamp(n, low, high):
+          return max(low, min(n, high))
+    tests: |
+      def test_matches_own_output():
+          expected = clamp(15, 0, 10)
+          assert clamp(15, 0, 10) == expected
+
+  - name: celsius-wrong-code
+    class: failing-but-adequate
+    expected_adequate: true
+    expected_tests_pass: false
+    requirement: "Write celsius_to_fahrenheit(c) converting Celsius to Fahrenheit."
+    code: |
+      def celsius_to_fahrenheit(c):
+          return c * 9 / 5
+    tests: |
+      def test_freezing():
+          assert celsius_to_fahrenheit(0) == 32
+
+      def test_boiling():
+          assert celsius_to_fahrenheit(100) == 212
+
+  - name: is-even-inverted-code
+    class: failing-but-adequate
+    expected_adequate: true
+    expected_tests_pass: false
+    requirement: "Write is_even(n) returning True when n is even."
+    code: |
+      def is_even(n):
+          return n % 2 == 1
+    tests: |
+      def test_even():
+          assert is_even(4) is True
+
+      def test_odd():
+          assert is_even(3) is False

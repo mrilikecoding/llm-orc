@@ -2,6 +2,22 @@
 
 **Status:** Accepted (Conditional) — BUILD validation pending (2026-07-02)
 
+> **Amendment (#84, 2026-07-09): the adequacy signal is deterministic.** The
+> judge-adequacy measurement (`benchmarks/judge_adequacy`, 3 prompt variants x
+> 128 samples on the live seat) found the model judge never false-accepted an
+> inadequate suite (FAR 0.0 in all runs) but false-rejected 25-67% of adequate
+> ones, near-deterministically per fixture, and prompt iteration moved the
+> miscalibration around rather than removing it. Every measured inadequate
+> class has a static signature, so the gate's `tests_adequate` input is now
+> the deterministic value-bearing-assert analysis (`adequacy_check.py`) —
+> both gate inputs are deterministic, and §5's round-multiplier concern about
+> judge conservatism is retired. The model seat survives as
+> `adequacy-judge.yaml` (the harness's measurement subject); the §3
+> independence posture is unchanged (the checker reads only the executor's
+> echoed contract). The AND composition stands: the measurement answered §5's
+> AND-vs-weighted question in favor of AND with a calibrated deterministic
+> input rather than a weighted stochastic one.
+
 > **BUILD validation update (Cycle-8 WP-D8, 2026-07-03).** The owed Grounding Reframe ran
 > (thinned-criteria rerun; `essays/research-logs/cycle-8-spike-q2-grounded-acceptance.md`
 > §"WP-D8 Grounding Reframe"). Findings: (a) the anti-gaming catch is 100%
