@@ -47,6 +47,16 @@ _EXPLAIN_MARKERS = (
 _INTERROGATIVE_RE = re.compile(r"^(what|why|how|when|where|which|who)\b", re.IGNORECASE)
 _DEFAULT_CODE_SEAT = "code-seat"
 _EXPLAIN_SEAT = "explainer"
+_TESTS_SEAT = "tests-seat"
+# Tests as the OBJECT of the request (issue #98): a build verb directly
+# asking for tests, or "tests for/of/against <target>". A trailing "with
+# tests" mention stays a code turn — routing it here would ship only tests.
+_TESTS_PRIMARY_RE = re.compile(
+    r"\b(?:write|add|create|generate|implement|build)\s+"
+    r"(?:some\s+|unit\s+|more\s+|the\s+)?tests?\b"
+    r"|\btests?\s+(?:for|of|against)\b",
+    re.IGNORECASE,
+)
 _FILE_RE = re.compile(
     r"\b([\w./-]+\.(?:py|js|ts|jsx|tsx|json|md|txt|ya?ml|sh|go|rs|java|c|cpp|h))\b"
 )
@@ -102,8 +112,17 @@ def main() -> None:
     named_file = turn.get("file") or _extract_file(task)
     has_build_signal = bool(named_file) or bool(_BUILD_RE.search(task))
 
+    named_basename = named_file.rsplit("/", 1)[-1] if named_file else ""
+    tests_primary = bool(_TESTS_PRIMARY_RE.search(task)) or named_basename.startswith(
+        "test_"
+    )
+
     if is_explain:
         target, kind, build, needs_decider = _EXPLAIN_SEAT, "explanation", False, False
+    elif tests_primary:
+        # the deliverable IS a test file, run against the workspace alone
+        # (issue #98) — never build-gated's code/tests duality
+        target, kind, build, needs_decider = _TESTS_SEAT, "python_tests", True, False
     elif has_build_signal:
         target = _DEFAULT_CODE_SEAT
         kind = turn.get("kind", "python_module")
@@ -112,7 +131,15 @@ def main() -> None:
         # No structural signal — hand the routing to the guarded model decider.
         target, kind, build, needs_decider = "", "", False, True
 
-    file = named_file or "solution.py"
+    if target == _TESTS_SEAT:
+        if named_basename.startswith("test_"):
+            file = named_file
+        elif named_basename:
+            file = f"test_{named_basename}"
+        else:
+            file = "test_solution.py"
+    else:
+        file = named_file or "solution.py"
 
     # Rung-1 conversation memory: context composes into dispatch_input behind
     # the deterministic marker (generation seats resolve referents; verifier

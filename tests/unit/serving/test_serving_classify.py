@@ -129,3 +129,43 @@ def test_routing_reads_the_task_never_the_context() -> None:
 def test_no_context_leaves_dispatch_input_as_the_bare_task() -> None:
     decision = _classify({"task": "write a function that adds two numbers"})
     assert decision["dispatch_input"] == "write a function that adds two numbers"
+
+
+# --- test-primary turns route to the tests-seat (#98) ---
+
+
+def test_write_tests_for_a_named_file_routes_to_the_tests_seat() -> None:
+    """A test-primary turn (tests as the OBJECT): the deliverable is a test
+    file run against the workspace, never build-gated's code/tests duality
+    (the shadowed-composite wrong-accept, issue #98)."""
+    decision = _classify({"task": "Write tests for storage.py"})
+    assert decision["target"] == "tests-seat"
+    assert decision["build"] is True
+    assert decision["kind"] == "python_tests"
+    assert decision["file"] == "test_storage.py"
+
+
+def test_add_tests_for_it_routes_to_the_tests_seat() -> None:
+    decision = _classify({"task": "add tests for it"})
+    assert decision["target"] == "tests-seat"
+    assert decision["file"] == "test_solution.py"
+
+
+def test_a_named_test_file_routes_to_the_tests_seat() -> None:
+    decision = _classify({"task": "update test_models.py with a case for done"})
+    assert decision["target"] == "tests-seat"
+    assert decision["file"] == "test_models.py"
+
+
+def test_with_tests_is_not_test_primary() -> None:
+    """'write is_even with tests' wants code (tests as a trailing mention);
+    routing it to the tests-seat would ship only tests."""
+    decision = _classify({"task": "write is_even with tests in even.py"})
+    assert decision["target"] == "code-seat"
+    assert decision["file"] == "even.py"
+
+
+def test_explain_still_outranks_the_tests_signal() -> None:
+    decision = _classify({"task": "what do the tests in test_foo.py cover?"})
+    assert decision["build"] is False
+    assert decision["target"] == "explainer"
