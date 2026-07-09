@@ -5,7 +5,11 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
-from llm_orc.models.base import HTTPConnectionPool, ModelInterface
+from llm_orc.models.base import (
+    HTTPConnectionPool,
+    ModelInterface,
+    ToolCallingNotSupportedError,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -301,3 +305,99 @@ class TestModelInterface:
 
         # Then
         assert usage is None
+
+
+class TestHTTPTimeoutConfig:
+    """HTTP request timeouts flow from performance config.
+
+    Operators tune request timeouts per-deployment — local
+    tool-calling models (Ollama with mistral-nemo / qwen2.5, etc.)
+    take 30-80s per iteration, so the hardcoded ``read=30`` default
+    from before this refactor tripped ``httpx.ReadTimeout`` on the
+    first `/v1/chat/completions` request.
+    """
+
+    def setup_method(self) -> None:
+        HTTPConnectionPool._instance = None
+        HTTPConnectionPool._httpx_client = None
+        HTTPConnectionPool._performance_config = None
+
+    def test_timeout_values_default_when_config_absent(self) -> None:
+        """The ``read`` default is sized for local tool-calling models.
+
+        Ollama with mistral-nemo / qwen2.5 / llama3.1-tools routinely
+        takes 30-80s per orchestrator iteration; 180s leaves headroom.
+        Faster remote providers tune down via
+        ``performance.concurrency.request_timeout.read``.
+        """
+        with (
+            patch("httpx.AsyncClient"),
+            patch("httpx.Limits"),
+            patch("httpx.Timeout") as mock_timeout,
+        ):
+            HTTPConnectionPool.get_httpx_client()
+
+        mock_timeout.assert_called_once_with(
+            connect=10.0, read=180.0, write=10.0, pool=5.0
+        )
+
+    def test_timeout_values_from_config_override_defaults(self) -> None:
+        custom_config: dict[str, object] = {
+            "concurrency": {
+                "request_timeout": {
+                    "connect": 15.0,
+                    "read": 300.0,
+                    "write": 20.0,
+                    "pool": 10.0,
+                },
+            },
+        }
+        HTTPConnectionPool.configure(custom_config)
+
+        with (
+            patch("httpx.AsyncClient"),
+            patch("httpx.Limits"),
+            patch("httpx.Timeout") as mock_timeout,
+        ):
+            HTTPConnectionPool.get_httpx_client()
+
+        mock_timeout.assert_called_once_with(
+            connect=15.0, read=300.0, write=20.0, pool=10.0
+        )
+
+    def test_partial_timeout_config_fills_missing_fields_with_defaults(self) -> None:
+        """Only ``read`` set in config; others fall back to defaults."""
+        HTTPConnectionPool.configure(
+            {"concurrency": {"request_timeout": {"read": 180.0}}}
+        )
+
+        with (
+            patch("httpx.AsyncClient"),
+            patch("httpx.Limits"),
+            patch("httpx.Timeout") as mock_timeout,
+        ):
+            HTTPConnectionPool.get_httpx_client()
+
+        mock_timeout.assert_called_once_with(
+            connect=10.0, read=180.0, write=10.0, pool=5.0
+        )
+
+
+class TestToolCallingDefaultBehavior:
+    """Tool calling is opt-in per provider.
+
+    The base ``ModelInterface`` defaults ``supports_tool_calling`` to
+    False and ``generate_with_tools`` raises ``ToolCallingNotSupportedError``.
+    Providers that support it set the flag to True and override the
+    method.
+    """
+
+    def test_supports_tool_calling_defaults_to_false(self) -> None:
+        assert ConcreteModel.supports_tool_calling is False
+        assert ModelInterface.supports_tool_calling is False
+
+    @pytest.mark.asyncio
+    async def test_base_generate_with_tools_raises_not_supported(self) -> None:
+        model = ConcreteModel()
+        with pytest.raises(ToolCallingNotSupportedError, match="test-model"):
+            await model.generate_with_tools(messages=[], tools=[])

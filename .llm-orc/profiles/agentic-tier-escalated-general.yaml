@@ -1,0 +1,11 @@
+# Agentic-serving — escalated-tier dispatch target for most Topaz skills
+# (Cycle 5 / ADR-015 Reflect verdict routing per ADR-014).
+#
+# Same underlying model as agentic-orchestrator-offline so Ollama loads
+# it once and reuses across orchestrator + escalated dispatch when
+# running locally.
+name: agentic-tier-escalated-general
+model: qwen3:14b
+provider: ollama
+cost_per_token: 0.0
+timeout_seconds: 300

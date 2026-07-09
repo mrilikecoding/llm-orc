@@ -1,0 +1,50 @@
+name: prose-improver
+description: |
+  Single-agent capability ensemble that improves the clarity and
+  structure of prose while preserving the author's voice and intent.
+  Any skill framework whose workflow decomposes into a writing-quality
+  sub-task can dispatch this ensemble via
+  `invoke_ensemble("prose-improver", ...)`.
+
+  Output: the improved prose only. No editorial commentary, no
+  side-by-side comparison, no list of what was changed — just the
+  improved text.
+
+  Tagged `writing_quality` per the Topaz eight-skill taxonomy
+  (ADR-015). Cheap-tier defaults to qwen3:8b
+  (agentic-tier-cheap-general); the Calibration Gate routes escalation
+  to qwen3:14b (agentic-tier-escalated-general) on a Reflect verdict.
+
+topaz_skill: writing_quality
+
+# ADR-025 §"Scope: always, for capability ensembles" — deliverable
+# routes through SessionArtifactStore; envelope.artifacts[0] carries
+# the typed reference. AS-7 amended: result-summarizer is skipped.
+output_substrate: artifact
+
+default_task: |
+  Improve the clarity and structure of the provided prose. Preserve
+  the author's voice, tone, and intent. Improvements should target:
+
+  - Sentence-level clarity (eliminate ambiguity, tighten phrasing)
+  - Paragraph-level structure (logical progression, transitions)
+  - Word-choice precision (replace vague terms with specific ones
+    where the meaning is clear from context)
+  - Removal of throat-clearing, filler, and redundant qualification
+
+  Do NOT:
+
+  - Add content the author did not write
+  - Change the argument or conclusions
+  - Shift register (e.g., do not make casual prose formal or
+    technical prose colloquial)
+  - Rewrite for length unless explicitly asked
+
+  Output only the improved prose. No editorial commentary, no
+  preamble, no annotations. If the prose is already clear and
+  well-structured, output it unchanged (with a brief leading note:
+  "No improvements warranted — prose is already clear.").
+
+agents:
+  - name: improver
+    model_profile: agentic-tier-cheap-general

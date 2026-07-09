@@ -1,0 +1,87 @@
+name: text-summarizer
+description: |
+  Single-agent capability ensemble that produces a user-facing summary
+  of input text — main claim, key supporting points, notable caveats.
+  Any skill framework whose workflow decomposes into a summarization
+  sub-task can dispatch this ensemble via
+  `invoke_ensemble("text-summarizer", ...)`.
+
+  Distinct from the internal `agentic-result-summarizer` (which is
+  invoked by Orchestrator Tool Dispatch on every `invoke_ensemble`
+  return path per ADR-004 / AS-7). This ensemble is user-facing
+  summarization of arbitrary text; the internal summarizer is
+  ensemble-result summarization for orchestrator context-management.
+  Operators should not conflate the two.
+
+  Tagged `summarization` per the Topaz eight-skill taxonomy (ADR-015).
+  Cheap-tier defaults to qwen3:1.7b (agentic-tier-cheap-summary —
+  smaller/faster than the general cheap tier because summarization is
+  high-volume but bounded-reasoning); the Calibration Gate routes
+  escalation to qwen3:14b (agentic-tier-escalated-general) on a
+  Reflect verdict.
+
+topaz_skill: summarization
+
+# ADR-025 §"Scope: always, for capability ensembles" — deliverable
+# routes through SessionArtifactStore; envelope.artifacts[0] carries
+# the typed reference. AS-7 amended: result-summarizer is skipped.
+# (Cycle 6 size-floor tradeoff: short text-summarizer outputs accept
+# substrate overhead deliberately; the dial-back falsification
+# indicators in ADR-025 §"Dial-back falsification criteria" cover
+# the operational-friction case.)
+output_substrate: artifact
+
+# ADR-024 (Cycle 6 WP-D): operator-declared shape for envelope.structured.
+# Documents the canonical typed shape — main_claim, key_points, caveats —
+# without changing the current prose default_task. Per Cycle 6 WP-E
+# entry decision (WP-D snapshot moderate advisory 1 resolution): the
+# schema stays documentary; default_task is preserved. Spike β's
+# reframing places drift at the orchestrator's input.data override,
+# not at the synthesizer's compliance — rewriting default_task would
+# address the wrong layer. Dispatch populates envelope.structured
+# advisorily when the synthesizer naturally emits JSON.
+output_schema:
+  type: object
+  properties:
+    main_claim:
+      type: string
+    key_points:
+      type: array
+      items:
+        type: string
+    caveats:
+      type: array
+      items:
+        type: string
+  required: [main_claim, key_points]
+
+default_task: |
+  Produce a summary of the provided text. The summary should:
+
+  - State the main claim or thesis in a single sentence
+  - List 2-5 key supporting points (one bullet each)
+  - Note any caveats, limitations, or open questions the text
+    explicitly raises (one bullet each)
+
+  Output structure (in this order):
+
+  **Main claim:** <one sentence>
+
+  **Key points:**
+  - <point 1>
+  - <point 2>
+  - ...
+
+  **Caveats:** (omit this section entirely if the text raises no
+  caveats)
+  - <caveat 1>
+  - ...
+
+  Do not editorialize. Do not introduce content the text does not
+  contain. If the text is too short to summarize meaningfully (e.g.,
+  a single sentence), output the text verbatim with the leading note:
+  "Source too short to summarize:".
+
+agents:
+  - name: summarizer
+    model_profile: agentic-tier-cheap-summary

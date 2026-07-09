@@ -1,7 +1,10 @@
 """Base classes and shared infrastructure for LLM models."""
 
 from abc import ABC, abstractmethod
-from typing import Any
+from dataclasses import dataclass, field
+from typing import Any, Literal
+
+from llm_orc.models.structural_errors import LlmOrcStructuralError
 
 _DEFAULT_PERFORMANCE_CONFIG: dict[str, Any] = {
     "concurrency": {
@@ -53,7 +56,9 @@ class HTTPConnectionPool:
             )
 
             # Get connection pool settings from configuration
-            pool_config = config.get("concurrency", {}).get("connection_pool", {})
+            concurrency = config.get("concurrency", {})
+            pool_config = concurrency.get("connection_pool", {})
+            timeout_config = concurrency.get("request_timeout", {})
 
             # Configure connection pooling for better performance
             limits = httpx.Limits(
@@ -62,11 +67,17 @@ class HTTPConnectionPool:
                 keepalive_expiry=pool_config.get("keepalive_expiry", 30.0),
             )
 
+            # Default read is sized for local tool-calling models
+            # (Ollama with mistral-nemo / qwen2.5 / llama3.1-tools)
+            # where a single orchestrator iteration routinely takes
+            # 30-80s. Operators deploying against faster remote
+            # providers can tune down via
+            # ``performance.concurrency.request_timeout.read``.
             timeout = httpx.Timeout(
-                connect=10.0,  # Connection timeout
-                read=30.0,  # Read timeout
-                write=10.0,  # Write timeout
-                pool=5.0,  # Pool timeout
+                connect=timeout_config.get("connect", 10.0),
+                read=timeout_config.get("read", 180.0),
+                write=timeout_config.get("write", 10.0),
+                pool=timeout_config.get("pool", 5.0),
             )
 
             cls._httpx_client = httpx.AsyncClient(
@@ -87,8 +98,80 @@ class HTTPConnectionPool:
             cls._httpx_client = None
 
 
+class ToolCallingNotSupportedError(LlmOrcStructuralError):
+    """Raised when a model that does not support tool calling is asked to.
+
+    First concrete subclass of :class:`LlmOrcStructuralError` per ADR-017
+    §"Shared typed-error base class" and FC-17. The discriminator
+    ``error_kind="tool_call_rejected_per_model"`` and the disposition
+    ``recovery_action_required="reformulate"`` are fixed by construction —
+    callers continue to instantiate with a message string.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        dispatch_context: dict[str, Any] | None = None,
+        operator_diagnostic: str | None = None,
+    ) -> None:
+        super().__init__(
+            message,
+            error_kind="tool_call_rejected_per_model",
+            recovery_action_required="reformulate",
+            dispatch_context=dispatch_context,
+            operator_diagnostic=operator_diagnostic,
+        )
+
+
+@dataclass(frozen=True)
+class ToolCallUsage:
+    """Token accounting returned with a tool-calling response."""
+
+    prompt_tokens: int
+    completion_tokens: int
+    total_tokens: int
+
+
+@dataclass(frozen=True)
+class ToolCall:
+    """A tool call emitted by the model.
+
+    ``arguments_json`` mirrors OpenAI's wire format — the arguments
+    are a JSON-encoded string. Downstream parsers (e.g., the
+    orchestrator Runtime) parse it before handing off.
+    """
+
+    id: str
+    name: str
+    arguments_json: str
+
+
+@dataclass(frozen=True)
+class ToolCallingResponse:
+    """One model turn's output when invoked with tools."""
+
+    content: str
+    tool_calls: list[ToolCall] = field(default_factory=list)
+    usage: ToolCallUsage = field(
+        default_factory=lambda: ToolCallUsage(
+            prompt_tokens=0, completion_tokens=0, total_tokens=0
+        )
+    )
+    finish_reason: Literal["stop", "length", "tool_calls"] = "stop"
+
+
 class ModelInterface(ABC):
     """Abstract interface for LLM models."""
+
+    supports_tool_calling: bool = False
+    """Whether this provider implements ``generate_with_tools``.
+
+    Providers override to ``True`` alongside overriding the method.
+    Callers that need tool-calling (e.g., the orchestrator Runtime at
+    session start) check this flag to fail fast with a clear error
+    when a non-tool-calling profile is configured.
+    """
 
     def __init__(
         self,
@@ -111,6 +194,21 @@ class ModelInterface(ABC):
     async def generate_response(self, message: str, role_prompt: str) -> str:
         """Generate a response from the model."""
         pass
+
+    async def generate_with_tools(
+        self,
+        *,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]],
+    ) -> ToolCallingResponse:
+        """Generate a response with tool-calling enabled.
+
+        Default implementation raises ``ToolCallingNotSupportedError``.
+        Providers that support tool calling override this method and
+        set ``supports_tool_calling = True``.
+        """
+        del messages, tools
+        raise ToolCallingNotSupportedError(f"{self.name} does not support tool calling")
 
     def get_conversation_history(self) -> list[dict[str, str]]:
         """Get the conversation history."""

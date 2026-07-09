@@ -52,7 +52,7 @@ class TestInvokeStatusNormalization:
             executor_execute_return={
                 "status": "completed",
                 "results": {},
-                "synthesis": None,
+                "deliverable": None,
             },
         )
 
@@ -67,7 +67,7 @@ class TestInvokeStatusNormalization:
             executor_execute_return={
                 "status": "completed_with_errors",
                 "results": {},
-                "synthesis": None,
+                "deliverable": None,
             },
         )
 
@@ -82,13 +82,47 @@ class TestInvokeStatusNormalization:
             executor_execute_return={
                 "status": "running",
                 "results": {},
-                "synthesis": None,
+                "deliverable": None,
             },
         )
 
         result = await handler.invoke({"ensemble_name": "test", "input": "hello"})
 
         assert result["status"] == "running"
+
+
+class TestInvokeDeliverablePassthrough:
+    """invoke carries the executor's deliverable contract (ADR-035 D1)."""
+
+    @pytest.mark.asyncio
+    async def test_deliverable_rides_the_projection(self) -> None:
+        handler = _make_handler(
+            _fake_ensemble(),
+            executor_execute_return={
+                "status": "completed",
+                "results": {"synthesizer": {"status": "success", "response": "code"}},
+                "deliverable": "code",
+            },
+        )
+
+        result = await handler.invoke({"ensemble_name": "test", "input": "hello"})
+
+        assert result["deliverable"] == "code"
+
+    @pytest.mark.asyncio
+    async def test_absent_deliverable_projects_none(self) -> None:
+        handler = _make_handler(
+            _fake_ensemble(),
+            executor_execute_return={
+                "status": "completed",
+                "results": {},
+                "deliverable": None,
+            },
+        )
+
+        result = await handler.invoke({"ensemble_name": "test", "input": "hello"})
+
+        assert result["deliverable"] is None
 
 
 class TestInvokeInputFile:
@@ -105,7 +139,7 @@ class TestInvokeInputFile:
             executor_execute_return={
                 "status": "completed",
                 "results": {},
-                "synthesis": None,
+                "deliverable": None,
             },
         )
         await handler.invoke(
@@ -133,7 +167,7 @@ class TestInvokeInputFile:
             executor_execute_return={
                 "status": "completed",
                 "results": {},
-                "synthesis": None,
+                "deliverable": None,
             },
         )
         await handler.invoke(

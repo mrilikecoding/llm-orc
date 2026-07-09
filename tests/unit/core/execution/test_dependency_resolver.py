@@ -4,7 +4,12 @@ from typing import Any
 from unittest.mock import Mock
 
 from llm_orc.core.execution.phases.dependency_resolver import DependencyResolver
-from llm_orc.schemas.agent_config import AgentConfig, LlmAgentConfig, ScriptAgentConfig
+from llm_orc.schemas.agent_config import (
+    AgentConfig,
+    DynamicDispatchAgentConfig,
+    LlmAgentConfig,
+    ScriptAgentConfig,
+)
 
 
 class TestDependencyResolver:
@@ -548,6 +553,93 @@ class TestDependencyResolver:
         # LLM agent gets text format
         llm_input = enhanced["llm_agent"]
         assert "Previous Agent Results" in llm_input
+
+    def test_input_scope_dependencies_omits_base_input(self) -> None:
+        """A node with ``input_scope: dependencies`` receives ONLY its
+        dependency results — no ``Original Input`` section. Verifier seats
+        (the accept-gate judge) use this so conversation context threaded
+        into the shape's base input never reaches them (ADR-048 isolation).
+        """
+        resolver, _ = self.setup_resolver()
+
+        agents: list[AgentConfig] = [
+            LlmAgentConfig(
+                name="judge",
+                model_profile="test-profile",
+                depends_on=["executor"],
+                input_scope="dependencies",
+            ),
+        ]
+        results_dict = {
+            "executor": {
+                "status": "success",
+                "response": '{"requirement": "add two numbers", "tests_pass": true}',
+            },
+        }
+
+        enhanced = resolver.enhance_input_with_dependencies(
+            "SECRET CONVERSATION CONTEXT\n\nCurrent request: add", agents, results_dict
+        )
+
+        assert "SECRET CONVERSATION CONTEXT" not in enhanced["judge"]
+        assert "Original Input" not in enhanced["judge"]
+        assert '"requirement": "add two numbers"' in enhanced["judge"]
+
+    def test_dispatch_agent_with_input_key_gets_clean_selected_value(self) -> None:
+        """A dispatched child ensemble is a fresh execution: it receives the
+        input_key-selected value verbatim, never the LLM dependency prose
+        wrapper (Cycle-8 PLAY field note #2 — the seat narrated about "the
+        previous agent" because its child saw the wrapped input).
+        """
+        import json
+
+        resolver, _ = self.setup_resolver()
+
+        agents: list[AgentConfig] = [
+            DynamicDispatchAgentConfig(
+                name="seat",
+                dispatch="${resolve.target}",
+                input_key="dispatch_input",
+                depends_on=["resolve"],
+            ),
+        ]
+        results_dict = {
+            "resolve": {
+                "status": "success",
+                "response": json.dumps(
+                    {"target": "explainer", "dispatch_input": "hello"}
+                ),
+            },
+        }
+
+        enhanced = resolver.enhance_input_with_dependencies(
+            '{"task": "hello"}', agents, results_dict
+        )
+
+        assert enhanced["seat"] == "hello"
+
+    def test_dispatch_agent_without_input_key_gets_base_input(self) -> None:
+        """Without input_key, a dispatch node's child receives the original
+        ensemble input — still no dependency prose wrapper.
+        """
+        resolver, _ = self.setup_resolver()
+
+        agents: list[AgentConfig] = [
+            DynamicDispatchAgentConfig(
+                name="seat",
+                dispatch="${resolve.target}",
+                depends_on=["resolve"],
+            ),
+        ]
+        results_dict = {
+            "resolve": {"status": "success", "response": '{"target": "explainer"}'},
+        }
+
+        enhanced = resolver.enhance_input_with_dependencies(
+            "the original turn", agents, results_dict
+        )
+
+        assert enhanced["seat"] == "the original turn"
 
 
 class TestFanOutInputPreparation:

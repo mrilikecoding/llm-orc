@@ -90,7 +90,7 @@ class ExecutionResult:
     input: dict[str, str]
     results: dict[str, Any]
     metadata: ExecutionMetadata
-    synthesis: Any = None
+    deliverable: str | None = None
     execution_order: list[str] = field(default_factory=list)
     validation_result: Any = None
 
@@ -109,8 +109,9 @@ class ExecutionResult:
                 for name, agent_result in self.results.items()
             },
             "metadata": self.metadata.to_dict(),
-            "synthesis": self.synthesis,
         }
+        if self.deliverable is not None:
+            result["deliverable"] = self.deliverable
         if self.execution_order:
             result["execution_order"] = self.execution_order
         if self.validation_result is not None:

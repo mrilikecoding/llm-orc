@@ -10,6 +10,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import pytest
+import yaml
 
 from llm_orc.core.execution.ensemble_execution import EnsembleExecutor
 from llm_orc.core.execution.executor_factory import ExecutorFactory
@@ -139,18 +140,41 @@ class TestEnsembleScriptCacheIntegration:
                 assert cached_result["output"] == execution_result
 
     def test_cache_configuration_from_performance_config(
-        self, ensemble_executor: EnsembleExecutor
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Test that cache configuration can be loaded from performance config."""
-        # Test that the EnsembleExecutor has the cache configuration
-        assert hasattr(ensemble_executor, "_script_cache_config")
-        assert hasattr(ensemble_executor, "_script_cache")
+        """The executor loads its script-cache config from the performance config.
 
-        # Verify the cache config has expected defaults
-        cache_config = ensemble_executor._script_cache_config
+        Isolated from the ambient project ``.llm-orc/config.yaml`` (whose
+        ``performance.script_cache`` may enable or disable the cache) by pointing
+        config discovery at a tmp project dir with a known performance config.
+        The non-default ttl/max_size prove the values are read from config rather
+        than falling back to the hardcoded defaults.
+        """
+        llm_orc_dir = tmp_path / ".llm-orc"
+        llm_orc_dir.mkdir()
+        (llm_orc_dir / "config.yaml").write_text(
+            yaml.safe_dump(
+                {
+                    "performance": {
+                        "script_cache": {
+                            "enabled": True,
+                            "ttl_seconds": 7200,
+                            "max_size": 500,
+                        }
+                    }
+                }
+            )
+        )
+        monkeypatch.chdir(tmp_path)
+
+        executor = ExecutorFactory.create_root_executor()
+
+        assert hasattr(executor, "_script_cache_config")
+        assert hasattr(executor, "_script_cache")
+        cache_config = executor._script_cache_config
         assert cache_config.enabled is True
-        assert cache_config.ttl_seconds == 3600
-        assert cache_config.max_size == 1000
+        assert cache_config.ttl_seconds == 7200
+        assert cache_config.max_size == 500
 
     def test_script_cache_respects_disabled_configuration(
         self, ensemble_executor: EnsembleExecutor

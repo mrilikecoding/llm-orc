@@ -244,3 +244,41 @@ class TestOllamaOptionsPassThrough:
         call_kwargs = model.client.chat.call_args
         options = call_kwargs.kwargs.get("options") or call_kwargs[1].get("options")
         assert options is None
+
+
+class TestOllamaThinkingControl:
+    """Scenario: `think` is a top-level Ollama chat field, not a sampling option.
+
+    Disabling qwen3 thinking is a ~33x latency lever; it is provider-specific
+    config carried in `options` but lifted to the top-level `think` chat field.
+    """
+
+    @pytest.mark.asyncio
+    async def test_think_lifted_from_options_to_top_level(self) -> None:
+        model = OllamaModel(
+            model_name="qwen3:8b",
+            options={"think": False, "num_ctx": 4096},
+        )
+        model.client = AsyncMock()
+        model.client.chat = AsyncMock(return_value={"message": {"content": "x"}})
+
+        await model.generate_response("hello", "system prompt")
+
+        call_kwargs = model.client.chat.call_args
+        # think goes to the top-level chat field...
+        assert call_kwargs.kwargs.get("think") is False
+        # ...and is NOT left in the sampling options dict.
+        options = call_kwargs.kwargs.get("options") or {}
+        assert "think" not in options
+        assert options["num_ctx"] == 4096
+
+    @pytest.mark.asyncio
+    async def test_think_absent_when_not_configured(self) -> None:
+        model = OllamaModel(model_name="qwen3:8b", options={"num_ctx": 4096})
+        model.client = AsyncMock()
+        model.client.chat = AsyncMock(return_value={"message": {"content": "x"}})
+
+        await model.generate_response("hello", "system prompt")
+
+        call_kwargs = model.client.chat.call_args
+        assert call_kwargs.kwargs.get("think") is None

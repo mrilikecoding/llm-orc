@@ -96,8 +96,9 @@ class ExecutionHandler:
 
         return {
             "results": result.get("results", {}),
-            "synthesis": result.get("synthesis"),
+            "deliverable": result.get("deliverable"),
             "status": status,
+            "raw_output": config.raw_output,
         }
 
     async def execute_streaming(
@@ -176,17 +177,17 @@ class ExecutionHandler:
 
         elif event_type == "execution_completed":
             results = event_data.get("results", {})
-            synthesis = event_data.get("synthesis")
+            deliverable = event_data.get("deliverable")
             status = event_data.get("status", "completed")
             state["result"] = {
                 "results": results,
-                "synthesis": synthesis,
+                "deliverable": deliverable,
                 "status": status,
             }
             ensemble_name = state.get("ensemble_name", "unknown")
             input_data = state.get("input_data", "")
             self.save_execution_artifact(
-                ensemble_name, input_data, results, synthesis, status
+                ensemble_name, input_data, results, deliverable, status
             )
             await reporter.report_progress(progress=total_agents, total=total_agents)
 
@@ -195,7 +196,7 @@ class ExecutionHandler:
             await reporter.error(f"Execution failed: {error_msg}")
             state["result"] = {
                 "results": {},
-                "synthesis": None,
+                "deliverable": None,
                 "status": "failed",
                 "error": error_msg,
             }
@@ -210,7 +211,7 @@ class ExecutionHandler:
         ensemble_name: str,
         input_data: str,
         results: dict[str, Any],
-        synthesis: Any,
+        deliverable: str | None,
         status: str,
     ) -> Path | None:
         """Save execution results as an artifact.
@@ -219,7 +220,7 @@ class ExecutionHandler:
             ensemble_name: Name of the executed ensemble.
             input_data: Input provided to the ensemble.
             results: Agent results dictionary.
-            synthesis: Synthesis result (if any).
+            deliverable: The executor-resolved deliverable (ADR-035 D1).
             status: Execution status.
 
         Returns:
@@ -231,7 +232,7 @@ class ExecutionHandler:
             "timestamp": datetime.datetime.now().isoformat(),
             "status": status,
             "results": results,
-            "synthesis": synthesis,
+            "deliverable": deliverable,
             "agents": [],
         }
 

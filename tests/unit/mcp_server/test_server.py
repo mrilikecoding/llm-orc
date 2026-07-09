@@ -1326,7 +1326,7 @@ class TestMCPServerStreamingExecution:
             "type": "execution_completed",
             "data": {
                 "results": {"agent1": "output1"},
-                "synthesis": "combined",
+                "deliverable": "combined",
                 "status": "completed",
             },
         }
@@ -1340,7 +1340,7 @@ class TestMCPServerStreamingExecution:
         await server._handle_streaming_event(event, mock_reporter, 2, state)
 
         assert state["result"]["status"] == "completed"
-        assert state["result"]["synthesis"] == "combined"
+        assert state["result"]["deliverable"] == "combined"
         mock_reporter.report_progress.assert_called_once_with(progress=2, total=2)
 
     @pytest.mark.asyncio

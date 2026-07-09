@@ -345,6 +345,48 @@ class ConfigurationManager:
 
         return merged_config
 
+    def load_agentic_serving_config(self) -> dict[str, Any]:
+        """Load agentic-serving configuration with sensible defaults.
+
+        Defaults reflect stateless-first operation (AS-8) and llm-orc's
+        core value proposition that orchestration with local-hardware
+        compute trades tokens-for-quality against a single frontier-API
+        call. Plexus is disabled, autonomy is ``operator-as-tool-user``,
+        and Budget sizes are loose: the token ceiling is a pathology
+        circuit breaker for the local-orchestration-heavy case, not a
+        cost ceiling for frontier-API pricing. Frontier-mix deployments
+        tighten via ``config.yaml``.
+
+        Global ``config.yaml`` overlays defaults; local project
+        ``config.yaml`` overlays global.
+        """
+        defaults: dict[str, Any] = {
+            "orchestrator": {"model_profile": "default"},
+            "budget": {"turn_limit": 500, "token_limit": 10_000_000},
+            "autonomy": {"default_level": "operator-as-tool-user"},
+            "plexus": {"enabled": False},
+            "overrides": {
+                "allow_budget_override": True,
+                "max_turn_limit": 1_000,
+                "max_token_limit": 50_000_000,
+            },
+        }
+
+        global_config = self._load_global_config()
+        global_section = global_config.get("agentic_serving") or {}
+        if not isinstance(global_section, dict):
+            global_section = {}
+
+        local_config = self.load_project_config()
+        local_section = local_config.get("agentic_serving") or {}
+        if not isinstance(local_section, dict):
+            local_section = {}
+
+        self._deep_merge_dict(defaults, global_section)
+        self._deep_merge_dict(defaults, local_section)
+
+        return defaults
+
     def _deep_merge_dict(self, base: dict[str, Any], overlay: dict[str, Any]) -> None:
         """Deep merge overlay dict into base dict."""
         for key, value in overlay.items():
@@ -477,10 +519,19 @@ class ConfigurationManager:
         profiles_dir: Path,
         target: dict[str, dict[str, str]],
     ) -> None:
-        """Load individual profile YAML files from a directory."""
+        """Load individual profile YAML files from a directory.
+
+        ``*.local.yaml`` files load last (each group sorted), so an
+        operator-private override of a checked-in profile name wins
+        deterministically — the seam for backing a tier with a private
+        provider without committing provider-specific config.
+        """
         if not profiles_dir.exists():
             return
-        for yaml_file in profiles_dir.glob("*.yaml"):
+        all_files = sorted(profiles_dir.glob("*.yaml"))
+        base = [f for f in all_files if not f.name.endswith(".local.yaml")]
+        overrides = [f for f in all_files if f.name.endswith(".local.yaml")]
+        for yaml_file in base + overrides:
             try:
                 with open(yaml_file) as f:
                     data = yaml.safe_load(f) or {}

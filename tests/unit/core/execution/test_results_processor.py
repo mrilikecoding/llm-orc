@@ -4,7 +4,11 @@ import time
 from typing import Any
 from unittest.mock import Mock
 
-from llm_orc.core.execution.result_types import ExecutionMetadata, ExecutionResult
+from llm_orc.core.execution.result_types import (
+    AgentResult,
+    ExecutionMetadata,
+    ExecutionResult,
+)
 from llm_orc.core.execution.results_processor import (
     add_fan_out_metadata,
     calculate_usage_summary,
@@ -18,7 +22,9 @@ from llm_orc.core.execution.results_processor import (
     format_execution_summary,
     get_agent_statuses,
     process_agent_results,
+    resolve_deliverable,
 )
+from llm_orc.schemas.agent_config import LlmAgentConfig
 
 
 class TestResultsProcessor:
@@ -33,7 +39,7 @@ class TestResultsProcessor:
         assert result.status == "running"
         assert result.input["data"] == "test input"
         assert result.results == {}
-        assert result.synthesis is None
+        assert result.deliverable is None
         assert result.metadata.agents_used == 3
         assert result.metadata.started_at >= start_time
 
@@ -98,7 +104,7 @@ class TestResultsProcessor:
             },
         }
 
-        summary = calculate_usage_summary(agent_usage, None)
+        summary = calculate_usage_summary(agent_usage)
 
         # Check structure
         assert "agents" in summary
@@ -117,42 +123,9 @@ class TestResultsProcessor:
         assert totals["total_duration_ms"] == 2500
         assert totals["agents_count"] == 2
 
-    def test_calculate_usage_summary_with_synthesis(self) -> None:
-        """Test calculating usage summary with synthesis."""
-        agent_usage = {
-            "agent1": {
-                "total_tokens": 100,
-                "input_tokens": 60,
-                "output_tokens": 40,
-                "cost_usd": 0.05,
-                "duration_ms": 1000,
-            }
-        }
-        synthesis_usage = {
-            "total_tokens": 50,
-            "input_tokens": 30,
-            "output_tokens": 20,
-            "cost_usd": 0.03,
-            "duration_ms": 500,
-        }
-
-        summary = calculate_usage_summary(agent_usage, synthesis_usage)
-
-        # Check synthesis is included
-        assert "synthesis" in summary
-        assert summary["synthesis"] == synthesis_usage
-
-        # Check totals include synthesis
-        totals = summary["totals"]
-        assert totals["total_tokens"] == 150  # 100 + 50
-        assert totals["total_input_tokens"] == 90  # 60 + 30
-        assert totals["total_output_tokens"] == 60  # 40 + 20
-        assert totals["total_cost_usd"] == 0.08  # 0.05 + 0.03
-        assert totals["total_duration_ms"] == 1500  # 1000 + 500
-
     def test_calculate_usage_summary_empty(self) -> None:
         """Test calculating usage summary with no data."""
-        summary = calculate_usage_summary({}, None)
+        summary = calculate_usage_summary({})
 
         assert summary["agents"] == {}
         totals = summary["totals"]
@@ -170,7 +143,7 @@ class TestResultsProcessor:
             "agent2": {"cost_usd": 0.05, "duration_ms": 1000},  # Missing tokens
         }
 
-        summary = calculate_usage_summary(agent_usage, None)
+        summary = calculate_usage_summary(agent_usage)
 
         totals = summary["totals"]
         assert totals["total_tokens"] == 100  # Only agent1 has tokens
@@ -477,3 +450,111 @@ class TestFanOutResultsProcessing:
         stats = count_fan_out_instances(results)
 
         assert stats == {}
+
+
+def _agent(name: str, depends_on: list[str | dict[str, Any]] | None = None) -> Any:
+    """Minimal LLM agent config for deliverable-resolution tests."""
+    return LlmAgentConfig(
+        name=name, model_profile="test-profile", depends_on=depends_on or []
+    )
+
+
+class TestResolveDeliverable:
+    """Deliverable resolution from the dependency DAG (ADR-035 D1, FC-56).
+
+    The ensemble abstraction presents a single output: the unique
+    terminal node's response when it succeeded, else the last
+    successful agent's — never the raw result dict shape.
+    """
+
+    def test_terminal_node_output_is_the_deliverable(self) -> None:
+        """Multi-agent DAG (a ∥ b → c): the terminal agent's response wins."""
+        agents = [
+            _agent("coder"),
+            _agent("critic"),
+            _agent("synthesizer", depends_on=["coder", "critic"]),
+        ]
+        results = {
+            "coder": {"status": "success", "response": "draft code"},
+            "critic": {"status": "success", "response": "a critique"},
+            "synthesizer": {"status": "success", "response": "final code"},
+        }
+
+        assert resolve_deliverable(results, agents) == "final code"
+
+    def test_failed_terminal_falls_back_to_last_successful(self) -> None:
+        """Terminal failed (Spike χ-P1 timeout): last successful agent wins."""
+        agents = [
+            _agent("coder"),
+            _agent("critic"),
+            _agent("synthesizer", depends_on=["coder", "critic"]),
+        ]
+        results = {
+            "coder": {"status": "success", "response": "draft code"},
+            "critic": {"status": "failed", "error": "timeout"},
+            "synthesizer": {"status": "failed", "response": None},
+        }
+
+        assert resolve_deliverable(results, agents) == "draft code"
+
+    def test_all_agents_failed_yields_none(self) -> None:
+        """No successful agent: no deliverable (caller decides the fallback)."""
+        agents = [_agent("solo")]
+        results = {"solo": {"status": "failed", "error": "boom"}}
+
+        assert resolve_deliverable(results, agents) is None
+
+    def test_single_agent_response_is_the_deliverable(self) -> None:
+        """A single-agent ensemble's lone response is its deliverable."""
+        agents = [_agent("extractor")]
+        results = {"extractor": {"status": "success", "response": "claims"}}
+
+        assert resolve_deliverable(results, agents) == "claims"
+
+    def test_dict_form_dependencies_are_recognized(self) -> None:
+        """Conditional (dict-form) depends_on entries count as edges."""
+        agents = [
+            _agent("first"),
+            _agent("second", depends_on=[{"agent_name": "first"}]),
+        ]
+        results = {
+            "first": {"status": "success", "response": "upstream"},
+            "second": {"status": "success", "response": "terminal"},
+        }
+
+        assert resolve_deliverable(results, agents) == "terminal"
+
+    def test_terminal_with_empty_response_falls_back(self) -> None:
+        """A successful terminal with an empty response is not a deliverable."""
+        agents = [_agent("a"), _agent("b", depends_on=["a"])]
+        results = {
+            "a": {"status": "success", "response": "real content"},
+            "b": {"status": "success", "response": ""},
+        }
+
+        assert resolve_deliverable(results, agents) == "real content"
+
+    def test_multiple_terminals_take_last_by_declaration_order(self) -> None:
+        """Multi-terminal DAG edge: the last declared terminal wins."""
+        agents = [
+            _agent("root"),
+            _agent("left", depends_on=["root"]),
+            _agent("right", depends_on=["root"]),
+        ]
+        results = {
+            "root": {"status": "success", "response": "shared"},
+            "left": {"status": "success", "response": "left out"},
+            "right": {"status": "success", "response": "right out"},
+        }
+
+        assert resolve_deliverable(results, agents) == "right out"
+
+    def test_agent_result_objects_are_tolerated(self) -> None:
+        """Results may hold AgentResult objects, not just plain dicts."""
+        agents = [_agent("a"), _agent("b", depends_on=["a"])]
+        results = {
+            "a": AgentResult(status="success", response="upstream"),
+            "b": AgentResult(status="success", response="terminal"),
+        }
+
+        assert resolve_deliverable(results, agents) == "terminal"

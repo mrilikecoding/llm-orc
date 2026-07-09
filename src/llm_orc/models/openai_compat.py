@@ -3,11 +3,24 @@
 import time
 from typing import Any
 
-from llm_orc.models.base import HTTPConnectionPool, ModelInterface
+from llm_orc.models.base import (
+    HTTPConnectionPool,
+    ModelInterface,
+    ToolCall,
+    ToolCallingNotSupportedError,
+    ToolCallingResponse,
+    ToolCallUsage,
+)
 
 
 class OpenAICompatibleModel(ModelInterface):
     """Model for any OpenAI-compatible API (vLLM, LM Studio, OpenRouter, etc.)."""
+
+    supports_tool_calling: bool = True
+    """Supports OpenAI's tool-calling format natively. Covers Ollama
+    (``/v1/chat/completions`` endpoint with tool-calling models like
+    ``llama3.1``, ``qwen2.5``), OpenAI proper, OpenRouter, LM Studio,
+    vLLM, and any compatible provider."""
 
     def __init__(
         self,
@@ -77,3 +90,105 @@ class OpenAICompatibleModel(ModelInterface):
         )
 
         return str(content)
+
+    async def generate_with_tools(
+        self,
+        *,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]],
+    ) -> ToolCallingResponse:
+        """Call the OpenAI-compat ``/v1/chat/completions`` endpoint with tools.
+
+        Non-streaming — the Serving Layer handles streaming separately
+        on its SSE surface. The tool-calling endpoint returns a single
+        response with ``message.content`` (may be null when only tool
+        calls were emitted), ``message.tool_calls``, and ``finish_reason``.
+        """
+        start_time = time.time()
+
+        headers: dict[str, str] = {"Content-Type": "application/json"}
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+
+        body: dict[str, Any] = {
+            "model": self.model_name,
+            "messages": messages,
+            "tools": tools,
+            "stream": False,
+        }
+        if self.temperature is not None:
+            body["temperature"] = self.temperature
+        if self.max_tokens is not None:
+            body["max_tokens"] = self.max_tokens
+
+        client = HTTPConnectionPool.get_httpx_client()
+        response = await client.post(
+            f"{self.base_url}/chat/completions",
+            headers=headers,
+            json=body,
+        )
+
+        if response.status_code != 200:
+            # Per-model tool-calling unsupported: distinguish from generic
+            # transport failure so downstream code can treat this as a
+            # configuration error rather than a transient/retryable fault.
+            # Empirical signal (research log 2026-04-28, S0-CAP-8): Ollama
+            # returns 400 with "does not support tools" when the configured
+            # model has no tool-calling capability metadata; the
+            # ``supports_tool_calling`` flag on this class is class-level
+            # and does not catch that per-model variation.
+            if (
+                response.status_code == 400
+                and "does not support tools" in response.text
+            ):
+                raise ToolCallingNotSupportedError(
+                    f"Model '{self.name}' does not support tool calling on "
+                    f"this provider. Provider returned: {response.text}"
+                )
+            raise RuntimeError(
+                f"OpenAI-compatible tool-calling API error "
+                f"{response.status_code}: {response.text}"
+            )
+
+        data = response.json()
+        choice = data["choices"][0]
+        message = choice["message"]
+        raw_content = message.get("content")
+        content = str(raw_content) if raw_content is not None else ""
+
+        raw_tool_calls = message.get("tool_calls") or []
+        tool_calls = [
+            ToolCall(
+                id=str(tc["id"]),
+                name=str(tc["function"]["name"]),
+                arguments_json=str(tc["function"].get("arguments", "")),
+            )
+            for tc in raw_tool_calls
+        ]
+
+        finish_reason = choice.get("finish_reason", "stop")
+        if finish_reason not in ("stop", "length", "tool_calls"):
+            finish_reason = "stop"
+
+        usage_data = data.get("usage", {})
+        usage = ToolCallUsage(
+            prompt_tokens=int(usage_data.get("prompt_tokens", 0)),
+            completion_tokens=int(usage_data.get("completion_tokens", 0)),
+            total_tokens=int(usage_data.get("total_tokens", 0)),
+        )
+
+        duration_ms = int((time.time() - start_time) * 1000)
+        self._record_usage(
+            input_tokens=usage.prompt_tokens,
+            output_tokens=usage.completion_tokens,
+            duration_ms=duration_ms,
+            cost_usd=0.0,
+            model_name=self.model_name,
+        )
+
+        return ToolCallingResponse(
+            content=content,
+            tool_calls=tool_calls,
+            usage=usage,
+            finish_reason=finish_reason,
+        )

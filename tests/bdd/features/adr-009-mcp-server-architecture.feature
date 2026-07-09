@@ -54,7 +54,7 @@ Feature: MCP Server Architecture
     Given an artifact "code-review/2025-01-15-120000" exists
     When I request the "llm-orc://artifact/code-review/2025-01-15-120000" resource
     Then I should receive the complete artifact data
-    And it should include agent results and synthesis
+    And it should include agent results and the deliverable
 
   # Resource: Metrics
   @resource @metrics

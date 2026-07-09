@@ -1,0 +1,14 @@
+# Agentic-serving — backing profile for system ensembles
+# (Cycle 5).
+#
+# Used by `agentic-result-summarizer` (Orchestrator Tool Dispatch's
+# invoke_ensemble return path, ADR-004 / AS-7) and
+# `agentic-calibration-checker` (Calibration Gate first-N invocations,
+# ADR-007). Both system ensembles run on every dispatch path so their
+# cost has to stay bounded — hence a small/fast model.
+name: agentic-summarizer
+model: qwen3:0.6b
+provider: ollama
+cost_per_token: 0.0
+system_prompt: You are a quick analyst for rapid local analysis.
+timeout_seconds: 60

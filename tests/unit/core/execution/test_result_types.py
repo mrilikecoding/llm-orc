@@ -181,8 +181,8 @@ class TestExecutionResult:
 
         assert d["results"]["agent1"]["response"] == "world"
 
-    def test_to_dict_synthesis_none(self) -> None:
-        """to_dict includes synthesis as None when not set."""
+    def test_deliverable_defaults_to_none(self) -> None:
+        """The deliverable contract field (ADR-035 D1) defaults unset."""
         meta = ExecutionMetadata(agents_used=1, started_at=1000.0)
         result = ExecutionResult(
             ensemble="test",
@@ -192,7 +192,19 @@ class TestExecutionResult:
             metadata=meta,
         )
 
-        d = result.to_dict()
+        assert result.deliverable is None
+        assert "deliverable" not in result.to_dict()
 
-        assert "synthesis" in d
-        assert d["synthesis"] is None
+    def test_to_dict_carries_deliverable_when_set(self) -> None:
+        """A resolved deliverable rides the serialized result."""
+        meta = ExecutionMetadata(agents_used=1, started_at=1000.0)
+        result = ExecutionResult(
+            ensemble="test",
+            status="completed",
+            input={"data": "hello"},
+            results={},
+            metadata=meta,
+            deliverable="final code",
+        )
+
+        assert result.to_dict()["deliverable"] == "final code"

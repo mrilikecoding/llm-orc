@@ -133,7 +133,7 @@ class TestCLI:
                     "agent1": {"response": "test"},
                     "agent2": {"response": "test"},
                 },
-                "synthesis": "Combined results",
+                "deliverable": "Combined results",
                 "status": "success",
             }
 
@@ -144,7 +144,7 @@ class TestCLI:
                 yield {
                     "type": "complete",
                     "results": mock_result["results"],
-                    "synthesis": "Combined results",
+                    "deliverable": "Combined results",
                 }
 
             mock_executor.execute_streaming = mock_streaming
