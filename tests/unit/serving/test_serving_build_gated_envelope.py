@@ -203,6 +203,36 @@ def test_reject_with_inadequate_tests_regenerates_fresh() -> None:
     assert "[HELD TESTS" not in env["diagnostics"]["retry_input"]
 
 
+def test_envelope_marks_a_held_round_in_diagnostics() -> None:
+    """Observability for the TDD retry loop: the round's mode is only
+    knowable live from the envelope, so a held round (gather dep carries
+    held=true) stamps diagnostics.held_round."""
+    payload = json.dumps(
+        {
+            "input_data": "Write f() in f.py",
+            "dependencies": {
+                "code_writer": {"response": _sub_ensemble_response("x = 1")},
+                "accept_gate": {"response": json.dumps({"accept": True})},
+                "gather": {"response": json.dumps({"held": True})},
+            },
+        }
+    )
+    out = subprocess.run(
+        [sys.executable, str(ENVELOPE)],
+        input=payload,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    env = json.loads(out)
+    assert env["diagnostics"]["held_round"] is True
+
+
+def test_envelope_marks_a_fresh_round_without_gather_held() -> None:
+    env = _envelope("x = 1", {"accept": True, "reason": "ok"})
+    assert env["diagnostics"]["held_round"] is False
+
+
 def test_accept_envelope_has_no_retry_input() -> None:
     env = _envelope_with_input(
         "def f():\n    return 1",

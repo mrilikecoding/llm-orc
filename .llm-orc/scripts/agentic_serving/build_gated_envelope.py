@@ -49,6 +49,17 @@ def _verdict(deps: dict[str, object]) -> dict[str, object]:
     return parsed if isinstance(parsed, dict) else {}
 
 
+def _held_round(deps: dict[str, object]) -> bool:
+    """Whether this round ran held (build-code-round wires gather in as an
+    envelope dep; the fresh round has no gather dep here) — the round's mode
+    is only knowable live from the envelope diagnostics."""
+    try:
+        parsed = json.loads(_response(deps.get("gather", {})))
+    except (json.JSONDecodeError, TypeError):
+        return False
+    return bool(parsed.get("held", False)) if isinstance(parsed, dict) else False
+
+
 def main() -> None:
     payload = _payload(sys.stdin.read().strip())
     deps = _deps(payload)
@@ -62,6 +73,7 @@ def main() -> None:
         "accept_reason": str(verdict.get("reason", "")),
         "tests_pass": bool(verdict.get("tests_pass", False)),
         "tests_adequate": bool(verdict.get("tests_adequate", False)),
+        "held_round": _held_round(deps),
     }
     if not diagnostics["accept"]:
         # the bounded retry round's carry REPLACES the next iteration's

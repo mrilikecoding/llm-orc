@@ -32,4 +32,5 @@ agents:
 
   - name: envelope
     script: scripts/agentic_serving/build_gated_envelope.py
-    depends_on: [code_writer, executor, accept_gate]
+    # gather is wired in so diagnostics.held_round marks this round's mode
+    depends_on: [code_writer, executor, accept_gate, gather]
