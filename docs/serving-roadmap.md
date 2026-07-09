@@ -37,11 +37,11 @@ parity-percentage arm (Haiku 4.5 / Sonnet 5 behind OpenCode as baseline).
 ## Current state (2026-07-09)
 
 Released: **v0.18.0** (agentic serving) and **v0.18.1** (review-debt sweep).
-Merged: **PR #99** — Stage 2 core (wire observation + full-history
-selection + gate-runner TestCase support), released as **v0.18.2**.
-In flight: the `tdd-retry-loop` branch — #100 shipped plus the 2026-07-09
-live-diagnosis fixes (reject-noise filter, deliverable test-fence pollution,
-reflection-test prompt ban, `held_round` + trace-depth observability).
+Merged and released: **PR #99** (Stage 2 core — wire observation +
+full-history selection + gate-runner TestCase support) as **v0.18.2**;
+**PR #101** (#100 TDD retry loop + the 2026-07-09 live-diagnosis fixes:
+reject-noise filter, deliverable test-fence pollution, reflection-test
+prompt ban, `held_round` + trace-depth observability) as **v0.18.3**.
 
 Shipped capability: build (accept-gated, bounded retry), explain,
 edit-existing (conversation-written files), within-session memory with
@@ -68,7 +68,7 @@ Key empirical facts the next work builds on:
 
 ## The path, in order of leverage
 
-### 1. TDD retry loop (#100) — SHIPPED (tdd-retry-loop branch)
+### 1. TDD retry loop (#100) — SHIPPED in v0.18.3
 
 The loop body is now a deterministic router: a reject whose tests collected
 and were judged adequate carries them under a HELD TESTS sentinel, and
@@ -142,4 +142,4 @@ Path: #98/#84 gate integrity (raised) · #83 client execution ·
 #93/#95 remainders.
 Shipped: #87 #88 #89 (v0.18.0) · #86 #91 #92 #94 #96 (v0.18.1) ·
 #82-core + gate-runner TestCase support (v0.18.2, PR #99) ·
-#100 TDD retry + live-diagnosis fixes (tdd-retry-loop branch).
+#100 TDD retry + live-diagnosis fixes (v0.18.3, PR #101).
