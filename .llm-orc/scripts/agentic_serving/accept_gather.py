@@ -12,6 +12,7 @@ Emits JSON: {requirement, code, tests}
 
 from __future__ import annotations
 
+import ast
 import json
 import re
 import sys
@@ -69,9 +70,27 @@ def _fenced(text: str) -> str | None:
     return None
 
 
+def _trim_to_parse(code: str, max_drops: int = 10) -> str:
+    """Drop trailing non-parsing lines (bounded) — seat models sometimes leave
+    a prose usage line inside the fence. Valid code returns byte-identical;
+    if nothing parses within the bound, return the original unchanged."""
+    lines = code.splitlines()
+    for drop in range(min(max_drops, len(lines)) + 1):
+        candidate = "\n".join(lines[: len(lines) - drop]).rstrip()
+        if not candidate:
+            break
+        try:
+            ast.parse(candidate)
+        except SyntaxError:
+            continue
+        return candidate if drop else code
+    return code
+
+
 def _extract_code(text: str) -> str:
     fenced = _fenced(text)
-    return fenced if fenced is not None else text.strip()
+    code = fenced if fenced is not None else text.strip()
+    return _trim_to_parse(code)
 
 
 def _extract_tests(text: str) -> str:
@@ -117,6 +136,41 @@ def _workspace(context: str) -> dict[str, str]:
     return files
 
 
+def _inject_workspace_imports(text: str, workspace: dict[str, str]) -> str:
+    """Prepend imports for workspace-module names a deliverable uses but never
+    imports (a common small-model omission caught by the accept gate)."""
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        return text
+    defined = {
+        n.name
+        for n in tree.body
+        if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+    }
+    used = {n.id for n in ast.walk(tree) if isinstance(n, ast.Name)}
+    prelude: list[str] = []
+    for filename, body in workspace.items():
+        module = filename.rsplit(".", 1)[0]
+        already_imported = (
+            f"import {module}" in text or f"from {module} import" in text
+        )
+        if already_imported or not module.isidentifier():
+            continue
+        try:
+            exported = {
+                n.name
+                for n in ast.parse(body).body
+                if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+            }
+        except SyntaxError:
+            continue
+        missing = sorted((used - defined) & exported)
+        if missing:
+            prelude.append(f"from {module} import {', '.join(missing)}")
+    return "\n".join(prelude) + "\n" + text if prelude else text
+
+
 def main() -> None:
     payload = _payload(sys.stdin.read().strip())
     requirement = str(payload.get("input_data", ""))
@@ -130,6 +184,8 @@ def main() -> None:
 
     tests = _extract_tests(_terminal(_response(deps.get("test_writer", {}))))
     code = _extract_code(_terminal(_response(deps.get("code_writer", {}))))
+    tests = _inject_workspace_imports(tests, workspace)
+    code = _inject_workspace_imports(code, workspace)
 
     print(
         json.dumps(

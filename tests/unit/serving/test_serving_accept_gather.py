@@ -126,6 +126,21 @@ def test_gather_skips_shell_fences_when_extracting_code() -> None:
     assert out["code"] == CODE
 
 
+def test_gather_trims_trailing_chatter_until_the_code_parses() -> None:
+    """Seat models sometimes leave a prose example line inside the fence
+    (ladder finding 2026-07-08: a Unicode-arrow usage line → SyntaxError at
+    the executor). Trailing non-parsing lines are dropped, bounded, until the
+    deliverable parses; valid code stays byte-identical."""
+    chatty = CODE + "\nstack.push(3); stack.push(1) → assert stack.min() == 1\n"
+    out = _gather("Write is_even(n).", TESTS, chatty)
+    assert out["code"] == CODE
+
+
+def test_gather_gives_up_cleanly_when_nothing_parses() -> None:
+    out = _gather("Write is_even(n).", TESTS, "→ not code at all →\n→ still not →")
+    assert out["code"] == "→ not code at all →\n→ still not →"
+
+
 def test_gather_extracts_conversation_written_files_as_workspace() -> None:
     """Files written earlier in the conversation render as '[wrote <path>]'
     blocks in the context; gather extracts them so the executor can
@@ -153,6 +168,37 @@ def test_gather_skips_truncated_write_blocks() -> None:
     )
     out = _gather(criteria, TESTS, CODE)
     assert out["workspace"] == {}
+
+
+def test_gather_injects_missing_workspace_imports() -> None:
+    """Generated tests sometimes use a workspace module's names without
+    importing them (ladder finding 2026-07-08: NameError('Stack') on every
+    test). When a deliverable references top-level names defined by a
+    workspace module and has no import for it, gather prepends one."""
+    criteria = (
+        "Conversation so far:\n"
+        "assistant: [wrote stack.py]\n"
+        "class Stack:\n"
+        "    def push(self, item):\n"
+        "        pass\n"
+        "\n\nCurrent request: add tests for the Stack class"
+    )
+    tests_without_import = "def test_push():\n    stack = Stack()\n    stack.push(1)\n"
+    out = _gather(criteria, tests_without_import, CODE)
+    assert out["tests"].startswith("from stack import Stack\n")
+
+
+def test_gather_leaves_deliverables_with_imports_untouched() -> None:
+    criteria = (
+        "Conversation so far:\n"
+        "assistant: [wrote stack.py]\n"
+        "class Stack:\n"
+        "    pass\n"
+        "\n\nCurrent request: add tests"
+    )
+    tests_with_import = "from stack import Stack\n\ndef test_push():\n    s = Stack()\n"
+    out = _gather(criteria, tests_with_import, CODE)
+    assert out["tests"] == tests_with_import.strip()
 
 
 def test_executor_materializes_workspace_files_in_the_sandbox() -> None:
