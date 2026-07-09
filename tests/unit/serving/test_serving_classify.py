@@ -76,3 +76,20 @@ def test_structural_turns_do_not_need_the_decider() -> None:
         "implement a stack",
     ):
         assert _classify({"task": task})["needs_decider"] is False
+
+
+def test_a_question_naming_a_file_routes_to_explain_not_build() -> None:
+    """An interrogative turn is a request for understanding even when it names
+    a file — the named-file build signal must not outrank the question shape
+    (battery finding 2026-07-08: "What approach does palindrome.py use?" ran
+    the full gated build and returned a reject verdict).
+    """
+    decision = _classify({"task": "What approach does palindrome.py use, briefly?"})
+    assert decision["build"] is False
+    assert decision["target"] == "explainer"
+
+
+def test_an_imperative_build_request_phrased_politely_still_builds() -> None:
+    decision = _classify({"task": "Can you write a function to add numbers in add.py"})
+    assert decision["build"] is True
+    assert decision["target"] == "code-seat"
