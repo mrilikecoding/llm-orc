@@ -17,57 +17,18 @@ import json
 import re
 import sys
 
-
-def _payload(raw: str) -> dict[str, object]:
-    try:
-        data = json.loads(raw)
-    except (json.JSONDecodeError, TypeError):
-        return {}
-    return data if isinstance(data, dict) else {}
+import _helpers
+from _helpers import payload as _payload
+from _helpers import response as _response
+from _helpers import terminal as _terminal
 
 
-def _response(dep: object) -> str:
-    return dep.get("response", "") if isinstance(dep, dict) else ""
 
 
-def _terminal(text: str) -> str:
-    """Peel the sub-ensemble envelope layers (deliverable / output / results) to
-    the terminal node's raw output (matches emit_envelope._terminal)."""
-    current = text
-    for _ in range(6):
-        try:
-            obj = json.loads(current)
-        except (json.JSONDecodeError, TypeError):
-            return current
-        if not isinstance(obj, dict):
-            return current
-        if isinstance(obj.get("deliverable"), str):
-            current = obj["deliverable"]
-            continue
-        if isinstance(obj.get("output"), str):
-            current = obj["output"]
-            continue
-        results = obj.get("results")
-        if isinstance(results, dict) and results:
-            node = results[list(results.keys())[-1]]
-            current = node.get("response", "") if isinstance(node, dict) else str(node)
-            continue
-        return current
-    return current
 
 
-_SHELL_LANGS = {"bash", "sh", "shell", "console", "zsh", "text"}
 
 
-def _fenced(text: str) -> str | None:
-    tagged = re.findall(r"```([a-zA-Z0-9_+-]*)\n(.*?)```", text, re.DOTALL)
-    # only python/untagged fences are code — models append shell usage blocks
-    blocks = [
-        body for lang, body in tagged if lang.lower() not in _SHELL_LANGS
-    ] or [body for _, body in tagged]
-    if blocks:
-        return "\n".join(block.strip() for block in blocks)
-    return None
 
 
 def _trim_to_parse(code: str, max_drops: int = 10) -> str:
@@ -88,14 +49,12 @@ def _trim_to_parse(code: str, max_drops: int = 10) -> str:
 
 
 def _extract_code(text: str) -> str:
-    fenced = _fenced(text)
-    code = fenced if fenced is not None else text.strip()
-    return _trim_to_parse(code)
+    return _trim_to_parse(_helpers.extract_code(text))
 
 
 def _extract_tests(text: str) -> str:
-    fenced = _fenced(text)
-    if fenced is not None:
+    fenced = _helpers.extract_code(text)
+    if fenced != text.strip():
         return fenced
     lines = text.splitlines()
     for i, line in enumerate(lines):

@@ -17,6 +17,8 @@ gracefully rather than requiring every seat to envelope first.
 from __future__ import annotations
 
 import json
+
+from _helpers import terminal as _terminal
 import sys
 
 
@@ -32,32 +34,6 @@ def _response(dep: object) -> str:
     return dep.get("response", "") if isinstance(dep, dict) else ""
 
 
-def _terminal(text: str) -> str:
-    """The seat's deliverable, unwrapping the layers the engine adds
-    (``deliverable`` / script ``{"success","output"}`` / nested ``results``).
-    For a build seat this yields the ADR-024 envelope JSON; for a raw seat it
-    yields the plain terminal text."""
-    current = text
-    for _ in range(6):
-        try:
-            obj = json.loads(current)
-        except (json.JSONDecodeError, TypeError):
-            return current
-        if not isinstance(obj, dict):
-            return current
-        if isinstance(obj.get("deliverable"), str):
-            current = obj["deliverable"]
-            continue
-        if isinstance(obj.get("output"), str):
-            current = obj["output"]
-            continue
-        results = obj.get("results")
-        if isinstance(results, dict) and results:
-            node = results[list(results.keys())[-1]]
-            current = node.get("response", "") if isinstance(node, dict) else str(node)
-            continue
-        return current
-    return current
 
 
 def _envelope_deliverable(seat_terminal: str) -> str | None:
