@@ -90,14 +90,29 @@ ADR-046 (the target architecture and the orchestrator-actor dissolution),
 ADR-047 (extensibility: registry + shape catalog), and ADR-048 (grounded
 acceptance).
 
+## Conversation memory
+
+The serve threads conversation context from the client-sent history into
+generation seats (bounded render: last 8 user/assistant turns, ~4KB;
+written-file bodies included so referents like "add tests for it" resolve).
+classify composes it behind the deterministic `Current request:` marker;
+routing and verifier seats read the clean latest turn only (the accept-gate
+judge is input-scoped to its dependencies). Conversation-written files
+materialize into the accept-gate sandbox, so follow-up builds can import the
+modules the conversation created. Design and the scaling ladder (lossless
+session record, plexus lenses):
+`docs/plans/2026-07-08-serving-conversation-memory-design.md`.
+
 ## Current capability coverage
 
-Build (accept-gated) and explain are implemented and grounded against a live
-endpoint and a literal `opencode run`. Fix, edit-existing, and run-tests are
-the named frontier — future default seats/shapes, grown the same way. The
-serve is single-turn by construction today: each request is handled from its
-latest user message, and conversation memory (threading prior turns or session
-substrate state into the ensemble input) is a named open design question.
+Build (accept-gated), explain, and within-session conversation memory are
+implemented and grounded against a live endpoint and a literal
+`opencode run` (multi-turn battery 2026-07-08: build → "did you see my
+previous query?" → "add tests for it", all green). Fix and edit-existing for
+files the conversation did not write are the named frontier — they need
+client-file threading or client-delegated execution. Context older than the
+render window is dropped until the lossless session record (design §Rung 2′)
+lands.
 
 ## History
 
