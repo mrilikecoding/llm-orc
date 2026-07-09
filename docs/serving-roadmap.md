@@ -78,8 +78,7 @@ hierarchy (assume-guarantee direction noted at Cycle-8 close).
 Roadmap stages: #82 lossless record (Stage 2) · #83 client execution
 (Stage 3) · #84 accept-gate harness + judge false-reject measurement ·
 #85 sandbox hardening · #90 llama.cpp backend (bootstrapping).
-Review debt (v0.18.0 pre-merge pass): #91 web-UI deliverable key ·
-#92 shared script helpers / single fence extractor · #93 serving hot-path
-caching · #94 AS-2 loop/dispatch reference coverage · #95 post-collapse
-dead-surface sweep · #96 list_ensembles transitive fragility.
-Misc: #86 flaky auth test. Shipped: #87, #88, #89 (v0.18.0).
+Review debt remaining: #93 (executor reuse + registry-scan caching) ·
+#95 (dead EnsembleConfig fields + prime machinery removal).
+Shipped: #87, #88, #89 (v0.18.0); #86, #91, #92, #94, #96 and the safe
+halves of #93/#95 (v0.18.1).
