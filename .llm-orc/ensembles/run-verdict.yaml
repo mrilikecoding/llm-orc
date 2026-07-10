@@ -1,9 +1,1 @@
-name: run-verdict
-description: |
-  issue #83 run half — the resumed run turn's dispatch target. One
-  deterministic script node parses the [ran ...] block's pytest summary and
-  composes the honest verdict; zero model calls.
-serves: run-verdict
-agents:
-  - name: verdict
-    script: scripts/agentic_serving/run_verdict.py
+agentic-serving/run-verdict.yaml
