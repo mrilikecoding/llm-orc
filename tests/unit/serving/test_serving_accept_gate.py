@@ -14,6 +14,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
@@ -30,9 +31,18 @@ REAL_TESTS = (
 TRIVIAL_TESTS = "def test_callable():\n    assert callable(celsius_to_fahrenheit)\n"
 
 
-def _executor(requirement: str, code: str, tests: str) -> dict[str, Any]:
+def _executor(
+    requirement: str,
+    code: str,
+    tests: str,
+    env_overrides: dict[str, str] | None = None,
+) -> dict[str, Any]:
     payload = json.dumps({"requirement": requirement, "code": code, "tests": tests})
-    env = {**os.environ, "LLM_ORC_ACCEPT_EXECUTOR_TIMEOUT": "3"}
+    env = {
+        **os.environ,
+        "LLM_ORC_ACCEPT_EXECUTOR_TIMEOUT": "3",
+        **(env_overrides or {}),
+    }
     out = subprocess.run(
         [sys.executable, str(EXECUTOR)],
         input=payload,
@@ -92,6 +102,36 @@ def test_executor_sandbox_times_out_on_a_runaway_test() -> None:
     r = _executor("loops forever", CORRECT, runaway)
     assert r["tests_pass"] is False
     assert "timeout" in r["report"].lower()
+
+
+def test_aggregate_budget_bounds_a_many_hang_suite() -> None:
+    # Per-test isolation can spawn up to 21 children, each hanging for the
+    # full per-child timeout — an interactive serve cannot absorb that. The
+    # aggregate budget caps total wall time across the suite and reports it.
+    hang_five = "".join(
+        f"def test_hang_{i}():\n    while True:\n        pass\n" for i in range(5)
+    )
+    start = time.monotonic()
+    r = _executor(
+        "loops forever x5",
+        CORRECT,
+        hang_five,
+        env_overrides={
+            "LLM_ORC_ACCEPT_EXECUTOR_TIMEOUT": "1",
+            "LLM_ORC_ACCEPT_EXECUTOR_BUDGET": "2",
+        },
+    )
+    elapsed = time.monotonic() - start
+    assert elapsed < 10
+    assert r["tests_pass"] is False
+    assert "aggregate budget exhausted after 2s" in r["report"]
+    assert "of 5 tests not run" in r["report"]
+
+
+def test_aggregate_budget_does_not_fire_on_a_normal_suite() -> None:
+    r = _executor("c * 9/5 + 32", CORRECT, REAL_TESTS)
+    assert r["tests_pass"] is True
+    assert "aggregate budget" not in r["report"]
 
 
 def test_executor_passes_the_contract_through_for_the_judge() -> None:
@@ -215,3 +255,154 @@ def test_quoted_string_false_from_the_judge_does_not_pass_the_gate() -> None:
     )
     assert verdict["tests_adequate"] is False
     assert verdict["accept"] is False
+
+
+LEAKY_STATE_CODE = "todos = []\ndef add(item):\n    todos.append(item)\n"
+LEAKY_STATE_TESTS = (
+    "def test_one():\n    add('a')\n    assert len(todos) == 1\n"
+    "def test_two():\n    add('a')\n    add('b')\n    assert len(todos) == 2\n"
+)
+LEAKY_FILE_TESTS = (
+    "import os, json\n"
+    "def save(t):\n    json.dump(t, open('t.json', 'w'))\n"
+    "def test_writes():\n    save([1])\n    assert os.path.exists('t.json')\n"
+    "def test_fresh():\n    assert not os.path.exists('t.json')\n"
+)
+
+
+def test_executor_isolates_module_state_across_tests() -> None:
+    result = _executor("add todos", LEAKY_STATE_CODE, LEAKY_STATE_TESTS)
+    assert result["tests_pass"] is True
+    assert result["n_tests"] == 2
+
+
+def test_executor_isolates_filesystem_across_tests() -> None:
+    result = _executor("save todos", "", LEAKY_FILE_TESTS)
+    assert result["tests_pass"] is True
+    assert result["n_tests"] == 2
+
+
+def test_executor_still_fails_genuinely_wrong_code() -> None:
+    result = _executor(
+        "adds",
+        "def add(a, b):\n    return a - b\n",
+        "def test_add():\n    assert add(1, 2) == 3\n",
+    )
+    assert result["tests_pass"] is False
+    assert "test_add" in result["report"]
+
+
+STRAY_ASSERT_TESTS = (
+    "def test_overwrite():\n"
+    "    save_todos(['a'])\n"
+    "    assert load\n"
+    "    assert load_todos() == ['a']\n"
+)
+STRAY_CODE = (
+    "_d = {}\n"
+    "def save_todos(t):\n    _d['t'] = t\n"
+    "def load_todos():\n    return _d.get('t', [])\n"
+)
+
+
+def test_bare_name_assert_is_sanitized_before_execution() -> None:
+    result = _executor("storage", STRAY_CODE, STRAY_ASSERT_TESTS)
+    assert result["tests_pass"] is True
+    assert result["tests_sanitized"] == 1
+    assert "assert load\n" not in result["tests"]
+    assert "assert load_todos() == ['a']" in result["tests"]
+
+
+def test_value_bearing_asserts_are_never_sanitized() -> None:
+    tests = "def test_add():\n    assert add(1, 2) == 3\n"
+    result = _executor("adds", "def add(a, b):\n    return a + b\n", tests)
+    assert result["tests_pass"] is True
+    assert result["tests_sanitized"] == 0
+    assert "assert add(1, 2) == 3" in result["tests"]
+
+
+def test_bare_assert_on_an_assigned_local_is_kept() -> None:
+    # 'assert result' on a test-local CAN be a real truthiness check —
+    # only names never assigned in the tests source are value-free.
+    tests = "def test_t():\n    result = add(1, 2)\n    assert result\n"
+    result = _executor("adds", "def add(a, b):\n    return a + b\n", tests)
+    assert result["tests_sanitized"] == 0
+    assert "assert result" in result["tests"]
+
+
+def test_missing_stdlib_and_pytest_imports_are_injected() -> None:
+    tests = (
+        "def test_raises():\n"
+        "    with pytest.raises(ValueError):\n"
+        "        boom()\n"
+        "def test_file():\n"
+        "    open('x.txt', 'w').write('1')\n"
+        "    assert os.path.exists('x.txt')\n"
+    )
+    code = "def boom():\n    raise ValueError('no')\n"
+    result = _executor("boom raises", code, tests)
+    assert result["tests_pass"] is True
+    assert result["tests_imports_injected"] == 2
+    assert result["tests"].startswith("import os\nimport pytest\n")
+
+
+def test_non_whitelisted_unbound_names_are_not_injected() -> None:
+    tests = "def test_x():\n    assert requests.get is not None\n"
+    result = _executor("http", "", tests)
+    assert result["tests_imports_injected"] == 0
+    assert result["tests_pass"] is False
+
+
+def test_already_imported_modules_are_not_reinjected() -> None:
+    tests = "import os\ndef test_x():\n    assert os.sep\n"
+    result = _executor("sep", "", tests)
+    assert result["tests_imports_injected"] == 0
+
+
+# --- final-review findings: C1, I1, I2 ---
+
+
+def test_bare_assert_on_a_loop_bound_name_is_kept() -> None:
+    # C1: _ASSIGNED_NAME_RE only matched plain 'name = ...', so a bare
+    # assert on a for-loop-bound name was (wrongly) treated as value-free
+    # and stripped — silently turning a real falsy-value check into a
+    # no-op and letting wrong code through.
+    code = "def all_flags():\n    return [1, 0, 1]\n"
+    tests = (
+        "def test_all_true():\n"
+        "    for flag in all_flags():\n"
+        "        _ = flag\n"
+        "        assert flag\n"
+    )
+    result = _executor("flags", code, tests)
+    assert result["tests_sanitized"] == 0
+    assert result["tests_pass"] is False  # 0 is falsy — the suite must reject
+
+
+def test_nested_test_defs_fall_back_to_legacy_whole_run() -> None:
+    # I1: a test_* def nested under a module-level if/try/for must not be
+    # silently dropped by the per-test isolation path — fall back to one
+    # legacy whole-suite run so completeness matches the pre-isolation
+    # executor.
+    tests = "if True:\n    def test_hidden():\n        assert add(1, 1) == 3\n"
+    result = _executor("adds", "def add(a, b):\n    return a + b\n", tests)
+    assert result["tests_pass"] is False
+    assert "test_hidden" in result["report"]
+
+
+def test_injection_never_shadows_a_code_bound_name() -> None:
+    # I2: an injected 'import os' must not rebind a code-defined 'os' in
+    # the shared runner namespace — that would flip a genuine code bug
+    # (os = None) into a false pass.
+    code = "os = None\n"
+    tests = "def test_os():\n    assert os is not None\n"
+    result = _executor("os check", code, tests)
+    assert result["tests_imports_injected"] == 0
+    assert result["tests_pass"] is False
+
+
+def test_unparseable_tests_skip_injection_and_sanitization() -> None:
+    result = _executor("broken", "x = 1\n", "def test_x(:\n")
+    assert result["tests_sanitized"] == 0
+    assert result["tests_imports_injected"] == 0
+    assert result["tests_pass"] is False
