@@ -38,8 +38,14 @@ def _failing_line(error: Exception, tests: str) -> str:
     return ""
 
 
-def run_tests(code: str, tests: str) -> tuple[bool, str, int]:
-    """Exec code + tests in a shared namespace, call every ``test_*`` function."""
+def run_tests(code: str, tests: str, only: str | None = None) -> tuple[bool, str, int]:
+    """Exec code + tests in a shared namespace, call every ``test_*`` function.
+
+    ``only`` (per-test isolation, seat-quality design 2026-07-09) restricts
+    the run to one named top-level test function — the executor spawns one
+    runner per test so module and filesystem state cannot leak across
+    tests. ``only="__cases__"`` runs just the unittest.TestCase classes.
+    """
     namespace: dict[str, object] = {}
     try:
         exec(compile(code, "solution.py", "exec"), namespace)
@@ -67,6 +73,12 @@ def run_tests(code: str, tests: str) -> tuple[bool, str, int]:
         and issubclass(obj, unittest.TestCase)
         and obj is not unittest.TestCase
     ]
+
+    if only == "__cases__":
+        test_fns = []
+    elif only is not None:
+        test_fns = [(n, f) for n, f in test_fns if n == only]
+        case_classes = []
 
     failures: list[str] = []
     n_tests = 0
@@ -100,7 +112,10 @@ def run_tests(code: str, tests: str) -> tuple[bool, str, int]:
             failures.append(f"{test}: {trace.strip().splitlines()[-1]}")
 
     if n_tests == 0:
-        return False, "no test_* functions or TestCase classes found", 0
+        detail = f"no test named {only!r} found" if only and only != "__cases__" else (
+            "no test_* functions or TestCase classes found"
+        )
+        return False, detail, 0
     if failures:
         return False, "; ".join(failures), n_tests
     return True, "all passed", n_tests
@@ -110,9 +125,12 @@ def main() -> None:
     # sandbox dir on sys.path so tests can import materialized workspace
     # modules (conversation-written files) as siblings
     sys.path.insert(0, str(Path(sys.argv[1]).resolve().parent))
+    only = None
+    if "--only" in sys.argv:
+        only = sys.argv[sys.argv.index("--only") + 1]
     code = Path(sys.argv[1]).read_text(encoding="utf-8")
     tests = Path(sys.argv[2]).read_text(encoding="utf-8")
-    tests_pass, report, n_tests = run_tests(code, tests)
+    tests_pass, report, n_tests = run_tests(code, tests, only)
     print(json.dumps({"tests_pass": tests_pass, "n_tests": n_tests, "report": report}))
 
 
