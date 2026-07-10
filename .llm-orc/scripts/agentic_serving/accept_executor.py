@@ -78,8 +78,19 @@ def _sanitize_tests(tests: str) -> tuple[str, int]:
 # outside the whitelist stay uninjected and reject honestly.
 _INJECTABLE_MODULES = frozenset(
     {
-        "collections", "functools", "itertools", "json", "math", "os",
-        "pathlib", "pytest", "re", "string", "sys", "tempfile", "time",
+        "collections",
+        "functools",
+        "itertools",
+        "json",
+        "math",
+        "os",
+        "pathlib",
+        "pytest",
+        "re",
+        "string",
+        "sys",
+        "tempfile",
+        "time",
         "unittest",
     }
 )
