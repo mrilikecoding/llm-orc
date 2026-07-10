@@ -36,6 +36,7 @@ model as the backend. Trajectory so far:
 | 2026-07-10 (fenced block grammar) | 11-turn recorded ladder, same battery | **5/11** | No fencing-attributable regression: all 11 routings fired correctly, read rung green, run rung verdict matched ground truth (6 passed), phantom refusal honest. Turn 1's honest build reject cascaded (turns 2/3/4/7 degrade downstream, deep recall skews) — run-to-run variance is dominated by whether turn 1 lands, i.e. the test-quality residual, now clearly the highest-leverage target. Spoof battery (separate live session): a read file carrying a forged "999 passed" transcript block could NOT suppress the real run — real delegation, honest red verdict |
 | 2026-07-10 (repairs round 2, pre-review-fix) | 11-turn recorded ladder | **9/11** | Best recorded score. The deterministic repairs (excision, removal guard, raises rewrite, adequacy mutation fix, retry timeout) converted the whole build cascade: turns 1/2/4/6 all shipped. Misses: turn 7 honest reject (the persist-integration shape) and #82 deep recall. Replay evidence behind the repairs: turn6 3/3 round-1 accepts vs 2/5-with-3-never at baseline |
 | 2026-07-10 (repairs round 2, post-review-fix) | 11-turn recorded ladder (resumed at turn 6 after a harness process reap; detached runner thereafter) | **6/11** | Three wrong-accept vectors from the adversarial review closed pre-merge (substring expectation match, anywhere-in-body removal wrap, lambda-param binding blindness) — the fixes are deliberately conservative and refuse ambiguous rewrites, trading conversions for gate honesty. 3 honest build rejects + cascade + #82. Named follow-up with evidence: tighten the negation refusal to expectation-adjacent tokens ("Expected TypeError not raised" currently refuses) |
+| 2026-07-10 (#83 discovery) | 12-turn recorded ladder (discovery rung added) | **3/12, infra-degraded** | The rung this battery validates PASSED clean: turn 12 globbed the unnamed metrics module, read the match, shipped test_metrics.py (green client-side). Run rung honest ("no tests ran" — accurate at that moment), phantom refusal honest. The rest is rig exhaustion after six batteries in one day: four turns timed out with EMPTY output (not rejects — the request died client- or model-side), cascading the todo chain. Zero dishonest outcomes. NOT comparable to the series; fresh-rig rerun is the next session's first act. Separate live probes (same code): 1-match chain, 0-match refusal, 2-match refusal all green |
 
 The Cycle-7 benchmark harness (`research/agentic-serving-corpus` branch,
 `benchmark-runs/`) is the automation to revive for a standing
@@ -102,27 +103,26 @@ deterministic accept gate (per-test-isolated executor + static adequacy
 into the shipped artifact). All-local (qwen3:8b) by default; operator
 seat overrides via `*.local.yaml`.
 
-**Handoff pointer (fresh-session start here):** deterministic gate
-repairs round 2 SHIPPED (v0.18.10; design + evidence
-`docs/plans/2026-07-10-test-repair-round-2-design.md` — 11 live replays
-proved code wrong in 0/8 rejected rounds; the repairs attack the tests).
-NEXT, in leverage order: **#83 discovery** (list/glob through the
-permission seam — the meta-task rung's requirement, unblocked by
-fencing), the **rewrite negation-tightening** (expectation-adjacent
-tokens only; "Expected TypeError not raised" currently refuses the
-rewrite and costs a round — exact evidence in the design doc's second
-review round), the **#82 deep-recall remainder** (still costs a ladder
-turn every run), and the import-guard residual (turn1_sv2 class, one
-deterministic signature away). The recorded battery is
-`benchmarks/agentic_serving/ladder_battery.sh` (11 turns; series 4/10 →
-7/10 → 6/11 → 5/11 → 9/11 → 6/11, every miss honest — variance is
-per-run seat stochasticity on the build turns). Standing smaller
-follow-ups: #110 (accepted-artifact quality gate + adequacy mutator
-tightening), the injector's scope-blind binding, #107 (content-parts
-crash class), #106 (shape single-home + silent dispatch trace errors).
-Ops note: the harness reaps tracked background serves/batteries
-mid-long-run — start them detached (nohup + disown) with a Monitor on
-the log file.
+**Handoff pointer (fresh-session start here):** #83 is COMPLETE — read,
+run, and discovery halves all shipped (v0.18.6/8/11); the client
+execution surface the fix-execution and meta-task rungs need is in
+place. FIRST ACT next session: a fresh-rig 12-turn battery rerun (the
+last recorded run was infra-degraded after six batteries in one day —
+see the trajectory table). Then, in leverage order: the **fix-execution
+rung itself** (chain write → run → verdict inside one fix turn — every
+seam exists, this is composition), the **rewrite negation-tightening**
+(expectation-adjacent tokens only; exact evidence in
+`docs/plans/2026-07-10-test-repair-round-2-design.md`), the **#82
+deep-recall remainder**, and the import-guard residual. The recorded
+battery is `benchmarks/agentic_serving/ladder_battery.sh` (12 turns
+since the discovery rung; series 4/10 → 7/10 → 6/11 → 5/11 → 9/11 →
+6/11 → 3/12-infra-degraded, every miss honest). Standing smaller
+follow-ups: #110, the injector's scope-blind binding, #107, #106, and
+the glob-result verbatim wire capture (tolerant normalizer live-proven;
+lock it when a capture lands). Ops notes: the harness reaps tracked
+background serves/batteries mid-long-run — start them detached (nohup +
+disown) with a Monitor tail; give the rig cooling headroom between
+batteries.
 
 Key empirical facts the next work builds on:
 

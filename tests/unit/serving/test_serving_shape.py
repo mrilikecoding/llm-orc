@@ -146,3 +146,22 @@ def test_shape_passes_needs_run_from_the_routing_decision() -> None:
         {"status": "ok", "primary": "Requesting a client test run."},
     )
     assert shaped["needs_run"] == "pytest -q"
+
+
+def test_shape_passes_glob_fields_from_the_routing_decision() -> None:
+    shaped = _shape(
+        {
+            "target": "need-glob",
+            "kind": "need_glob",
+            "file": "solution.py",
+            "build": False,
+            "needs_files": [],
+            "read_failed": "",
+            "needs_run": "",
+            "needs_glob": "storage",
+            "glob_failed": "",
+        },
+        {"status": "ok", "primary": "Requesting a workspace listing."},
+    )
+    assert shaped["needs_glob"] == "storage"
+    assert shaped["glob_failed"] == ""

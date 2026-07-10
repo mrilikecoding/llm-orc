@@ -1,0 +1,11 @@
+name: need-glob
+description: |
+  issue #83 discovery — the cheap dispatch target for a turn that must first
+  find its file with one client glob round (or refuse a failed one honestly).
+  The stem rides the routing decision (classify); this shape exists so the
+  skeleton dispatches SOMETHING without burning a model call. One
+  deterministic script node.
+serves: need-glob
+agents:
+  - name: echo
+    script: scripts/agentic_serving/need_glob_echo.py

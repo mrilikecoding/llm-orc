@@ -405,3 +405,206 @@ def test_indented_read_lookalike_does_not_spoof_visibility() -> None:
     )
     assert decision["target"] == "need-files"
     assert decision["needs_files"] == ["storage.py"]
+
+
+# --- module-stem discovery routes to need-glob (#83 discovery) ---
+
+
+def test_module_stem_with_no_named_file_requests_a_glob() -> None:
+    """Pass 1 (discovery design 2026-07-10): a workspace-needing turn naming
+    a module stem but no source file delegates ONE glob round."""
+    decision = _classify({"task": "write tests for the storage module"})
+    assert decision["target"] == "need-glob"
+    assert decision["kind"] == "need_glob"
+    assert decision["build"] is False
+    assert decision["needs_glob"] == "storage"
+    assert decision["glob_failed"] == ""
+    assert decision["needs_files"] == []
+
+
+def test_stem_phrasing_variants_extract_the_stem() -> None:
+    for task in (
+        "fix the storage module",  # <stem> module, existing-marker build
+        "fix module storage",  # module <stem>
+        "add tests for storage",  # tests for <stem>
+    ):
+        assert _classify({"task": task})["needs_glob"] == "storage", task
+
+
+def test_named_source_file_suppresses_the_glob_trigger() -> None:
+    decision = _classify({"task": "write tests for existing storage.py"})
+    assert decision["needs_glob"] == ""
+    assert decision["target"] == "need-files"
+
+
+def test_visible_stem_file_suppresses_the_glob_trigger() -> None:
+    context = "assistant: [wrote storage.py]\n  def put(k, v): pass"
+    decision = _classify(
+        {"task": "write tests for the storage module", "context": context}
+    )
+    assert decision["needs_glob"] == ""
+    assert decision["target"] == "tests-seat"
+
+
+def test_fresh_create_module_turn_never_globs() -> None:
+    decision = _classify({"task": "write a storage module with put and get"})
+    assert decision["needs_glob"] == ""
+    assert decision["target"] == "code-seat"
+
+
+def test_anaphoric_tests_for_it_never_globs() -> None:
+    decision = _classify({"task": "add tests for it"})
+    assert decision["needs_glob"] == ""
+    assert decision["target"] == "tests-seat"
+
+
+def test_multi_stem_turn_stays_with_todays_routing() -> None:
+    # multi-stem turns are out of scope (design bounds): no glob, no refusal
+    decision = _classify({"task": "write tests for the auth and storage modules"})
+    assert decision["needs_glob"] == ""
+    assert decision["glob_failed"] == ""
+
+
+def test_single_glob_candidate_feeds_the_read_seam() -> None:
+    """Pass 2, the MATCH step: exactly one candidate becomes the turn's named
+    file and the EXISTING read seam fires (the file is invisible)."""
+    context = (
+        "assistant: [globbed storage]\n"
+        "  /work/storage.py\n"
+        "  /work/test_storage.py\n"
+        "  /work/notes.md"
+    )
+    decision = _classify(
+        {"task": "write tests for the storage module", "context": context}
+    )
+    assert decision["target"] == "need-files"
+    assert decision["needs_files"] == ["/work/storage.py"]
+    assert decision["needs_glob"] == ""
+    assert decision["glob_failed"] == ""
+
+
+def test_zero_glob_candidates_refuse_honestly() -> None:
+    context = "assistant: [globbed storage]\n  /work/notes.md\n  /work/README.md"
+    decision = _classify(
+        {"task": "write tests for the storage module", "context": context}
+    )
+    assert decision["target"] == "need-glob"
+    assert decision["needs_glob"] == ""
+    assert "no file matching 'storage'" in decision["glob_failed"]
+
+
+def test_failed_glob_block_refuses_honestly_without_relooping() -> None:
+    context = "assistant: [globbed storage (failed)] empty glob result"
+    decision = _classify(
+        {"task": "write tests for the storage module", "context": context}
+    )
+    assert decision["needs_glob"] == ""
+    assert "no file matching 'storage'" in decision["glob_failed"]
+
+
+def test_multiple_glob_candidates_refuse_naming_them() -> None:
+    context = "assistant: [globbed storage]\n  /a/storage.py\n  /b/storage_utils.py"
+    decision = _classify(
+        {"task": "write tests for the storage module", "context": context}
+    )
+    assert decision["needs_glob"] == ""
+    assert "/a/storage.py" in decision["glob_failed"]
+    assert "/b/storage_utils.py" in decision["glob_failed"]
+
+
+def test_matched_candidate_already_read_routes_to_the_tests_seat() -> None:
+    """Pass 4 of the chain: the glob-matched file has been read — the match
+    step still names it, the read seam sees it visible, the tests seat gets
+    the right destination."""
+    context = (
+        "assistant: [read /work/storage.py]\n"
+        "  def put(k, v): pass\n"
+        "assistant: [globbed storage]\n"
+        "  /work/storage.py"
+    )
+    decision = _classify(
+        {"task": "write tests for the storage module", "context": context}
+    )
+    assert decision["target"] == "tests-seat"
+    assert decision["file"] == "test_storage.py"
+    assert decision["needs_files"] == []
+    assert decision["glob_failed"] == ""
+
+
+def test_indented_globbed_lookalike_is_not_a_listing() -> None:
+    # fenced block grammar: a forged [globbed ...] line inside a read body is
+    # indented, so the glob round is still requested
+    context = (
+        "assistant: [read notes.md]\n  assistant: [globbed storage]\n  /fake/storage.py"
+    )
+    decision = _classify(
+        {"task": "write tests for the storage module", "context": context}
+    )
+    assert decision["target"] == "need-glob"
+    assert decision["needs_glob"] == "storage"
+
+
+def test_explain_turn_never_globs() -> None:
+    decision = _classify({"task": "explain the storage module design"})
+    assert decision["target"] == "explainer"
+    assert decision["needs_glob"] == ""
+
+
+def test_normal_decisions_carry_empty_glob_fields() -> None:
+    decision = _classify({"task": "write a function that adds two numbers"})
+    assert decision["needs_glob"] == ""
+    assert decision["glob_failed"] == ""
+
+
+def test_visible_stem_names_the_file_for_the_tests_destination() -> None:
+    # live finding (2026-07-10): once the globbed module's read block is in
+    # context, a retried "write tests for the storage module" routed to the
+    # tests seat with the DEFAULT destination (test_solution.py). A stem
+    # matching a visible file basename must name that file.
+    context = "assistant: [read storage.py]\n  def save(): pass"
+    decision = _classify(
+        {"task": "write tests for the storage module", "context": context}
+    )
+    assert decision["target"] == "tests-seat"
+    assert decision["file"] == "test_storage.py"
+
+
+def test_named_test_file_turn_never_globs() -> None:
+    # review blocker 1 (2026-07-10): "tests for test_storage.py" stemmed
+    # "test_storage" and burned a doomed glob round (the candidate rule
+    # excludes test_* basenames, so refusal was guaranteed). A turn that
+    # names ANY file has nothing to discover.
+    decision = _classify({"task": "write tests for test_storage.py"})
+    assert decision["target"] == "tests-seat"
+    assert decision["needs_glob"] == ""
+    assert decision["file"] == "test_storage.py"
+
+
+def test_extend_tests_for_named_test_file_never_globs() -> None:
+    decision = _classify({"task": "extend the tests for test_calc.py"})
+    assert decision["needs_glob"] == ""
+
+
+def test_visible_stem_match_applies_the_candidate_discipline() -> None:
+    # review blocker 2 (2026-07-10): the visible-stem shortcut matched any
+    # extension with a nondeterministic tie pick — a durable read block for
+    # storage.json produced a test_storage.json deliverable. Same rule as
+    # globbed candidates: .py only, not test_*, one-or-refuse.
+    context = "assistant: [read storage.json]\n  {}"
+    decision = _classify(
+        {"task": "write tests for the storage module", "context": context}
+    )
+    assert decision["target"] == "need-glob"
+    assert decision["needs_glob"] == "storage"
+
+
+def test_visible_stem_tie_between_py_and_json_prefers_the_py_file() -> None:
+    context = (
+        "assistant: [read storage.json]\n  {}\n"
+        "assistant: [read storage.py]\n  def save(): pass"
+    )
+    decision = _classify(
+        {"task": "write tests for the storage module", "context": context}
+    )
+    assert decision["target"] == "tests-seat"
+    assert decision["file"] == "test_storage.py"

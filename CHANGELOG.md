@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.18.11] - 2026-07-10
+
+### Added
+- Discovery through the permission seam (issue #83, final widening): a
+  turn naming no file ("write tests for the storage module") gets ONE
+  glob round — classify extracts the module stem, the client's `glob`
+  tool lists matches, and a deterministic rule picks the candidate
+  (`.py`, not `test_*`, exactly-one-or-refuse) which then rides the
+  existing read seam. Zero matches and ties refuse honestly, naming
+  candidates; one glob round per turn; the pattern is template-built
+  from the charset-checked stem, never model text. Live-validated end
+  to end (glob → read → gated build) plus both refusal probes; the
+  battery gains a discovery rung (turn 12)
+- `need-glob` shape and the fenced `[globbed <stem>]` context block
+  (ephemeral post-turn selection like run blocks; never materialized)
+
+### Fixed
+- Review blockers closed pre-merge: turns naming test_* files no longer
+  burn a doomed glob round, and the visible-stem match applies the full
+  candidate discipline (previously any extension with a
+  nondeterministic pick); a retried module turn now ships to the right
+  test_<module>.py destination
+
 ## [0.18.10] - 2026-07-10
 
 ### Added

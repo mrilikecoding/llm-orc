@@ -162,3 +162,50 @@ def test_needs_run_emits_a_run_outcome() -> None:
         }
     )
     assert outcome == {"finish": False, "run": "pytest -q test_calc.py"}
+
+
+def test_needs_glob_emits_a_glob_outcome() -> None:
+    outcome = _emit(
+        {
+            "build": False,
+            "file": "solution.py",
+            "content": "Requesting a workspace listing.",
+            "valid": True,
+            "reason": "ok",
+            "needs_files": [],
+            "read_failed": "",
+            "needs_run": "",
+            "needs_glob": "storage",
+            "glob_failed": "",
+            "accept": None,
+            "accept_reason": "",
+            "seat_admitted": None,
+            "seat_contract_reason": "",
+        }
+    )
+    assert outcome == {"finish": False, "glob": "storage"}
+
+
+def test_glob_failed_emits_an_honest_refusal() -> None:
+    outcome = _emit(
+        {
+            "build": False,
+            "file": "solution.py",
+            "content": "Requesting a workspace listing.",
+            "valid": True,
+            "reason": "ok",
+            "needs_files": [],
+            "read_failed": "",
+            "needs_run": "",
+            "needs_glob": "",
+            "glob_failed": "no file matching 'storage' in the workspace listing",
+            "accept": None,
+            "accept_reason": "",
+            "seat_admitted": None,
+            "seat_contract_reason": "",
+        }
+    )
+    assert outcome["finish"] is True
+    assert outcome["content"] == (
+        "Refused: no file matching 'storage' in the workspace listing"
+    )

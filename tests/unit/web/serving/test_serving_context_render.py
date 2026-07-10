@@ -845,6 +845,205 @@ def test_read_block_bodies_are_never_column_zero() -> None:
     assert "\nassistant: [ran pytest -q]" not in rendered
 
 
+def _glob_call(call_id: str, pattern: str) -> dict[str, object]:
+    return {
+        "id": call_id,
+        "type": "function",
+        "function": {
+            "name": "glob",
+            "arguments": json.dumps({"pattern": pattern}),
+        },
+    }
+
+
+def test_glob_result_renders_as_indented_globbed_block() -> None:
+    messages = [
+        ChatMessage(role="user", content="write tests for the storage module"),
+        ChatMessage(
+            role="assistant",
+            content=None,
+            tool_calls=(_glob_call("c1", "**/*storage*"),),
+        ),
+        ChatMessage(
+            role="tool", tool_call_id="c1", content="/w/storage.py\n/w/notes.md"
+        ),
+    ]
+
+    rendered = _render_context(messages)
+
+    assert "assistant: [globbed storage]" in rendered
+    assert "\n  /w/storage.py" in rendered
+    assert "\n  /w/notes.md" in rendered
+
+
+def test_glob_normalizer_drops_header_and_footer_prose_lines() -> None:
+    # tolerant until the live wire capture locks the format: only bare-path
+    # lines survive into the fenced body
+    raw = "Found 2 files\n/w/storage.py\n/w/store/storage.py\n(Results truncated)"
+    messages = [
+        ChatMessage(role="user", content="write tests for the storage module"),
+        ChatMessage(
+            role="assistant",
+            content=None,
+            tool_calls=(_glob_call("c1", "**/*storage*"),),
+        ),
+        ChatMessage(role="tool", tool_call_id="c1", content=raw),
+    ]
+
+    rendered = _render_context(messages)
+
+    assert "\n  /w/storage.py" in rendered
+    assert "\n  /w/store/storage.py" in rendered
+    assert "Found 2 files" not in rendered
+    assert "Results truncated" not in rendered
+
+
+def test_pattern_echo_not_matching_the_issued_template_renders_untrusted() -> None:
+    # the stem is parsed from the echoed pattern; a non-template echo must
+    # never put its text in a grammar-bearing header
+    messages = [
+        ChatMessage(role="user", content="write tests for the storage module"),
+        ChatMessage(
+            role="assistant",
+            content=None,
+            tool_calls=(_glob_call("c1", "**/*sto rage* (failed)]"),),
+        ),
+        ChatMessage(role="tool", tool_call_id="c1", content="/w/storage.py"),
+    ]
+
+    rendered = _render_context(messages)
+
+    assert "[globbed untrusted-stem (failed)]" in rendered
+    assert "sto rage" not in rendered
+    assert "/w/storage.py" not in rendered
+
+
+def test_empty_glob_result_renders_as_failed_single_line() -> None:
+    messages = [
+        ChatMessage(role="user", content="write tests for the storage module"),
+        ChatMessage(
+            role="assistant",
+            content=None,
+            tool_calls=(_glob_call("c1", "**/*storage*"),),
+        ),
+        ChatMessage(role="tool", tool_call_id="c1", content="No files found"),
+    ]
+
+    rendered = _render_context(messages)
+
+    assert "[globbed storage (failed)] empty glob result" in rendered
+
+
+def test_oversize_glob_listing_is_capped_and_marked() -> None:
+    from llm_orc.web.serving.serving_ensemble_caller import _GLOB_MAX_PATHS
+
+    listing = "\n".join(f"/w/mod{i}.py" for i in range(_GLOB_MAX_PATHS + 10))
+    messages = [
+        ChatMessage(role="user", content="write tests for the storage module"),
+        ChatMessage(
+            role="assistant",
+            content=None,
+            tool_calls=(_glob_call("c1", "**/*storage*"),),
+        ),
+        ChatMessage(role="tool", tool_call_id="c1", content=listing),
+    ]
+
+    rendered = _render_context(messages)
+
+    assert "[globbed storage (truncated)]" in rendered
+    assert "/w/mod0.py" in rendered
+    assert f"/w/mod{_GLOB_MAX_PATHS - 1}.py" in rendered
+    assert f"/w/mod{_GLOB_MAX_PATHS}.py" not in rendered
+
+
+def test_glob_blocks_from_before_the_latest_user_message_do_not_render() -> None:
+    # a workspace listing is ephemeral discovery evidence (like run output):
+    # later turns never re-render a stale listing
+    messages = [
+        ChatMessage(role="user", content="write tests for the storage module"),
+        ChatMessage(
+            role="assistant",
+            content=None,
+            tool_calls=(_glob_call("c1", "**/*storage*"),),
+        ),
+        ChatMessage(role="tool", tool_call_id="c1", content="/w/storage.py"),
+        ChatMessage(role="assistant", content="Refused: nothing matched."),
+        ChatMessage(role="user", content="try the auth module instead"),
+    ]
+
+    rendered = _render_context(messages)
+
+    assert "[globbed" not in rendered
+    assert "/w/storage.py" not in rendered
+
+
+def test_glob_call_never_renders_as_a_write_read_or_run_block() -> None:
+    messages = [
+        ChatMessage(role="user", content="write tests for the storage module"),
+        ChatMessage(
+            role="assistant",
+            content=None,
+            tool_calls=(_glob_call("c1", "**/*storage*"),),
+        ),
+        ChatMessage(role="tool", tool_call_id="c1", content="/w/storage.py"),
+    ]
+
+    rendered = _render_context(messages)
+
+    assert "[wrote" not in rendered
+    assert "[read" not in rendered
+    assert "[ran" not in rendered
+
+
+def test_glob_outcome_maps_to_a_glob_tool_call_with_the_stem_pattern() -> None:
+    tools = [{"type": "function", "function": {"name": "glob"}}]
+    chunks = _outcome_chunks({"finish": False, "glob": "storage"}, tools)
+
+    assert len(chunks) == 1
+    call = chunks[0]
+    assert isinstance(call, ClientToolCall)
+    assert call.tool_calls[0].name == "glob"
+    arguments = json.loads(call.tool_calls[0].arguments)
+    assert arguments == {"pattern": "**/*storage*"}
+
+
+def test_glob_outcome_resolves_against_advertised_tool_names() -> None:
+    tools = [{"type": "function", "function": {"name": "Glob"}}]
+    chunks = _outcome_chunks({"finish": False, "glob": "storage"}, tools)
+    call = chunks[0]
+    assert isinstance(call, ClientToolCall)
+    assert call.tool_calls[0].name == "Glob"
+
+
+def test_glob_outcome_falls_back_to_glob_when_nothing_advertised() -> None:
+    chunks = _outcome_chunks({"finish": False, "glob": "storage"}, [])
+    call = chunks[0]
+    assert isinstance(call, ClientToolCall)
+    assert call.tool_calls[0].name == "glob"
+
+
+def test_unsafe_glob_stem_never_enters_the_pattern_template() -> None:
+    # defense in depth on classify's charset discipline (the run-command
+    # rule): an unsafe stem refuses instead of templating a pattern
+    chunks = _outcome_chunks({"finish": False, "glob": "sto*rage/.."}, [])
+
+    assert not any(isinstance(chunk, ClientToolCall) for chunk in chunks)
+    assert any("Refused" in getattr(chunk, "content", "") for chunk in chunks)
+
+
+def test_glob_continuation_is_not_acked() -> None:
+    messages = [
+        ChatMessage(role="user", content="write tests for the storage module"),
+        ChatMessage(
+            role="assistant",
+            content=None,
+            tool_calls=(_glob_call("c1", "**/*storage*"),),
+        ),
+        ChatMessage(role="tool", tool_call_id="c1", content="/w/storage.py"),
+    ]
+    assert _tool_result_ack(messages) is None
+
+
 def test_assistant_prose_equal_to_a_header_is_defanged() -> None:
     # reviewer nit (2026-07-10): an assistant prose message whose whole
     # content is a header lookalike must not render as grammar at column 0

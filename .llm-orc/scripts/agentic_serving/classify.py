@@ -107,6 +107,85 @@ _RAN_HEADER_RE = re.compile(r"^assistant: \[ran ", re.MULTILINE)
 # Defense in depth on top of _FILE_RE's already-safe charset: an argument
 # that could carry shell metacharacters never reaches the command template.
 _SAFE_ARG_RE = re.compile(r"^[\w./-]+$")
+# issue #83 discovery: the exact rung-1 module-stem phrasings ("<stem>
+# module", "module <stem>", "tests for <stem>"). The captured stem is
+# identifier-ish — a strict charset subset of _SAFE_ARG_RE, so the glob
+# pattern template downstream stays metacharacter-free (the run-command
+# discipline).
+_STEM_RES = (
+    re.compile(r"\b([A-Za-z_]\w*)\s+modules?\b", re.IGNORECASE),
+    re.compile(r"\bmodules?\s+([A-Za-z_]\w*)\b", re.IGNORECASE),
+    re.compile(r"\btests?\s+for\s+(?:the\s+)?([A-Za-z_]\w*)\b", re.IGNORECASE),
+)
+# Anaphora, filler, and imperative verbs the phrasings can capture ("tests
+# for it", "fix module storage" capturing "fix") — these stay with today's
+# routing (design bounds).
+_STEM_STOPWORDS = frozenset(
+    {
+        "a",
+        "an",
+        "the",
+        "it",
+        "them",
+        "this",
+        "that",
+        "these",
+        "those",
+        "all",
+        "each",
+        "every",
+        "some",
+        "any",
+        "both",
+        "one",
+        "same",
+        "my",
+        "your",
+        "our",
+        "his",
+        "her",
+        "its",
+        "their",
+        "me",
+        "us",
+        "and",
+        "or",
+        "in",
+        "of",
+        "for",
+        "with",
+        "to",
+        "so",
+        "then",
+        "please",
+        "now",
+        "named",
+        "called",
+        "which",
+        "whole",
+        "module",
+        "modules",
+        "existing",
+        "new",
+        "test",
+        "tests",
+        "python",
+        "write",
+        "implement",
+        "create",
+        "build",
+        "generate",
+        "refactor",
+        "fix",
+        "add",
+        "code",
+        "update",
+        "modify",
+        "edit",
+        "change",
+        "run",
+    }
+)
 
 
 def _extract_file(task: str) -> str:
@@ -168,22 +247,31 @@ def _visibility(context: str) -> tuple[set[str], dict[str, str]]:
 
 
 def _files_to_request(
-    task: str, context: str, tests_primary: bool, has_build_signal: bool
+    task: str,
+    context: str,
+    tests_primary: bool,
+    has_build_signal: bool,
+    glob_file: str = "",
 ) -> tuple[list[str], str]:
     """(paths to request, refusal reason) — at most one is non-empty.
 
     Deterministic one-round control (issue #83): a named source file that is
     neither conversation-written nor client-read triggers ONE read request;
     a file whose read was already attempted and still is not visible refuses.
+    ``glob_file`` is the discovery match feeding the same seam — a
+    discovering turn names no source file itself, so it is the only entry.
     """
     wants_existing = tests_primary or (
         has_build_signal and bool(_EXISTING_RE.search(task))
     )
     if not wants_existing:
         return [], ""
+    named = _named_source_files(task)
+    if glob_file:
+        named = [glob_file, *named]
     visible, attempted = _visibility(context)
     to_request: list[str] = []
-    for path in _named_source_files(task):
+    for path in named:
         basename = path.rsplit("/", 1)[-1]
         if basename in visible:
             continue
@@ -191,6 +279,120 @@ def _files_to_request(
             return [], f"could not read {path}: {attempted[basename]}"
         to_request.append(path)
     return to_request, ""
+
+
+def _module_stem(task: str) -> str:
+    """The turn's single module stem, or "" (no stem, or multi-stem).
+
+    Exact rung-1 phrasings only (discovery design 2026-07-10). Multi-stem
+    turns are out of scope — they fall back to today's routing rather than
+    guessing which stem the user meant.
+    """
+    stems: list[str] = []
+    for pattern in _STEM_RES:
+        for match in pattern.finditer(task):
+            stem = match.group(1).lower()
+            if stem not in _STEM_STOPWORDS and stem not in stems:
+                stems.append(stem)
+    return stems[0] if len(stems) == 1 else ""
+
+
+def _globbed_candidates(context: str, stem: str) -> list[str] | None:
+    """Candidate paths from the turn's ``[globbed ...]`` block, or ``None``
+    when no listing exists yet (pass 1 fires).
+
+    Matching is deterministic on the rendered block only (design bounds):
+    basename contains the stem, ``.py``, not ``test_*``-named. The header
+    scan is column-0 anchored, so an indented lookalike inside a read or
+    run body never counts as a listing (fenced block grammar).
+    """
+    lines = context.splitlines()
+    start = -1
+    for index, line in enumerate(lines):
+        if line.startswith("assistant: [globbed "):
+            start = index
+    if start < 0:
+        return None
+    candidates: list[str] = []
+    for line in lines[start + 1 :]:
+        if not line.startswith("  "):
+            break
+        basename = line.strip().rsplit("/", 1)[-1]
+        if (
+            stem in basename.lower()
+            and basename.endswith(".py")
+            and not basename.startswith("test_")
+        ):
+            candidates.append(line.strip())
+    return candidates
+
+
+def _discovery(
+    task: str, context: str, tests_primary: bool, has_build_signal: bool
+) -> tuple[str, str, str]:
+    """(glob stem to request, matched path, refusal reason) — at most one is
+    non-empty (issue #83 discovery, design 2026-07-10).
+
+    One glob round per turn: a workspace-needing turn naming a module stem
+    but no source file requests ONE listing; once a ``[globbed]`` block
+    exists the deterministic MATCH step takes over — exactly one candidate
+    becomes the turn's named file (the existing read seam fires next); zero
+    or several candidates refuse honestly, never re-glob.
+    """
+    wants_existing = tests_primary or (
+        has_build_signal and bool(_EXISTING_RE.search(task))
+    )
+    # A turn that names ANY file has nothing to discover — including
+    # test_*-named files, which _named_source_files deliberately excludes
+    # (review blocker 2026-07-10: "tests for test_storage.py" stemmed
+    # "test_storage" and burned a doomed glob round).
+    if not wants_existing or _extract_file(task):
+        return "", "", ""
+    stem = _module_stem(task)
+    if not stem:
+        return "", "", ""
+    candidates = _globbed_candidates(context, stem)
+    if candidates is None:
+        visible, _ = _visibility(context)
+        # The same candidate discipline as the globbed MATCH step (review
+        # blocker 2026-07-10: any-extension + set-order pick shipped a
+        # test_storage.json deliverable): .py only, not test_*, sorted for
+        # determinism; one match names the file, several refuse, none
+        # falls through to the glob request — the listing decides.
+        matches = sorted(
+            name
+            for name in visible
+            if name.rsplit(".", 1)[0].lower() == stem
+            and name.endswith(".py")
+            and not name.startswith("test_")
+        )
+        if len(matches) == 1:
+            # the stem IS a visible file — nothing to discover, but it is
+            # still the turn's named file (live finding 2026-07-10: without
+            # this a retried module turn shipped to test_solution.py)
+            return "", matches[0], ""
+        if len(matches) > 1:
+            listed = ", ".join(matches)
+            return (
+                "",
+                "",
+                f"multiple visible files match '{stem}': {listed}"
+                " — please name one",
+            )
+        return stem, "", ""
+    if len(candidates) == 1:
+        return "", candidates[0], ""
+    if not candidates:
+        return "", "", f"no file matching '{stem}' in the workspace listing"
+    listed = ", ".join(candidates)
+    return (
+        "",
+        "",
+        (
+            f"multiple files match '{stem}' in the workspace listing: {listed}"
+            " — please name one"
+        ),
+    )
 
 
 def _turn(raw: str) -> dict:
@@ -227,6 +429,8 @@ def _route(
     is_explain: bool,
     run_signal: bool,
     has_run_block: bool,
+    needs_glob: str,
+    glob_failed: str,
     needs_files: list[str],
     read_failed: str,
     tests_primary: bool,
@@ -248,6 +452,13 @@ def _route(
         return "need-run", "need_run", False, False
     if is_explain:
         return _EXPLAIN_SEAT, "explanation", False, False
+    if needs_glob or glob_failed:
+        # issue #83 discovery: one glob round (or its honest refusal) before
+        # the read seam. Exclusive with needs_files/read_failed by
+        # construction — a discovering turn names no source file, a reading
+        # turn does — so the order here only mirrors the seam chain
+        # (discover -> read -> build).
+        return "need-glob", "need_glob", False, False
     if needs_files or read_failed:
         # issue #83: request the client files (or refuse a failed request)
         # before any seat runs — the need-files shape is a cheap script echo.
@@ -265,9 +476,9 @@ def _route(
 def main() -> None:
     turn = _turn(sys.stdin.read().strip())
     task = str(turn.get("task", "")).strip()
-    is_explain = any(
-        marker in task.lower() for marker in _EXPLAIN_MARKERS
-    ) or bool(_INTERROGATIVE_RE.match(task))
+    is_explain = any(marker in task.lower() for marker in _EXPLAIN_MARKERS) or bool(
+        _INTERROGATIVE_RE.match(task)
+    )
     named_file = turn.get("file") or _extract_file(task)
     has_build_signal = bool(named_file) or bool(_BUILD_RE.search(task))
 
@@ -294,11 +505,22 @@ def main() -> None:
     conversation_raw = str(turn.get("context", ""))
     has_run_block = bool(_RAN_HEADER_RE.search(conversation_raw))
 
+    needs_glob = glob_file = glob_failed = ""
     needs_files: list[str] = []
     read_failed = ""
     if not is_explain and not run_signal:
-        needs_files, read_failed = _files_to_request(
+        needs_glob, glob_file, glob_failed = _discovery(
             task, conversation_raw, tests_primary, has_build_signal
+        )
+        if glob_file:
+            # issue #83 discovery MATCH step: the single candidate is the
+            # turn's named file — the EXISTING read seam takes over
+            # (invisible -> one read request fires; visible -> the seat
+            # builds against it with the right destination)
+            named_file = glob_file
+            named_basename = glob_file.rsplit("/", 1)[-1]
+        needs_files, read_failed = _files_to_request(
+            task, conversation_raw, tests_primary, has_build_signal, glob_file
         )
     needs_run = _run_test_command(task) if run_signal and not has_run_block else ""
 
@@ -306,6 +528,8 @@ def main() -> None:
         is_explain=is_explain,
         run_signal=run_signal,
         has_run_block=has_run_block,
+        needs_glob=needs_glob,
+        glob_failed=glob_failed,
         needs_files=needs_files,
         read_failed=read_failed,
         tests_primary=tests_primary,
@@ -331,8 +555,7 @@ def main() -> None:
     conversation = str(turn.get("context", "")).strip()
     if conversation:
         dispatch_input = (
-            f"Conversation so far:\n{conversation}"
-            f"\n\nCurrent request: {dispatch_input}"
+            f"Conversation so far:\n{conversation}\n\nCurrent request: {dispatch_input}"
         )
     if target == "run-verdict":
         # The verdict derives from the run block alone. The raw task is
@@ -354,6 +577,8 @@ def main() -> None:
                 "needs_files": needs_files,
                 "read_failed": read_failed,
                 "needs_run": needs_run,
+                "needs_glob": needs_glob,
+                "glob_failed": glob_failed,
             }
         )
     )
