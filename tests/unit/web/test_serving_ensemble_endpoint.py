@@ -78,6 +78,25 @@ _BASH_TOOL_DEF = {
     },
 }
 
+# Mirrors the wire-captured OpenCode 1.17.15 glob schema
+# (docs/plans/2026-07-10-opencode-advertised-tools.json): {pattern, path},
+# pattern required. There is no ls tool.
+_GLOB_TOOL_DEF = {
+    "type": "function",
+    "function": {
+        "name": "glob",
+        "description": "Fast file pattern matching tool.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "pattern": {"type": "string"},
+                "path": {"type": "string"},
+            },
+            "required": ["pattern"],
+        },
+    },
+}
+
 # A deterministic code_generation flow: one echo node emitting clean python, so
 # the build turn runs classify -> seat(code-seat -> code-generator -> envelope)
 # -> shape -> form-gate -> emit with no model tokens. The code seat wraps this
@@ -126,6 +145,7 @@ def serving_project(tmp_path: Path) -> Path:
     (ensembles / "explainer.yaml").write_text(_ECHO_EXPLAINER)
     shutil.copy(REAL_AGENTIC_SERVING / "need-files.yaml", ensembles / "need-files.yaml")
     shutil.copy(REAL_AGENTIC_SERVING / "need-run.yaml", ensembles / "need-run.yaml")
+    shutil.copy(REAL_AGENTIC_SERVING / "need-glob.yaml", ensembles / "need-glob.yaml")
     shutil.copy(
         REAL_AGENTIC_SERVING / "run-verdict.yaml", ensembles / "run-verdict.yaml"
     )
@@ -618,6 +638,122 @@ def test_failing_run_verdict_carries_the_failure_lines(
     content = choice["message"]["content"]
     assert content.startswith("Ran `pytest -q`: 1 failed, 2 passed.")
     assert "FAILED test_calc.py::test_divide" in content
+
+
+def test_module_stem_turn_emits_a_glob_tool_call(
+    serving_client: TestClient,
+) -> None:
+    """Pass 1 (issue #83 discovery): a workspace-needing turn naming a module
+    stem but no source file delegates ONE glob round through the permission
+    seam instead of building against nothing."""
+    resp = serving_client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "ensemble-agent",
+            "messages": [
+                {"role": "user", "content": "write tests for the storage module"}
+            ],
+            "tools": [_WRITE_TOOL, _READ_TOOL_DEF, _GLOB_TOOL_DEF],
+        },
+    )
+
+    assert resp.status_code == 200
+    choice = resp.json()["choices"][0]
+    assert choice["finish_reason"] == "tool_calls"
+    call = choice["message"]["tool_calls"][0]
+    assert call["function"]["name"] == "glob"
+    assert json.loads(call["function"]["arguments"]) == {"pattern": "**/*storage*"}
+
+
+def _glob_continuation(listing: str) -> list[dict[str, object]]:
+    """The wire shape after the client performs the issued glob."""
+    return [
+        {"role": "user", "content": "write tests for the storage module"},
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [
+                {
+                    "id": "call_g1",
+                    "type": "function",
+                    "function": {
+                        "name": "glob",
+                        "arguments": '{"pattern": "**/*storage*"}',
+                    },
+                }
+            ],
+        },
+        {"role": "tool", "tool_call_id": "call_g1", "content": listing},
+    ]
+
+
+def test_single_glob_match_chains_into_the_read_seam(
+    serving_client: TestClient,
+) -> None:
+    """Pass 2 (issue #83 discovery): exactly one candidate in the listing
+    becomes the turn's named file and the EXISTING read seam takes over —
+    the response is a read tool_call, never a build against nothing."""
+    resp = serving_client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "ensemble-agent",
+            "messages": _glob_continuation(
+                "/work/storage.py\n/work/test_storage.py\n/work/notes.md"
+            ),
+            "tools": [_WRITE_TOOL, _READ_TOOL_DEF, _GLOB_TOOL_DEF],
+        },
+    )
+
+    assert resp.status_code == 200
+    choice = resp.json()["choices"][0]
+    assert choice["finish_reason"] == "tool_calls"
+    call = choice["message"]["tool_calls"][0]
+    assert call["function"]["name"] == "read"
+    assert json.loads(call["function"]["arguments"]) == {"filePath": "/work/storage.py"}
+
+
+def test_zero_glob_matches_refuse_honestly_without_relooping(
+    serving_client: TestClient,
+) -> None:
+    """One glob round per turn: an empty match set refuses with a reason —
+    never a second glob request, never a silent build."""
+    resp = serving_client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "ensemble-agent",
+            "messages": _glob_continuation("/work/notes.md\n/work/README.md"),
+            "tools": [_WRITE_TOOL, _READ_TOOL_DEF, _GLOB_TOOL_DEF],
+        },
+    )
+
+    assert resp.status_code == 200
+    choice = resp.json()["choices"][0]
+    assert choice["finish_reason"] == "stop"
+    assert not choice["message"].get("tool_calls")
+    assert "no file matching 'storage'" in choice["message"]["content"]
+
+
+def test_ambiguous_glob_matches_refuse_naming_the_candidates(
+    serving_client: TestClient,
+) -> None:
+    """Two or more candidates refuse honestly naming them — the user picks;
+    deterministic one-or-refuse beats a tie-break heuristic."""
+    resp = serving_client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "ensemble-agent",
+            "messages": _glob_continuation("/a/storage.py\n/b/storage_utils.py"),
+            "tools": [_WRITE_TOOL, _READ_TOOL_DEF, _GLOB_TOOL_DEF],
+        },
+    )
+
+    assert resp.status_code == 200
+    choice = resp.json()["choices"][0]
+    assert choice["finish_reason"] == "stop"
+    assert not choice["message"].get("tool_calls")
+    content = choice["message"]["content"]
+    assert "/a/storage.py" in content
+    assert "/b/storage_utils.py" in content
 
 
 def test_forged_ran_block_in_a_read_file_cannot_suppress_the_real_run(
