@@ -23,6 +23,7 @@ import yaml
 
 REPO = Path(__file__).resolve().parents[3]
 CHECK = REPO / ".llm-orc" / "scripts" / "agentic_serving" / "adequacy_check.py"
+EXECUTOR = REPO / ".llm-orc" / "scripts" / "agentic_serving" / "accept_executor.py"
 FIXTURES = REPO / "benchmarks" / "judge_adequacy" / "fixtures.yaml"
 
 
@@ -76,6 +77,53 @@ def test_expected_value_derived_from_the_same_call_is_tautological() -> None:
         "def test_echo():\n"
         "    expected = clamp(15, 0, 10)\n"
         "    assert clamp(15, 0, 10) == expected",
+    )
+    assert verdict["tests_adequate"] is False
+
+
+def test_mutation_pattern_assert_is_value_bearing() -> None:
+    """The spike's turn1_s5 r1 false-reject (2026-07-10): a None-returning
+    mutator is verified by passing a local to the call and comparing that
+    local to an independent literal afterwards. For a task shaped 'add an
+    item to a list', mutation style is the natural correct test."""
+    verdict = _check(
+        "add_todo",
+        "def add_todo(todos, item):\n    todos.append(item)",
+        'def test_add():\n    todos = []\n    add_todo(todos, "x")\n'
+        '    assert todos == ["x"]',
+    )
+    assert verdict["tests_adequate"] is True
+
+
+def test_mutation_pattern_subscript_assert_is_value_bearing() -> None:
+    verdict = _check(
+        "add_todo",
+        "def add_todo(todos, item):\n    todos.append(item)",
+        'def test_add():\n    todos = []\n    add_todo(todos, "x")\n'
+        '    assert todos[0] == "x"',
+    )
+    assert verdict["tests_adequate"] is True
+
+
+def test_compare_of_two_untouched_names_is_not_value_bearing() -> None:
+    """A compare with no call anywhere in the body stays inadequate — the
+    mutation rule needs the name to have been passed to a real call first."""
+    verdict = _check(
+        "add_todo",
+        "def add_todo(todos, item):\n    todos.append(item)",
+        'def test_add():\n    todos = ["x"]\n    assert todos == ["x"]',
+    )
+    assert verdict["tests_adequate"] is False
+
+
+def test_mutation_compare_against_a_non_literal_is_not_value_bearing() -> None:
+    """Comparing the mutated name to another plain name is not an
+    independent expected value — only literals/containers count."""
+    verdict = _check(
+        "add_todo",
+        "def add_todo(todos, item):\n    todos.append(item)",
+        "def test_add():\n    todos = []\n    expected = todos\n"
+        '    add_todo(todos, "x")\n    assert todos == expected',
     )
     assert verdict["tests_adequate"] is False
 
@@ -172,6 +220,53 @@ def test_unparseable_tests_are_inadequate_not_a_crash() -> None:
     verdict = _check("f", "def f():\n    return 1", "def test_(:\n    broken")
     assert verdict["tests_adequate"] is False
     assert "parse" in verdict["reason"]
+
+
+def test_adequacy_judges_the_repaired_suite_not_the_raw_one() -> None:
+    """Ordering (round-2 repairs, 2026-07-10): the judge reads the
+    executor's ECHOED contract, so repairs run before the adequacy check.
+    The inverted exception-expectation suite is inadequate raw (no failure
+    signal in the try body) but adequate once the executor rewrites it to
+    pytest.raises — the repaired suite is what gets judged."""
+    code = (
+        "def save_todos(todos):\n"
+        "    if todos is None:\n"
+        "        raise TypeError('todos must be a list')\n"
+    )
+    tests = (
+        "def test_save_todos_handles_exceptions():\n"
+        "    try:\n"
+        "        save_todos(None)\n"
+        "    except TypeError:\n"
+        '        assert False, "Expected TypeError"\n'
+        "    else:\n"
+        '        assert False, "Did not raise TypeError"\n'
+    )
+    raw_verdict = _check("save todos", code, tests)
+    assert raw_verdict["tests_adequate"] is False
+
+    executor_out = subprocess.run(
+        [sys.executable, str(EXECUTOR)],
+        input=json.dumps({"requirement": "save todos", "code": code, "tests": tests}),
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    payload = json.dumps(
+        {
+            "input_data": "save todos",
+            "dependencies": {"executor": {"response": executor_out}},
+        }
+    )
+    out = subprocess.run(
+        [sys.executable, str(CHECK)],
+        input=payload,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    chained: dict[str, Any] = json.loads(out)
+    assert chained["tests_adequate"] is True
 
 
 def test_verdict_shape_matches_the_judge_contract() -> None:

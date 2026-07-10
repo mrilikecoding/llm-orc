@@ -66,7 +66,13 @@ def _run_test_fns(test_fns: list, tests: str) -> tuple[int, list[str]]:
                 # an async test returns a coroutine that raised nothing yet —
                 # uncollected it would count as a silent pass (wrong accept)
                 asyncio.run(result)
-        except Exception as error:  # noqa: BLE001
+        except (KeyboardInterrupt, SystemExit, GeneratorExit):
+            raise
+        except BaseException as error:  # noqa: BLE001
+            # BaseException, not Exception: pytest's Failed (the
+            # pytest.raises DID-NOT-RAISE outcome) derives from
+            # BaseException and must report as a clean per-test failure,
+            # not crash the runner child (validation replay 2026-07-10)
             line = _failing_line(error, tests)
             detail = f"{name}: {error!r}"
             if line:

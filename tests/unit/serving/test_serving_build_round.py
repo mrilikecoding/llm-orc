@@ -108,6 +108,18 @@ def test_build_gated_loop_body_is_the_router() -> None:
     assert round_agent.loop.body == "build-round"
 
 
+def test_build_code_round_code_writer_has_timeout_headroom() -> None:
+    """The held-round input is the system's longest prompt (turn + reject
+    report + held tests); the 300s default timed out the 3-call
+    code-generator, shipped empty code, and killed the one convertible
+    retry (spike 2026-07-10). The node needs explicit headroom, bounded
+    by the dispatch/loop budget above it."""
+    config = _load("build-code-round")
+    assert config is not None
+    writer = next(a for a in config.agents if a.name == "code_writer")
+    assert writer.timeout_seconds == 600
+
+
 def test_build_code_round_has_no_test_writer_and_gate_reads_gather() -> None:
     """The held round: code-only against the carried spec; the gate carries
     round 1's adequacy from gather's held flag (no judge seat)."""

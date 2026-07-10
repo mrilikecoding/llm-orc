@@ -52,3 +52,25 @@ def test_no_flag_keeps_legacy_whole_run(tmp_path: Path) -> None:
     verdict = _run(CODE, LEAKY_TESTS, tmp_path)
     assert verdict["n_tests"] == 2
     assert verdict["tests_pass"] is False  # the shared-state leak, as today
+
+
+def test_pytest_raises_did_not_raise_reports_as_failure_not_crash(
+    tmp_path: Path,
+) -> None:
+    """pytest.fail's Failed derives from BaseException, so the repaired
+    pytest.raises form (test-repair round 2) crashed the runner child on
+    DID NOT RAISE instead of reporting a clean per-test failure — a
+    fail-closed defect that starved the retry round of evidence
+    (validation replay turn6_sv5 r1, 2026-07-10)."""
+    code = "def load_todos():\n    return []\n"
+    tests = (
+        "import pytest\n\n"
+        "def test_missing_file_raises():\n"
+        "    with pytest.raises(FileNotFoundError):\n"
+        "        load_todos()\n"
+    )
+    verdict = _run(code, tests, tmp_path)
+    assert verdict["tests_pass"] is False
+    assert verdict["n_tests"] == 1
+    assert "DID NOT RAISE" in verdict["report"]
+    assert "runner crashed" not in verdict["report"]

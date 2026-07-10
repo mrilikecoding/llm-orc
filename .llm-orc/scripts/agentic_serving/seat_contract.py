@@ -18,13 +18,12 @@ from __future__ import annotations
 
 import asyncio
 import json
-
-from _helpers import terminal as _terminal
 import sys
 from pathlib import Path
 from typing import Any
 
 import yaml
+from _helpers import terminal as _terminal
 
 from llm_orc.core.validation.models import ValidationConfig
 from llm_orc.core.validation.seat_contract import SEAT_OUTPUT_KEY, admit

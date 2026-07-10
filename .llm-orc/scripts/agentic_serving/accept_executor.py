@@ -89,6 +89,7 @@ def _sanitize_tests(tests: str) -> tuple[str, int]:
 _INJECTABLE_MODULES = frozenset(
     {
         "collections",
+        "contextlib",
         "functools",
         "itertools",
         "json",
@@ -120,8 +121,12 @@ def _param_names(args: ast.arguments) -> set[str]:
 
 def _bound_names(tree: ast.Module) -> set[str]:
     """Every name the tests source binds: assignments, for/with targets (all
-    ``ast.Name`` in Store context), def/class names, function parameters, and
-    import aliases — the rest are candidates for import injection."""
+    ``ast.Name`` in Store context), def/class names, function AND lambda
+    parameters, except-handler aliases, and import aliases — the rest are
+    candidates for import injection. Lambda params and handler aliases were
+    missed pre-review (probe P3b, 2026-07-10): harmless for injection (it
+    only errs toward injecting) but excision turned the gap into silently
+    dropping a good test."""
     bound = {
         n.id
         for n in ast.walk(tree)
@@ -130,8 +135,10 @@ def _bound_names(tree: ast.Module) -> set[str]:
     for node in ast.walk(tree):
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
             bound.add(node.name)
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
             bound |= _param_names(node.args)
+        if isinstance(node, ast.ExceptHandler) and node.name:
+            bound.add(node.name)
         if isinstance(node, (ast.Import, ast.ImportFrom)):
             bound |= {a.asname or a.name.split(".")[0] for a in node.names}
     return bound
@@ -164,6 +171,273 @@ def _inject_test_imports(tests: str, code: str) -> tuple[str, int]:
         return tests, 0
     prelude = "\n".join(f"import {name}" for name in missing)
     return f"{prelude}\n\n{tests}", len(missing)
+
+
+def _calls_unbound_name(func: ast.AST, bound: set[str]) -> bool:
+    """Whether a test function calls a bare name outside ``bound`` — a
+    guaranteed NameError no code regeneration can convert."""
+    return any(
+        isinstance(n, ast.Call)
+        and isinstance(n.func, ast.Name)
+        and n.func.id not in bound
+        for n in ast.walk(func)
+    )
+
+
+def _excise_unbound_callable_tests(tests: str, code: str) -> tuple[str, int]:
+    """Tests minus the ones calling a name bound nowhere, and the count.
+
+    Spike 2026-07-10 (turn6_s2/turn6_s5): ``assert file_exists(...)`` — a
+    call to a bare name the tests never bind, the code deliverable never
+    defines, and neither builtins nor the injectable-module whitelist can
+    supply. The line NameErrors in every round; excising that one test and
+    running the remainder is honest, where name-mapping (``file_exists ->
+    os.path.exists``) would risk changing intent. Scope: top-level
+    ``test_*`` functions (per-test isolation's unit). Bounded: if excision
+    would drop ALL test units, the suite is returned unchanged so the
+    round rejects on the real NameError. The echoed (shipped) tests are
+    the excised suite, per the v0.18.7 repair convention.
+    """
+    try:
+        tree = ast.parse(tests)
+    except SyntaxError:
+        return tests, 0
+    try:
+        code_bound = _bound_names(ast.parse(code))
+    except SyntaxError:
+        code_bound = set()
+    bound = _bound_names(tree) | code_bound | _BUILTIN_NAMES | _INJECTABLE_MODULES
+    test_funcs = [
+        n
+        for n in tree.body
+        if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and n.name.startswith("test_")
+    ]
+    doomed = [f for f in test_funcs if _calls_unbound_name(f, bound)]
+    has_cases = any(isinstance(n, ast.ClassDef) for n in tree.body)
+    if not doomed or (len(doomed) == len(test_funcs) and not has_cases):
+        return tests, 0
+    lines = tests.splitlines()
+    for func in sorted(doomed, key=lambda f: f.lineno, reverse=True):
+        start = min([func.lineno, *(d.lineno for d in func.decorator_list)]) - 1
+        del lines[start : (func.end_lineno or func.lineno)]
+    return "\n".join(lines) + ("\n" if tests.endswith("\n") else ""), len(doomed)
+
+
+def _is_bare_os_removal(stmt: ast.stmt) -> bool:
+    """A bare ``os.remove(...)`` / ``os.unlink(...)`` expression statement."""
+    if not (isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Call)):
+        return False
+    func = stmt.value.func
+    return (
+        isinstance(func, ast.Attribute)
+        and func.attr in ("remove", "unlink")
+        and isinstance(func.value, ast.Name)
+        and func.value.id == "os"
+    )
+
+
+def _setup_removals(
+    node: ast.FunctionDef | ast.AsyncFunctionDef, code_bound: set[str]
+) -> list[ast.stmt]:
+    """Bare removals in the SETUP region only — before the first statement
+    that references a code-bound name. A removal AFTER the code ran is an
+    implicit the-file-was-created assertion; wrapping it would neuter the
+    check and accept code that never writes (review probe P2b,
+    2026-07-10)."""
+    removals: list[ast.stmt] = []
+    for stmt in node.body:
+        if _is_bare_os_removal(stmt):
+            removals.append(stmt)
+            continue
+        loads = {
+            n.id
+            for n in ast.walk(stmt)
+            if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Load)
+        }
+        if loads & code_bound:
+            break
+    return removals
+
+
+def _guard_unconditional_removals(tests: str, code: str) -> tuple[str, int]:
+    """Tests with bare SETUP-position removals suppressed, and the count.
+
+    Spike 2026-07-10 (turn6_s4 r1+r2): setup deletes a file that never
+    exists in the fresh per-test sandbox — per-test isolation itself
+    created this failure mode — and the FileNotFoundError fires before any
+    assert. A bare ``os.remove(...)`` / ``os.unlink(...)`` expression
+    statement in a test function's setup region (before any code-bound
+    name is referenced, so never one already inside try/with and never a
+    post-call existence check) is wrapped in ``with contextlib.suppress(
+    FileNotFoundError):``; the contextlib import arrives via the existing
+    injection mechanism. Same shape as import injection: the artifact
+    becomes self-consistent without touching what it asserts about the
+    code. The echoed (shipped) tests carry the wrap.
+    """
+    try:
+        tree = ast.parse(tests)
+    except SyntaxError:
+        return tests, 0
+    try:
+        code_bound = _bound_names(ast.parse(code)) - _BUILTIN_NAMES
+    except SyntaxError:
+        code_bound = set()
+    targets = [
+        stmt
+        for node in tree.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and node.name.startswith("test_")
+        for stmt in _setup_removals(node, code_bound)
+    ]
+    if not targets:
+        return tests, 0
+    lines = tests.splitlines()
+    for stmt in sorted(targets, key=lambda s: s.lineno, reverse=True):
+        start, end = stmt.lineno - 1, stmt.end_lineno or stmt.lineno
+        indent = " " * stmt.col_offset
+        block = [f"{indent}with contextlib.suppress(FileNotFoundError):"] + [
+            f"    {line}" for line in lines[start:end]
+        ]
+        lines[start:end] = block
+    return "\n".join(lines) + ("\n" if tests.endswith("\n") else ""), len(targets)
+
+
+def _is_assert_false(stmt: ast.stmt) -> bool:
+    return (
+        isinstance(stmt, ast.Assert)
+        and isinstance(stmt.test, ast.Constant)
+        and stmt.test.value is False
+    )
+
+
+def _is_vacuous_else(orelse: list[ast.stmt]) -> bool:
+    """Absent, or a single constant-bool assert (``assert False, msg`` /
+    ``assert True, msg``) — an else that can never check a value."""
+    if not orelse:
+        return True
+    if len(orelse) != 1:
+        return False
+    stmt = orelse[0]
+    return (
+        isinstance(stmt, ast.Assert)
+        and isinstance(stmt.test, ast.Constant)
+        and isinstance(stmt.test.value, bool)
+    )
+
+
+def _exception_source(exc: ast.expr | None) -> tuple[str, str]:
+    """(source form, declared name) for a bare or dotted exception type —
+    ``ValueError`` -> ("ValueError", "ValueError"); the Attribute form
+    ``json.JSONDecodeError`` (validation replays 2026-07-10: the natural
+    spelling for the storage turn, rejected in every sample) ->
+    ("json.JSONDecodeError", "JSONDecodeError"). ("", "") otherwise."""
+    if isinstance(exc, ast.Name):
+        return exc.id, exc.id
+    if isinstance(exc, ast.Attribute) and isinstance(exc.value, ast.Name):
+        return f"{exc.value.id}.{exc.attr}", exc.attr
+    return "", ""
+
+
+def _declares_expectation(msg: str, declared: str) -> bool:
+    """A positive, whole-word declaration that the named exception is
+    expected. Substring matching was a wrong-accept vector (review probes
+    2026-07-10): "Unexpected ValueError" contains "expected" and would
+    invert a correct must-not-raise guard; "Error" is a substring of
+    "KeyError" and matched the wrong class. Whole-word ``expected`` never
+    matches inside "unexpected"; a negation token anywhere refuses; the
+    exception name must appear as a whole word."""
+    lowered = msg.lower()
+    if not re.search(r"\bexpected\b", lowered):
+        return False
+    if re.search(r"\b(?:not|never|no)\b", lowered):
+        return False
+    return bool(re.search(rf"\b{re.escape(declared)}\b", msg))
+
+
+def _declared_expected_exception(handler: ast.excepthandler) -> str:
+    """The exception source a handler both catches and declares expected —
+    ``except <E>: assert False, "...expected...<E>..."`` — else ''."""
+    if not isinstance(handler, ast.ExceptHandler):
+        return ""
+    if len(handler.body) != 1 or not _is_assert_false(handler.body[0]):
+        return ""
+    stmt = handler.body[0]
+    msg = stmt.msg if isinstance(stmt, ast.Assert) else None
+    if not (isinstance(msg, ast.Constant) and isinstance(msg.value, str)):
+        return ""
+    source, declared = _exception_source(handler.type)
+    if source and _declares_expectation(msg.value, declared):
+        return source
+    return ""
+
+
+def _inverted_expectation(stmt: ast.stmt) -> tuple[ast.Call, str] | None:
+    """(call, exception name) when a statement matches the inverted
+    exception-expectation signature exactly; ``None`` otherwise.
+
+    The exact AST signature (spike 2026-07-10, turn6_s2 r1+r2 and
+    turn1_s5 r2): a try whose body is a single bare call; EVERY handler
+    body is a single ``assert False``; the first handler catches a named
+    exception and its message declares that raise expected ("Expected
+    TypeError"); the else is absent or a vacuous constant-bool assert.
+    Such a test punishes exactly the raise its own message expects — the
+    assert-False belongs after the call / in else. Anything outside the
+    signature (a real else assert, an assert inside the try body, a
+    message that doesn't declare the expectation) is ambiguous and stays
+    untouched, so a correct must-not-raise guard is never inverted.
+    """
+    if not isinstance(stmt, ast.Try) or stmt.finalbody or not stmt.handlers:
+        return None
+    if len(stmt.body) != 1:
+        return None
+    call_stmt = stmt.body[0]
+    if not (isinstance(call_stmt, ast.Expr) and isinstance(call_stmt.value, ast.Call)):
+        return None
+    if not all(
+        len(h.body) == 1 and _is_assert_false(h.body[0]) for h in stmt.handlers
+    ):
+        return None
+    exc_name = _declared_expected_exception(stmt.handlers[0])
+    if not exc_name or not _is_vacuous_else(stmt.orelse):
+        return None
+    return call_stmt.value, exc_name
+
+
+def _rewrite_inverted_expectations(tests: str) -> tuple[str, int]:
+    """Tests with inverted exception-expectations rewritten to the
+    canonical ``with pytest.raises(<E>): <call>`` form, and the count.
+    The pytest import arrives via the existing injection mechanism; the
+    echoed (shipped) tests carry the rewrite (v0.18.7 convention)."""
+    try:
+        tree = ast.parse(tests)
+    except SyntaxError:
+        return tests, 0
+    found: list[tuple[ast.Try, ast.Call, str]] = []
+    for node in tree.body:
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        if not node.name.startswith("test_"):
+            continue
+        for stmt in node.body:
+            match = _inverted_expectation(stmt)
+            if match is not None and isinstance(stmt, ast.Try):
+                found.append((stmt, match[0], match[1]))
+    if not found:
+        return tests, 0
+    lines = tests.splitlines()
+    for try_stmt, call, exc_name in sorted(
+        found, key=lambda item: item[0].lineno, reverse=True
+    ):
+        start = try_stmt.lineno - 1
+        end = try_stmt.end_lineno or try_stmt.lineno
+        indent = " " * try_stmt.col_offset
+        call_src = ast.get_source_segment(tests, call) or ast.unparse(call)
+        lines[start:end] = [
+            f"{indent}with pytest.raises({exc_name}):",
+            f"{indent}    {call_src}",
+        ]
+    return "\n".join(lines) + ("\n" if tests.endswith("\n") else ""), len(found)
 
 
 def _from_dependencies(envelope: dict[str, object]) -> dict[str, object] | None:
@@ -409,6 +683,9 @@ def main() -> None:
     code = str(data.get("code", ""))
     tests = str(data.get("tests", ""))
     tests, tests_sanitized = _sanitize_tests(tests)
+    tests, tests_excised = _excise_unbound_callable_tests(tests, code)
+    tests, tests_removals_guarded = _guard_unconditional_removals(tests, code)
+    tests, tests_raises_rewritten = _rewrite_inverted_expectations(tests)
     tests, tests_imports_injected = _inject_test_imports(tests, code)
     raw_workspace = data.get("workspace")
     workspace = (
@@ -430,6 +707,9 @@ def main() -> None:
                 "tests_pass": tests_pass,
                 "n_tests": n_tests,
                 "tests_sanitized": tests_sanitized,
+                "tests_excised": tests_excised,
+                "tests_removals_guarded": tests_removals_guarded,
+                "tests_raises_rewritten": tests_raises_rewritten,
                 "tests_imports_injected": tests_imports_injected,
                 "report": report,
             }

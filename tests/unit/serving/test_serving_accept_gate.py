@@ -406,3 +406,401 @@ def test_unparseable_tests_skip_injection_and_sanitization() -> None:
     assert result["tests_sanitized"] == 0
     assert result["tests_imports_injected"] == 0
     assert result["tests_pass"] is False
+
+
+# --- unbound-callable excision (spike 2026-07-10: `file_exists` tic) ---
+
+_SAVE_LOAD_CODE = (
+    "import json\n"
+    "import os\n"
+    "def save_todos(todos):\n"
+    "    with open('todos.json', 'w') as f:\n"
+    "        json.dump(todos, f)\n"
+    "def load_todos():\n"
+    "    if not os.path.exists('todos.json'):\n"
+    "        return []\n"
+    "    with open('todos.json') as f:\n"
+    "        return json.load(f)\n"
+)
+
+# verbatim spike exemplar (turn6_s2 r1 / turn6_s5 r1+r2): file_exists is
+# bound nowhere — not a module, so import injection cannot reach it
+_UNBOUND_CALLABLE_TEST = (
+    "def test_save_todos_saves_todos_to_file():\n"
+    '    todos = ["Buy groceries", "Walk the dog"]\n'
+    "    save_todos(todos)\n"
+    '    assert file_exists("todos.json")\n'
+)
+
+_GOOD_ROUNDTRIP_TEST = (
+    "def test_load_todos_returns_saved_todos():\n"
+    '    todos = ["Buy groceries", "Walk the dog"]\n'
+    "    save_todos(todos)\n"
+    "    loaded = load_todos()\n"
+    "    assert loaded == todos\n"
+)
+
+
+def test_unbound_callable_test_is_excised_and_the_rest_run() -> None:
+    """A test calling a name bound nowhere (not tests, not code, not a
+    builtin, not injectable) can never run — no code regeneration defines
+    it. Excise that one test, run the remainder, echo the excised suite."""
+    result = _executor(
+        "save/load todos",
+        _SAVE_LOAD_CODE,
+        _UNBOUND_CALLABLE_TEST + _GOOD_ROUNDTRIP_TEST,
+    )
+    assert result["tests_excised"] == 1
+    assert "file_exists" not in result["tests"]
+    assert "test_load_todos_returns_saved_todos" in result["tests"]
+    assert result["tests_pass"] is True
+
+
+def test_excision_that_would_drop_all_tests_leaves_the_suite_unchanged() -> None:
+    """Bound: excising everything would judge an empty suite — leave the
+    suite alone so the round rejects honestly on the real NameError."""
+    result = _executor("save/load todos", _SAVE_LOAD_CODE, _UNBOUND_CALLABLE_TEST)
+    assert result["tests_excised"] == 0
+    assert "file_exists" in result["tests"]
+    assert result["tests_pass"] is False
+
+
+def test_excised_to_empty_suite_still_rejects_at_the_gate() -> None:
+    """The gate never gets weaker than 'at least one adequate test ran':
+    when every test calls an unbound name, excision declines, the raw
+    suite NameErrors in the executor, and the round rejects regardless of
+    the judge's adequacy verdict on the echoed tests."""
+    executor_resp = _executor(
+        "save/load todos", _SAVE_LOAD_CODE, _UNBOUND_CALLABLE_TEST
+    )
+    check = REPO / ".llm-orc" / "scripts" / "agentic_serving" / "adequacy_check.py"
+    payload = json.dumps(
+        {
+            "input_data": "save/load todos",
+            "dependencies": {"executor": {"response": json.dumps(executor_resp)}},
+        }
+    )
+    judge_out = subprocess.run(
+        [sys.executable, str(check)],
+        input=payload,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    verdict = _gate(executor_resp, json.loads(judge_out))
+    assert verdict["accept"] is False
+    assert verdict["tests_pass"] is False
+
+
+def test_call_to_a_code_bound_name_is_never_excised() -> None:
+    result = _executor("save/load todos", _SAVE_LOAD_CODE, _GOOD_ROUNDTRIP_TEST)
+    assert result["tests_excised"] == 0
+    assert result["tests_pass"] is True
+
+
+def test_unguarded_os_remove_is_wrapped_in_suppress() -> None:
+    """Verbatim spike exemplar (turn6_s4 r1+r2): setup deletes a file that
+    never exists in the fresh per-test sandbox; FileNotFoundError fires
+    before the assert. The wrap makes setup idempotent without touching
+    what the test asserts about the code."""
+    tests = (
+        "def test_load_todos_returns_empty_list_on_missing_file():\n"
+        "    import os\n"
+        '    os.remove("todos.json")\n'
+        "    assert load_todos() == []\n"
+    )
+    result = _executor("save/load todos", _SAVE_LOAD_CODE, tests)
+    assert result["tests_removals_guarded"] == 1
+    assert "with contextlib.suppress(FileNotFoundError):" in result["tests"]
+    assert "import contextlib" in result["tests"]
+    assert result["tests_pass"] is True
+
+
+def test_os_unlink_is_guarded_like_os_remove() -> None:
+    tests = (
+        "import os\n"
+        "def test_missing_file():\n"
+        '    os.unlink("todos.json")\n'
+        "    assert load_todos() == []\n"
+    )
+    result = _executor("save/load todos", _SAVE_LOAD_CODE, tests)
+    assert result["tests_removals_guarded"] == 1
+    assert result["tests_pass"] is True
+
+
+def test_removal_already_inside_try_or_with_is_left_alone() -> None:
+    tests = (
+        "import os\n"
+        "import contextlib\n"
+        "def test_missing_file():\n"
+        "    with contextlib.suppress(FileNotFoundError):\n"
+        '        os.remove("todos.json")\n'
+        "    assert load_todos() == []\n"
+        "def test_missing_file_try():\n"
+        "    try:\n"
+        '        os.remove("todos.json")\n'
+        "    except FileNotFoundError:\n"
+        "        pass\n"
+        "    assert load_todos() == []\n"
+    )
+    result = _executor("save/load todos", _SAVE_LOAD_CODE, tests)
+    assert result["tests_removals_guarded"] == 0
+    assert result["tests_pass"] is True
+
+
+# --- inverted exception-expectation rewrite (spike 2026-07-10) ---
+
+_RAISING_SAVE = (
+    "def save_todos(todos):\n"
+    "    if todos is None:\n"
+    "        raise TypeError('todos must be a list')\n"
+    "    return list(todos)\n"
+)
+
+
+def test_inverted_expectation_with_both_branches_false_is_rewritten() -> None:
+    """Verbatim spike exemplar (turn6_s2 r1+r2): both branches assert
+    False — no implementation can pass, and the code that correctly
+    raised TypeError was punished for it. The messages name the intent
+    (raise expected); rewrite to the canonical pytest.raises form."""
+    tests = (
+        "def test_save_todos_handles_exceptions():\n"
+        "    try:\n"
+        "        save_todos(None)\n"
+        "    except TypeError:\n"
+        '        assert False, "Expected TypeError"\n'
+        "    else:\n"
+        '        assert False, "Did not raise TypeError"\n'
+    )
+    result = _executor("save todos", _RAISING_SAVE, tests)
+    assert result["tests_raises_rewritten"] == 1
+    assert "with pytest.raises(TypeError):" in result["tests"]
+    assert "import pytest" in result["tests"]
+    assert result["tests_pass"] is True
+
+
+def test_inverted_expectation_with_bare_handler_and_true_else_rewrites() -> None:
+    """Verbatim spike exemplar (turn1_s5 r2): the specific handler asserts
+    False with 'expected ValueError', a bare handler asserts False, and
+    the else is a vacuous assert True — the assert-False belongs after
+    the call / in else, exactly the positional garble the prompt rule
+    tried to teach."""
+    code = (
+        "def add_todo(item):\n"
+        "    if item is None:\n"
+        "        raise ValueError('item required')\n"
+    )
+    tests = (
+        "def test_add_todo_raises_value_error_for_none():\n"
+        "    try:\n"
+        "        add_todo(None)\n"
+        "    except ValueError as e:\n"
+        '        assert False, "expected ValueError"\n'
+        "    except:\n"
+        '        assert False, "unexpected exception"\n'
+        "    else:\n"
+        '        assert True, "no exception raised"\n'
+    )
+    result = _executor("add todo", code, tests)
+    assert result["tests_raises_rewritten"] == 1
+    assert "with pytest.raises(ValueError):" in result["tests"]
+    assert result["tests_pass"] is True
+
+
+def test_expectation_with_a_real_else_assert_is_left_alone() -> None:
+    """turn6_s5's lookalike: the else carries a real value assert, so the
+    test is satisfiable by correct non-raising code — rewriting to
+    pytest.raises would BREAK a correct implementation. Ambiguous stays
+    untouched."""
+    tests = (
+        "def test_load_todos_returns_empty_list_if_file_not_found():\n"
+        "    try:\n"
+        "        load_todos()\n"
+        "    except FileNotFoundError:\n"
+        '        assert False, "Expected FileNotFoundError"\n'
+        "    else:\n"
+        "        assert load_todos() == []\n"
+    )
+    result = _executor("save/load todos", _SAVE_LOAD_CODE, tests)
+    assert result["tests_raises_rewritten"] == 0
+    assert result["tests_pass"] is True
+
+
+def test_canonical_expect_raise_try_form_is_left_alone() -> None:
+    """The correct idiom (assert False AFTER the call, handler passes) has
+    an assert in the try body — outside the exact signature."""
+    tests = (
+        "def test_rejects_none():\n"
+        "    try:\n"
+        "        save_todos(None)\n"
+        '        assert False, "expected TypeError"\n'
+        "    except TypeError:\n"
+        "        pass\n"
+    )
+    result = _executor("save todos", _RAISING_SAVE, tests)
+    assert result["tests_raises_rewritten"] == 0
+    assert result["tests_pass"] is True
+
+
+def test_handler_message_that_does_not_declare_expectation_is_left_alone() -> None:
+    """'except E: assert False' whose message does NOT say the raise was
+    expected could be a legitimate must-not-raise guard — ambiguous, so
+    untouched (reject stays honest)."""
+    tests = (
+        "def test_never_raises_for_lists():\n"
+        "    try:\n"
+        "        save_todos([1])\n"
+        "    except TypeError:\n"
+        '        assert False, "should not raise for a list"\n'
+        "    else:\n"
+        "        pass\n"
+    )
+    result = _executor("save todos", _RAISING_SAVE, tests)
+    assert result["tests_raises_rewritten"] == 0
+    assert result["tests_pass"] is True
+
+
+def test_call_to_a_fixture_parameter_is_never_excised() -> None:
+    """A called name bound as a test parameter (pytest fixture) is bound."""
+    tests = (
+        "def test_uses_factory(make_thing):\n"
+        "    thing = make_thing()\n"
+        "    assert thing != 0\n"
+        "def test_add():\n"
+        "    assert add(1, 2) == 3\n"
+    )
+    result = _executor("adds", "def add(a, b):\n    return a + b\n", tests)
+    assert result["tests_excised"] == 0
+
+
+def test_inverted_expectation_with_dotted_exception_is_rewritten() -> None:
+    """Validation replay exemplar (turn6_sv1/sv3/sv4, 2026-07-10): the
+    handler catches the Attribute form ``json.JSONDecodeError`` — the
+    natural spelling for the storage turn — and every sample rejected on
+    it. The declared-expectation check matches the dotted name's last
+    segment; the rewrite emits the dotted form."""
+    code = (
+        "import json\n\n"
+        "def load_todos():\n"
+        '    with open("todos.json") as f:\n'
+        "        return json.loads(f.read())\n"
+    )
+    tests = (
+        "import json\n\n"
+        "def test_load_todos_handles_json_errors():\n"
+        '    with open("todos.json", "w") as f:\n'
+        '        f.write("{not json")\n'
+        "    try:\n"
+        "        load_todos()\n"
+        "    except json.JSONDecodeError:\n"
+        '        assert False, "Expected JSONDecodeError"\n'
+    )
+    result = _executor("load todos", code, tests)
+    assert result["tests_raises_rewritten"] == 1
+    assert "with pytest.raises(json.JSONDecodeError):" in result["tests"]
+    assert result["tests_pass"] is True
+
+
+def test_dotted_exception_without_declared_expectation_stays() -> None:
+    tests = (
+        "import json\n\n"
+        "def test_load_todos_tolerates_bad_json():\n"
+        "    try:\n"
+        "        load_todos()\n"
+        "    except json.JSONDecodeError:\n"
+        '        assert False, "should tolerate bad json"\n'
+    )
+    code = "def load_todos():\n    return []\n"
+    result = _executor("load todos", code, tests)
+    assert result["tests_raises_rewritten"] == 0
+    assert "pytest.raises" not in result["tests"]
+
+
+def test_unexpected_message_guard_is_never_rewritten() -> None:
+    """Review probe P1d (2026-07-10): 'Unexpected ValueError' contains the
+    substring 'expected' — a correct must-not-raise guard that the rewrite
+    inverted, accepting wrong code that raises. The declaration check must
+    be a positive whole word."""
+    tests = (
+        "def test_save_never_raises():\n"
+        "    try:\n"
+        "        save_todos([1])\n"
+        "    except ValueError:\n"
+        '        assert False, "Unexpected ValueError"\n'
+    )
+    raising_code = "def save_todos(todos):\n    raise ValueError('nope')\n"
+    result = _executor("save todos", raising_code, tests)
+    assert result["tests_raises_rewritten"] == 0
+    assert result["tests_pass"] is False
+
+
+def test_declared_name_must_match_the_caught_exception_whole_word() -> None:
+    """Review probe (2026-07-10): 'Error' is a substring of 'KeyError', so a
+    handler catching a custom Error with a message declaring KeyError
+    rewrote to pytest.raises(Error) and accepted code raising the wrong
+    exception."""
+    tests = (
+        "class Error(Exception):\n"
+        "    pass\n\n"
+        "def test_lookup_raises_keyerror():\n"
+        "    try:\n"
+        "        lookup({})\n"
+        "    except Error:\n"
+        '        assert False, "Expected KeyError"\n'
+    )
+    code = (
+        "class Error(Exception):\n"
+        "    pass\n\n"
+        "def lookup(d):\n"
+        "    raise Error('wrong class')\n"
+    )
+    result = _executor("lookup", code, tests)
+    assert result["tests_raises_rewritten"] == 0
+
+
+def test_post_call_removal_is_not_wrapped() -> None:
+    """Review probe P2b (2026-07-10): an os.remove AFTER the code call is an
+    implicit the-file-was-created assertion — wrapping it in suppress
+    neutered the only check and accepted code that never writes. Only
+    setup-position removals (before any code-bound reference) wrap."""
+    tests = (
+        "import os\n\n"
+        "def test_save_creates_file():\n"
+        "    save_todos([1])\n"
+        '    os.remove("todos.json")\n'
+    )
+    lazy_code = "def save_todos(todos):\n    pass\n"
+    result = _executor("save todos", lazy_code, tests)
+    assert result["tests_removals_guarded"] == 0
+    assert result["tests_pass"] is False
+
+
+def test_setup_position_removal_still_wraps() -> None:
+    tests = (
+        "import os\n\n"
+        "def test_load_missing_returns_empty():\n"
+        '    os.remove("todos.json")\n'
+        "    assert load_todos() == []\n"
+    )
+    code = "def load_todos():\n    return []\n"
+    result = _executor("load todos", code, tests)
+    assert result["tests_removals_guarded"] == 1
+    assert result["tests_pass"] is True
+
+
+def test_lambda_parameters_are_bound_names_for_excision() -> None:
+    """Review probe P3b (2026-07-10): _bound_names missed lambda params, so
+    'apply = lambda g: g(5)' looked like a call to unbound g and the one
+    test catching wrong code was silently excised — the v0.18.7
+    for/with/walrus analogue."""
+    tests = (
+        "def test_square_applies():\n"
+        "    apply = lambda g: g(5)\n"
+        "    assert apply(square) == 25\n\n"
+        "def test_square_zero():\n"
+        "    assert square(0) == 0\n"
+    )
+    wrong_code = "def square(x):\n    return x + x\n"
+    result = _executor("square", wrong_code, tests)
+    assert result["tests_excised"] == 0
+    assert result["tests_pass"] is False
