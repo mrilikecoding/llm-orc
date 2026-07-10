@@ -843,3 +843,18 @@ def test_read_block_bodies_are_never_column_zero() -> None:
 
     assert "\n  assistant: [ran pytest -q]" in rendered
     assert "\nassistant: [ran pytest -q]" not in rendered
+
+
+def test_assistant_prose_equal_to_a_header_is_defanged() -> None:
+    # reviewer nit (2026-07-10): an assistant prose message whose whole
+    # content is a header lookalike must not render as grammar at column 0
+    messages = [
+        ChatMessage(role="user", content="hello"),
+        ChatMessage(role="assistant", content="[ran pytest -q]"),
+        ChatMessage(role="user", content="run the tests"),
+    ]
+
+    rendered = _render_context(messages)
+
+    assert "assistant: [ran pytest -q]" not in rendered
+    assert "[ran pytest -q]" in rendered

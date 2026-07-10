@@ -461,13 +461,20 @@ def _run_blocks(post_user: Sequence[Any]) -> list[str]:
 
 
 def _render_text(message: Any, role: str) -> str | None:
-    """One line per message — write-block bodies stay the only multi-line
-    content, keeping the transcript line-anchored for workspace extraction."""
+    """One line per message — block bodies stay the only multi-line content,
+    keeping the transcript line-anchored for workspace extraction.
+
+    A prose line whose content would read as block grammar (an assistant
+    message that IS a header lookalike) is defanged with a quote marker so
+    it can never match the column-0 header parsers (fenced block grammar,
+    belt-and-suspenders per review 2026-07-10)."""
     content = getattr(message, "content", None)
     if isinstance(content, str) and content.strip():
         if role == "assistant" and content.strip().startswith(_SERVE_STATUS_PREFIX):
             return None
         flat = " ".join(content.strip().split())
+        if flat.startswith("["):
+            flat = f"> {flat}"
         return f"{role}: {flat[:_CTX_TEXT_CAP]}"
     return None
 
