@@ -29,6 +29,7 @@ model as the backend. Trajectory so far:
 | 2026-07-08 (arc start) | 8-turn ladder | 4/8 | silent wrong verdicts |
 | 2026-07-08 (v0.18.0) | 8-turn ladder | 5/8 | all failures honest rejects |
 | 2026-07-09 (Stage 2 core) | 9-turn todo app | **8/9** | multi-file build + deep recall pass; one honest reject |
+| 2026-07-09 (#83 read rung) | existing-file battery (3 + 2 regression) | **5/5** | read→gated tests green on a real repo file; honest refusal on a missing file; fresh-build and explain unregressed. Full-ladder rerun pending |
 
 The Cycle-7 benchmark harness (`research/agentic-serving-corpus` branch,
 `benchmark-runs/`) is the automation to revive for a standing
@@ -129,14 +130,26 @@ moves the gate integrity pair up in leverage.
 
 ### 2. Client execution surface (#83)
 
-Files the conversation didn't write, and running things: thread client
-read-tool results into the turn and/or client-delegated execution (emit's
-permission seam reused for a test-run tool_call — ADR-048 ODP-1). Includes
-the tool-mapping step (resolve emit outcomes against the client's
-advertised tools instead of the hardcoded `write`). Closes run-tests and
-pre-existing-file editing — the two biggest remaining parity holes — and is
-the enabler for both named upper battery rungs (the codebase meta-task
-needs real-repo retrieval; the fix-execution milestone needs edit + run).
+**Read half SHIPPED (2026-07-09, branch feat/83-client-file-reads).**
+Named-but-invisible files now ride the permission seam: classify's
+deterministic visibility check routes to a `need-files` script shape, emit
+ships a read tool_call resolved against the client's advertised tools, and
+the continuation resumes statelessly from the appended wire — the read
+result renders as a `[read <path>]` context block, materializes into the
+gate sandbox, and stays retrievable in later turns via the existing
+lossless selection. One read round per turn; a failed read refuses
+honestly. OpenCode's read format (`<path>`/`<content>` tags, `N: ` gutter,
+end-of-file trailer, bare `File not found:` on error) was wire-captured
+and the normalizer locked to it. Design:
+`docs/plans/2026-07-09-client-file-reads-design.md`.
+
+Remaining on #83: **client-delegated execution** (the same seam reused for
+a test-run tool_call — the `{"finish": false, "run": ...}` outcome), and
+**discovery** (list/glob for files the turn doesn't name — the meta-task
+rung's requirement; named-files-only is a rung-1 bound, not architecture).
+Rung-1 trigger limitations, revisit on ladder evidence: no reads for
+`test_`-named files, "add X to foo.py" phrasings, or the model-decider
+(ambiguous) routing path.
 
 ### 3. Gate integrity pair (#84, #98) — DONE (v0.18.4, v0.18.5)
 
@@ -205,10 +218,11 @@ removal).
 
 ## Issue index
 
-Path: #83 client execution (NEXT — enabler for the realism rungs) ·
-seat tiering / test sanitizer (path item 4; the measured test-writer
-bottleneck) · #82 memory remainder · #90 llama.cpp · #85 sandbox
-hardening · #93/#95 remainders.
+Path: #83 run half — client-delegated execution + discovery (NEXT — the
+read half shipped 2026-07-09; the run half completes the fix-execution
+rung's enabler) · seat tiering / test sanitizer (path item 4; the measured
+test-writer bottleneck) · #82 memory remainder · #90 llama.cpp · #85
+sandbox hardening · #93/#95 remainders.
 Shipped: #87 #88 #89 (v0.18.0) · #86 #91 #92 #94 #96 (v0.18.1) ·
 #82-core (v0.18.2, PR #99) · #100 TDD retry (v0.18.3, PR #101) ·
 #84 deterministic adequacy (v0.18.4, PR #102) · #98 write-tests shape
