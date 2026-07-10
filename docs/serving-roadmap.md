@@ -29,7 +29,8 @@ model as the backend. Trajectory so far:
 | 2026-07-08 (arc start) | 8-turn ladder | 4/8 | silent wrong verdicts |
 | 2026-07-08 (v0.18.0) | 8-turn ladder | 5/8 | all failures honest rejects |
 | 2026-07-09 (Stage 2 core) | 9-turn todo app | **8/9** | multi-file build + deep recall pass; one honest reject |
-| 2026-07-09 (#83 read rung) | existing-file battery (3 + 2 regression) | **5/5** | read→gated tests green on a real repo file; honest refusal on a missing file; fresh-build and explain unregressed. Full-ladder rerun pending |
+| 2026-07-09 (#83 read rung) | existing-file battery (3 + 2 regression) | **5/5** | read→gated tests green on a real repo file; honest refusal on a missing file; fresh-build and explain unregressed |
+| 2026-07-09 (v0.18.6) | 10-turn recorded ladder (`benchmarks/agentic_serving/ladder_battery.sh`, new baseline) | **4/10** | #83 rungs all to spec (read→tests 4/4 green mid-session; honest phantom refusal; honest cascade on an unbuilt dependency). Misses: 3 build rejects (round-1 test quality — path item 4's measured class), memory question mis-routed to build (decider flake; "did …?" is not structurally interrogative), deep recall named the latest build not the first (#82 prose-retrieval remainder). Strict scoring; not comparable to earlier unrecorded rows |
 
 The Cycle-7 benchmark harness (`research/agentic-serving-corpus` branch,
 `benchmark-runs/`) is the automation to revive for a standing
