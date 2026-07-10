@@ -43,8 +43,14 @@ _EXPLAIN_MARKERS = (
 )
 # An interrogative-shaped turn asks for understanding; it outranks the
 # named-file build signal ("What approach does palindrome.py use?" is an
-# explain turn, not a build).
-_INTERROGATIVE_RE = re.compile(r"^(what|why|how|when|where|which|who)\b", re.IGNORECASE)
+# explain turn, not a build). The yes/no forms are deliberately narrow —
+# only memory-shaped questions addressed to the assistant ("did you…",
+# "have you…"); "can/could/will you write X" are polite imperatives and
+# must stay on the build path (ladder turn 5 mis-route, 2026-07-09).
+_INTERROGATIVE_RE = re.compile(
+    r"^(?:what|why|how|when|where|which|who)\b|^(?:did|have) you\b",
+    re.IGNORECASE,
+)
 _DEFAULT_CODE_SEAT = "code-seat"
 _EXPLAIN_SEAT = "explainer"
 _TESTS_SEAT = "tests-seat"

@@ -31,6 +31,7 @@ model as the backend. Trajectory so far:
 | 2026-07-09 (Stage 2 core) | 9-turn todo app | **8/9** | multi-file build + deep recall pass; one honest reject |
 | 2026-07-09 (#83 read rung) | existing-file battery (3 + 2 regression) | **5/5** | read→gated tests green on a real repo file; honest refusal on a missing file; fresh-build and explain unregressed |
 | 2026-07-09 (v0.18.6) | 10-turn recorded ladder (`benchmarks/agentic_serving/ladder_battery.sh`, new baseline) | **4/10** | #83 rungs all to spec (read→tests 4/4 green mid-session; honest phantom refusal; honest cascade on an unbuilt dependency). Misses: 3 build rejects (round-1 test quality — path item 4's measured class), memory question mis-routed to build (decider flake; "did …?" is not structurally interrogative), deep recall named the latest build not the first (#82 prose-retrieval remainder). Strict scoring; not comparable to earlier unrecorded rows |
+| 2026-07-09 (seat-quality arc) | 10-turn recorded ladder, same seed | **7/10** | Every targeted class converted: memory question routes to explain and answers accurately (decider fix); the storage rung ships (isolation + sanitizer + import injection); its downstream cascade unblocks and the persistence integration is real (todo.py imports storage). Misses: 2 honest build rejects (thinner round-1 test-quality residual) and the known #82 deep-recall deferral. Regression probes: probe 1 accepts attempt 1, probe 2 within two |
 
 The Cycle-7 benchmark harness (`research/agentic-serving-corpus` branch,
 `benchmark-runs/`) is the automation to revive for a standing
@@ -196,10 +197,28 @@ deterministic test sanitizer (path item 4), not more prompt rules.
 
 ### 4. Shapes and seat tiering
 
-Operator-curated catalog growth: fix shape, refactor shape,
-grounded-explain (file-reading explain seat), elicit-then-build
-(criteria-first) as a selectable entry. Escalation-on-signal seat tiering
-(local 14b / hosted) — the default stays local-first per the A/B result.
+**Seat-quality half SHIPPED (2026-07-09, branch
+feat/seat-quality-isolation; design
+`docs/plans/2026-07-09-seat-quality-isolation-escalation-design.md`).**
+Four deterministic gate repairs, no model judgment added: per-test
+isolation in the accept executor (each test function in its own fresh
+sandbox — kills cross-test state/filesystem leakage, the measured
+dominant false-reject class), an aggregate wall budget across isolated
+children (bounded, surfaced), a bare-name-assert sanitizer, deterministic
+missing-import injection into authored tests (os/pytest-style omissions),
+and the classify interrogative fix ("did/have you …" routes to explain).
+Ladder 4/10 → 7/10 on the same seed.
+
+**Escalation deferred with its measurement recorded:** the 4-arm tier
+spike found qwen3:14b think-off generates as fast as 8b think-off on the
+rig (4–13s) while think-on costs 10–20× on either model, and NO arm
+converts what the deterministic repairs don't — every arm plateaued on a
+garbage test line. If a capability-bound class ever survives the repairs,
+the rung is qwen3:14b think-off via `agentic-tier-escalated-general`.
+
+Still open here: operator-curated catalog growth — fix shape, refactor
+shape, grounded-explain (file-reading explain seat), elicit-then-build
+(criteria-first) as a selectable entry.
 
 ### 5. Memory remainder (#82) and beyond-parity
 
