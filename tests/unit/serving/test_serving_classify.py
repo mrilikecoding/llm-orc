@@ -273,3 +273,62 @@ def test_can_you_write_stays_a_build_turn() -> None:
     decision = _classify({"task": "can you write a function that adds in add.py"})
     assert decision["target"] != "explainer"
     assert decision["build"] is True
+
+
+def test_run_the_tests_routes_to_need_run_with_the_closed_command() -> None:
+    decision = _classify({"task": "run the tests"})
+    assert decision["target"] == "need-run"
+    assert decision["kind"] == "need_run"
+    assert decision["build"] is False
+    assert decision["needs_run"] == "pytest -q"
+    assert decision["needs_files"] == []
+
+
+def test_named_test_file_rides_the_run_command() -> None:
+    decision = _classify({"task": "run test_calc.py"})
+    assert decision["target"] == "need-run"
+    assert decision["needs_run"] == "pytest -q test_calc.py"
+
+
+def test_rerun_pytest_is_a_run_turn() -> None:
+    decision = _classify({"task": "rerun pytest"})
+    assert decision["target"] == "need-run"
+    assert decision["needs_run"] == "pytest -q"
+
+
+def test_run_signal_with_a_ran_block_routes_to_run_verdict() -> None:
+    context = "assistant: [ran pytest -q]\n  ..\n  2 passed in 0.01s"
+    decision = _classify({"task": "run the tests", "context": context})
+    assert decision["target"] == "run-verdict"
+    assert decision["kind"] == "run_verdict"
+    assert decision["needs_run"] == ""
+
+
+def test_failed_ran_block_still_routes_to_run_verdict_not_a_reloop() -> None:
+    context = "assistant: [ran pytest -q (failed)] empty run result"
+    decision = _classify({"task": "run the tests", "context": context})
+    assert decision["target"] == "run-verdict"
+    assert decision["needs_run"] == ""
+
+
+def test_write_tests_then_run_them_is_not_a_run_turn() -> None:
+    decision = _classify({"task": "write tests for existing calc.py and run them"})
+    assert decision["target"] != "need-run"
+    assert decision["needs_run"] == ""
+
+
+def test_run_the_app_is_not_a_run_turn() -> None:
+    decision = _classify({"task": "run the app"})
+    assert decision["target"] != "need-run"
+    assert decision["needs_run"] == ""
+
+
+def test_did_you_run_the_tests_stays_an_explain_turn() -> None:
+    decision = _classify({"task": "did you run the tests?"})
+    assert decision["target"] == "explainer"
+    assert decision["needs_run"] == ""
+
+
+def test_non_run_decisions_carry_empty_needs_run() -> None:
+    decision = _classify({"task": "write a function that adds two numbers"})
+    assert decision["needs_run"] == ""

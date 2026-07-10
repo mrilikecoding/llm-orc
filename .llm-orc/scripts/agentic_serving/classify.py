@@ -90,6 +90,19 @@ _READ_ATTEMPT_RE = re.compile(
     r"^assistant: \[read ([^\]]+?)( \((failed|oversize)\))?\]", re.MULTILINE
 )
 _READ_CAP_KB = 24
+# issue #83 run half: an imperative run verb with a tests object within a
+# short window ("run the unit tests", "rerun pytest") — the window keeps
+# "write tests for calc.py and run them" off the run path. A named
+# test_*.py file with a run verb also qualifies ("run test_calc.py").
+_RUN_VERB_RE = re.compile(r"\b(?:re-?run|run|execute)\b", re.IGNORECASE)
+_RUN_TESTS_RE = re.compile(
+    r"\b(?:re-?run|run|execute)\b(?:\s+[\w./-]+){0,3}?\s*\b(?:tests?|pytest|suite)\b",
+    re.IGNORECASE,
+)
+_RAN_HEADER_RE = re.compile(r"^assistant: \[ran ", re.MULTILINE)
+# Defense in depth on top of _FILE_RE's already-safe charset: an argument
+# that could carry shell metacharacters never reaches the command template.
+_SAFE_ARG_RE = re.compile(r"^[\w./-]+$")
 
 
 def _extract_file(task: str) -> str:
@@ -108,6 +121,29 @@ def _named_source_files(task: str) -> list[str]:
         if path not in files:
             files.append(path)
     return files
+
+
+def _named_test_files(task: str) -> list[str]:
+    """Every named test_*.py file, first-mention order, deduped."""
+    files: list[str] = []
+    for match in _FILE_RE.finditer(task):
+        path = match.group(1)
+        if not path.rsplit("/", 1)[-1].startswith("test_"):
+            continue
+        if path.endswith(".py") and path not in files:
+            files.append(path)
+    return files
+
+
+def _run_test_command(task: str) -> str:
+    """The closed run template: ``pytest -q`` + regex-safe named test files.
+
+    Never model text (deterministic control) — the only variable part is
+    filenames already restricted to ``_FILE_RE``'s metacharacter-free
+    charset, re-asserted here.
+    """
+    named = [path for path in _named_test_files(task) if _SAFE_ARG_RE.match(path)]
+    return " ".join(["pytest", "-q", *named]).strip()
 
 
 def _visibility(context: str) -> tuple[set[str], dict[str, str]]:
@@ -196,16 +232,30 @@ def main() -> None:
         "test_"
     )
 
+    run_signal = not is_explain and (
+        bool(_RUN_TESTS_RE.search(task))
+        or (bool(_RUN_VERB_RE.search(task)) and bool(_named_test_files(task)))
+    )
     conversation_raw = str(turn.get("context", ""))
+    has_run_block = bool(_RAN_HEADER_RE.search(conversation_raw))
+
     needs_files: list[str] = []
     read_failed = ""
-    if not is_explain:
+    if not is_explain and not run_signal:
         needs_files, read_failed = _files_to_request(
             task, conversation_raw, tests_primary, has_build_signal
         )
+    needs_run = _run_test_command(task) if run_signal and not has_run_block else ""
 
     if is_explain:
         target, kind, build, needs_decider = _EXPLAIN_SEAT, "explanation", False, False
+    elif run_signal and has_run_block:
+        # issue #83 run half: the client ran the command — the deliverable
+        # is the deterministic verdict, one run round per turn.
+        target, kind, build, needs_decider = "run-verdict", "run_verdict", False, False
+    elif run_signal:
+        # issue #83 run half: delegate one closed-template test run.
+        target, kind, build, needs_decider = "need-run", "need_run", False, False
     elif needs_files or read_failed:
         # issue #83: request the client files (or refuse a failed request)
         # before any seat runs — the need-files shape is a cheap script echo.
@@ -256,6 +306,7 @@ def main() -> None:
                 "needs_decider": needs_decider,
                 "needs_files": needs_files,
                 "read_failed": read_failed,
+                "needs_run": needs_run,
             }
         )
     )
