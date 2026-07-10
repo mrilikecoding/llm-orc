@@ -714,3 +714,93 @@ def test_dotted_exception_without_declared_expectation_stays() -> None:
     result = _executor("load todos", code, tests)
     assert result["tests_raises_rewritten"] == 0
     assert "pytest.raises" not in result["tests"]
+
+
+def test_unexpected_message_guard_is_never_rewritten() -> None:
+    """Review probe P1d (2026-07-10): 'Unexpected ValueError' contains the
+    substring 'expected' — a correct must-not-raise guard that the rewrite
+    inverted, accepting wrong code that raises. The declaration check must
+    be a positive whole word."""
+    tests = (
+        "def test_save_never_raises():\n"
+        "    try:\n"
+        "        save_todos([1])\n"
+        "    except ValueError:\n"
+        '        assert False, "Unexpected ValueError"\n'
+    )
+    raising_code = "def save_todos(todos):\n    raise ValueError('nope')\n"
+    result = _executor("save todos", raising_code, tests)
+    assert result["tests_raises_rewritten"] == 0
+    assert result["tests_pass"] is False
+
+
+def test_declared_name_must_match_the_caught_exception_whole_word() -> None:
+    """Review probe (2026-07-10): 'Error' is a substring of 'KeyError', so a
+    handler catching a custom Error with a message declaring KeyError
+    rewrote to pytest.raises(Error) and accepted code raising the wrong
+    exception."""
+    tests = (
+        "class Error(Exception):\n"
+        "    pass\n\n"
+        "def test_lookup_raises_keyerror():\n"
+        "    try:\n"
+        "        lookup({})\n"
+        "    except Error:\n"
+        '        assert False, "Expected KeyError"\n'
+    )
+    code = (
+        "class Error(Exception):\n"
+        "    pass\n\n"
+        "def lookup(d):\n"
+        "    raise Error('wrong class')\n"
+    )
+    result = _executor("lookup", code, tests)
+    assert result["tests_raises_rewritten"] == 0
+
+
+def test_post_call_removal_is_not_wrapped() -> None:
+    """Review probe P2b (2026-07-10): an os.remove AFTER the code call is an
+    implicit the-file-was-created assertion — wrapping it in suppress
+    neutered the only check and accepted code that never writes. Only
+    setup-position removals (before any code-bound reference) wrap."""
+    tests = (
+        "import os\n\n"
+        "def test_save_creates_file():\n"
+        "    save_todos([1])\n"
+        '    os.remove("todos.json")\n'
+    )
+    lazy_code = "def save_todos(todos):\n    pass\n"
+    result = _executor("save todos", lazy_code, tests)
+    assert result["tests_removals_guarded"] == 0
+    assert result["tests_pass"] is False
+
+
+def test_setup_position_removal_still_wraps() -> None:
+    tests = (
+        "import os\n\n"
+        "def test_load_missing_returns_empty():\n"
+        '    os.remove("todos.json")\n'
+        "    assert load_todos() == []\n"
+    )
+    code = "def load_todos():\n    return []\n"
+    result = _executor("load todos", code, tests)
+    assert result["tests_removals_guarded"] == 1
+    assert result["tests_pass"] is True
+
+
+def test_lambda_parameters_are_bound_names_for_excision() -> None:
+    """Review probe P3b (2026-07-10): _bound_names missed lambda params, so
+    'apply = lambda g: g(5)' looked like a call to unbound g and the one
+    test catching wrong code was silently excised — the v0.18.7
+    for/with/walrus analogue."""
+    tests = (
+        "def test_square_applies():\n"
+        "    apply = lambda g: g(5)\n"
+        "    assert apply(square) == 25\n\n"
+        "def test_square_zero():\n"
+        "    assert square(0) == 0\n"
+    )
+    wrong_code = "def square(x):\n    return x + x\n"
+    result = _executor("square", wrong_code, tests)
+    assert result["tests_excised"] == 0
+    assert result["tests_pass"] is False

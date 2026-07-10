@@ -121,8 +121,12 @@ def _param_names(args: ast.arguments) -> set[str]:
 
 def _bound_names(tree: ast.Module) -> set[str]:
     """Every name the tests source binds: assignments, for/with targets (all
-    ``ast.Name`` in Store context), def/class names, function parameters, and
-    import aliases — the rest are candidates for import injection."""
+    ``ast.Name`` in Store context), def/class names, function AND lambda
+    parameters, except-handler aliases, and import aliases — the rest are
+    candidates for import injection. Lambda params and handler aliases were
+    missed pre-review (probe P3b, 2026-07-10): harmless for injection (it
+    only errs toward injecting) but excision turned the gap into silently
+    dropping a good test."""
     bound = {
         n.id
         for n in ast.walk(tree)
@@ -131,8 +135,10 @@ def _bound_names(tree: ast.Module) -> set[str]:
     for node in ast.walk(tree):
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
             bound.add(node.name)
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
             bound |= _param_names(node.args)
+        if isinstance(node, ast.ExceptHandler) and node.name:
+            bound.add(node.name)
         if isinstance(node, (ast.Import, ast.ImportFrom)):
             bound |= {a.asname or a.name.split(".")[0] for a in node.names}
     return bound
@@ -231,15 +237,39 @@ def _is_bare_os_removal(stmt: ast.stmt) -> bool:
     )
 
 
-def _guard_unconditional_removals(tests: str) -> tuple[str, int]:
-    """Tests with bare top-of-test-body removals suppressed, and the count.
+def _setup_removals(
+    node: ast.FunctionDef | ast.AsyncFunctionDef, code_bound: set[str]
+) -> list[ast.stmt]:
+    """Bare removals in the SETUP region only — before the first statement
+    that references a code-bound name. A removal AFTER the code ran is an
+    implicit the-file-was-created assertion; wrapping it would neuter the
+    check and accept code that never writes (review probe P2b,
+    2026-07-10)."""
+    removals: list[ast.stmt] = []
+    for stmt in node.body:
+        if _is_bare_os_removal(stmt):
+            removals.append(stmt)
+            continue
+        loads = {
+            n.id
+            for n in ast.walk(stmt)
+            if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Load)
+        }
+        if loads & code_bound:
+            break
+    return removals
+
+
+def _guard_unconditional_removals(tests: str, code: str) -> tuple[str, int]:
+    """Tests with bare SETUP-position removals suppressed, and the count.
 
     Spike 2026-07-10 (turn6_s4 r1+r2): setup deletes a file that never
     exists in the fresh per-test sandbox — per-test isolation itself
     created this failure mode — and the FileNotFoundError fires before any
     assert. A bare ``os.remove(...)`` / ``os.unlink(...)`` expression
-    statement directly in a test function's body (so never one already
-    inside try/with) is wrapped in ``with contextlib.suppress(
+    statement in a test function's setup region (before any code-bound
+    name is referenced, so never one already inside try/with and never a
+    post-call existence check) is wrapped in ``with contextlib.suppress(
     FileNotFoundError):``; the contextlib import arrives via the existing
     injection mechanism. Same shape as import injection: the artifact
     becomes self-consistent without touching what it asserts about the
@@ -249,13 +279,16 @@ def _guard_unconditional_removals(tests: str) -> tuple[str, int]:
         tree = ast.parse(tests)
     except SyntaxError:
         return tests, 0
+    try:
+        code_bound = _bound_names(ast.parse(code)) - _BUILTIN_NAMES
+    except SyntaxError:
+        code_bound = set()
     targets = [
         stmt
         for node in tree.body
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
         and node.name.startswith("test_")
-        for stmt in node.body
-        if _is_bare_os_removal(stmt)
+        for stmt in _setup_removals(node, code_bound)
     ]
     if not targets:
         return tests, 0
@@ -306,6 +339,22 @@ def _exception_source(exc: ast.expr | None) -> tuple[str, str]:
     return "", ""
 
 
+def _declares_expectation(msg: str, declared: str) -> bool:
+    """A positive, whole-word declaration that the named exception is
+    expected. Substring matching was a wrong-accept vector (review probes
+    2026-07-10): "Unexpected ValueError" contains "expected" and would
+    invert a correct must-not-raise guard; "Error" is a substring of
+    "KeyError" and matched the wrong class. Whole-word ``expected`` never
+    matches inside "unexpected"; a negation token anywhere refuses; the
+    exception name must appear as a whole word."""
+    lowered = msg.lower()
+    if not re.search(r"\bexpected\b", lowered):
+        return False
+    if re.search(r"\b(?:not|never|no)\b", lowered):
+        return False
+    return bool(re.search(rf"\b{re.escape(declared)}\b", msg))
+
+
 def _declared_expected_exception(handler: ast.excepthandler) -> str:
     """The exception source a handler both catches and declares expected —
     ``except <E>: assert False, "...expected...<E>..."`` — else ''."""
@@ -318,7 +367,7 @@ def _declared_expected_exception(handler: ast.excepthandler) -> str:
     if not (isinstance(msg, ast.Constant) and isinstance(msg.value, str)):
         return ""
     source, declared = _exception_source(handler.type)
-    if source and "expected" in msg.value.lower() and declared in msg.value:
+    if source and _declares_expectation(msg.value, declared):
         return source
     return ""
 
@@ -635,7 +684,7 @@ def main() -> None:
     tests = str(data.get("tests", ""))
     tests, tests_sanitized = _sanitize_tests(tests)
     tests, tests_excised = _excise_unbound_callable_tests(tests, code)
-    tests, tests_removals_guarded = _guard_unconditional_removals(tests)
+    tests, tests_removals_guarded = _guard_unconditional_removals(tests, code)
     tests, tests_raises_rewritten = _rewrite_inverted_expectations(tests)
     tests, tests_imports_injected = _inject_test_imports(tests, code)
     raw_workspace = data.get("workspace")
