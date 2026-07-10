@@ -81,16 +81,33 @@ observation + full-history selection + gate-runner TestCase support),
 **v0.18.3** (PR #101 — #100 TDD retry loop + live-diagnosis fixes),
 **v0.18.4** (PR #102 — #84 judge measurement + deterministic adequacy
 checker), **v0.18.5** (PR #103 — #98 write-tests shape + line-level
-failure reports). Earlier: v0.18.0 (agentic serving), v0.18.1
-(review-debt sweep).
+failure reports), **v0.18.6** (PR #104 — #83 read half: client-file
+reads through the permission seam), **v0.18.7** (PR #105 — path item 4
+seat-quality half: per-test isolation, bare-name-assert sanitizer,
+missing-import injection, decider interrogative fix). Earlier: v0.18.0
+(agentic serving), v0.18.1 (review-debt sweep).
 
 Shipped capability: build (accept-gated, bounded TDD retry with held
 tests), write-tests (deliverable executed against the workspace),
-explain, edit-existing (conversation-written files), within-session
-memory with lossless file selection, deterministic routing with a
-guarded decider, fully deterministic accept gate (executor + static
-adequacy). All-local (qwen3:8b) by default; operator seat overrides via
-`*.local.yaml`.
+explain, edit-existing (conversation-written files), **client-file reads**
+(named-but-invisible files fetched via a read tool_call, one round,
+honest refusal on failure), within-session memory with lossless file
+selection, deterministic routing with a guarded decider, fully
+deterministic accept gate (per-test-isolated executor + static adequacy
++ deterministic test repair: sanitizer and import injection, both echoed
+into the shipped artifact). All-local (qwen3:8b) by default; operator
+seat overrides via `*.local.yaml`.
+
+**Handoff pointer (fresh-session start here):** NEXT is the #83 run half
+(client-delegated execution + discovery) — see path item 2's "Remaining"
+paragraph. The other measured candidate is the #82 deep-recall remainder
+(now costs a ladder turn). The recorded battery is
+`benchmarks/agentic_serving/ladder_battery.sh` (current score 7/10; the
+two build misses are honest rejects from the thinner test-quality
+residual). Standing follow-ups before the meta-task rung: fence/escape
+read bodies (path item 2 note) and the injector's scope-blind binding
+(an import inside one test function suppresses injection for siblings —
+revisit if probes show mixed import styles).
 
 Key empirical facts the next work builds on:
 
@@ -115,6 +132,13 @@ Key empirical facts the next work builds on:
   line-level failure reports). When a failure class persists across two
   prompt iterations, reach for a structural lever — deterministic checks,
   shape changes, escalation-on-signal — not a third rule.
+- **Deterministic gate repairs beat model tiers** (4-arm spike + arc
+  result, 2026-07-09): {8b, 14b} × {think on, off} were identical on the
+  measured failing fixture — the breakers were structural (test-state
+  leakage, garbage assert lines, missing test imports), and repairing them
+  deterministically took the ladder 4/10 → 7/10 with zero added model
+  judgment. Latency datum for the deferred escalation rung: 14b think-off
+  generates as fast as 8b think-off on the rig; think-on costs 10–20×.
 
 ## The path, in order of leverage
 
@@ -251,10 +275,12 @@ removal).
 
 Path: #83 run half — client-delegated execution + discovery (NEXT — the
 read half shipped 2026-07-09; the run half completes the fix-execution
-rung's enabler) · seat tiering / test sanitizer (path item 4; the measured
-test-writer bottleneck) · #82 memory remainder · #90 llama.cpp · #85
+rung's enabler) · #82 memory remainder (deep recall now costs a measured
+ladder turn) · shape-catalog growth (path item 4's remaining half:
+fix/refactor/grounded-explain/elicit-then-build) · #90 llama.cpp · #85
 sandbox hardening · #93/#95 remainders.
 Shipped: #87 #88 #89 (v0.18.0) · #86 #91 #92 #94 #96 (v0.18.1) ·
 #82-core (v0.18.2, PR #99) · #100 TDD retry (v0.18.3, PR #101) ·
 #84 deterministic adequacy (v0.18.4, PR #102) · #98 write-tests shape
-(v0.18.5, PR #103).
+(v0.18.5, PR #103) · #83 read half (v0.18.6, PR #104) · path item 4
+seat-quality half (v0.18.7, PR #105).
