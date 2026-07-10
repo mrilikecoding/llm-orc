@@ -8,6 +8,8 @@ ADR-034 re-homes the Client-Tool-Action Terminal). A build deliverable the
 form-gate refused degrades to a prose finish carrying the refusal reason: the
 serve never writes a deliverable that failed destination-validity.
 
+    read failed:     {"finish": true, "content": "Refused: <read_failed reason>"}
+    needs files:     {"finish": false, "reads": ["<path>", ...]}
     build + valid:   {"finish": false, "file": "<path>", "content": "<source>"}
     build + refused: {"finish": true, "content": "Refused: <reason>"}
     non-build:       {"finish": true, "content": "<prose>"}
@@ -44,8 +46,17 @@ def main() -> None:
     content = str(gated.get("content", ""))
     accept = gated.get("accept")
     seat_admitted = gated.get("seat_admitted")
+    needs_files = gated.get("needs_files") or []
+    read_failed = str(gated.get("read_failed", ""))
 
-    if seat_admitted is False:
+    if read_failed:
+        # issue #83: one read round per turn — a failed request refuses
+        # honestly, never re-requests.
+        outcome = {"finish": True, "content": f"Refused: {read_failed}"}
+    elif needs_files:
+        # issue #83: delegate the file reads to the client permission seam.
+        outcome = {"finish": False, "reads": list(needs_files)}
+    elif seat_admitted is False:
         # The seat's output did not meet its own seat-owned contract (WP-E8;
         # ADR-046 §2). Refuse before shipping — a distinct, higher-priority gate
         # than the loop-level accept below. Only an explicit False refuses; an

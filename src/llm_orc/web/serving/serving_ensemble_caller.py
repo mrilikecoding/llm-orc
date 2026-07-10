@@ -41,6 +41,28 @@ if TYPE_CHECKING:
     from llm_orc.web.serving.session_start import SessionContext
 
 _WRITE_TOOL = "write"
+_READ_TOOL = "read"
+# issue #83 tool mapping: resolve emit outcomes against the client's
+# advertised tool names; candidates cover the common client vocabularies.
+_WRITE_TOOL_CANDIDATES = ("write", "write_file", "Write")
+_READ_TOOL_CANDIDATES = ("read", "read_file", "Read")
+
+
+def _client_tool(
+    tools: Sequence[Any], candidates: tuple[str, ...], fallback: str
+) -> str:
+    """The first advertised candidate tool name, else the fallback."""
+    advertised = set()
+    for tool in tools or ():
+        function = tool.get("function", {}) if isinstance(tool, dict) else {}
+        name = function.get("name")
+        if isinstance(name, str):
+            advertised.add(name)
+    for candidate in candidates:
+        if candidate in advertised:
+            return candidate
+    return fallback
+
 
 # Conversation-context caps (memory design §Rung 1/2'): bounded render,
 # flat per-turn cost regardless of session length. The tail carries recency;
@@ -54,6 +76,27 @@ _CTX_SELECTED_CAP = 4000
 
 _CTX_FILE_RE = re.compile(r"\b[\w./-]+\.(?:py|js|ts|json|md|txt|ya?ml|sh|go|rs)\b")
 _CTX_TOKEN_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]{2,}")
+
+# Client-read file blocks (issue #83): whole-file-or-refuse — a truncated
+# module fails imports in the sandbox, so an over-cap read refuses honestly
+# instead of materializing a corrupted file.
+_READ_FILE_CAP = 24576
+_READ_FAIL_REASON_CAP = 200
+# Legacy line-number gutter ("00001| ..."); strip it only when every
+# non-empty line carries one. Not what real OpenCode sends (captured wire,
+# 2026-07-09, shows the "N: " gutter below) — kept for other clients that
+# may use this shape.
+_LINE_NUM_GUTTER_RE = re.compile(r"^\s*\d+\| ?")
+# OpenCode 1.17.15 wraps a successful read in <path>/<type>/<content> tags
+# (captured wire, 2026-07-09): the body is everything between the <content>
+# tags, each source line carries an unpadded "N: " gutter (original
+# indentation preserved after it; an empty source line renders as "N: "),
+# and an "(End of file - total N lines)" trailer sits inside <content>
+# after a blank line. A failed read is a bare "File not found: ..." string —
+# no tags, no "Error" prefix.
+_CONTENT_TAG_RE = re.compile(r"<content>(.*?)</content>", re.DOTALL)
+_END_OF_FILE_TRAILER_RE = re.compile(r"^\(End of file - total \d+ lines?\)$")
+_OPENCODE_GUTTER_RE = re.compile(r"^\d+: ?")
 
 # The serve's own reject-status surface (emit.py composes it). In-session
 # rejects accumulate on the append-only wire; rendered back into generation
@@ -133,12 +176,28 @@ def _render_context(messages: Sequence[Any]) -> str:
         for line in rendered.splitlines()
         if line.startswith("assistant: [wrote ")
     }
-    blocks = [block for path, block in selected if path not in tail_paths]
-    kept = _whole_blocks_within_cap(blocks)
+    write_blocks = [block for path, block in selected if path not in tail_paths]
+    kept = _whole_blocks_within_cap(write_blocks)
+    kept = _select_read_blocks(messages, task, tail_paths) + kept
+
     if kept:
         selected_text = "\n".join(kept)
         rendered = f"{selected_text}\n{rendered}" if rendered else selected_text
     return rendered
+
+
+def _select_read_blocks(
+    messages: Sequence[Any], task: str, tail_paths: set[str]
+) -> list[str]:
+    """Latest read block per path (issue #83), joined from the FULL history —
+    exempt from the selected-block cap: dropping one would make classify
+    re-request it (a read loop). A later write of the same path supersedes."""
+    written_paths = {path for path, _ in _select_written_files(list(messages), task)}
+    latest_reads: dict[str, str] = {}
+    for path, block in _read_blocks(messages):
+        if path not in written_paths and path not in tail_paths:
+            latest_reads[path] = block
+    return list(latest_reads.values())
 
 
 def _whole_blocks_within_cap(blocks: list[str]) -> list[str]:
@@ -200,7 +259,11 @@ def _render_write(message: Any) -> str | None:
             arguments = json.loads(function.get("arguments", ""))
         except (json.JSONDecodeError, TypeError):
             continue
-        if isinstance(arguments, dict) and arguments.get("filePath"):
+        if (
+            isinstance(arguments, dict)
+            and arguments.get("filePath")
+            and "content" in arguments
+        ):
             body = str(arguments.get("content", ""))
             if len(body) > _CTX_FILE_CAP:
                 # marked so gather never materializes a corrupted file
@@ -208,6 +271,99 @@ def _render_write(message: Any) -> str | None:
                 return f"{header}\n{body[:_CTX_FILE_CAP]}"
             return f"assistant: [wrote {arguments['filePath']}]\n{body}"
     return None
+
+
+def _read_shaped_arguments(call: Any) -> dict[str, Any] | None:
+    """Parsed arguments of a read-shaped tool call (filePath, no content)."""
+    function = call.get("function", {}) if isinstance(call, dict) else {}
+    try:
+        arguments = json.loads(function.get("arguments", ""))
+    except (json.JSONDecodeError, TypeError):
+        return None
+    if (
+        isinstance(arguments, dict)
+        and arguments.get("filePath")
+        and "content" not in arguments
+    ):
+        return arguments
+    return None
+
+
+def _read_call_paths(messages: Sequence[Any]) -> dict[str, str]:
+    """tool_call_id -> filePath for every read-shaped call in the history."""
+    paths: dict[str, str] = {}
+    for message in messages:
+        for call in getattr(message, "tool_calls", ()) or ():
+            arguments = _read_shaped_arguments(call)
+            if arguments is not None and isinstance(call, dict) and call.get("id"):
+                paths[str(call["id"])] = str(arguments["filePath"])
+    return paths
+
+
+def _normalize_read(content: str) -> str:
+    """Client read output as plain source.
+
+    If a <content>...</content> section exists (OpenCode's wrapped success
+    form), the body is what's between the tags — everything else (<path>,
+    <type>) is dropped. The end-of-file trailer line is dropped next.
+    Legacy handling then strips a <file>/</file> wrapper pair and a uniform
+    "NNNNN| " gutter (other clients may use it), and finally the OpenCode
+    "N: " gutter is stripped when every non-empty line carries one.
+    """
+    match = _CONTENT_TAG_RE.search(content)
+    body = match.group(1) if match else content
+    lines = body.strip().splitlines()
+    lines = [line for line in lines if not _END_OF_FILE_TRAILER_RE.match(line.strip())]
+    if lines and lines[0].strip() == "<file>":
+        lines = lines[1:]
+    if lines and lines[-1].strip() == "</file>":
+        lines = lines[:-1]
+    non_empty = [line for line in lines if line.strip()]
+    if non_empty and all(_LINE_NUM_GUTTER_RE.match(line) for line in non_empty):
+        lines = [_LINE_NUM_GUTTER_RE.sub("", line, count=1) for line in lines]
+    elif non_empty and all(_OPENCODE_GUTTER_RE.match(line) for line in non_empty):
+        lines = [_OPENCODE_GUTTER_RE.sub("", line, count=1) for line in lines]
+    return "\n".join(lines).strip()
+
+
+def _render_read_block(path: str, raw: str) -> str:
+    """A read result as a context block (issue #83 grammar). Failure and
+    oversize variants are single header lines so gather never materializes
+    them and classify can refuse instead of re-requesting (one-round bound).
+
+    OpenCode's <content>-wrapped success form (captured wire, 2026-07-09) is
+    checked BEFORE the failure-prefix heuristic — a structural check, so a
+    source file whose first line happens to read "Error ..." can never be
+    misclassified as a failed read.
+    """
+    flat = " ".join((raw or "").strip().split())
+    if not flat:
+        return f"assistant: [read {path} (failed)] empty read result"
+    if "<content>" not in raw:
+        lowered = flat.lower()
+        if lowered.startswith("file not found") or lowered.startswith("error"):
+            reason = flat[:_READ_FAIL_REASON_CAP]
+            return f"assistant: [read {path} (failed)] {reason}"
+    normalized = _normalize_read(raw)
+    if len(normalized) > _READ_FILE_CAP:
+        return f"assistant: [read {path} (oversize)]"
+    return f"assistant: [read {path}]\n{normalized}"
+
+
+def _read_blocks(messages: Sequence[Any]) -> list[tuple[str, str]]:
+    """(path, block) for every tool result answering a read-shaped call,
+    in wire order. Selected from the FULL history: on the resume pass the
+    read result sits after the last user message."""
+    call_paths = _read_call_paths(messages)
+    blocks: list[tuple[str, str]] = []
+    for message in messages:
+        if getattr(message, "role", None) != "tool":
+            continue
+        path = call_paths.get(getattr(message, "tool_call_id", None) or "")
+        if path:
+            content = getattr(message, "content", None)
+            blocks.append((path, _render_read_block(path, content or "")))
+    return blocks
 
 
 def _render_text(message: Any, role: str) -> str | None:
@@ -226,14 +382,22 @@ def _tool_result_ack(messages: Sequence[Any]) -> str | None:
     """A short acknowledgment when the call is a tool-result continuation.
 
     After the serve emits a tool_call and the client performs it, the client
-    calls back with the tool result appended. That call continues the SAME
-    turn — re-running the pipeline would redo (and possibly re-judge) work
-    the client already applied. Returns None when the call is a fresh turn.
+    calls back with the tool result appended. A write continuation closes
+    the SAME turn — re-running the pipeline would redo (and possibly
+    re-judge) work the client already applied. A read continuation instead
+    RESUMES the turn (issue #83): the read result belongs in context for
+    another pipeline pass, so this returns None and ``run()`` falls through.
+    Also returns None when the call is a fresh turn.
     """
     last = messages[-1] if messages else None
     if getattr(last, "role", None) != "tool":
         return None
     for message in reversed(list(messages)):
+        for call in getattr(message, "tool_calls", ()) or ():
+            if _read_shaped_arguments(call) is not None:
+                # issue #83: a read continuation RESUMES the turn — fall
+                # through to the pipeline with the read result in context.
+                return None
         written = _written_file_path(getattr(message, "tool_calls", ()) or ())
         if written:
             return f"Wrote {written}."
@@ -251,7 +415,11 @@ def _written_file_path(tool_calls: Sequence[Any]) -> str | None:
             arguments = json.loads(function.get("arguments", ""))
         except (json.JSONDecodeError, TypeError):
             continue
-        if isinstance(arguments, dict) and arguments.get("filePath"):
+        if (
+            isinstance(arguments, dict)
+            and arguments.get("filePath")
+            and "content" in arguments
+        ):
             return str(arguments["filePath"])
     return None
 
@@ -281,12 +449,26 @@ def _serve_outcome(result: dict[str, Any]) -> dict[str, Any]:
     return {"finish": True, "content": str(outcome)}
 
 
-def _outcome_chunks(outcome: dict[str, Any]) -> list[OrchestratorChunk]:
+def _outcome_chunks(
+    outcome: dict[str, Any], tools: Sequence[Any]
+) -> list[OrchestratorChunk]:
     if outcome.get("finish"):
         return [
             ContentDelta(content=str(outcome.get("content", "Done."))),
             Completion(finish_reason="stop"),
         ]
+    reads = outcome.get("reads")
+    if reads:
+        read_tool = _client_tool(tools, _READ_TOOL_CANDIDATES, _READ_TOOL)
+        invocations = tuple(
+            ToolCallInvocation(
+                id=f"call_{uuid.uuid4().hex[:8]}",
+                name=read_tool,
+                arguments=json.dumps({"filePath": str(path)}),
+            )
+            for path in reads
+        )
+        return [ClientToolCall(tool_calls=invocations)]
     arguments = json.dumps(
         {
             "filePath": outcome.get("file", "solution.py"),
@@ -294,7 +476,9 @@ def _outcome_chunks(outcome: dict[str, Any]) -> list[OrchestratorChunk]:
         }
     )
     invocation = ToolCallInvocation(
-        id=f"call_{uuid.uuid4().hex[:8]}", name=_WRITE_TOOL, arguments=arguments
+        id=f"call_{uuid.uuid4().hex[:8]}",
+        name=_client_tool(tools, _WRITE_TOOL_CANDIDATES, _WRITE_TOOL),
+        arguments=arguments,
     )
     return [ClientToolCall(tool_calls=(invocation,))]
 
@@ -341,7 +525,7 @@ class ServingEnsembleCaller:
         outcome = await self._serve(
             _task_from(context.messages), _render_context(context.messages)
         )
-        for chunk in _outcome_chunks(outcome):
+        for chunk in _outcome_chunks(outcome, context.tools):
             yield chunk
 
     async def _serve(self, task: str, conversation: str = "") -> dict[str, Any]:

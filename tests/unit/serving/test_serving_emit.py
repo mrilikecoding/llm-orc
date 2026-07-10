@@ -101,3 +101,44 @@ def test_accepted_build_emits_a_file_write() -> None:
     )
     assert outcome["finish"] is False
     assert outcome["file"] == "a.py"
+
+
+def test_needs_files_emits_a_reads_outcome() -> None:
+    outcome = _emit(
+        gated={
+            "build": False,
+            "file": "test_storage.py",
+            "content": "Requesting client files.",
+            "valid": True,
+            "reason": "ok",
+            "needs_files": ["storage.py"],
+            "read_failed": "",
+            "accept": None,
+            "accept_reason": "",
+            "seat_admitted": None,
+            "seat_contract_reason": "",
+        }
+    )
+    assert outcome == {"finish": False, "reads": ["storage.py"]}
+
+
+def test_read_failed_emits_an_honest_refusal() -> None:
+    outcome = _emit(
+        gated={
+            "build": False,
+            "file": "test_storage.py",
+            "content": "Requesting client files.",
+            "valid": True,
+            "reason": "ok",
+            "needs_files": [],
+            "read_failed": "could not read storage.py: client read failed",
+            "accept": None,
+            "accept_reason": "",
+            "seat_admitted": None,
+            "seat_contract_reason": "",
+        }
+    )
+    assert outcome["finish"] is True
+    assert outcome["content"] == (
+        "Refused: could not read storage.py: client read failed"
+    )

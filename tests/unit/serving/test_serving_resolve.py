@@ -138,3 +138,37 @@ def test_decider_tests_seat_derives_python_tests_build() -> None:
     )
     assert out["kind"] == "python_tests"
     assert out["build"] is True
+
+
+def test_needs_files_and_read_failed_pass_through_resolve() -> None:
+    routing = _resolve(
+        {
+            "target": "need-files",
+            "kind": "need_files",
+            "file": "test_storage.py",
+            "dispatch_input": "write tests for existing storage.py",
+            "build": False,
+            "needs_decider": False,
+            "needs_files": ["storage.py"],
+            "read_failed": "",
+        }
+    )
+    assert routing["target"] == "need-files"
+    assert routing["needs_files"] == ["storage.py"]
+    assert routing["read_failed"] == ""
+
+
+def test_decider_path_defaults_read_fields_empty() -> None:
+    routing = _resolve(
+        {
+            "target": "",
+            "kind": "",
+            "file": "solution.py",
+            "dispatch_input": "coverage for the storage module",
+            "build": False,
+            "needs_decider": True,
+        },
+        '{"target": "tests-seat"}',
+    )
+    assert routing["needs_files"] == []
+    assert routing["read_failed"] == ""

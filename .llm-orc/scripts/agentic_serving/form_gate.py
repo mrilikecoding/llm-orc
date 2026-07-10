@@ -80,6 +80,8 @@ def main() -> None:
                 # a different granularity from accept — the two compose).
                 "seat_admitted": shaped.get("seat_admitted"),
                 "seat_contract_reason": str(shaped.get("seat_contract_reason", "")),
+                "needs_files": shaped.get("needs_files", []),
+                "read_failed": str(shaped.get("read_failed", "")),
             }
         )
     )

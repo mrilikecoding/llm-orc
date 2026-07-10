@@ -128,14 +128,20 @@ session record, plexus lenses):
 
 ## Current capability coverage
 
-Build (accept-gated), explain, and within-session conversation memory are
-implemented and grounded against a live endpoint and a literal
-`opencode run` (multi-turn battery 2026-07-08: build → "did you see my
-previous query?" → "add tests for it", all green). Fix and edit-existing for
-files the conversation did not write are the named frontier — they need
-client-file threading or client-delegated execution. Context older than the
-render window is dropped until the lossless session record (design §Rung 2′)
-lands.
+Build (accept-gated), explain, within-session conversation memory, and
+**client-file reads** are implemented and grounded against a live endpoint
+and a literal `opencode run` (multi-turn battery 2026-07-08: build → "did
+you see my previous query?" → "add tests for it", all green;
+existing-file battery 2026-07-09: "write tests for existing storage.py" →
+read tool_call → gated test deliverable running green against the real
+module, and an honest one-round refusal when the read fails). A turn
+naming a file the serve can't see delegates a `read` through the
+permission seam (`docs/plans/2026-07-09-client-file-reads-design.md`);
+the result materializes into the gate sandbox and stays retrievable in
+later turns. Remaining frontier on the execution surface: client-delegated
+test runs and discovery of files the turn doesn't name. Context older than
+the render window is dropped until the lossless session record (design
+§Rung 2′) lands.
 
 ## Roadmap
 

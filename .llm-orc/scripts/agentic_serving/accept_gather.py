@@ -75,20 +75,23 @@ _FILE_RE = re.compile(
     r"\b([\w./-]+\.(?:py|js|ts|jsx|tsx|json|md|txt|ya?ml|sh|go|rs|java|c|cpp|h))\b"
 )
 
-# A conversation-written file block in the rendered context. Text lines are
-# newline-collapsed by the renderer, so a write body runs until the next
-# 'user:'/'assistant:' line. '(truncated)' blocks are never materialized.
-_WRITE_HEADER_RE = re.compile(r"^assistant: \[wrote ([^\]]+?)( \(truncated\))?\]$")
+# A file block in the rendered context: conversation-written ([wrote ...])
+# or client-read ([read ...], issue #83). '(truncated)' / '(failed)' /
+# '(oversize)' variants are never materialized; a failed read line carries
+# trailing reason text after ']' and so never matches the anchored $.
+_FILE_HEADER_RE = re.compile(
+    r"^assistant: \[(?:wrote|read) ([^\]]+?)( \((?:truncated|failed|oversize)\))?\]$"
+)
 _SPEAKER_RE = re.compile(r"^(user|assistant): ")
 
 
 def _workspace(context: str) -> dict[str, str]:
-    """Conversation-written files as {basename: body} for the sandbox."""
+    """Conversation-written and client-read files as {basename: body} for the sandbox."""
     files: dict[str, str] = {}
     lines = context.splitlines()
     index = 0
     while index < len(lines):
-        header = _WRITE_HEADER_RE.match(lines[index])
+        header = _FILE_HEADER_RE.match(lines[index])
         index += 1
         if not header:
             continue

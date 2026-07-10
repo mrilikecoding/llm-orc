@@ -7,8 +7,15 @@ context string threaded to generation seats
 
 from __future__ import annotations
 
+import json
+
 from llm_orc.core.session.messages import ChatMessage
-from llm_orc.web.serving.serving_ensemble_caller import _render_context
+from llm_orc.web.serving.chunks import ClientToolCall
+from llm_orc.web.serving.serving_ensemble_caller import (
+    _outcome_chunks,
+    _render_context,
+    _tool_result_ack,
+)
 
 
 def _write_call(path: str, content: str) -> dict[str, object]:
@@ -332,3 +339,269 @@ def test_write_truncated_out_of_the_tail_render_is_still_selected() -> None:
 
     assert rendered.count("[wrote models.py]") == 1
     assert "class Task" in rendered
+
+
+def _read_call(call_id: str, path: str) -> dict[str, object]:
+    return {
+        "id": call_id,
+        "type": "function",
+        "function": {"name": "read", "arguments": f'{{"filePath": "{path}"}}'},
+    }
+
+
+def test_read_result_renders_as_read_block() -> None:
+    messages = [
+        ChatMessage(role="user", content="write tests for existing calc.py"),
+        ChatMessage(
+            role="assistant", content=None, tool_calls=(_read_call("c1", "calc.py"),)
+        ),
+        ChatMessage(
+            role="tool", tool_call_id="c1", content="def divide(a, b): return a / b"
+        ),
+    ]
+
+    rendered = _render_context(messages)
+
+    assert "[read calc.py]" in rendered
+    assert "def divide" in rendered
+
+
+def test_read_call_never_renders_as_an_empty_write_block() -> None:
+    messages = [
+        ChatMessage(role="user", content="fix calc.py"),
+        ChatMessage(
+            role="assistant", content=None, tool_calls=(_read_call("c1", "calc.py"),)
+        ),
+        ChatMessage(role="tool", tool_call_id="c1", content="def divide(a): return a"),
+        ChatMessage(role="user", content="thanks, now fix the docstring"),
+    ]
+
+    rendered = _render_context(messages)
+
+    assert "[wrote calc.py]" not in rendered
+    assert "[read calc.py]" in rendered
+
+
+def test_empty_read_result_renders_as_failed_single_line() -> None:
+    messages = [
+        ChatMessage(role="user", content="fix calc.py"),
+        ChatMessage(
+            role="assistant", content=None, tool_calls=(_read_call("c1", "calc.py"),)
+        ),
+        ChatMessage(role="tool", tool_call_id="c1", content=""),
+    ]
+
+    rendered = _render_context(messages)
+
+    assert "[read calc.py (failed)]" in rendered
+
+
+def test_error_read_result_renders_as_failed_single_line() -> None:
+    messages = [
+        ChatMessage(role="user", content="fix calc.py"),
+        ChatMessage(
+            role="assistant", content=None, tool_calls=(_read_call("c1", "calc.py"),)
+        ),
+        ChatMessage(role="tool", tool_call_id="c1", content="Error: ENOENT calc.py"),
+    ]
+
+    rendered = _render_context(messages)
+
+    assert "[read calc.py (failed)] Error: ENOENT calc.py" in rendered
+
+
+def test_oversize_read_result_renders_header_only() -> None:
+    from llm_orc.web.serving.serving_ensemble_caller import _READ_FILE_CAP
+
+    messages = [
+        ChatMessage(role="user", content="fix calc.py"),
+        ChatMessage(
+            role="assistant", content=None, tool_calls=(_read_call("c1", "calc.py"),)
+        ),
+        ChatMessage(role="tool", tool_call_id="c1", content="x" * (_READ_FILE_CAP + 1)),
+    ]
+
+    rendered = _render_context(messages)
+
+    assert "[read calc.py (oversize)]" in rendered
+    assert "xxxx" not in rendered
+
+
+def test_line_number_gutter_is_stripped_from_read_content() -> None:
+    body = "00001| def divide(a, b):\n00002|     return a / b"
+    messages = [
+        ChatMessage(role="user", content="fix calc.py"),
+        ChatMessage(
+            role="assistant", content=None, tool_calls=(_read_call("c1", "calc.py"),)
+        ),
+        ChatMessage(role="tool", tool_call_id="c1", content=body),
+    ]
+
+    rendered = _render_context(messages)
+
+    assert "def divide(a, b):" in rendered
+    assert "    return a / b" in rendered
+    assert "00001|" not in rendered
+
+
+def test_later_write_of_same_path_supersedes_earlier_read() -> None:
+    messages = [
+        ChatMessage(role="user", content="fix calc.py"),
+        ChatMessage(
+            role="assistant", content=None, tool_calls=(_read_call("c1", "calc.py"),)
+        ),
+        ChatMessage(role="tool", tool_call_id="c1", content="def old(): pass"),
+        ChatMessage(
+            role="assistant",
+            content=None,
+            tool_calls=(_write_call("calc.py", "def new(): pass"),),
+        ),
+        ChatMessage(role="tool", content="Wrote file successfully."),
+        ChatMessage(role="user", content="now add tests"),
+    ]
+
+    rendered = _render_context(messages)
+
+    assert "def new(): pass" in rendered
+    assert "def old(): pass" not in rendered
+
+
+def test_reads_outcome_maps_to_read_tool_calls() -> None:
+    tools = [{"type": "function", "function": {"name": "read"}}]
+    chunks = _outcome_chunks({"finish": False, "reads": ["a.py", "b.py"]}, tools)
+
+    assert len(chunks) == 1
+    call = chunks[0]
+    assert isinstance(call, ClientToolCall)
+    assert [c.name for c in call.tool_calls] == ["read", "read"]
+    assert [json.loads(c.arguments)["filePath"] for c in call.tool_calls] == [
+        "a.py",
+        "b.py",
+    ]
+
+
+def test_write_outcome_resolves_against_advertised_tool_names() -> None:
+    tools = [{"type": "function", "function": {"name": "write_file"}}]
+    chunks = _outcome_chunks(
+        {"finish": False, "file": "a.py", "content": "pass"}, tools
+    )
+    call = chunks[0]
+    assert isinstance(call, ClientToolCall)
+    assert call.tool_calls[0].name == "write_file"
+
+
+def test_write_outcome_falls_back_to_write_when_nothing_advertised() -> None:
+    chunks = _outcome_chunks({"finish": False, "file": "a.py", "content": "pass"}, [])
+    call = chunks[0]
+    assert isinstance(call, ClientToolCall)
+    assert call.tool_calls[0].name == "write"
+
+
+def test_opencode_wrapped_read_result_normalizes_to_plain_source() -> None:
+    """Captured wire (opencode 1.17.15, 2026-07-09): a successful read wraps
+    plain source in <path>/<type>/<content> tags with an unpadded "N: "
+    line-number gutter and an "(End of file - total N lines)" trailer inside
+    <content>. The rendered block must carry the dedented original source —
+    no tags, no gutter, no trailer."""
+    raw = (
+        "<path>/abs/path/to/storage.py</path>\n"
+        "<type>file</type>\n"
+        "<content>\n"
+        "1: class Store:\n"
+        "2:     def __init__(self) -> None:\n"
+        "3:         self._data: dict[str, str] = {}\n"
+        "4: \n"
+        "5:     def put(self, key: str, value: str) -> None:\n"
+        "6:         self._data[key] = value\n"
+        "\n"
+        "(End of file - total 6 lines)\n"
+        "</content>"
+    )
+    messages = [
+        ChatMessage(role="user", content="add a get() method to storage.py"),
+        ChatMessage(
+            role="assistant", content=None, tool_calls=(_read_call("c1", "storage.py"),)
+        ),
+        ChatMessage(role="tool", tool_call_id="c1", content=raw),
+    ]
+
+    rendered = _render_context(messages)
+
+    assert "[read storage.py]" in rendered
+    assert "class Store:" in rendered
+    assert "    def put(self, key: str, value: str) -> None:" in rendered
+    assert "<path>" not in rendered
+    assert "<type>" not in rendered
+    assert "<content>" not in rendered
+    assert "End of file" not in rendered
+    assert "1: class Store:" not in rendered
+
+
+def test_opencode_file_not_found_renders_as_failed() -> None:
+    """Captured wire (opencode 1.17.15, 2026-07-09): a failed read is a bare
+    string, no tags, no 'Error' prefix."""
+    messages = [
+        ChatMessage(role="user", content="fix gone.py"),
+        ChatMessage(
+            role="assistant", content=None, tool_calls=(_read_call("c1", "gone.py"),)
+        ),
+        ChatMessage(
+            role="tool", tool_call_id="c1", content="File not found: /x/y/gone.py"
+        ),
+    ]
+
+    rendered = _render_context(messages)
+
+    assert "[read gone.py (failed)] File not found: /x/y/gone.py" in rendered
+
+
+def test_content_wrapped_result_starting_with_error_is_still_success() -> None:
+    """The <content> structural check outranks the failure-prefix heuristic:
+    a source file whose first line reads "ERRORS = ..." is still success."""
+    raw = (
+        "<path>/abs/path/to/errors.py</path>\n"
+        "<type>file</type>\n"
+        "<content>\n"
+        '1: ERRORS = ["a", "b"]\n'
+        "2: \n"
+        "\n"
+        "(End of file - total 2 lines)\n"
+        "</content>"
+    )
+    messages = [
+        ChatMessage(role="user", content="fix errors.py"),
+        ChatMessage(
+            role="assistant", content=None, tool_calls=(_read_call("c1", "errors.py"),)
+        ),
+        ChatMessage(role="tool", tool_call_id="c1", content=raw),
+    ]
+
+    rendered = _render_context(messages)
+
+    assert "[read errors.py (failed)]" not in rendered
+    assert "[read errors.py]" in rendered
+    assert 'ERRORS = ["a", "b"]' in rendered
+
+
+def test_read_continuation_is_not_acked() -> None:
+    messages = [
+        ChatMessage(role="user", content="fix calc.py"),
+        ChatMessage(
+            role="assistant", content=None, tool_calls=(_read_call("c1", "calc.py"),)
+        ),
+        ChatMessage(role="tool", tool_call_id="c1", content="def divide(a): return a"),
+    ]
+    assert _tool_result_ack(messages) is None
+
+
+def test_write_continuation_is_still_acked() -> None:
+    messages = [
+        ChatMessage(role="user", content="write add.py"),
+        ChatMessage(
+            role="assistant",
+            content=None,
+            tool_calls=(_write_call("add.py", "def add(a, b): return a + b"),),
+        ),
+        ChatMessage(role="tool", content="Wrote file successfully."),
+    ]
+    assert _tool_result_ack(messages) == "Wrote add.py."
