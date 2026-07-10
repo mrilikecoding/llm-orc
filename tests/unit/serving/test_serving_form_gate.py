@@ -83,3 +83,22 @@ def test_form_gate_passes_read_fields_through() -> None:
     assert gated["needs_files"] == ["storage.py"]
     assert gated["read_failed"] == ""
     assert gated["valid"] is True
+
+
+def test_form_gate_passes_needs_run_through() -> None:
+    gated = _gate(
+        {
+            "build": False,
+            "file": "solution.py",
+            "content": "Requesting a client test run.",
+            "needs_files": [],
+            "read_failed": "",
+            "needs_run": "pytest -q",
+            "accept": None,
+            "accept_reason": "",
+            "seat_admitted": None,
+            "seat_contract_reason": "",
+        }
+    )
+    assert gated["needs_run"] == "pytest -q"
+    assert gated["valid"] is True

@@ -130,3 +130,19 @@ def test_shape_passes_read_fields_from_the_routing_decision() -> None:
     )
     assert shaped["needs_files"] == ["storage.py"]
     assert shaped["read_failed"] == ""
+
+
+def test_shape_passes_needs_run_from_the_routing_decision() -> None:
+    shaped = _shape(
+        {
+            "target": "need-run",
+            "kind": "need_run",
+            "file": "solution.py",
+            "build": False,
+            "needs_files": [],
+            "read_failed": "",
+            "needs_run": "pytest -q",
+        },
+        {"status": "ok", "primary": "Requesting a client test run."},
+    )
+    assert shaped["needs_run"] == "pytest -q"
