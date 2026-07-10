@@ -554,3 +554,16 @@ def test_normal_decisions_carry_empty_glob_fields() -> None:
     decision = _classify({"task": "write a function that adds two numbers"})
     assert decision["needs_glob"] == ""
     assert decision["glob_failed"] == ""
+
+
+def test_visible_stem_names_the_file_for_the_tests_destination() -> None:
+    # live finding (2026-07-10): once the globbed module's read block is in
+    # context, a retried "write tests for the storage module" routed to the
+    # tests seat with the DEFAULT destination (test_solution.py). A stem
+    # matching a visible file basename must name that file.
+    context = "assistant: [read storage.py]\n  def save(): pass"
+    decision = _classify(
+        {"task": "write tests for the storage module", "context": context}
+    )
+    assert decision["target"] == "tests-seat"
+    assert decision["file"] == "test_storage.py"

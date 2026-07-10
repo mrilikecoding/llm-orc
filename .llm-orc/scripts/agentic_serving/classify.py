@@ -350,9 +350,15 @@ def _discovery(
     candidates = _globbed_candidates(context, stem)
     if candidates is None:
         visible, _ = _visibility(context)
-        if any(name.rsplit(".", 1)[0].lower() == stem for name in visible):
-            # the stem IS a visible file — nothing to discover
-            return "", "", ""
+        match = next(
+            (name for name in visible if name.rsplit(".", 1)[0].lower() == stem),
+            "",
+        )
+        if match:
+            # the stem IS a visible file — nothing to discover, but it is
+            # still the turn's named file (live finding 2026-07-10: without
+            # this a retried module turn shipped to test_solution.py)
+            return "", match, ""
         return stem, "", ""
     if len(candidates) == 1:
         return "", candidates[0], ""

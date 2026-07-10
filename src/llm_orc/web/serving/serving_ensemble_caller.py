@@ -492,12 +492,13 @@ def _run_blocks(post_user: Sequence[Any]) -> list[str]:
 def _normalize_glob(raw: str) -> list[str]:
     """Client glob output as a plain path list.
 
-    TODO(live-validation): the glob RESULT format is not yet wire-captured —
-    the advertised-tools capture (2026-07-10) covers only the argument
-    schema. Expected: newline-separated paths. Anything that does not parse
-    as a bare path line (a "Found N files" header, a truncation footer,
-    prose) is dropped defensively; lock this to the captured format once the
-    coordinator runs the live validation step.
+    Live-confirmed 2026-07-10 (OpenCode 1.17.15, real session): the result
+    carries ABSOLUTE paths, at least one per line, and this tolerant filter
+    parsed it correctly end-to-end (glob -> match -> read -> build). A
+    verbatim wire capture is still outstanding (the history-probe path hits
+    the opencode -c bootstrap wedge); the defensive non-path-line drop
+    ("Found N files" headers, truncation footers, prose) stays until one
+    lands.
     """
     paths: list[str] = []
     for line in (raw or "").splitlines():
