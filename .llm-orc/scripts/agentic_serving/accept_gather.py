@@ -82,11 +82,18 @@ _FILE_RE = re.compile(
 _FILE_HEADER_RE = re.compile(
     r"^assistant: \[(?:wrote|read) ([^\]]+?)( \((?:truncated|failed|oversize)\))?\]$"
 )
-_SPEAKER_RE = re.compile(r"^(user|assistant): ")
 
 
 def _workspace(context: str) -> dict[str, str]:
-    """Conversation-written and client-read files as {basename: body} for the sandbox."""
+    """Conversation-written and client-read files as {basename: body} for the
+    sandbox.
+
+    Fenced block grammar (2026-07-10): body lines carry a two-space indent
+    the renderer added; the indent is stripped on materialization and ANY
+    other non-empty line ends the body. Headers live only at column 0, so a
+    header lookalike inside untrusted file content strips back to plain
+    content and can never materialize a phantom file.
+    """
     files: dict[str, str] = {}
     lines = context.splitlines()
     index = 0
@@ -96,8 +103,14 @@ def _workspace(context: str) -> dict[str, str]:
         if not header:
             continue
         body_lines = []
-        while index < len(lines) and not _SPEAKER_RE.match(lines[index]):
-            body_lines.append(lines[index])
+        while index < len(lines):
+            line = lines[index]
+            if line.startswith("  "):
+                body_lines.append(line[2:])
+            elif not line.strip():
+                body_lines.append("")
+            else:
+                break
             index += 1
         if not header.group(2):
             name = header.group(1).rsplit("/", 1)[-1]

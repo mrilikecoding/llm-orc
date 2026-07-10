@@ -275,6 +275,14 @@ def _select_written_files(history: Sequence[Any], task: str) -> list[tuple[str, 
     return sorted(items, key=lambda item: (not referenced(item),))
 
 
+def _indent_body(text: str) -> str:
+    """The fenced block grammar: every body line carries a two-space indent
+    (whitespace-only lines render empty), so untrusted content can never put
+    a header lookalike at column 0 — gather strips the indent back off, and
+    every header parser stays anchored to column 0."""
+    return "\n".join(f"  {line}" if line.strip() else "" for line in text.splitlines())
+
+
 def _render_write(message: Any) -> str | None:
     """An assistant write tool_call as ``[wrote <path>]`` + capped body."""
     for call in getattr(message, "tool_calls", ()) or ():
@@ -284,8 +292,9 @@ def _render_write(message: Any) -> str | None:
             if len(body) > _CTX_FILE_CAP:
                 # marked so gather never materializes a corrupted file
                 header = f"assistant: [wrote {arguments['filePath']} (truncated)]"
-                return f"{header}\n{body[:_CTX_FILE_CAP]}"
-            return f"assistant: [wrote {arguments['filePath']}]\n{body}"
+                return f"{header}\n{_indent_body(body[:_CTX_FILE_CAP])}"
+            path = arguments["filePath"]
+            return f"assistant: [wrote {path}]\n{_indent_body(body)}"
     return None
 
 
@@ -387,7 +396,7 @@ def _render_read_block(path: str, raw: str) -> str:
     normalized = _normalize_read(raw)
     if len(normalized) > _READ_FILE_CAP:
         return f"assistant: [read {path} (oversize)]"
-    return f"assistant: [read {path}]\n{normalized}"
+    return f"assistant: [read {path}]\n{_indent_body(normalized)}"
 
 
 def _read_blocks(messages: Sequence[Any]) -> list[tuple[str, str]]:
@@ -431,10 +440,7 @@ def _render_run_block(command: str, raw: str) -> str:
         cut = body.find("\n")
         body = body[cut + 1 :] if cut >= 0 else body
         header = f"assistant: [ran {command} (truncated)]"
-    indented = "\n".join(
-        f"  {line}" if line.strip() else "" for line in body.splitlines()
-    )
-    return f"{header}\n{indented}"
+    return f"{header}\n{_indent_body(body)}"
 
 
 def _run_blocks(post_user: Sequence[Any]) -> list[str]:
