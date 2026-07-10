@@ -90,13 +90,17 @@ _READ_ATTEMPT_RE = re.compile(
     r"^assistant: \[read ([^\]]+?)( \((failed|oversize)\))?\]", re.MULTILINE
 )
 _READ_CAP_KB = 24
-# issue #83 run half: an imperative run verb with a tests object within a
-# short window ("run the unit tests", "rerun pytest") — the window keeps
-# "write tests for calc.py and run them" off the run path. A named
-# test_*.py file with a run verb also qualifies ("run test_calc.py").
+# issue #83 run half: an imperative run verb with a tests object later in
+# the same sentence fragment ("run the unit tests", "rerun pytest", "run
+# every single one of the unit tests"). A named test_*.py file with a run
+# verb also qualifies ("run test_calc.py"). Composite turns are kept off
+# the run path by verb suppression, not the window: any build or edit verb
+# in the turn ("write tests ... and run them", "fix ... and rerun the
+# tests") routes build-first — the follow-on run is the user's next turn
+# (review finding 2026-07-09: the run route must never swallow a build).
 _RUN_VERB_RE = re.compile(r"\b(?:re-?run|run|execute)\b", re.IGNORECASE)
 _RUN_TESTS_RE = re.compile(
-    r"\b(?:re-?run|run|execute)\b(?:\s+[\w./-]+){0,3}?\s*\b(?:tests?|pytest|suite)\b",
+    r"\b(?:re-?run|run|execute)\b[^.!?\n]{0,60}?\b(?:tests?|pytest|suite)\b",
     re.IGNORECASE,
 )
 _RAN_HEADER_RE = re.compile(r"^assistant: \[ran ", re.MULTILINE)
@@ -229,9 +233,12 @@ def _route(
     has_build_signal: bool,
     kind_hint: str,
 ) -> tuple[str, str, bool, bool]:
-    """(target, kind, build, needs_decider) — the deterministic routing chain."""
-    if is_explain:
-        return _EXPLAIN_SEAT, "explanation", False, False
+    """(target, kind, build, needs_decider) — the deterministic routing chain.
+
+    Run outranks marker-based explain (run_signal is already false on
+    interrogative or marker-led turns), so "run the tests and tell me what
+    failed" delegates the run instead of narrating one.
+    """
     if run_signal and has_run_block:
         # issue #83 run half: the client ran the command — the deliverable
         # is the deterministic verdict, one run round per turn.
@@ -239,6 +246,8 @@ def _route(
     if run_signal:
         # issue #83 run half: delegate one closed-template test run.
         return "need-run", "need_run", False, False
+    if is_explain:
+        return _EXPLAIN_SEAT, "explanation", False, False
     if needs_files or read_failed:
         # issue #83: request the client files (or refuse a failed request)
         # before any seat runs — the need-files shape is a cheap script echo.
@@ -267,9 +276,20 @@ def main() -> None:
         "test_"
     )
 
-    run_signal = not is_explain and (
-        bool(_RUN_TESTS_RE.search(task))
-        or (bool(_RUN_VERB_RE.search(task)) and bool(_named_test_files(task)))
+    # Interrogatives and turns LED by an explain marker stay explain turns;
+    # a trailing marker ("run the tests and tell me what failed") does not
+    # suppress the imperative run — the verdict IS the telling.
+    is_interrogative = bool(_INTERROGATIVE_RE.match(task))
+    leading_explain = task.lower().startswith(_EXPLAIN_MARKERS)
+    run_signal = (
+        not is_interrogative
+        and not leading_explain
+        and not _BUILD_RE.search(task)
+        and not _EXISTING_RE.search(task)
+        and (
+            bool(_RUN_TESTS_RE.search(task))
+            or (bool(_RUN_VERB_RE.search(task)) and bool(_named_test_files(task)))
+        )
     )
     conversation_raw = str(turn.get("context", ""))
     has_run_block = bool(_RAN_HEADER_RE.search(conversation_raw))

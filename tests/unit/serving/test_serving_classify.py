@@ -332,3 +332,39 @@ def test_did_you_run_the_tests_stays_an_explain_turn() -> None:
 def test_non_run_decisions_carry_empty_needs_run() -> None:
     decision = _classify({"task": "write a function that adds two numbers"})
     assert decision["needs_run"] == ""
+
+
+def test_composite_build_and_run_turn_stays_on_the_build_path() -> None:
+    # review finding (2026-07-09): the run route must not swallow the build
+    # half of a composite turn — a build verb anywhere suppresses the run
+    # signal, and the follow-on run is the user's next turn
+    decision = _classify({"task": "write test_calc.py covering calc.py and run it"})
+    assert decision["target"] != "need-run"
+    assert decision["needs_run"] == ""
+
+
+def test_fix_and_rerun_composite_requests_the_file_not_the_run() -> None:
+    decision = _classify({"task": "fix the bug in calc.py and rerun the tests"})
+    assert decision["target"] == "need-files"
+    assert decision["needs_files"] == ["calc.py"]
+    assert decision["needs_run"] == ""
+
+
+def test_edit_request_naming_a_test_file_is_not_a_run_turn() -> None:
+    decision = _classify({"task": "update test_calc.py to run each case twice"})
+    assert decision["target"] != "need-run"
+    assert decision["needs_run"] == ""
+
+
+def test_long_natural_run_phrasing_still_fires() -> None:
+    decision = _classify({"task": "run every single one of the unit tests"})
+    assert decision["target"] == "need-run"
+    assert decision["needs_run"] == "pytest -q"
+
+
+def test_run_with_trailing_explain_marker_still_runs() -> None:
+    # "tell me" is an explain marker, but the imperative run wins on
+    # non-interrogative turns — the verdict IS the telling
+    decision = _classify({"task": "run the tests and tell me what failed"})
+    assert decision["target"] == "need-run"
+    assert decision["needs_run"] == "pytest -q"
