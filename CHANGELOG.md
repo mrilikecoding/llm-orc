@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.18.9] - 2026-07-10
+
+### Fixed
+- Fenced block grammar: every context block body ([wrote]/[read]/[ran])
+  is indented two spaces at render, and workspace extraction strips the
+  indent and ends a body at any column-0 line. Kills the header-lookalike
+  class end to end: untrusted file content can no longer materialize a
+  phantom workspace file into the accept-gate sandbox, spoof read
+  visibility, or suppress a real run delegation and fabricate a test
+  verdict. Spoof cases pinned at unit level, through the real engine,
+  and live against real OpenCode (a read file carrying a forged
+  "999 passed" transcript block; the serve delegated a real run and
+  reported the real failure). This was the named pre-meta-task blocker:
+  the meta-task rung reads exactly the files that carry these strings.
+  Belt-and-suspenders: an assistant prose line that IS a header lookalike
+  is defanged with a quote marker before it reaches column 0
+
 ## [0.18.8] - 2026-07-09
 
 ### Added
