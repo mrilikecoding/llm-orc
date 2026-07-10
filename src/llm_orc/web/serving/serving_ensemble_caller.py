@@ -19,7 +19,7 @@ import asyncio
 import json
 import re
 import uuid
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncIterator, Callable, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -127,6 +127,21 @@ def _task_from(messages: Sequence[Any]) -> str:
     return ""
 
 
+def _latest_user_index(messages: Sequence[Any]) -> int:
+    """Index of the latest non-empty user message, or -1 when none exists.
+
+    THE turn-boundary definition — transcript render and run-block selection
+    both derive from this single scan so they can never disagree about where
+    the current turn starts.
+    """
+    items = list(messages)
+    for index in range(len(items) - 1, -1, -1):
+        content = getattr(items[index], "content", None)
+        if getattr(items[index], "role", None) == "user" and (content or "").strip():
+            return index
+    return -1
+
+
 def _aux_reply(messages: Sequence[Any]) -> str:
     """A short plain-text reply for OpenCode's toolless meta calls (title /
     summary) — the last user message's subject, never the build pipeline."""
@@ -148,12 +163,8 @@ def _render_context(messages: Sequence[Any]) -> str:
     caps so per-turn cost stays flat regardless of session length.
     """
     items = list(messages)
-    prior: list[Any] = []
-    for index in range(len(items) - 1, -1, -1):
-        content = getattr(items[index], "content", None)
-        if getattr(items[index], "role", None) == "user" and (content or "").strip():
-            prior = items[:index]
-            break
+    boundary = _latest_user_index(items)
+    prior: list[Any] = items[:boundary] if boundary >= 0 else []
     lines: list[str] = []
     conversational = [
         m for m in prior if getattr(m, "role", "") in ("user", "assistant")
@@ -185,7 +196,7 @@ def _render_context(messages: Sequence[Any]) -> str:
     write_blocks = [block for path, block in selected if path not in tail_paths]
     kept = _whole_blocks_within_cap(write_blocks)
     kept = _select_read_blocks(messages, task, tail_paths) + kept
-    kept = kept + _run_blocks_after_latest_user(messages)
+    kept = kept + _run_blocks(items[boundary + 1 :])
 
     if kept:
         selected_text = "\n".join(kept)
@@ -261,16 +272,8 @@ def _select_written_files(history: Sequence[Any], task: str) -> list[tuple[str, 
 def _render_write(message: Any) -> str | None:
     """An assistant write tool_call as ``[wrote <path>]`` + capped body."""
     for call in getattr(message, "tool_calls", ()) or ():
-        function = call.get("function", {}) if isinstance(call, dict) else {}
-        try:
-            arguments = json.loads(function.get("arguments", ""))
-        except (json.JSONDecodeError, TypeError):
-            continue
-        if (
-            isinstance(arguments, dict)
-            and arguments.get("filePath")
-            and "content" in arguments
-        ):
+        arguments = _parsed_arguments(call)
+        if arguments is not None and _is_write_shaped(arguments):
             body = str(arguments.get("content", ""))
             if len(body) > _CTX_FILE_CAP:
                 # marked so gather never materializes a corrupted file
@@ -280,31 +283,55 @@ def _render_write(message: Any) -> str | None:
     return None
 
 
-def _read_shaped_arguments(call: Any) -> dict[str, Any] | None:
-    """Parsed arguments of a read-shaped tool call (filePath, no content)."""
+def _parsed_arguments(call: Any) -> dict[str, Any] | None:
+    """Parsed JSON arguments of a tool call, or None when unparseable.
+
+    The single parse point for tool-call arguments — the read/run/write
+    shape predicates below all classify the SAME parsed dict, so a parsing
+    fix (a client that double-encodes, say) lands once and the shapes can
+    never disagree about what a call is.
+    """
     function = call.get("function", {}) if isinstance(call, dict) else {}
     try:
         arguments = json.loads(function.get("arguments", ""))
     except (json.JSONDecodeError, TypeError):
         return None
-    if (
-        isinstance(arguments, dict)
-        and arguments.get("filePath")
-        and "content" not in arguments
-    ):
-        return arguments
-    return None
+    return arguments if isinstance(arguments, dict) else None
 
 
-def _read_call_paths(messages: Sequence[Any]) -> dict[str, str]:
-    """tool_call_id -> filePath for every read-shaped call in the history."""
-    paths: dict[str, str] = {}
+def _is_read_shaped(arguments: dict[str, Any]) -> bool:
+    """A read tool call: filePath, no content."""
+    return bool(arguments.get("filePath")) and "content" not in arguments
+
+
+def _is_run_shaped(arguments: dict[str, Any]) -> bool:
+    """A run tool call: command, no filePath."""
+    return bool(arguments.get("command")) and "filePath" not in arguments
+
+
+def _is_write_shaped(arguments: dict[str, Any]) -> bool:
+    """A write tool call: filePath plus content."""
+    return bool(arguments.get("filePath")) and "content" in arguments
+
+
+def _call_field_map(
+    messages: Sequence[Any],
+    predicate: Callable[[dict[str, Any]], bool],
+    field: str,
+) -> dict[str, str]:
+    """tool_call_id -> ``field`` for every tool call matching ``predicate``."""
+    mapping: dict[str, str] = {}
     for message in messages:
         for call in getattr(message, "tool_calls", ()) or ():
-            arguments = _read_shaped_arguments(call)
-            if arguments is not None and isinstance(call, dict) and call.get("id"):
-                paths[str(call["id"])] = str(arguments["filePath"])
-    return paths
+            arguments = _parsed_arguments(call)
+            if (
+                arguments is not None
+                and predicate(arguments)
+                and isinstance(call, dict)
+                and call.get("id")
+            ):
+                mapping[str(call["id"])] = str(arguments[field])
+    return mapping
 
 
 def _normalize_read(content: str) -> str:
@@ -361,7 +388,7 @@ def _read_blocks(messages: Sequence[Any]) -> list[tuple[str, str]]:
     """(path, block) for every tool result answering a read-shaped call,
     in wire order. Selected from the FULL history: on the resume pass the
     read result sits after the last user message."""
-    call_paths = _read_call_paths(messages)
+    call_paths = _call_field_map(messages, _is_read_shaped, "filePath")
     blocks: list[tuple[str, str]] = []
     for message in messages:
         if getattr(message, "role", None) != "tool":
@@ -371,33 +398,6 @@ def _read_blocks(messages: Sequence[Any]) -> list[tuple[str, str]]:
             content = getattr(message, "content", None)
             blocks.append((path, _render_read_block(path, content or "")))
     return blocks
-
-
-def _run_shaped_arguments(call: Any) -> dict[str, Any] | None:
-    """Parsed arguments of a run-shaped tool call (command, no filePath)."""
-    function = call.get("function", {}) if isinstance(call, dict) else {}
-    try:
-        arguments = json.loads(function.get("arguments", ""))
-    except (json.JSONDecodeError, TypeError):
-        return None
-    if (
-        isinstance(arguments, dict)
-        and arguments.get("command")
-        and "filePath" not in arguments
-    ):
-        return arguments
-    return None
-
-
-def _run_call_commands(messages: Sequence[Any]) -> dict[str, str]:
-    """tool_call_id -> command for every run-shaped call in the history."""
-    commands: dict[str, str] = {}
-    for message in messages:
-        for call in getattr(message, "tool_calls", ()) or ():
-            arguments = _run_shaped_arguments(call)
-            if arguments is not None and isinstance(call, dict) and call.get("id"):
-                commands[str(call["id"])] = str(arguments["command"])
-    return commands
 
 
 def _render_run_block(command: str, raw: str) -> str:
@@ -411,10 +411,9 @@ def _render_run_block(command: str, raw: str) -> str:
     and a fabricated newline-bearing command must not inject header-line
     lookalikes at column 0."""
     command = " ".join((command or "").split())
-    flat = " ".join((raw or "").strip().split())
-    if not flat:
+    body = (raw or "").strip()
+    if not body:
         return f"assistant: [ran {command} (failed)] empty run result"
-    body = raw.strip()
     header = f"assistant: [ran {command}]"
     if len(body) > _RUN_OUTPUT_CAP:
         body = body[-_RUN_OUTPUT_CAP:]
@@ -427,20 +426,14 @@ def _render_run_block(command: str, raw: str) -> str:
     return f"{header}\n{indented}"
 
 
-def _run_blocks_after_latest_user(messages: Sequence[Any]) -> list[str]:
+def _run_blocks(post_user: Sequence[Any]) -> list[str]:
     """Run blocks answering THIS turn only — run output is ephemeral
     verification evidence (unlike read blocks, which are durable workspace
-    state), so only results after the latest user message render."""
-    items = list(messages)
-    start = 0
-    for index in range(len(items) - 1, -1, -1):
-        content = getattr(items[index], "content", None)
-        if getattr(items[index], "role", None) == "user" and (content or "").strip():
-            start = index + 1
-            break
-    commands = _run_call_commands(items)
+    state), so callers pass just the slice after the latest user message
+    (the answering tool_call sits in the same slice as its result)."""
+    commands = _call_field_map(post_user, _is_run_shaped, "command")
     blocks: list[str] = []
-    for message in items[start:]:
+    for message in post_user:
         if getattr(message, "role", None) != "tool":
             continue
         command = commands.get(getattr(message, "tool_call_id", None) or "")
@@ -465,9 +458,9 @@ def _render_text(message: Any, role: str) -> str | None:
 def _resumes_turn(call: Any) -> bool:
     """Read and run continuations resume the turn (issue #83) — their
     results belong in context for another pipeline pass."""
-    return (
-        _read_shaped_arguments(call) is not None
-        or _run_shaped_arguments(call) is not None
+    arguments = _parsed_arguments(call)
+    return arguments is not None and (
+        _is_read_shaped(arguments) or _is_run_shaped(arguments)
     )
 
 
@@ -502,16 +495,8 @@ def _tool_result_ack(messages: Sequence[Any]) -> str | None:
 def _written_file_path(tool_calls: Sequence[Any]) -> str | None:
     """The filePath of the first write-shaped tool call, if any."""
     for call in tool_calls:
-        function = call.get("function", {}) if isinstance(call, dict) else {}
-        try:
-            arguments = json.loads(function.get("arguments", ""))
-        except (json.JSONDecodeError, TypeError):
-            continue
-        if (
-            isinstance(arguments, dict)
-            and arguments.get("filePath")
-            and "content" in arguments
-        ):
+        arguments = _parsed_arguments(call)
+        if arguments is not None and _is_write_shaped(arguments):
             return str(arguments["filePath"])
     return None
 
