@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.18.8] - 2026-07-09
+
+### Added
+- Client-delegated test runs through the permission seam (issue #83, run
+  half): a run turn ("run the tests", "run test_calc.py") emits ONE
+  deterministically-built pytest command (`pytest -q` + regex-safe named
+  `test_` files — a closed template, never model text) as a bash
+  tool_call; the continuation renders the output as an indented,
+  tail-capped `[ran <command>]` context block and replies with an honest
+  verdict parsed from pytest's own summary. Zero model calls end to end;
+  one run round per turn; failures and unparseable output report honestly
+- `need-run` shape: the script-only dispatch target for the requesting
+  pass
+- `run-verdict` shape: the deterministic pytest-summary parser the
+  resumed turn dispatches to (pass/fail/error counts, FAILED lines,
+  "no tests ran", could-not-execute, could-not-parse — all honest)
+- Ladder battery turn 11 (the run rung): the delegated run executes
+  client-side and the verdict must match the client's own result
+
+### Fixed
+- Catalog shapes are dispatch-resolvable again: dynamic dispatch resolves
+  ensemble names non-recursively, so shapes living only under
+  `ensembles/agentic-serving/` routed but silently failed at the seat
+  (latent since v0.18.6 for `need-files`, invisible because its outcome
+  rides the routing decision). Top-level copies restored; a regression
+  test pins every `serves:`-declaring catalog shape to an identical
+  top-level copy. Deeper single-home design question tracked as #106
+
 ## [0.18.7] - 2026-07-09
 
 ### Added

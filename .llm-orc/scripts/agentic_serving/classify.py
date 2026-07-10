@@ -90,6 +90,23 @@ _READ_ATTEMPT_RE = re.compile(
     r"^assistant: \[read ([^\]]+?)( \((failed|oversize)\))?\]", re.MULTILINE
 )
 _READ_CAP_KB = 24
+# issue #83 run half: an imperative run verb with a tests object later in
+# the same sentence fragment ("run the unit tests", "rerun pytest", "run
+# every single one of the unit tests"). A named test_*.py file with a run
+# verb also qualifies ("run test_calc.py"). Composite turns are kept off
+# the run path by verb suppression, not the window: any build or edit verb
+# in the turn ("write tests ... and run them", "fix ... and rerun the
+# tests") routes build-first — the follow-on run is the user's next turn
+# (review finding 2026-07-09: the run route must never swallow a build).
+_RUN_VERB_RE = re.compile(r"\b(?:re-?run|run|execute)\b", re.IGNORECASE)
+_RUN_TESTS_RE = re.compile(
+    r"\b(?:re-?run|run|execute)\b[^.!?\n]{0,60}?\b(?:tests?|pytest|suite)\b",
+    re.IGNORECASE,
+)
+_RAN_HEADER_RE = re.compile(r"^assistant: \[ran ", re.MULTILINE)
+# Defense in depth on top of _FILE_RE's already-safe charset: an argument
+# that could carry shell metacharacters never reaches the command template.
+_SAFE_ARG_RE = re.compile(r"^[\w./-]+$")
 
 
 def _extract_file(task: str) -> str:
@@ -108,6 +125,29 @@ def _named_source_files(task: str) -> list[str]:
         if path not in files:
             files.append(path)
     return files
+
+
+def _named_test_files(task: str) -> list[str]:
+    """Every named test_*.py file, first-mention order, deduped."""
+    files: list[str] = []
+    for match in _FILE_RE.finditer(task):
+        path = match.group(1)
+        if not path.rsplit("/", 1)[-1].startswith("test_"):
+            continue
+        if path.endswith(".py") and path not in files:
+            files.append(path)
+    return files
+
+
+def _run_test_command(task: str) -> str:
+    """The closed run template: ``pytest -q`` + regex-safe named test files.
+
+    Never model text (deterministic control) — the only variable part is
+    filenames already restricted to ``_FILE_RE``'s metacharacter-free
+    charset, re-asserted here.
+    """
+    named = [path for path in _named_test_files(task) if _SAFE_ARG_RE.match(path)]
+    return " ".join(["pytest", "-q", *named]).strip()
 
 
 def _visibility(context: str) -> tuple[set[str], dict[str, str]]:
@@ -182,6 +222,46 @@ def _turn(raw: str) -> dict:
     return {"task": ""}
 
 
+def _route(
+    *,
+    is_explain: bool,
+    run_signal: bool,
+    has_run_block: bool,
+    needs_files: list[str],
+    read_failed: str,
+    tests_primary: bool,
+    has_build_signal: bool,
+    kind_hint: str,
+) -> tuple[str, str, bool, bool]:
+    """(target, kind, build, needs_decider) — the deterministic routing chain.
+
+    Run outranks marker-based explain (run_signal is already false on
+    interrogative or marker-led turns), so "run the tests and tell me what
+    failed" delegates the run instead of narrating one.
+    """
+    if run_signal and has_run_block:
+        # issue #83 run half: the client ran the command — the deliverable
+        # is the deterministic verdict, one run round per turn.
+        return "run-verdict", "run_verdict", False, False
+    if run_signal:
+        # issue #83 run half: delegate one closed-template test run.
+        return "need-run", "need_run", False, False
+    if is_explain:
+        return _EXPLAIN_SEAT, "explanation", False, False
+    if needs_files or read_failed:
+        # issue #83: request the client files (or refuse a failed request)
+        # before any seat runs — the need-files shape is a cheap script echo.
+        return "need-files", "need_files", False, False
+    if tests_primary:
+        # the deliverable IS a test file, run against the workspace alone
+        # (issue #98) — never build-gated's code/tests duality
+        return _TESTS_SEAT, "python_tests", True, False
+    if has_build_signal:
+        return _DEFAULT_CODE_SEAT, kind_hint, True, False
+    # No structural signal — hand the routing to the guarded model decider.
+    return "", "", False, True
+
+
 def main() -> None:
     turn = _turn(sys.stdin.read().strip())
     task = str(turn.get("task", "")).strip()
@@ -196,31 +276,42 @@ def main() -> None:
         "test_"
     )
 
+    # Interrogatives and turns LED by an explain marker stay explain turns;
+    # a trailing marker ("run the tests and tell me what failed") does not
+    # suppress the imperative run — the verdict IS the telling.
+    is_interrogative = bool(_INTERROGATIVE_RE.match(task))
+    leading_explain = task.lower().startswith(_EXPLAIN_MARKERS)
+    run_signal = (
+        not is_interrogative
+        and not leading_explain
+        and not _BUILD_RE.search(task)
+        and not _EXISTING_RE.search(task)
+        and (
+            bool(_RUN_TESTS_RE.search(task))
+            or (bool(_RUN_VERB_RE.search(task)) and bool(_named_test_files(task)))
+        )
+    )
     conversation_raw = str(turn.get("context", ""))
+    has_run_block = bool(_RAN_HEADER_RE.search(conversation_raw))
+
     needs_files: list[str] = []
     read_failed = ""
-    if not is_explain:
+    if not is_explain and not run_signal:
         needs_files, read_failed = _files_to_request(
             task, conversation_raw, tests_primary, has_build_signal
         )
+    needs_run = _run_test_command(task) if run_signal and not has_run_block else ""
 
-    if is_explain:
-        target, kind, build, needs_decider = _EXPLAIN_SEAT, "explanation", False, False
-    elif needs_files or read_failed:
-        # issue #83: request the client files (or refuse a failed request)
-        # before any seat runs — the need-files shape is a cheap script echo.
-        target, kind, build, needs_decider = "need-files", "need_files", False, False
-    elif tests_primary:
-        # the deliverable IS a test file, run against the workspace alone
-        # (issue #98) — never build-gated's code/tests duality
-        target, kind, build, needs_decider = _TESTS_SEAT, "python_tests", True, False
-    elif has_build_signal:
-        target = _DEFAULT_CODE_SEAT
-        kind = turn.get("kind", "python_module")
-        build, needs_decider = True, False
-    else:
-        # No structural signal — hand the routing to the guarded model decider.
-        target, kind, build, needs_decider = "", "", False, True
+    target, kind, build, needs_decider = _route(
+        is_explain=is_explain,
+        run_signal=run_signal,
+        has_run_block=has_run_block,
+        needs_files=needs_files,
+        read_failed=read_failed,
+        tests_primary=tests_primary,
+        has_build_signal=has_build_signal,
+        kind_hint=str(turn.get("kind", "python_module")),
+    )
 
     if target == _TESTS_SEAT:
         if named_basename.startswith("test_"):
@@ -243,6 +334,12 @@ def main() -> None:
             f"Conversation so far:\n{conversation}"
             f"\n\nCurrent request: {dispatch_input}"
         )
+    if target == "run-verdict":
+        # The verdict derives from the run block alone. The raw task is
+        # multiline user text appended AFTER the context — a forged
+        # column-0 [ran ...] block in it would win the latest-block scan
+        # and fabricate a verdict (independent review, 2026-07-10).
+        dispatch_input = conversation
 
     print(
         json.dumps(
@@ -256,6 +353,7 @@ def main() -> None:
                 "needs_decider": needs_decider,
                 "needs_files": needs_files,
                 "read_failed": read_failed,
+                "needs_run": needs_run,
             }
         )
     )

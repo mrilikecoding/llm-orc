@@ -86,6 +86,7 @@ def main() -> None:
     if not isinstance(needs_files, list):
         needs_files = []
     read_failed = str(classify.get("read_failed", ""))
+    needs_run = str(classify.get("needs_run", ""))
 
     if classify.get("needs_decider"):
         target = _decider_target(_response(deps.get("decide", {})))
@@ -111,6 +112,7 @@ def main() -> None:
                 "build": build,
                 "needs_files": needs_files,
                 "read_failed": read_failed,
+                "needs_run": needs_run,
             }
         )
     )

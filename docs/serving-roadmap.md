@@ -32,6 +32,7 @@ model as the backend. Trajectory so far:
 | 2026-07-09 (#83 read rung) | existing-file battery (3 + 2 regression) | **5/5** | read→gated tests green on a real repo file; honest refusal on a missing file; fresh-build and explain unregressed |
 | 2026-07-09 (v0.18.6) | 10-turn recorded ladder (`benchmarks/agentic_serving/ladder_battery.sh`, new baseline) | **4/10** | #83 rungs all to spec (read→tests 4/4 green mid-session; honest phantom refusal; honest cascade on an unbuilt dependency). Misses: 3 build rejects (round-1 test quality — path item 4's measured class), memory question mis-routed to build (decider flake; "did …?" is not structurally interrogative), deep recall named the latest build not the first (#82 prose-retrieval remainder). Strict scoring; not comparable to earlier unrecorded rows |
 | 2026-07-09 (seat-quality arc) | 10-turn recorded ladder, same seed | **7/10** | Every targeted class converted: memory question routes to explain and answers accurately (decider fix); the storage rung ships (isolation + sanitizer + import injection); its downstream cascade unblocks and the persistence integration is real (todo.py imports storage). Misses: 2 honest build rejects (thinner round-1 test-quality residual) and the known #82 deep-recall deferral. Regression probes: probe 1 accepts attempt 1, probe 2 within two |
+| 2026-07-10 (#83 run half) | 11-turn recorded ladder (run rung added; session resumed at turn 6 after an external process stop — continuity held on the append-only wire) | **6/11** | New rungs both green: turn 8 read→gated tests (client-run green), turn 11 delegated `pytest -q` with the verdict matching client ground truth exactly (6 passed); turn 9 honest phantom refusal. Misses: 3 honest build rejects (turns 2/4/6 — the stochastic 8b test-quality residual, 2–3 per run) plus turn 7 as their honest cascade, and the known #82 deep-recall miss. Zero dishonest outcomes; routing fired correctly on all 11 turns |
 
 The Cycle-7 benchmark harness (`research/agentic-serving-corpus` branch,
 `benchmark-runs/`) is the automation to revive for a standing
@@ -98,16 +99,21 @@ deterministic accept gate (per-test-isolated executor + static adequacy
 into the shipped artifact). All-local (qwen3:8b) by default; operator
 seat overrides via `*.local.yaml`.
 
-**Handoff pointer (fresh-session start here):** NEXT is the #83 run half
-(client-delegated execution + discovery) — see path item 2's "Remaining"
-paragraph. The other measured candidate is the #82 deep-recall remainder
-(now costs a ladder turn). The recorded battery is
-`benchmarks/agentic_serving/ladder_battery.sh` (current score 7/10; the
-two build misses are honest rejects from the thinner test-quality
-residual). Standing follow-ups before the meta-task rung: fence/escape
-read bodies (path item 2 note) and the injector's scope-blind binding
-(an import inside one test function suppresses injection for siblings —
-revisit if probes show mixed import styles).
+**Handoff pointer (fresh-session start here):** NEXT is **block-body
+fencing** (the pre-meta-task blocker, scope widened 2026-07-10: read and
+write block bodies render untrusted content at column 0, which can both
+materialize phantom workspace files via gather AND spoof
+`has_run_block`/run_verdict into fabricating a test verdict for a run
+that never happened — one shared fenced/indented grammar for all block
+bodies, gather made robust, classify's detector covered). After it, in
+leverage order: #83 discovery (list/glob through the same seam — the
+meta-task rung's requirement), the #82 deep-recall remainder (still
+costs a ladder turn every run), and the build test-quality residual
+(2–3 honest rejects per 11-turn run is now the dominant score cost).
+The recorded battery is `benchmarks/agentic_serving/ladder_battery.sh`
+(11 turns; current score 6/11, every miss honest). Standing smaller
+follow-ups: the injector's scope-blind binding, and #107
+(content-parts message content crashes the render path — pre-existing).
 
 Key empirical facts the next work builds on:
 
@@ -169,13 +175,32 @@ end-of-file trailer, bare `File not found:` on error) was wire-captured
 and the normalizer locked to it. Design:
 `docs/plans/2026-07-09-client-file-reads-design.md`.
 
-Remaining on #83: **client-delegated execution** (the same seam reused for
-a test-run tool_call — the `{"finish": false, "run": ...}` outcome), and
-**discovery** (list/glob for files the turn doesn't name — the meta-task
-rung's requirement; named-files-only is a rung-1 bound, not architecture).
-Rung-1 trigger limitations, revisit on ladder evidence: no reads for
+**Run half SHIPPED (2026-07-09, branch feat/83-client-run-delegation;
+design `docs/plans/2026-07-09-client-run-delegation-design.md`).** A run
+turn ("run the tests", "run test_calc.py") delegates ONE
+deterministically-built pytest command (`pytest -q` + regex-safe named
+`test_` files — a closed template, never model text) as a bash tool_call;
+the continuation renders the output as an `assistant: [ran <command>]`
+block (body indented two spaces — untrusted column-0 output can never
+look like a `[wrote]` header to gather; tail-capped at 4 KB so pytest's
+summary survives) and routes to a `run-verdict` script shape that parses
+pytest's own summary deterministically. A "run the tests" turn costs zero
+model calls end to end. Live-validated green AND red against real
+OpenCode. Shipping it surfaced a latent v0.18.6 defect: dispatch
+resolution is non-recursive, so catalog-only shapes silently failed at
+the seat (invisible for need-files, whose outcome rides the routing
+decision) — top-level copies restored, regression-pinned, deeper
+dedup/design question filed as #106.
+
+Remaining on #83: **discovery** (list/glob for files the turn doesn't
+name — the meta-task rung's requirement; named-files-only is a rung-1
+bound, not architecture), and **chained fix-execution** (write → run →
+verdict inside one turn — composes the two shipped seams). Rung-1
+trigger limitations, revisit on ladder evidence: no reads for
 `test_`-named files, "add X to foo.py" phrasings, or the model-decider
-(ambiguous) routing path.
+(ambiguous) routing path; run turns are pytest-scoped (cargo test for the
+plexus/Rust half is the named first runner generalization — the command
+builder and verdict parser are the only pytest-aware seams).
 
 **Pre-meta-task follow-up (final review 2026-07-09):** the read-block
 grammar is line-anchored, so a read body carrying a zero-indent

@@ -142,3 +142,23 @@ def test_read_failed_emits_an_honest_refusal() -> None:
     assert outcome["content"] == (
         "Refused: could not read storage.py: client read failed"
     )
+
+
+def test_needs_run_emits_a_run_outcome() -> None:
+    outcome = _emit(
+        {
+            "build": False,
+            "file": "solution.py",
+            "content": "Requesting a client test run.",
+            "valid": True,
+            "reason": "ok",
+            "needs_files": [],
+            "read_failed": "",
+            "needs_run": "pytest -q test_calc.py",
+            "accept": None,
+            "accept_reason": "",
+            "seat_admitted": None,
+            "seat_contract_reason": "",
+        }
+    )
+    assert outcome == {"finish": False, "run": "pytest -q test_calc.py"}

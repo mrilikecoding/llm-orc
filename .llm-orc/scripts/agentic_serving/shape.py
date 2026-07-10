@@ -122,9 +122,10 @@ def main() -> None:
                 "accept_reason": accept_reason,
                 "seat_admitted": seat_admitted,
                 "seat_contract_reason": seat_contract_reason,
-                # issue #83: the reads request rides the routing decision
+                # issue #83: read and run requests ride the routing decision
                 "needs_files": decision.get("needs_files", []),
                 "read_failed": str(decision.get("read_failed", "")),
+                "needs_run": str(decision.get("needs_run", "")),
             }
         )
     )
