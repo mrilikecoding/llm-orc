@@ -521,6 +521,118 @@ def test_removal_already_inside_try_or_with_is_left_alone() -> None:
     assert result["tests_pass"] is True
 
 
+# --- inverted exception-expectation rewrite (spike 2026-07-10) ---
+
+_RAISING_SAVE = (
+    "def save_todos(todos):\n"
+    "    if todos is None:\n"
+    "        raise TypeError('todos must be a list')\n"
+    "    return list(todos)\n"
+)
+
+
+def test_inverted_expectation_with_both_branches_false_is_rewritten() -> None:
+    """Verbatim spike exemplar (turn6_s2 r1+r2): both branches assert
+    False — no implementation can pass, and the code that correctly
+    raised TypeError was punished for it. The messages name the intent
+    (raise expected); rewrite to the canonical pytest.raises form."""
+    tests = (
+        "def test_save_todos_handles_exceptions():\n"
+        "    try:\n"
+        "        save_todos(None)\n"
+        "    except TypeError:\n"
+        '        assert False, "Expected TypeError"\n'
+        "    else:\n"
+        '        assert False, "Did not raise TypeError"\n'
+    )
+    result = _executor("save todos", _RAISING_SAVE, tests)
+    assert result["tests_raises_rewritten"] == 1
+    assert "with pytest.raises(TypeError):" in result["tests"]
+    assert "import pytest" in result["tests"]
+    assert result["tests_pass"] is True
+
+
+def test_inverted_expectation_with_bare_handler_and_true_else_rewrites() -> None:
+    """Verbatim spike exemplar (turn1_s5 r2): the specific handler asserts
+    False with 'expected ValueError', a bare handler asserts False, and
+    the else is a vacuous assert True — the assert-False belongs after
+    the call / in else, exactly the positional garble the prompt rule
+    tried to teach."""
+    code = (
+        "def add_todo(item):\n"
+        "    if item is None:\n"
+        "        raise ValueError('item required')\n"
+    )
+    tests = (
+        "def test_add_todo_raises_value_error_for_none():\n"
+        "    try:\n"
+        "        add_todo(None)\n"
+        "    except ValueError as e:\n"
+        '        assert False, "expected ValueError"\n'
+        "    except:\n"
+        '        assert False, "unexpected exception"\n'
+        "    else:\n"
+        '        assert True, "no exception raised"\n'
+    )
+    result = _executor("add todo", code, tests)
+    assert result["tests_raises_rewritten"] == 1
+    assert "with pytest.raises(ValueError):" in result["tests"]
+    assert result["tests_pass"] is True
+
+
+def test_expectation_with_a_real_else_assert_is_left_alone() -> None:
+    """turn6_s5's lookalike: the else carries a real value assert, so the
+    test is satisfiable by correct non-raising code — rewriting to
+    pytest.raises would BREAK a correct implementation. Ambiguous stays
+    untouched."""
+    tests = (
+        "def test_load_todos_returns_empty_list_if_file_not_found():\n"
+        "    try:\n"
+        "        load_todos()\n"
+        "    except FileNotFoundError:\n"
+        '        assert False, "Expected FileNotFoundError"\n'
+        "    else:\n"
+        "        assert load_todos() == []\n"
+    )
+    result = _executor("save/load todos", _SAVE_LOAD_CODE, tests)
+    assert result["tests_raises_rewritten"] == 0
+    assert result["tests_pass"] is True
+
+
+def test_canonical_expect_raise_try_form_is_left_alone() -> None:
+    """The correct idiom (assert False AFTER the call, handler passes) has
+    an assert in the try body — outside the exact signature."""
+    tests = (
+        "def test_rejects_none():\n"
+        "    try:\n"
+        "        save_todos(None)\n"
+        '        assert False, "expected TypeError"\n'
+        "    except TypeError:\n"
+        "        pass\n"
+    )
+    result = _executor("save todos", _RAISING_SAVE, tests)
+    assert result["tests_raises_rewritten"] == 0
+    assert result["tests_pass"] is True
+
+
+def test_handler_message_that_does_not_declare_expectation_is_left_alone() -> None:
+    """'except E: assert False' whose message does NOT say the raise was
+    expected could be a legitimate must-not-raise guard — ambiguous, so
+    untouched (reject stays honest)."""
+    tests = (
+        "def test_never_raises_for_lists():\n"
+        "    try:\n"
+        "        save_todos([1])\n"
+        "    except TypeError:\n"
+        '        assert False, "should not raise for a list"\n'
+        "    else:\n"
+        "        pass\n"
+    )
+    result = _executor("save todos", _RAISING_SAVE, tests)
+    assert result["tests_raises_rewritten"] == 0
+    assert result["tests_pass"] is True
+
+
 def test_call_to_a_fixture_parameter_is_never_excised() -> None:
     """A called name bound as a test parameter (pytest fixture) is bound."""
     tests = (

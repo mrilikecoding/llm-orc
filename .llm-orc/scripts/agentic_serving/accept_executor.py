@@ -270,6 +270,116 @@ def _guard_unconditional_removals(tests: str) -> tuple[str, int]:
     return "\n".join(lines) + ("\n" if tests.endswith("\n") else ""), len(targets)
 
 
+def _is_assert_false(stmt: ast.stmt) -> bool:
+    return (
+        isinstance(stmt, ast.Assert)
+        and isinstance(stmt.test, ast.Constant)
+        and stmt.test.value is False
+    )
+
+
+def _is_vacuous_else(orelse: list[ast.stmt]) -> bool:
+    """Absent, or a single constant-bool assert (``assert False, msg`` /
+    ``assert True, msg``) — an else that can never check a value."""
+    if not orelse:
+        return True
+    if len(orelse) != 1:
+        return False
+    stmt = orelse[0]
+    return (
+        isinstance(stmt, ast.Assert)
+        and isinstance(stmt.test, ast.Constant)
+        and isinstance(stmt.test.value, bool)
+    )
+
+
+def _declared_expected_exception(handler: ast.excepthandler) -> str:
+    """The exception name a handler both catches and declares expected —
+    ``except <E>: assert False, "...expected...<E>..."`` — else ''."""
+    if not isinstance(handler, ast.ExceptHandler):
+        return ""
+    if len(handler.body) != 1 or not _is_assert_false(handler.body[0]):
+        return ""
+    stmt = handler.body[0]
+    msg = stmt.msg if isinstance(stmt, ast.Assert) else None
+    if not (isinstance(msg, ast.Constant) and isinstance(msg.value, str)):
+        return ""
+    exc = handler.type
+    if not isinstance(exc, ast.Name):
+        return ""
+    if "expected" in msg.value.lower() and exc.id in msg.value:
+        return exc.id
+    return ""
+
+
+def _inverted_expectation(stmt: ast.stmt) -> tuple[ast.Call, str] | None:
+    """(call, exception name) when a statement matches the inverted
+    exception-expectation signature exactly; ``None`` otherwise.
+
+    The exact AST signature (spike 2026-07-10, turn6_s2 r1+r2 and
+    turn1_s5 r2): a try whose body is a single bare call; EVERY handler
+    body is a single ``assert False``; the first handler catches a named
+    exception and its message declares that raise expected ("Expected
+    TypeError"); the else is absent or a vacuous constant-bool assert.
+    Such a test punishes exactly the raise its own message expects — the
+    assert-False belongs after the call / in else. Anything outside the
+    signature (a real else assert, an assert inside the try body, a
+    message that doesn't declare the expectation) is ambiguous and stays
+    untouched, so a correct must-not-raise guard is never inverted.
+    """
+    if not isinstance(stmt, ast.Try) or stmt.finalbody or not stmt.handlers:
+        return None
+    if len(stmt.body) != 1:
+        return None
+    call_stmt = stmt.body[0]
+    if not (isinstance(call_stmt, ast.Expr) and isinstance(call_stmt.value, ast.Call)):
+        return None
+    if not all(
+        len(h.body) == 1 and _is_assert_false(h.body[0]) for h in stmt.handlers
+    ):
+        return None
+    exc_name = _declared_expected_exception(stmt.handlers[0])
+    if not exc_name or not _is_vacuous_else(stmt.orelse):
+        return None
+    return call_stmt.value, exc_name
+
+
+def _rewrite_inverted_expectations(tests: str) -> tuple[str, int]:
+    """Tests with inverted exception-expectations rewritten to the
+    canonical ``with pytest.raises(<E>): <call>`` form, and the count.
+    The pytest import arrives via the existing injection mechanism; the
+    echoed (shipped) tests carry the rewrite (v0.18.7 convention)."""
+    try:
+        tree = ast.parse(tests)
+    except SyntaxError:
+        return tests, 0
+    found: list[tuple[ast.Try, ast.Call, str]] = []
+    for node in tree.body:
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        if not node.name.startswith("test_"):
+            continue
+        for stmt in node.body:
+            match = _inverted_expectation(stmt)
+            if match is not None and isinstance(stmt, ast.Try):
+                found.append((stmt, match[0], match[1]))
+    if not found:
+        return tests, 0
+    lines = tests.splitlines()
+    for try_stmt, call, exc_name in sorted(
+        found, key=lambda item: item[0].lineno, reverse=True
+    ):
+        start = try_stmt.lineno - 1
+        end = try_stmt.end_lineno or try_stmt.lineno
+        indent = " " * try_stmt.col_offset
+        call_src = ast.get_source_segment(tests, call) or ast.unparse(call)
+        lines[start:end] = [
+            f"{indent}with pytest.raises({exc_name}):",
+            f"{indent}    {call_src}",
+        ]
+    return "\n".join(lines) + ("\n" if tests.endswith("\n") else ""), len(found)
+
+
 def _from_dependencies(envelope: dict[str, object]) -> dict[str, object] | None:
     """The ``{requirement, code, tests}`` contract from a dependency (the
     build-gated ``gather`` node), when the executor runs inside the ensemble.
@@ -515,6 +625,7 @@ def main() -> None:
     tests, tests_sanitized = _sanitize_tests(tests)
     tests, tests_excised = _excise_unbound_callable_tests(tests, code)
     tests, tests_removals_guarded = _guard_unconditional_removals(tests)
+    tests, tests_raises_rewritten = _rewrite_inverted_expectations(tests)
     tests, tests_imports_injected = _inject_test_imports(tests, code)
     raw_workspace = data.get("workspace")
     workspace = (
@@ -538,6 +649,7 @@ def main() -> None:
                 "tests_sanitized": tests_sanitized,
                 "tests_excised": tests_excised,
                 "tests_removals_guarded": tests_removals_guarded,
+                "tests_raises_rewritten": tests_raises_rewritten,
                 "tests_imports_injected": tests_imports_injected,
                 "report": report,
             }
