@@ -45,12 +45,22 @@ _MAX_ISOLATED_TESTS = 20
 # tests are the sanitized suite. ``assert result`` on an assigned local is
 # a real truthiness check and is kept.
 _BARE_ASSERT_RE = re.compile(r"^\s*assert\s+([A-Za-z_]\w*)\s*(?:,.*)?$")
-_ASSIGNED_NAME_RE = re.compile(r"^\s*([A-Za-z_]\w*)\s*=[^=]", re.MULTILINE)
 
 
 def _sanitize_tests(tests: str) -> tuple[str, int]:
-    """Tests with value-free bare-name assert lines removed, and the count."""
-    assigned = set(_ASSIGNED_NAME_RE.findall(tests))
+    """Tests with value-free bare-name assert lines removed, and the count.
+
+    "Assigned" is computed via the AST (``_bound_names``): every
+    Store-context name, for/with/walrus target, parameter, def/class name,
+    and import alias — not just a plain ``name = ...`` line — so a bare
+    assert on any of those is a real check, not a value-free reference.
+    Unparseable tests skip sanitization entirely (mirrors the injector).
+    """
+    try:
+        tree = ast.parse(tests)
+    except SyntaxError:
+        return tests, 0
+    assigned = _bound_names(tree)
     kept: list[str] = []
     dropped = 0
     # Skip Python keywords and built-in constants that are intentionally asserted
@@ -127,18 +137,28 @@ def _bound_names(tree: ast.Module) -> set[str]:
     return bound
 
 
-def _inject_test_imports(tests: str) -> tuple[str, int]:
-    """Tests with missing whitelisted imports prepended, and the count."""
+def _inject_test_imports(tests: str, code: str) -> tuple[str, int]:
+    """Tests with missing whitelisted imports prepended, and the count.
+
+    Injection candidates exclude any name the code binds — an injected
+    ``import os`` must never shadow a code-defined ``os`` in the runner's
+    shared namespace, or a code bug (``os = None``) would be masked
+    instead of failing its test.
+    """
     try:
         tree = ast.parse(tests)
     except SyntaxError:
         return tests, 0
+    try:
+        code_bound = _bound_names(ast.parse(code))
+    except SyntaxError:
+        code_bound = set()
     loaded = {
         n.id
         for n in ast.walk(tree)
         if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Load)
     }
-    unbound = loaded - _bound_names(tree) - _BUILTIN_NAMES
+    unbound = loaded - _bound_names(tree) - _BUILTIN_NAMES - code_bound
     missing = sorted(unbound & _INJECTABLE_MODULES)
     if not missing:
         return tests, 0
@@ -211,17 +231,36 @@ def _aggregate_budget() -> float:
 
 def _enumerate_tests(tests: str) -> tuple[list[str], bool] | None:
     """(top-level test_* function names, has_testcase_classes), or ``None``
-    when the tests don't parse — the caller falls back to one legacy run."""
+    when the tests don't parse — the caller falls back to one legacy run.
+
+    Completeness invariant: per-test isolation only ever runs the names
+    returned here, but only ``tree.body`` is visible to the caller's child
+    dispatch. A ``test_*`` def nested anywhere else (module-level if/try/
+    for, or inside another def) would therefore be silently dropped from
+    the run — legacy's single whole-module exec picks it up regardless of
+    nesting. So if any such nested test def exists, return ``None`` and
+    let the caller fall back to that legacy run instead of losing it.
+    """
     try:
         tree = ast.parse(tests)
     except SyntaxError:
         return None
-    names = [
-        n.name
+    top_level_defs = [
+        n
         for n in tree.body
         if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
         and n.name.startswith("test_")
     ]
+    top_level_ids = {id(n) for n in top_level_defs}
+    nested_exists = any(
+        isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and n.name.startswith("test_")
+        and id(n) not in top_level_ids
+        for n in ast.walk(tree)
+    )
+    if nested_exists:
+        return None
+    names = [n.name for n in top_level_defs]
     has_cases = any(isinstance(n, ast.ClassDef) for n in tree.body)
     return names, has_cases
 
@@ -300,7 +339,9 @@ def _run_children(
     wall budget across the suite is spent — the per-child timeout bounds
     one runaway test, this bounds the whole suite (review finding: 21
     children × per-child timeout is too much blocking time for an
-    interactive serve)."""
+    interactive serve). The budget check happens before spawning each
+    child, not after, so the real worst case is budget + at most one
+    per-child timeout (check-before-spawn slack), not the budget alone."""
     budget = _aggregate_budget()
     start = time.monotonic()
     n = len(children)
@@ -368,7 +409,7 @@ def main() -> None:
     code = str(data.get("code", ""))
     tests = str(data.get("tests", ""))
     tests, tests_sanitized = _sanitize_tests(tests)
-    tests, tests_imports_injected = _inject_test_imports(tests)
+    tests, tests_imports_injected = _inject_test_imports(tests, code)
     raw_workspace = data.get("workspace")
     workspace = (
         {str(k): str(v) for k, v in raw_workspace.items()}

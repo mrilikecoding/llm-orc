@@ -357,3 +357,52 @@ def test_already_imported_modules_are_not_reinjected() -> None:
     tests = "import os\ndef test_x():\n    assert os.sep\n"
     result = _executor("sep", "", tests)
     assert result["tests_imports_injected"] == 0
+
+
+# --- final-review findings: C1, I1, I2 ---
+
+
+def test_bare_assert_on_a_loop_bound_name_is_kept() -> None:
+    # C1: _ASSIGNED_NAME_RE only matched plain 'name = ...', so a bare
+    # assert on a for-loop-bound name was (wrongly) treated as value-free
+    # and stripped — silently turning a real falsy-value check into a
+    # no-op and letting wrong code through.
+    code = "def all_flags():\n    return [1, 0, 1]\n"
+    tests = (
+        "def test_all_true():\n"
+        "    for flag in all_flags():\n"
+        "        _ = flag\n"
+        "        assert flag\n"
+    )
+    result = _executor("flags", code, tests)
+    assert result["tests_sanitized"] == 0
+    assert result["tests_pass"] is False  # 0 is falsy — the suite must reject
+
+
+def test_nested_test_defs_fall_back_to_legacy_whole_run() -> None:
+    # I1: a test_* def nested under a module-level if/try/for must not be
+    # silently dropped by the per-test isolation path — fall back to one
+    # legacy whole-suite run so completeness matches the pre-isolation
+    # executor.
+    tests = "if True:\n    def test_hidden():\n        assert add(1, 1) == 3\n"
+    result = _executor("adds", "def add(a, b):\n    return a + b\n", tests)
+    assert result["tests_pass"] is False
+    assert "test_hidden" in result["report"]
+
+
+def test_injection_never_shadows_a_code_bound_name() -> None:
+    # I2: an injected 'import os' must not rebind a code-defined 'os' in
+    # the shared runner namespace — that would flip a genuine code bug
+    # (os = None) into a false pass.
+    code = "os = None\n"
+    tests = "def test_os():\n    assert os is not None\n"
+    result = _executor("os check", code, tests)
+    assert result["tests_imports_injected"] == 0
+    assert result["tests_pass"] is False
+
+
+def test_unparseable_tests_skip_injection_and_sanitization() -> None:
+    result = _executor("broken", "x = 1\n", "def test_x(:\n")
+    assert result["tests_sanitized"] == 0
+    assert result["tests_imports_injected"] == 0
+    assert result["tests_pass"] is False
