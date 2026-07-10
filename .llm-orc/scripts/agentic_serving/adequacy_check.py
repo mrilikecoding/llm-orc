@@ -14,8 +14,13 @@ Value-bearing forms: a comparison containing a real call whose two sides
 are not the same expression (directly or via a variable assigned from the
 same call — the tautology channel); a truthy assert that IS a real call
 (``assert is_even(4)``); unittest assert methods over a real call; an
-exception-expectation try/except around a real call. Reflection calls
-(callable/hasattr/isinstance/type/...) are never value-bearing.
+exception-expectation try/except around a real call; a mutation-pattern
+compare — a name (or subscript of it) checked against an independent
+literal/container after that name was passed as an argument to a real
+call earlier in the same test body (the spike's turn1_s5 false-reject
+class, 2026-07-10: ``add_todo(todos, "x"); assert todos == ["x"]``).
+Reflection calls (callable/hasattr/isinstance/type/...) are never
+value-bearing.
 
 Emits the judge seat's contract: {"tests_adequate": bool, "reason": str} —
 the accept gate reads it unchanged. Deterministic control per the standing
@@ -27,6 +32,7 @@ from __future__ import annotations
 import ast
 import json
 import sys
+from collections.abc import Iterator
 from typing import Any
 
 from _helpers import deps as _deps
@@ -139,6 +145,89 @@ def _expect_raise_with(node: ast.With | ast.AsyncWith) -> bool:
     return False
 
 
+def _literal_like(node: ast.AST) -> bool:
+    """A literal or a container of literals — an independent expected value
+    the code cannot have produced."""
+    if isinstance(node, ast.Constant):
+        return True
+    if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
+        return all(_literal_like(e) for e in node.elts)
+    if isinstance(node, ast.Dict):
+        keys_ok = all(k is not None and _literal_like(k) for k in node.keys)
+        return keys_ok and all(_literal_like(v) for v in node.values)
+    if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.UAdd, ast.USub)):
+        return _literal_like(node.operand)
+    return False
+
+
+def _base_name(node: ast.expr) -> str:
+    """The underlying name of a Name or a (nested) subscript of one."""
+    while isinstance(node, ast.Subscript):
+        node = node.value
+    return node.id if isinstance(node, ast.Name) else ""
+
+
+def _call_arg_names(stmt: ast.stmt) -> set[str]:
+    """Bare names passed as arguments to real calls in one statement —
+    candidates a ``None``-returning mutator may have mutated."""
+    names: set[str] = set()
+    for call in _real_calls(stmt):
+        for arg in (*call.args, *(kw.value for kw in call.keywords)):
+            if isinstance(arg, ast.Name):
+                names.add(arg.id)
+    return names
+
+
+def _mutation_compare(node: ast.Compare, mutated: set[str]) -> bool:
+    """A call-free compare of a mutated name (or subscript of it) against
+    an independent literal/container — the mutation-test pattern."""
+    if _real_calls(node) or len(node.comparators) != 1:
+        return False
+    left, right = node.left, node.comparators[0]
+    return any(
+        _base_name(side) in mutated and _literal_like(other)
+        for side, other in ((left, right), (right, left))
+    )
+
+
+def _ordered_statements(body: list[ast.stmt]) -> Iterator[ast.stmt]:
+    """Statements in source order, recursing into compound bodies."""
+    for stmt in body:
+        yield stmt
+        for handler in getattr(stmt, "handlers", []):
+            yield from _ordered_statements(handler.body)
+        for field in ("body", "orelse", "finalbody"):
+            nested = getattr(stmt, field, None)
+            if nested:
+                yield from _ordered_statements(nested)
+
+
+def _mutation_asserts(unit: ast.AST) -> int:
+    """Mutation-pattern asserts in a test unit: the compared name was passed
+    to a real call EARLIER in the same test body, then checked against a
+    literal/container (spike 2026-07-10, turn1_s5 false-reject class —
+    ``add_todo(todos, "x"); assert todos == ["x"]``). Disjoint from
+    ``_value_bearing_asserts``'s compare rule, which requires a real call
+    inside the compare; this rule requires the compare be call-free."""
+    count = 0
+    funcs = [
+        n
+        for n in ast.walk(unit)
+        if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+    ]
+    for func in funcs:
+        mutated: set[str] = set()
+        for stmt in _ordered_statements(func.body):
+            if (
+                isinstance(stmt, ast.Assert)
+                and isinstance(stmt.test, ast.Compare)
+                and _mutation_compare(stmt.test, mutated)
+            ):
+                count += 1
+            mutated |= _call_arg_names(stmt)
+    return count
+
+
 def _value_bearing_asserts(unit: ast.AST) -> int:
     """Value-bearing asserts within one test unit (function or class)."""
     assigned = _assigned_call_signatures(unit)
@@ -167,7 +256,7 @@ def _value_bearing_asserts(unit: ast.AST) -> int:
                 and _has_failure_signal(node.body)
             ):
                 count += 1
-    return count
+    return count + _mutation_asserts(unit)
 
 
 def _is_test_class(node: ast.ClassDef) -> bool:

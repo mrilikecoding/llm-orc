@@ -80,6 +80,53 @@ def test_expected_value_derived_from_the_same_call_is_tautological() -> None:
     assert verdict["tests_adequate"] is False
 
 
+def test_mutation_pattern_assert_is_value_bearing() -> None:
+    """The spike's turn1_s5 r1 false-reject (2026-07-10): a None-returning
+    mutator is verified by passing a local to the call and comparing that
+    local to an independent literal afterwards. For a task shaped 'add an
+    item to a list', mutation style is the natural correct test."""
+    verdict = _check(
+        "add_todo",
+        "def add_todo(todos, item):\n    todos.append(item)",
+        'def test_add():\n    todos = []\n    add_todo(todos, "x")\n'
+        '    assert todos == ["x"]',
+    )
+    assert verdict["tests_adequate"] is True
+
+
+def test_mutation_pattern_subscript_assert_is_value_bearing() -> None:
+    verdict = _check(
+        "add_todo",
+        "def add_todo(todos, item):\n    todos.append(item)",
+        'def test_add():\n    todos = []\n    add_todo(todos, "x")\n'
+        '    assert todos[0] == "x"',
+    )
+    assert verdict["tests_adequate"] is True
+
+
+def test_compare_of_two_untouched_names_is_not_value_bearing() -> None:
+    """A compare with no call anywhere in the body stays inadequate — the
+    mutation rule needs the name to have been passed to a real call first."""
+    verdict = _check(
+        "add_todo",
+        "def add_todo(todos, item):\n    todos.append(item)",
+        'def test_add():\n    todos = ["x"]\n    assert todos == ["x"]',
+    )
+    assert verdict["tests_adequate"] is False
+
+
+def test_mutation_compare_against_a_non_literal_is_not_value_bearing() -> None:
+    """Comparing the mutated name to another plain name is not an
+    independent expected value — only literals/containers count."""
+    verdict = _check(
+        "add_todo",
+        "def add_todo(todos, item):\n    todos.append(item)",
+        "def test_add():\n    todos = []\n    expected = todos\n"
+        '    add_todo(todos, "x")\n    assert todos == expected',
+    )
+    assert verdict["tests_adequate"] is False
+
+
 def test_unittest_assert_methods_are_value_bearing() -> None:
     verdict = _check(
         "add",
