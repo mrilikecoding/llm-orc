@@ -82,10 +82,21 @@ _CTX_TOKEN_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]{2,}")
 # instead of materializing a corrupted file.
 _READ_FILE_CAP = 24576
 _READ_FAIL_REASON_CAP = 200
-# OpenCode's read tool returns a line-number gutter ("00001| ..."); strip it
-# only when every non-empty line carries one (assumption to verify against
-# the captured wire — see the live-validation task).
+# Legacy line-number gutter ("00001| ..."); strip it only when every
+# non-empty line carries one. Not what real OpenCode sends (captured wire,
+# 2026-07-09, shows the "N: " gutter below) — kept for other clients that
+# may use this shape.
 _LINE_NUM_GUTTER_RE = re.compile(r"^\s*\d+\| ?")
+# OpenCode 1.17.15 wraps a successful read in <path>/<type>/<content> tags
+# (captured wire, 2026-07-09): the body is everything between the <content>
+# tags, each source line carries an unpadded "N: " gutter (original
+# indentation preserved after it; an empty source line renders as "N: "),
+# and an "(End of file - total N lines)" trailer sits inside <content>
+# after a blank line. A failed read is a bare "File not found: ..." string —
+# no tags, no "Error" prefix.
+_CONTENT_TAG_RE = re.compile(r"<content>(.*?)</content>", re.DOTALL)
+_END_OF_FILE_TRAILER_RE = re.compile(r"^\(End of file - total \d+ lines?\)$")
+_OPENCODE_GUTTER_RE = re.compile(r"^\d+: ?")
 
 # The serve's own reject-status surface (emit.py composes it). In-session
 # rejects accumulate on the append-only wire; rendered back into generation
@@ -290,9 +301,19 @@ def _read_call_paths(messages: Sequence[Any]) -> dict[str, str]:
 
 
 def _normalize_read(content: str) -> str:
-    """Client read output as plain source: strip a <file> wrapper and a
-    uniform line-number gutter when present."""
-    lines = content.strip().splitlines()
+    """Client read output as plain source.
+
+    If a <content>...</content> section exists (OpenCode's wrapped success
+    form), the body is what's between the tags — everything else (<path>,
+    <type>) is dropped. The end-of-file trailer line is dropped next.
+    Legacy handling then strips a <file>/</file> wrapper pair and a uniform
+    "NNNNN| " gutter (other clients may use it), and finally the OpenCode
+    "N: " gutter is stripped when every non-empty line carries one.
+    """
+    match = _CONTENT_TAG_RE.search(content)
+    body = match.group(1) if match else content
+    lines = body.strip().splitlines()
+    lines = [line for line in lines if not _END_OF_FILE_TRAILER_RE.match(line.strip())]
     if lines and lines[0].strip() == "<file>":
         lines = lines[1:]
     if lines and lines[-1].strip() == "</file>":
@@ -300,17 +321,29 @@ def _normalize_read(content: str) -> str:
     non_empty = [line for line in lines if line.strip()]
     if non_empty and all(_LINE_NUM_GUTTER_RE.match(line) for line in non_empty):
         lines = [_LINE_NUM_GUTTER_RE.sub("", line, count=1) for line in lines]
+    elif non_empty and all(_OPENCODE_GUTTER_RE.match(line) for line in non_empty):
+        lines = [_OPENCODE_GUTTER_RE.sub("", line, count=1) for line in lines]
     return "\n".join(lines).strip()
 
 
 def _render_read_block(path: str, raw: str) -> str:
     """A read result as a context block (issue #83 grammar). Failure and
     oversize variants are single header lines so gather never materializes
-    them and classify can refuse instead of re-requesting (one-round bound)."""
+    them and classify can refuse instead of re-requesting (one-round bound).
+
+    OpenCode's <content>-wrapped success form (captured wire, 2026-07-09) is
+    checked BEFORE the failure-prefix heuristic — a structural check, so a
+    source file whose first line happens to read "Error ..." can never be
+    misclassified as a failed read.
+    """
     flat = " ".join((raw or "").strip().split())
-    if not flat or flat.lower().startswith("error"):
-        reason = flat[:_READ_FAIL_REASON_CAP] or "empty read result"
-        return f"assistant: [read {path} (failed)] {reason}"
+    if not flat:
+        return f"assistant: [read {path} (failed)] empty read result"
+    if "<content>" not in raw:
+        lowered = flat.lower()
+        if lowered.startswith("file not found") or lowered.startswith("error"):
+            reason = flat[:_READ_FAIL_REASON_CAP]
+            return f"assistant: [read {path} (failed)] {reason}"
     normalized = _normalize_read(raw)
     if len(normalized) > _READ_FILE_CAP:
         return f"assistant: [read {path} (oversize)]"

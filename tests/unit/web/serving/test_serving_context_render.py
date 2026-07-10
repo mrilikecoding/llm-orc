@@ -497,6 +497,92 @@ def test_write_outcome_falls_back_to_write_when_nothing_advertised() -> None:
     assert call.tool_calls[0].name == "write"
 
 
+def test_opencode_wrapped_read_result_normalizes_to_plain_source() -> None:
+    """Captured wire (opencode 1.17.15, 2026-07-09): a successful read wraps
+    plain source in <path>/<type>/<content> tags with an unpadded "N: "
+    line-number gutter and an "(End of file - total N lines)" trailer inside
+    <content>. The rendered block must carry the dedented original source —
+    no tags, no gutter, no trailer."""
+    raw = (
+        "<path>/abs/path/to/storage.py</path>\n"
+        "<type>file</type>\n"
+        "<content>\n"
+        "1: class Store:\n"
+        "2:     def __init__(self) -> None:\n"
+        "3:         self._data: dict[str, str] = {}\n"
+        "4: \n"
+        "5:     def put(self, key: str, value: str) -> None:\n"
+        "6:         self._data[key] = value\n"
+        "\n"
+        "(End of file - total 6 lines)\n"
+        "</content>"
+    )
+    messages = [
+        ChatMessage(role="user", content="add a get() method to storage.py"),
+        ChatMessage(
+            role="assistant", content=None, tool_calls=(_read_call("c1", "storage.py"),)
+        ),
+        ChatMessage(role="tool", tool_call_id="c1", content=raw),
+    ]
+
+    rendered = _render_context(messages)
+
+    assert "[read storage.py]" in rendered
+    assert "class Store:" in rendered
+    assert "    def put(self, key: str, value: str) -> None:" in rendered
+    assert "<path>" not in rendered
+    assert "<type>" not in rendered
+    assert "<content>" not in rendered
+    assert "End of file" not in rendered
+    assert "1: class Store:" not in rendered
+
+
+def test_opencode_file_not_found_renders_as_failed() -> None:
+    """Captured wire (opencode 1.17.15, 2026-07-09): a failed read is a bare
+    string, no tags, no 'Error' prefix."""
+    messages = [
+        ChatMessage(role="user", content="fix gone.py"),
+        ChatMessage(
+            role="assistant", content=None, tool_calls=(_read_call("c1", "gone.py"),)
+        ),
+        ChatMessage(
+            role="tool", tool_call_id="c1", content="File not found: /x/y/gone.py"
+        ),
+    ]
+
+    rendered = _render_context(messages)
+
+    assert "[read gone.py (failed)] File not found: /x/y/gone.py" in rendered
+
+
+def test_content_wrapped_result_starting_with_error_is_still_success() -> None:
+    """The <content> structural check outranks the failure-prefix heuristic:
+    a source file whose first line reads "ERRORS = ..." is still success."""
+    raw = (
+        "<path>/abs/path/to/errors.py</path>\n"
+        "<type>file</type>\n"
+        "<content>\n"
+        '1: ERRORS = ["a", "b"]\n'
+        "2: \n"
+        "\n"
+        "(End of file - total 2 lines)\n"
+        "</content>"
+    )
+    messages = [
+        ChatMessage(role="user", content="fix errors.py"),
+        ChatMessage(
+            role="assistant", content=None, tool_calls=(_read_call("c1", "errors.py"),)
+        ),
+        ChatMessage(role="tool", tool_call_id="c1", content=raw),
+    ]
+
+    rendered = _render_context(messages)
+
+    assert "[read errors.py (failed)]" not in rendered
+    assert "[read errors.py]" in rendered
+    assert 'ERRORS = ["a", "b"]' in rendered
+
+
 def test_read_continuation_is_not_acked() -> None:
     messages = [
         ChatMessage(role="user", content="fix calc.py"),
