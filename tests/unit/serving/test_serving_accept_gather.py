@@ -177,6 +177,109 @@ def test_executor_reads_contract_from_gather_dependency() -> None:
     assert result["tests"] == TESTS
 
 
+# --- round-2 repairs, end to end (spike 2026-07-10) ---
+
+JUDGE = REPO / ".llm-orc" / "scripts" / "agentic_serving" / "adequacy_check.py"
+GATE = REPO / ".llm-orc" / "scripts" / "agentic_serving" / "accept_gate.py"
+
+_STORAGE_CODE = (
+    "import json\n"
+    "import os\n"
+    "def save_todos(todos):\n"
+    "    if todos is None:\n"
+    "        raise TypeError('todos must be a list')\n"
+    "    with open('todos.json', 'w') as f:\n"
+    "        json.dump(todos, f)\n"
+    "def load_todos():\n"
+    "    if not os.path.exists('todos.json'):\n"
+    "        return []\n"
+    "    with open('todos.json') as f:\n"
+    "        return json.load(f)\n"
+)
+
+# one good test + the three spike defect classes, over CORRECT code
+_COMPOSITE_TESTS = (
+    "def test_roundtrip():\n"
+    '    save_todos(["Buy groceries"])\n'
+    '    assert load_todos() == ["Buy groceries"]\n'
+    "def test_save_todos_saves_todos_to_file():\n"
+    '    todos = ["Buy groceries", "Walk the dog"]\n'
+    "    save_todos(todos)\n"
+    '    assert file_exists("todos.json")\n'
+    "def test_load_todos_returns_empty_list_on_missing_file():\n"
+    "    import os\n"
+    '    os.remove("todos.json")\n'
+    "    assert load_todos() == []\n"
+    "def test_save_todos_handles_exceptions():\n"
+    "    try:\n"
+    "        save_todos(None)\n"
+    "    except TypeError:\n"
+    '        assert False, "Expected TypeError"\n'
+    "    else:\n"
+    '        assert False, "Did not raise TypeError"\n'
+)
+
+
+def _script(script: Path, payload: dict[str, Any]) -> dict[str, Any]:
+    out = subprocess.run(
+        [sys.executable, str(script)],
+        input=json.dumps(payload),
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    result: dict[str, Any] = json.loads(out)
+    return result
+
+
+def test_composite_defective_suite_over_correct_code_accepts_repaired() -> None:
+    """The round-2 repair layer end to end (spike 2026-07-10): a suite
+    carrying the three observed defect classes plus one good test, over
+    correct code, flows gather -> executor -> judge -> gate and ACCEPTS —
+    the unbound-callable test excised, the unguarded remove suppressed,
+    the inverted expectation rewritten, and the shipped artifact carrying
+    exactly the surviving/repaired tests."""
+    criteria = "Write save_todos(todos) and load_todos() in storage.py"
+    gathered = _gather(
+        criteria,
+        "```python\n" + _COMPOSITE_TESTS + "```",
+        "```python\n" + _STORAGE_CODE + "```",
+    )
+    executor_resp = _executor_from_gather(gathered)
+
+    assert executor_resp["tests_excised"] == 1
+    assert executor_resp["tests_removals_guarded"] == 1
+    assert executor_resp["tests_raises_rewritten"] == 1
+    assert executor_resp["tests_pass"] is True, executor_resp["report"]
+    assert executor_resp["n_tests"] == 3
+
+    repaired = executor_resp["tests"]
+    assert "file_exists" not in repaired
+    assert "with contextlib.suppress(FileNotFoundError):" in repaired
+    assert "with pytest.raises(TypeError):" in repaired
+    assert "test_roundtrip" in repaired
+
+    judge_resp = _script(
+        JUDGE,
+        {
+            "input_data": criteria,
+            "dependencies": {"executor": {"response": json.dumps(executor_resp)}},
+        },
+    )
+    assert judge_resp["tests_adequate"] is True
+
+    verdict = _script(
+        GATE,
+        {
+            "dependencies": {
+                "executor": {"response": json.dumps(executor_resp)},
+                "judge": {"response": json.dumps(judge_resp)},
+            }
+        },
+    )
+    assert verdict["accept"] is True, verdict
+
+
 def test_gather_strips_conversation_context_from_the_requirement() -> None:
     """With rung-1 context threading, the shape's base input carries the
     conversation ahead of the 'Current request:' marker. The requirement the

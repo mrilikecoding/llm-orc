@@ -13,13 +13,12 @@ CONTENT; the serving classify owns the DESTINATION path — shape combines them.
 from __future__ import annotations
 
 import json
+import sys
 
 from _helpers import extract_code as _extract_code
 from _helpers import payload as __payload
 from _helpers import response as _response
 from _helpers import terminal as _terminal
-import re
-import sys
 
 
 def _deps(raw: str) -> dict:
