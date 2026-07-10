@@ -18,7 +18,9 @@ from __future__ import annotations
 
 import ast
 import json
+import keyword
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -33,6 +35,37 @@ DEFAULT_TIMEOUT = 15.0
 # module globals and written files cannot leak across tests. Bounded and
 # surfaced — no silent caps.
 _MAX_ISOLATED_TESTS = 20
+
+# A bare-name assert on a name the tests never assign (``assert load`` /
+# ``assert load, "msg"``) checks only module-object truthiness — a defined
+# function is always truthy, so the line carries no test value, and the
+# 4-arm tier spike (2026-07-09) showed no seat at any tier/thinking mode
+# satisfies a garbage one. Stripped before execution; the echoed (shipped)
+# tests are the sanitized suite. ``assert result`` on an assigned local is
+# a real truthiness check and is kept.
+_BARE_ASSERT_RE = re.compile(r"^\s*assert\s+([A-Za-z_]\w*)\s*(?:,.*)?$")
+_ASSIGNED_NAME_RE = re.compile(r"^\s*([A-Za-z_]\w*)\s*=[^=]", re.MULTILINE)
+
+
+def _sanitize_tests(tests: str) -> tuple[str, int]:
+    """Tests with value-free bare-name assert lines removed, and the count."""
+    assigned = set(_ASSIGNED_NAME_RE.findall(tests))
+    kept: list[str] = []
+    dropped = 0
+    # Skip Python keywords and built-in constants that are intentionally asserted
+    skip_names = {"True", "False", "None", "__name__", "__doc__"}
+    for line in tests.splitlines():
+        match = _BARE_ASSERT_RE.match(line)
+        if (
+            match
+            and match.group(1) not in assigned
+            and not keyword.iskeyword(match.group(1))
+            and match.group(1) not in skip_names
+        ):
+            dropped += 1
+            continue
+        kept.append(line)
+    return "\n".join(kept) + ("\n" if tests.endswith("\n") else ""), dropped
 
 
 def _from_dependencies(envelope: dict[str, object]) -> dict[str, object] | None:
@@ -256,6 +289,7 @@ def main() -> None:
     requirement = str(data.get("requirement", ""))
     code = str(data.get("code", ""))
     tests = str(data.get("tests", ""))
+    tests, tests_sanitized = _sanitize_tests(tests)
     raw_workspace = data.get("workspace")
     workspace = (
         {str(k): str(v) for k, v in raw_workspace.items()}
@@ -275,6 +309,7 @@ def main() -> None:
                 "tests": tests,
                 "tests_pass": tests_pass,
                 "n_tests": n_tests,
+                "tests_sanitized": tests_sanitized,
                 "report": report,
             }
         )

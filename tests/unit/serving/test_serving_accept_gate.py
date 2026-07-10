@@ -290,3 +290,41 @@ def test_executor_still_fails_genuinely_wrong_code() -> None:
     )
     assert result["tests_pass"] is False
     assert "test_add" in result["report"]
+
+
+STRAY_ASSERT_TESTS = (
+    "def test_overwrite():\n"
+    "    save_todos(['a'])\n"
+    "    assert load\n"
+    "    assert load_todos() == ['a']\n"
+)
+STRAY_CODE = (
+    "_d = {}\n"
+    "def save_todos(t):\n    _d['t'] = t\n"
+    "def load_todos():\n    return _d.get('t', [])\n"
+)
+
+
+def test_bare_name_assert_is_sanitized_before_execution() -> None:
+    result = _executor("storage", STRAY_CODE, STRAY_ASSERT_TESTS)
+    assert result["tests_pass"] is True
+    assert result["tests_sanitized"] == 1
+    assert "assert load\n" not in result["tests"]
+    assert "assert load_todos() == ['a']" in result["tests"]
+
+
+def test_value_bearing_asserts_are_never_sanitized() -> None:
+    tests = "def test_add():\n    assert add(1, 2) == 3\n"
+    result = _executor("adds", "def add(a, b):\n    return a + b\n", tests)
+    assert result["tests_pass"] is True
+    assert result["tests_sanitized"] == 0
+    assert "assert add(1, 2) == 3" in result["tests"]
+
+
+def test_bare_assert_on_an_assigned_local_is_kept() -> None:
+    # 'assert result' on a test-local CAN be a real truthiness check —
+    # only names never assigned in the tests source are value-free.
+    tests = "def test_t():\n    result = add(1, 2)\n    assert result\n"
+    result = _executor("adds", "def add(a, b):\n    return a + b\n", tests)
+    assert result["tests_sanitized"] == 0
+    assert "assert result" in result["tests"]
