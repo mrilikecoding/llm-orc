@@ -218,6 +218,41 @@ def _turn(raw: str) -> dict:
     return {"task": ""}
 
 
+def _route(
+    *,
+    is_explain: bool,
+    run_signal: bool,
+    has_run_block: bool,
+    needs_files: list[str],
+    read_failed: str,
+    tests_primary: bool,
+    has_build_signal: bool,
+    kind_hint: str,
+) -> tuple[str, str, bool, bool]:
+    """(target, kind, build, needs_decider) — the deterministic routing chain."""
+    if is_explain:
+        return _EXPLAIN_SEAT, "explanation", False, False
+    if run_signal and has_run_block:
+        # issue #83 run half: the client ran the command — the deliverable
+        # is the deterministic verdict, one run round per turn.
+        return "run-verdict", "run_verdict", False, False
+    if run_signal:
+        # issue #83 run half: delegate one closed-template test run.
+        return "need-run", "need_run", False, False
+    if needs_files or read_failed:
+        # issue #83: request the client files (or refuse a failed request)
+        # before any seat runs — the need-files shape is a cheap script echo.
+        return "need-files", "need_files", False, False
+    if tests_primary:
+        # the deliverable IS a test file, run against the workspace alone
+        # (issue #98) — never build-gated's code/tests duality
+        return _TESTS_SEAT, "python_tests", True, False
+    if has_build_signal:
+        return _DEFAULT_CODE_SEAT, kind_hint, True, False
+    # No structural signal — hand the routing to the guarded model decider.
+    return "", "", False, True
+
+
 def main() -> None:
     turn = _turn(sys.stdin.read().strip())
     task = str(turn.get("task", "")).strip()
@@ -247,30 +282,16 @@ def main() -> None:
         )
     needs_run = _run_test_command(task) if run_signal and not has_run_block else ""
 
-    if is_explain:
-        target, kind, build, needs_decider = _EXPLAIN_SEAT, "explanation", False, False
-    elif run_signal and has_run_block:
-        # issue #83 run half: the client ran the command — the deliverable
-        # is the deterministic verdict, one run round per turn.
-        target, kind, build, needs_decider = "run-verdict", "run_verdict", False, False
-    elif run_signal:
-        # issue #83 run half: delegate one closed-template test run.
-        target, kind, build, needs_decider = "need-run", "need_run", False, False
-    elif needs_files or read_failed:
-        # issue #83: request the client files (or refuse a failed request)
-        # before any seat runs — the need-files shape is a cheap script echo.
-        target, kind, build, needs_decider = "need-files", "need_files", False, False
-    elif tests_primary:
-        # the deliverable IS a test file, run against the workspace alone
-        # (issue #98) — never build-gated's code/tests duality
-        target, kind, build, needs_decider = _TESTS_SEAT, "python_tests", True, False
-    elif has_build_signal:
-        target = _DEFAULT_CODE_SEAT
-        kind = turn.get("kind", "python_module")
-        build, needs_decider = True, False
-    else:
-        # No structural signal — hand the routing to the guarded model decider.
-        target, kind, build, needs_decider = "", "", False, True
+    target, kind, build, needs_decider = _route(
+        is_explain=is_explain,
+        run_signal=run_signal,
+        has_run_block=has_run_block,
+        needs_files=needs_files,
+        read_failed=read_failed,
+        tests_primary=tests_primary,
+        has_build_signal=has_build_signal,
+        kind_hint=str(turn.get("kind", "python_module")),
+    )
 
     if target == _TESTS_SEAT:
         if named_basename.startswith("test_"):
