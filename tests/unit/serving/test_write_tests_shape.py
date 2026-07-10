@@ -46,11 +46,15 @@ TESTS = (
     "    store.add(1, 'a')\n"
     "    assert store.list_tasks() == ['a']\n"
 )
+# fenced block grammar (2026-07-10): rendered bodies carry a two-space indent
+_FENCED_STORE = "\n".join(
+    f"  {line}" if line.strip() else "" for line in STORE_MODULE.splitlines()
+)
 CONTEXT_TASK = (
     "Conversation so far:\n"
     "assistant: [wrote storage.py]\n"
-    f"{STORE_MODULE}"
-    "\nCurrent request: Write tests for storage.py"
+    f"{_FENCED_STORE}"
+    "\n\nCurrent request: Write tests for storage.py"
 )
 
 
