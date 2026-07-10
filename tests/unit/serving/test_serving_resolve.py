@@ -172,3 +172,24 @@ def test_decider_path_defaults_read_fields_empty() -> None:
     )
     assert routing["needs_files"] == []
     assert routing["read_failed"] == ""
+
+
+def test_needs_run_passes_through_resolve() -> None:
+    routing = _resolve(
+        _structural(
+            target="need-run",
+            kind="need_run",
+            build=False,
+            needs_run="pytest -q",
+        )
+    )
+    assert routing["target"] == "need-run"
+    assert routing["needs_run"] == "pytest -q"
+
+
+def test_decider_path_defaults_needs_run_empty() -> None:
+    routing = _resolve(
+        _structural(target="", kind="", build=False, needs_decider=True),
+        decide_response='{"target": "explainer"}',
+    )
+    assert routing["needs_run"] == ""

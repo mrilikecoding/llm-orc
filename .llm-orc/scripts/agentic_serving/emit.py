@@ -10,6 +10,7 @@ serve never writes a deliverable that failed destination-validity.
 
     read failed:     {"finish": true, "content": "Refused: <read_failed reason>"}
     needs files:     {"finish": false, "reads": ["<path>", ...]}
+    needs run:       {"finish": false, "run": "<command>"}
     build + valid:   {"finish": false, "file": "<path>", "content": "<source>"}
     build + refused: {"finish": true, "content": "Refused: <reason>"}
     non-build:       {"finish": true, "content": "<prose>"}
@@ -48,6 +49,7 @@ def main() -> None:
     seat_admitted = gated.get("seat_admitted")
     needs_files = gated.get("needs_files") or []
     read_failed = str(gated.get("read_failed", ""))
+    needs_run = str(gated.get("needs_run", ""))
 
     if read_failed:
         # issue #83: one read round per turn — a failed request refuses
@@ -56,6 +58,10 @@ def main() -> None:
     elif needs_files:
         # issue #83: delegate the file reads to the client permission seam.
         outcome = {"finish": False, "reads": list(needs_files)}
+    elif needs_run:
+        # issue #83 run half: delegate one closed-template test run to the
+        # client permission seam.
+        outcome = {"finish": False, "run": needs_run}
     elif seat_admitted is False:
         # The seat's output did not meet its own seat-owned contract (WP-E8;
         # ADR-046 §2). Refuse before shipping — a distinct, higher-priority gate

@@ -128,18 +128,25 @@ session record, plexus lenses):
 
 ## Current capability coverage
 
-Build (accept-gated), explain, within-session conversation memory, and
-**client-file reads** are implemented and grounded against a live endpoint
-and a literal `opencode run` (multi-turn battery 2026-07-08: build → "did
-you see my previous query?" → "add tests for it", all green;
-existing-file battery 2026-07-09: "write tests for existing storage.py" →
-read tool_call → gated test deliverable running green against the real
-module, and an honest one-round refusal when the read fails). A turn
-naming a file the serve can't see delegates a `read` through the
-permission seam (`docs/plans/2026-07-09-client-file-reads-design.md`);
-the result materializes into the gate sandbox and stays retrievable in
-later turns. Remaining frontier on the execution surface: client-delegated
-test runs and discovery of files the turn doesn't name. Context older than
+Build (accept-gated), explain, within-session conversation memory,
+**client-file reads**, and **client-delegated test runs** are implemented
+and grounded against a live endpoint and a literal `opencode run`
+(multi-turn battery 2026-07-08: build → "did you see my previous query?"
+→ "add tests for it", all green; existing-file battery 2026-07-09:
+"write tests for existing storage.py" → read tool_call → gated test
+deliverable running green against the real module, and an honest
+one-round refusal when the read fails; run battery 2026-07-09: "run
+test_calc.py" → bash tool_call → client-executed pytest → honest verdict,
+green and red both). A turn naming a file the serve can't see delegates a
+`read` through the permission seam
+(`docs/plans/2026-07-09-client-file-reads-design.md`); the result
+materializes into the gate sandbox and stays retrievable in later turns.
+A run turn delegates one closed-template `pytest` command through the
+same seam and replies with a deterministic verdict parsed from pytest's
+own summary — zero model calls end to end
+(`docs/plans/2026-07-09-client-run-delegation-design.md`). Remaining
+frontier on the execution surface: discovery of files the turn doesn't
+name, and chaining write → run inside one fix turn. Context older than
 the render window is dropped until the lossless session record (design
 §Rung 2′) lands.
 

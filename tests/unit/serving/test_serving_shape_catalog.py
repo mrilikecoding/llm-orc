@@ -116,3 +116,37 @@ class TestNoAutoPromotion:
             if any(token in name.lower() for token in ("promote", "stabilize", "trust"))
         ]
         assert promotion_like == []
+
+
+class TestDispatchResolvability:
+    """Every catalog shape must be resolvable where dynamic dispatch looks.
+
+    Dispatch resolution (``_resolve_ensemble_reference``) searches ensemble
+    directories NON-recursively, so a shape living only under
+    ``ensembles/agentic-serving/`` routes fine but fails at the seat — a
+    latent break that stays invisible for shapes whose emit outcome rides
+    the routing decision (need-files shipped that way in v0.18.6) and
+    surfaces the first time a shape's deliverable comes from the seat
+    (run-verdict, live 2026-07-09).
+    """
+
+    def test_every_serving_catalog_shape_has_an_identical_top_level_copy(
+        self,
+    ) -> None:
+        repo = Path(__file__).resolve().parents[3]
+        ensembles = repo / ".llm-orc" / "ensembles"
+        catalog_dir = ensembles / "agentic-serving"
+        catalog = shape_catalog(catalog_dir)
+
+        missing = []
+        divergent = []
+        for shape_name in set(catalog.values()):
+            top_level = ensembles / f"{shape_name}.yaml"
+            catalog_copy = catalog_dir / f"{shape_name}.yaml"
+            if not top_level.exists():
+                missing.append(shape_name)
+            elif top_level.read_text() != catalog_copy.read_text():
+                divergent.append(shape_name)
+
+        assert not missing, f"catalog shapes not dispatch-resolvable: {missing}"
+        assert not divergent, f"top-level copies drifted from catalog: {divergent}"
