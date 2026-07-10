@@ -122,3 +122,10 @@ def test_summaryless_output_with_count_shaped_noise_reports_honestly() -> None:
     verdict = _verdict(_dispatch(block))
     assert "no pytest summary" in verdict
     assert "Segmentation fault" in verdict
+
+
+def test_skipped_only_summary_is_reported_not_treated_as_missing() -> None:
+    block = "assistant: [ran pytest -q]\n  sss\n  3 skipped in 0.01s"
+    verdict = _verdict(_dispatch(block))
+    assert "3 skipped" in verdict
+    assert "no pytest summary" not in verdict

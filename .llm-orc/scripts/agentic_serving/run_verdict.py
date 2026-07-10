@@ -23,7 +23,8 @@ _NO_TESTS_RE = re.compile(r"\bno tests ran\b", re.IGNORECASE)
 # the real result (review finding 2026-07-09). The last few lines are
 # scanned, latest match wins, to tolerate a client-appended trailer.
 _SUMMARY_SHAPE_RE = re.compile(
-    r"\b(?:\d+ (?:passed|failed|errors?)|no tests ran)\b.*\bin [\d.]+s\b",
+    r"\b(?:\d+ (?:passed|failed|errors?|skipped|deselected|xfailed|xpassed"
+    r"|warnings?)|no tests ran)\b.*\bin [\d.]+s\b",
     re.IGNORECASE,
 )
 _FAILING_LINE_RE = re.compile(r"^(?:FAILED|ERROR)\b")
@@ -102,6 +103,10 @@ def _verdict(command: str, variant: str, detail: str, body: str) -> str:
     failed = _count(r"\b(\d+) failed\b", summary)
     passed = _count(r"\b(\d+) passed\b", summary)
     errors = _count(r"\b(\d+) errors?\b", summary)
+    if failed is None and passed is None and errors is None:
+        # a summary with none of the verdict-bearing counts (all skipped /
+        # deselected) — echo pytest's own line rather than claiming no summary
+        return f"Ran `{command}`: {summary}"
     counts = ((failed, "failed"), (errors, "errored"), (passed, "passed"))
     parts = [f"{count} {label}" for count, label in counts if count]
     verdict = f"Ran `{command}`: {', '.join(parts) or '0 tests'}."

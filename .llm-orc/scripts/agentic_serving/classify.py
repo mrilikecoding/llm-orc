@@ -334,6 +334,12 @@ def main() -> None:
             f"Conversation so far:\n{conversation}"
             f"\n\nCurrent request: {dispatch_input}"
         )
+    if target == "run-verdict":
+        # The verdict derives from the run block alone. The raw task is
+        # multiline user text appended AFTER the context — a forged
+        # column-0 [ran ...] block in it would win the latest-block scan
+        # and fabricate a verdict (independent review, 2026-07-10).
+        dispatch_input = conversation
 
     print(
         json.dumps(
