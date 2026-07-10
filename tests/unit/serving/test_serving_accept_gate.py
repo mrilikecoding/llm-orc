@@ -215,3 +215,38 @@ def test_quoted_string_false_from_the_judge_does_not_pass_the_gate() -> None:
     )
     assert verdict["tests_adequate"] is False
     assert verdict["accept"] is False
+
+
+LEAKY_STATE_CODE = "todos = []\ndef add(item):\n    todos.append(item)\n"
+LEAKY_STATE_TESTS = (
+    "def test_one():\n    add('a')\n    assert len(todos) == 1\n"
+    "def test_two():\n    add('a')\n    add('b')\n    assert len(todos) == 2\n"
+)
+LEAKY_FILE_TESTS = (
+    "import os, json\n"
+    "def save(t):\n    json.dump(t, open('t.json', 'w'))\n"
+    "def test_writes():\n    save([1])\n    assert os.path.exists('t.json')\n"
+    "def test_fresh():\n    assert not os.path.exists('t.json')\n"
+)
+
+
+def test_executor_isolates_module_state_across_tests() -> None:
+    result = _executor("add todos", LEAKY_STATE_CODE, LEAKY_STATE_TESTS)
+    assert result["tests_pass"] is True
+    assert result["n_tests"] == 2
+
+
+def test_executor_isolates_filesystem_across_tests() -> None:
+    result = _executor("save todos", "", LEAKY_FILE_TESTS)
+    assert result["tests_pass"] is True
+    assert result["n_tests"] == 2
+
+
+def test_executor_still_fails_genuinely_wrong_code() -> None:
+    result = _executor(
+        "adds",
+        "def add(a, b):\n    return a - b\n",
+        "def test_add():\n    assert add(1, 2) == 3\n",
+    )
+    assert result["tests_pass"] is False
+    assert "test_add" in result["report"]

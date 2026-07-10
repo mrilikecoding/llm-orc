@@ -16,8 +16,10 @@ the contract and artifact to the isolated judge seat.
 
 from __future__ import annotations
 
+import ast
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -25,6 +27,12 @@ from pathlib import Path
 
 RUNNER = Path(__file__).with_name("accept_executor_runner.py")
 DEFAULT_TIMEOUT = 15.0
+
+# per-test isolation (seat-quality design 2026-07-09): each test function
+# runs in its own subprocess with its own fresh materialized directory, so
+# module globals and written files cannot leak across tests. Bounded and
+# surfaced — no silent caps.
+_MAX_ISOLATED_TESTS = 20
 
 
 def _from_dependencies(envelope: dict[str, object]) -> dict[str, object] | None:
@@ -73,32 +81,63 @@ def _timeout() -> float:
         return DEFAULT_TIMEOUT
 
 
-def _run_sandboxed(
+def _enumerate_tests(tests: str) -> tuple[list[str], bool] | None:
+    """(top-level test_* function names, has_testcase_classes), or ``None``
+    when the tests don't parse — the caller falls back to one legacy run."""
+    try:
+        tree = ast.parse(tests)
+    except SyntaxError:
+        return None
+    names = [
+        n.name
+        for n in tree.body
+        if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and n.name.startswith("test_")
+    ]
+    has_cases = any(isinstance(n, ast.ClassDef) for n in tree.body)
+    return names, has_cases
+
+
+def _materialize(
+    tmp: str,
     code: str,
     tests: str,
-    workspace: dict[str, str] | None = None,
-    target_file: str = "",
+    workspace: dict[str, str] | None,
+    target_file: str,
+) -> tuple[Path, Path]:
+    """Write one child's fresh sandbox dir: conversation-written workspace
+    files, then the edit turn's target-file shadow, then solution.py and
+    tests.py — exactly the materialization the legacy single run did."""
+    for name, body in (workspace or {}).items():
+        safe = Path(name).name
+        if safe and safe not in ("solution.py", "tests.py"):
+            (Path(tmp) / safe).write_text(str(body), encoding="utf-8")
+    safe_target = Path(target_file).name if target_file else ""
+    if safe_target and safe_target not in ("solution.py", "tests.py"):
+        (Path(tmp) / safe_target).write_text(code, encoding="utf-8")
+    code_path = Path(tmp) / "solution.py"
+    tests_path = Path(tmp) / "tests.py"
+    code_path.write_text(code, encoding="utf-8")
+    tests_path.write_text(tests, encoding="utf-8")
+    return code_path, tests_path
+
+
+def _run_one(
+    code: str,
+    tests: str,
+    workspace: dict[str, str] | None,
+    target_file: str,
+    only: str | None,
+    timeout: float,
 ) -> tuple[bool, str, int]:
-    timeout = _timeout()
     with tempfile.TemporaryDirectory() as tmp:
-        # conversation-written files (gather's workspace) so tests can import
-        # modules the conversation built; basenames only, no path traversal
-        for name, body in (workspace or {}).items():
-            safe = Path(name).name
-            if safe and safe not in ("solution.py", "tests.py"):
-                (Path(tmp) / safe).write_text(str(body), encoding="utf-8")
-        # an edit turn's deliverable shadows the stale workspace copy at its
-        # destination — mirroring what the client's write will do on accept
-        safe_target = Path(target_file).name if target_file else ""
-        if safe_target and safe_target not in ("solution.py", "tests.py"):
-            (Path(tmp) / safe_target).write_text(code, encoding="utf-8")
-        code_path = Path(tmp) / "solution.py"
-        tests_path = Path(tmp) / "tests.py"
-        code_path.write_text(code, encoding="utf-8")
-        tests_path.write_text(tests, encoding="utf-8")
+        code_path, tests_path = _materialize(tmp, code, tests, workspace, target_file)
+        argv = [sys.executable, str(RUNNER), str(code_path), str(tests_path)]
+        if only is not None:
+            argv += ["--only", only]
         try:
             completed = subprocess.run(
-                [sys.executable, str(RUNNER), str(code_path), str(tests_path)],
+                argv,
                 capture_output=True,
                 text=True,
                 timeout=timeout,
@@ -119,6 +158,43 @@ def _run_sandboxed(
         str(verdict.get("report", "")),
         int(verdict.get("n_tests", 0)),
     )
+
+
+def _run_sandboxed(
+    code: str,
+    tests: str,
+    workspace: dict[str, str] | None = None,
+    target_file: str = "",
+) -> tuple[bool, str, int]:
+    timeout = _timeout()
+    enumerated = _enumerate_tests(tests)
+    if enumerated is None or (not enumerated[0] and not enumerated[1]):
+        # unparseable or nothing enumerable: one legacy run reports it
+        return _run_one(code, tests, workspace, target_file, None, timeout)
+
+    names, has_cases = enumerated
+    capped = len(names) > _MAX_ISOLATED_TESTS
+    children: list[str | None] = list(names[:_MAX_ISOLATED_TESTS])
+    if has_cases:
+        children.append("__cases__")
+
+    failures: list[str] = []
+    total = 0
+    for only in children:
+        ok, report, n_tests = _run_one(
+            code, tests, workspace, target_file, only, timeout
+        )
+        total += n_tests
+        if not ok:
+            failures.append(report)
+    if capped:
+        failures.append(f"…capped at {_MAX_ISOLATED_TESTS} isolated tests")
+
+    # a load failure repeats identically in every child — report it once
+    deduped = list(dict.fromkeys(failures))
+    if deduped:
+        return False, "; ".join(deduped), total
+    return True, "all passed", total
 
 
 def main() -> None:
