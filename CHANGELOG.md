@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.18.7] - 2026-07-09
+
+### Added
+- Per-test isolation in the accept executor: each generated test function
+  runs in its own subprocess with its own fresh sandbox, so module-global
+  and filesystem state cannot leak across tests (the measured dominant
+  false-reject class). Child cap and an aggregate wall budget are both
+  surfaced in the report
+- Bare-name-assert sanitizer: value-free `assert <name>` lines on names
+  bound nowhere in the tests are stripped before execution (AST-grounded
+  binding detection — loop/with/walrus/param bindings all count)
+- Missing-import injection: whitelisted stdlib/pytest imports the
+  test-writer omitted are prepended, excluding names the code binds; the
+  shipped test artifact carries the sanitized+injected suite
+
+### Changed
+- classify routes "did/have you …" memory questions to explain
+  deterministically (previously rode the stochastic decider)
+- Recorded 10-turn ladder: 4/10 → 7/10 on the same seed
+
 ## [0.18.6] - 2026-07-09
 
 ### Added
