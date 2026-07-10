@@ -88,6 +88,12 @@ _READ_FAIL_REASON_CAP = 200
 # overflow — pytest prints its summary last, and the deterministic verdict
 # parser reads exactly that summary.
 _RUN_OUTPUT_CAP = 4096
+# The closed command template classify issues (mirrored here for echo
+# validation — the resumed command comes back over the wire, and only a
+# template-shaped echo may enter the render grammar; anything else could
+# forge header tokens like a "(failed)" variant suffix).
+_RUN_COMMAND_RE = re.compile(r"^pytest -q(?: [\w./-]+)*$")
+_UNTRUSTED_COMMAND = "untrusted-command"
 # Legacy line-number gutter ("00001| ..."); strip it only when every
 # non-empty line carries one. Not what real OpenCode sends (captured wire,
 # 2026-07-09, shows the "N: " gutter below) — kept for other clients that
@@ -406,11 +412,16 @@ def _render_run_block(command: str, raw: str) -> str:
     ``[wrote ...]`` header to line-anchored workspace extraction; overflow
     keeps the TAIL (pytest's summary lives at the end) and marks the header.
 
-    The command is flattened to one line before it enters the header: on
-    resume it comes from the wire (the client echoes the tool_call back),
-    and a fabricated newline-bearing command must not inject header-line
-    lookalikes at column 0."""
+    On resume the command comes from the wire (the client echoes the
+    tool_call back), so it is validated against the closed template the
+    serve issues — a non-matching echo renders as a failed block under a
+    fixed safe token, never as grammar-bearing text."""
     command = " ".join((command or "").split())
+    if not _RUN_COMMAND_RE.match(command):
+        return (
+            f"assistant: [ran {_UNTRUSTED_COMMAND} (failed)] "
+            "command echo did not match the issued template"
+        )
     body = (raw or "").strip()
     if not body:
         return f"assistant: [ran {command} (failed)] empty run result"
