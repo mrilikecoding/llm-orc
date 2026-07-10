@@ -39,10 +39,14 @@ execution.
 
 ## Turn flow (two passes)
 
-**Pass 1 — request.** classify detects the run signal (deterministic
-regex: an imperative run/rerun/execute verb with a tests/pytest object, or
-a named `test_`-file with a run verb) and no `[ran ...]` block after the
-latest user message. It routes to the `need-run` echo shape and carries
+**Pass 1 — request.** classify detects the run signal (deterministic:
+an imperative run/rerun/execute verb with a tests/pytest object in the
+same sentence fragment, or a named `test_`-file with a run verb — and NO
+build/edit verb anywhere in the turn: composite "write X and run it" /
+"fix X and rerun" turns route build-first, the follow-on run being the
+user's next turn; interrogative or explain-marker-LED turns stay explain,
+while a trailing marker like "…and tell me what failed" does not suppress
+the run) and no `[ran ...]` block after the latest user message. It routes to the `need-run` echo shape and carries
 `needs_run: "<command>"` through resolve → shape → form_gate → emit, which
 ships `{"finish": false, "run": "<command>"}`. The caller maps it to one
 bash tool_call (`{"command": "<command>", "description": "Run tests"}`)
@@ -57,9 +61,13 @@ block — output body indented two spaces (see hazard note) and TAIL-capped
 at `_RUN_OUTPUT_CAP` (pytest's summary lives at the end). classify sees
 the run signal AND a run block answering it → routes to `run-verdict`,
 a script node that extracts the latest run block and composes the verdict
-from pytest's own summary line: passed/failed/error counts, "no tests
-ran", or an honest could-not-parse report carrying the output tail. emit
-finishes prose.
+from pytest's own summary line — the last duration-anchored line only, so
+count-shaped text in captured stdout can never shadow the real result:
+passed/failed/error counts, "no tests ran", or an honest could-not-parse
+report carrying the output tail. emit finishes prose. The resumed
+command is validated against the issued closed template before it enters
+the render grammar; a non-matching echo renders as a failed block under a
+fixed safe token.
 
 Run blocks are selected ONLY from messages after the latest user message —
 run output is ephemeral verification evidence for the turn that requested
