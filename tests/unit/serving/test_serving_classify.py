@@ -255,3 +255,21 @@ def test_normal_decisions_carry_empty_read_fields() -> None:
     decision = _classify({"task": "write a function that adds two numbers"})
     assert decision["needs_files"] == []
     assert decision["read_failed"] == ""
+
+
+def test_did_you_memory_question_routes_to_explainer_deterministically() -> None:
+    decision = _classify({"task": "did you see my previous query?"})
+    assert decision["target"] == "explainer"
+    assert decision["build"] is False
+    assert decision["needs_decider"] is False
+
+
+def test_have_you_question_routes_to_explainer() -> None:
+    decision = _classify({"task": "have you written any tests yet?"})
+    assert decision["target"] == "explainer"
+
+
+def test_can_you_write_stays_a_build_turn() -> None:
+    decision = _classify({"task": "can you write a function that adds in add.py"})
+    assert decision["target"] != "explainer"
+    assert decision["build"] is True
