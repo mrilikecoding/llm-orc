@@ -718,3 +718,41 @@ def test_bash_call_never_renders_as_a_write_or_read_block() -> None:
 
     assert "[wrote" not in rendered
     assert "[read" not in rendered
+
+
+def test_run_outcome_maps_to_a_bash_tool_call() -> None:
+    tools = [{"type": "function", "function": {"name": "bash"}}]
+    chunks = _outcome_chunks({"finish": False, "run": "pytest -q"}, tools)
+
+    assert len(chunks) == 1
+    call = chunks[0]
+    assert isinstance(call, ClientToolCall)
+    assert call.tool_calls[0].name == "bash"
+    arguments = json.loads(call.tool_calls[0].arguments)
+    assert arguments["command"] == "pytest -q"
+
+
+def test_run_outcome_resolves_against_advertised_shell_tool() -> None:
+    tools = [{"type": "function", "function": {"name": "shell"}}]
+    chunks = _outcome_chunks({"finish": False, "run": "pytest -q"}, tools)
+    call = chunks[0]
+    assert isinstance(call, ClientToolCall)
+    assert call.tool_calls[0].name == "shell"
+
+
+def test_run_outcome_falls_back_to_bash_when_nothing_advertised() -> None:
+    chunks = _outcome_chunks({"finish": False, "run": "pytest -q"}, [])
+    call = chunks[0]
+    assert isinstance(call, ClientToolCall)
+    assert call.tool_calls[0].name == "bash"
+
+
+def test_run_continuation_is_not_acked() -> None:
+    messages = [
+        ChatMessage(role="user", content="run the tests"),
+        ChatMessage(
+            role="assistant", content=None, tool_calls=(_bash_call("c1", "pytest -q"),)
+        ),
+        ChatMessage(role="tool", tool_call_id="c1", content="2 passed in 0.01s"),
+    ]
+    assert _tool_result_ack(messages) is None

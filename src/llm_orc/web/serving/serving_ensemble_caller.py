@@ -46,6 +46,8 @@ _READ_TOOL = "read"
 # advertised tool names; candidates cover the common client vocabularies.
 _WRITE_TOOL_CANDIDATES = ("write", "write_file", "Write")
 _READ_TOOL_CANDIDATES = ("read", "read_file", "Read")
+_BASH_TOOL = "bash"
+_BASH_TOOL_CANDIDATES = ("bash", "shell", "terminal", "Bash")
 
 
 def _client_tool(
@@ -454,26 +456,34 @@ def _render_text(message: Any, role: str) -> str | None:
     return None
 
 
+def _resumes_turn(call: Any) -> bool:
+    """Read and run continuations resume the turn (issue #83) — their
+    results belong in context for another pipeline pass."""
+    return (
+        _read_shaped_arguments(call) is not None
+        or _run_shaped_arguments(call) is not None
+    )
+
+
 def _tool_result_ack(messages: Sequence[Any]) -> str | None:
     """A short acknowledgment when the call is a tool-result continuation.
 
     After the serve emits a tool_call and the client performs it, the client
     calls back with the tool result appended. A write continuation closes
     the SAME turn — re-running the pipeline would redo (and possibly
-    re-judge) work the client already applied. A read continuation instead
-    RESUMES the turn (issue #83): the read result belongs in context for
-    another pipeline pass, so this returns None and ``run()`` falls through.
-    Also returns None when the call is a fresh turn.
+    re-judge) work the client already applied. Read and run continuations
+    instead RESUME the turn (issue #83): the read result / run output
+    belongs in context for another pipeline pass, so this returns None and
+    ``run()`` falls through. Also returns None when the call is a fresh turn.
     """
     last = messages[-1] if messages else None
     if getattr(last, "role", None) != "tool":
         return None
     for message in reversed(list(messages)):
-        for call in getattr(message, "tool_calls", ()) or ():
-            if _read_shaped_arguments(call) is not None:
-                # issue #83: a read continuation RESUMES the turn — fall
-                # through to the pipeline with the read result in context.
-                return None
+        if any(
+            _resumes_turn(call) for call in getattr(message, "tool_calls", ()) or ()
+        ):
+            return None
         written = _written_file_path(getattr(message, "tool_calls", ()) or ())
         if written:
             return f"Wrote {written}."
@@ -545,6 +555,14 @@ def _outcome_chunks(
             for path in reads
         )
         return [ClientToolCall(tool_calls=invocations)]
+    run = outcome.get("run")
+    if run:
+        invocation = ToolCallInvocation(
+            id=f"call_{uuid.uuid4().hex[:8]}",
+            name=_client_tool(tools, _BASH_TOOL_CANDIDATES, _BASH_TOOL),
+            arguments=json.dumps({"command": str(run), "description": "Run tests"}),
+        )
+        return [ClientToolCall(tool_calls=(invocation,))]
     arguments = json.dumps(
         {
             "filePath": outcome.get("file", "solution.py"),
