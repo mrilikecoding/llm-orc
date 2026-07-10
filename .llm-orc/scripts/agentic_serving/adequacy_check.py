@@ -228,34 +228,42 @@ def _mutation_asserts(unit: ast.AST) -> int:
     return count
 
 
+def _assert_is_value_bearing(node: ast.Assert, assigned: dict[str, str]) -> bool:
+    test = node.test
+    if isinstance(test, ast.Compare):
+        return _compare_is_value_bearing(test, assigned)
+    return isinstance(test, ast.Call) and _call_name(test) not in _EXCLUDED_CALLS
+
+
+def _try_is_value_bearing(node: ast.Try) -> bool:
+    specific = any(handler.type is not None for handler in node.handlers)
+    return (
+        specific
+        and any(_real_calls(stmt) for stmt in node.body)
+        and _has_failure_signal(node.body)
+    )
+
+
+def _node_is_value_bearing(node: ast.AST, assigned: dict[str, str]) -> bool:
+    if isinstance(node, ast.Assert):
+        return _assert_is_value_bearing(node, assigned)
+    if isinstance(node, ast.Expr) and isinstance(node.value, ast.Call):
+        return _unittest_assert_is_value_bearing(node.value, assigned)
+    if isinstance(node, (ast.With, ast.AsyncWith)):
+        return _expect_raise_with(node) and any(
+            _real_calls(stmt) for stmt in node.body
+        )
+    if isinstance(node, ast.Try):
+        return _try_is_value_bearing(node)
+    return False
+
+
 def _value_bearing_asserts(unit: ast.AST) -> int:
     """Value-bearing asserts within one test unit (function or class)."""
     assigned = _assigned_call_signatures(unit)
-    count = 0
-    for node in ast.walk(unit):
-        if isinstance(node, ast.Assert):
-            test = node.test
-            if isinstance(test, ast.Compare):
-                if _compare_is_value_bearing(test, assigned):
-                    count += 1
-            elif isinstance(test, ast.Call) and _call_name(test) not in _EXCLUDED_CALLS:
-                count += 1
-        elif isinstance(node, ast.Expr) and isinstance(node.value, ast.Call):
-            if _unittest_assert_is_value_bearing(node.value, assigned):
-                count += 1
-        elif isinstance(node, (ast.With, ast.AsyncWith)):
-            if _expect_raise_with(node) and any(
-                _real_calls(stmt) for stmt in node.body
-            ):
-                count += 1
-        elif isinstance(node, ast.Try):
-            specific = any(handler.type is not None for handler in node.handlers)
-            if (
-                specific
-                and any(_real_calls(stmt) for stmt in node.body)
-                and _has_failure_signal(node.body)
-            ):
-                count += 1
+    count = sum(
+        1 for node in ast.walk(unit) if _node_is_value_bearing(node, assigned)
+    )
     return count + _mutation_asserts(unit)
 
 
