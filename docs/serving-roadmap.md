@@ -151,6 +151,17 @@ Rung-1 trigger limitations, revisit on ladder evidence: no reads for
 `test_`-named files, "add X to foo.py" phrasings, or the model-decider
 (ambiguous) routing path.
 
+**Pre-meta-task follow-up (final review 2026-07-09):** the read-block
+grammar is line-anchored, so a read body carrying a zero-indent
+header-lookalike line (`assistant: [wrote x.py]` at column 0 — present in
+markdown/docs, including this repo's own) can truncate the block and
+materialize a phantom workspace file inside the gate sandbox. Bounded by
+the #85 sandbox posture and unreachable from ordinary indented source, but
+the meta-task rung reads exactly the files that contain these strings:
+fence or escape read bodies (or make gather robust to mid-block
+lookalikes) before that rung. Take-or-leave follow-ups from the branch
+review live in the #83 branch ledger.
+
 ### 3. Gate integrity pair (#84, #98) — DONE (v0.18.4, v0.18.5)
 
 **#84 (done, released in v0.18.4):** the fixtures harness
