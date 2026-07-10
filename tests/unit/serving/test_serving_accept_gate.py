@@ -14,6 +14,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
@@ -30,9 +31,18 @@ REAL_TESTS = (
 TRIVIAL_TESTS = "def test_callable():\n    assert callable(celsius_to_fahrenheit)\n"
 
 
-def _executor(requirement: str, code: str, tests: str) -> dict[str, Any]:
+def _executor(
+    requirement: str,
+    code: str,
+    tests: str,
+    env_overrides: dict[str, str] | None = None,
+) -> dict[str, Any]:
     payload = json.dumps({"requirement": requirement, "code": code, "tests": tests})
-    env = {**os.environ, "LLM_ORC_ACCEPT_EXECUTOR_TIMEOUT": "3"}
+    env = {
+        **os.environ,
+        "LLM_ORC_ACCEPT_EXECUTOR_TIMEOUT": "3",
+        **(env_overrides or {}),
+    }
     out = subprocess.run(
         [sys.executable, str(EXECUTOR)],
         input=payload,
@@ -92,6 +102,36 @@ def test_executor_sandbox_times_out_on_a_runaway_test() -> None:
     r = _executor("loops forever", CORRECT, runaway)
     assert r["tests_pass"] is False
     assert "timeout" in r["report"].lower()
+
+
+def test_aggregate_budget_bounds_a_many_hang_suite() -> None:
+    # Per-test isolation can spawn up to 21 children, each hanging for the
+    # full per-child timeout — an interactive serve cannot absorb that. The
+    # aggregate budget caps total wall time across the suite and reports it.
+    hang_five = "".join(
+        f"def test_hang_{i}():\n    while True:\n        pass\n" for i in range(5)
+    )
+    start = time.monotonic()
+    r = _executor(
+        "loops forever x5",
+        CORRECT,
+        hang_five,
+        env_overrides={
+            "LLM_ORC_ACCEPT_EXECUTOR_TIMEOUT": "1",
+            "LLM_ORC_ACCEPT_EXECUTOR_BUDGET": "2",
+        },
+    )
+    elapsed = time.monotonic() - start
+    assert elapsed < 10
+    assert r["tests_pass"] is False
+    assert "aggregate budget exhausted after 2s" in r["report"]
+    assert "of 5 tests not run" in r["report"]
+
+
+def test_aggregate_budget_does_not_fire_on_a_normal_suite() -> None:
+    r = _executor("c * 9/5 + 32", CORRECT, REAL_TESTS)
+    assert r["tests_pass"] is True
+    assert "aggregate budget" not in r["report"]
 
 
 def test_executor_passes_the_contract_through_for_the_judge() -> None:

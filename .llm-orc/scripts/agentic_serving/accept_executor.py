@@ -19,10 +19,10 @@ from __future__ import annotations
 import ast
 import json
 import os
-import re
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 RUNNER = Path(__file__).with_name("accept_executor_runner.py")
@@ -79,6 +79,23 @@ def _timeout() -> float:
         return float(raw) if raw else DEFAULT_TIMEOUT
     except ValueError:
         return DEFAULT_TIMEOUT
+
+
+_BUDGET_MULTIPLIER = 3.0
+
+
+def _aggregate_budget() -> float:
+    """Total wall budget across isolated children: per-child timeout × 3
+    by default, LLM_ORC_ACCEPT_EXECUTOR_BUDGET overrides (seconds). The
+    per-child timeout bounds one runaway test; this bounds the SUITE —
+    per-test isolation multiplied the old single-run bound by the child
+    count, and an interactive serve cannot absorb 21× (review finding,
+    seat-quality arc 2026-07-09)."""
+    raw = os.environ.get("LLM_ORC_ACCEPT_EXECUTOR_BUDGET", "")
+    try:
+        return float(raw) if raw else _timeout() * _BUDGET_MULTIPLIER
+    except ValueError:
+        return _timeout() * _BUDGET_MULTIPLIER
 
 
 def _enumerate_tests(tests: str) -> tuple[list[str], bool] | None:
@@ -160,6 +177,41 @@ def _run_one(
     )
 
 
+def _run_children(
+    code: str,
+    tests: str,
+    workspace: dict[str, str] | None,
+    target_file: str,
+    timeout: float,
+    children: list[str | None],
+) -> tuple[list[str], int]:
+    """Run each isolated child in turn, stopping early once the aggregate
+    wall budget across the suite is spent — the per-child timeout bounds
+    one runaway test, this bounds the whole suite (review finding: 21
+    children × per-child timeout is too much blocking time for an
+    interactive serve)."""
+    budget = _aggregate_budget()
+    start = time.monotonic()
+    n = len(children)
+    failures: list[str] = []
+    total = 0
+    for i, only in enumerate(children):
+        if time.monotonic() - start >= budget:
+            remaining = n - i
+            failures.append(
+                f"aggregate budget exhausted after {budget:g}s; "
+                f"{remaining} of {n} tests not run"
+            )
+            break
+        ok, report, n_tests = _run_one(
+            code, tests, workspace, target_file, only, timeout
+        )
+        total += n_tests
+        if not ok:
+            failures.append(report)
+    return failures, total
+
+
 def _run_sandboxed(
     code: str,
     tests: str,
@@ -178,15 +230,9 @@ def _run_sandboxed(
     if has_cases:
         children.append("__cases__")
 
-    failures: list[str] = []
-    total = 0
-    for only in children:
-        ok, report, n_tests = _run_one(
-            code, tests, workspace, target_file, only, timeout
-        )
-        total += n_tests
-        if not ok:
-            failures.append(report)
+    failures, total = _run_children(
+        code, tests, workspace, target_file, timeout, children
+    )
     if capped:
         failures.append(f"…capped at {_MAX_ISOLATED_TESTS} isolated tests")
 
