@@ -465,6 +465,33 @@ def test_excision_that_would_drop_all_tests_leaves_the_suite_unchanged() -> None
     assert result["tests_pass"] is False
 
 
+def test_excised_to_empty_suite_still_rejects_at_the_gate() -> None:
+    """The gate never gets weaker than 'at least one adequate test ran':
+    when every test calls an unbound name, excision declines, the raw
+    suite NameErrors in the executor, and the round rejects regardless of
+    the judge's adequacy verdict on the echoed tests."""
+    executor_resp = _executor(
+        "save/load todos", _SAVE_LOAD_CODE, _UNBOUND_CALLABLE_TEST
+    )
+    check = REPO / ".llm-orc" / "scripts" / "agentic_serving" / "adequacy_check.py"
+    payload = json.dumps(
+        {
+            "input_data": "save/load todos",
+            "dependencies": {"executor": {"response": json.dumps(executor_resp)}},
+        }
+    )
+    judge_out = subprocess.run(
+        [sys.executable, str(check)],
+        input=payload,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    verdict = _gate(executor_resp, json.loads(judge_out))
+    assert verdict["accept"] is False
+    assert verdict["tests_pass"] is False
+
+
 def test_call_to_a_code_bound_name_is_never_excised() -> None:
     result = _executor("save/load todos", _SAVE_LOAD_CODE, _GOOD_ROUNDTRIP_TEST)
     assert result["tests_excised"] == 0
