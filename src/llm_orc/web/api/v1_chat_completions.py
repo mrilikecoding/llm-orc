@@ -86,7 +86,7 @@ def _log_wire_shape(request: _ChatCompletionsRequest) -> None:
     rows = []
     digest = hashlib.sha256()
     for message in request.messages:
-        content = message.content or ""
+        content = _text_content(message.content) or ""
         digest.update(f"{message.role}\x00{content}\x00".encode())
         rows.append(
             {
@@ -142,13 +142,29 @@ class _ChatCompletionMessage(BaseModel):
     result as ``content``. Both are optional so the common case
     (``role: user``, ``role: system``) parses without change.
     ``content`` is nullable because OpenAI accepts ``content: null`` on
-    an assistant message whose turn carried only tool calls.
+    an assistant message whose turn carried only tool calls, and may be
+    list-shaped (content parts) — normalized to plain text at this
+    boundary by :func:`_text_content` (issue #107) so the serving layer
+    stays str-only downstream.
     """
 
     role: str
-    content: str | None = None
+    content: str | list[dict[str, Any]] | None = None
     tool_call_id: str | None = None
     tool_calls: list[dict[str, Any]] | None = None
+
+
+def _text_content(content: str | list[dict[str, Any]] | None) -> str | None:
+    """Join list-shaped (content-parts) message content into plain text.
+
+    Non-text parts (``image_url``, …) carry nothing the serving layer can
+    route on and are dropped from the join.
+    """
+    if not isinstance(content, list):
+        return content
+    return "\n".join(
+        str(part.get("text", "")) for part in content if part.get("type") == "text"
+    )
 
 
 class _ChatCompletionsRequest(BaseModel):
@@ -188,7 +204,7 @@ def _resolve_context(request: _ChatCompletionsRequest) -> SessionContext:
     messages = [
         ChatMessage(
             role=message.role,
-            content=message.content,
+            content=_text_content(message.content),
             tool_call_id=message.tool_call_id,
             tool_calls=tuple(message.tool_calls) if message.tool_calls else (),
         )

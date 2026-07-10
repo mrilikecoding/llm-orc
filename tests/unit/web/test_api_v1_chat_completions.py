@@ -235,6 +235,35 @@ class TestChatCompletionsRequestParsing:
 
         assert response.status_code == 200
 
+    def test_content_parts_message_normalizes_to_joined_text(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """List-shaped (content-parts) message content is legal on the
+        OpenAI wire (issue #107): the request parses and the caller sees
+        the text parts joined into one plain string, so every downstream
+        content read stays str-only."""
+        stub = _StubCaller()
+        client, _, _ = _build_client(monkeypatch, terminal=stub)
+
+        response = client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "primary",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": "explain"},
+                            {"type": "text", "text": "todo.py"},
+                        ],
+                    }
+                ],
+            },
+        )
+
+        assert response.status_code == 200
+        assert stub.contexts[0].messages[-1].content == "explain\ntodo.py"
+
 
 class TestRequestRouting:
     """``POST /v1/chat/completions`` routes every request through the serving caller.
