@@ -671,3 +671,46 @@ def test_call_to_a_fixture_parameter_is_never_excised() -> None:
     )
     result = _executor("adds", "def add(a, b):\n    return a + b\n", tests)
     assert result["tests_excised"] == 0
+
+
+def test_inverted_expectation_with_dotted_exception_is_rewritten() -> None:
+    """Validation replay exemplar (turn6_sv1/sv3/sv4, 2026-07-10): the
+    handler catches the Attribute form ``json.JSONDecodeError`` — the
+    natural spelling for the storage turn — and every sample rejected on
+    it. The declared-expectation check matches the dotted name's last
+    segment; the rewrite emits the dotted form."""
+    code = (
+        "import json\n\n"
+        "def load_todos():\n"
+        '    with open("todos.json") as f:\n'
+        "        return json.loads(f.read())\n"
+    )
+    tests = (
+        "import json\n\n"
+        "def test_load_todos_handles_json_errors():\n"
+        '    with open("todos.json", "w") as f:\n'
+        '        f.write("{not json")\n'
+        "    try:\n"
+        "        load_todos()\n"
+        "    except json.JSONDecodeError:\n"
+        '        assert False, "Expected JSONDecodeError"\n'
+    )
+    result = _executor("load todos", code, tests)
+    assert result["tests_raises_rewritten"] == 1
+    assert "with pytest.raises(json.JSONDecodeError):" in result["tests"]
+    assert result["tests_pass"] is True
+
+
+def test_dotted_exception_without_declared_expectation_stays() -> None:
+    tests = (
+        "import json\n\n"
+        "def test_load_todos_tolerates_bad_json():\n"
+        "    try:\n"
+        "        load_todos()\n"
+        "    except json.JSONDecodeError:\n"
+        '        assert False, "should tolerate bad json"\n'
+    )
+    code = "def load_todos():\n    return []\n"
+    result = _executor("load todos", code, tests)
+    assert result["tests_raises_rewritten"] == 0
+    assert "pytest.raises" not in result["tests"]

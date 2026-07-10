@@ -293,8 +293,21 @@ def _is_vacuous_else(orelse: list[ast.stmt]) -> bool:
     )
 
 
+def _exception_source(exc: ast.expr | None) -> tuple[str, str]:
+    """(source form, declared name) for a bare or dotted exception type —
+    ``ValueError`` -> ("ValueError", "ValueError"); the Attribute form
+    ``json.JSONDecodeError`` (validation replays 2026-07-10: the natural
+    spelling for the storage turn, rejected in every sample) ->
+    ("json.JSONDecodeError", "JSONDecodeError"). ("", "") otherwise."""
+    if isinstance(exc, ast.Name):
+        return exc.id, exc.id
+    if isinstance(exc, ast.Attribute) and isinstance(exc.value, ast.Name):
+        return f"{exc.value.id}.{exc.attr}", exc.attr
+    return "", ""
+
+
 def _declared_expected_exception(handler: ast.excepthandler) -> str:
-    """The exception name a handler both catches and declares expected —
+    """The exception source a handler both catches and declares expected —
     ``except <E>: assert False, "...expected...<E>..."`` — else ''."""
     if not isinstance(handler, ast.ExceptHandler):
         return ""
@@ -304,11 +317,9 @@ def _declared_expected_exception(handler: ast.excepthandler) -> str:
     msg = stmt.msg if isinstance(stmt, ast.Assert) else None
     if not (isinstance(msg, ast.Constant) and isinstance(msg.value, str)):
         return ""
-    exc = handler.type
-    if not isinstance(exc, ast.Name):
-        return ""
-    if "expected" in msg.value.lower() and exc.id in msg.value:
-        return exc.id
+    source, declared = _exception_source(handler.type)
+    if source and "expected" in msg.value.lower() and declared in msg.value:
+        return source
     return ""
 
 
