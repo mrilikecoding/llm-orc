@@ -82,6 +82,10 @@ _CTX_TOKEN_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]{2,}")
 # instead of materializing a corrupted file.
 _READ_FILE_CAP = 24576
 _READ_FAIL_REASON_CAP = 200
+# Client-run output blocks (issue #83, run half): the TAIL is kept on
+# overflow — pytest prints its summary last, and the deterministic verdict
+# parser reads exactly that summary.
+_RUN_OUTPUT_CAP = 4096
 # Legacy line-number gutter ("00001| ..."); strip it only when every
 # non-empty line carries one. Not what real OpenCode sends (captured wire,
 # 2026-07-09, shows the "N: " gutter below) — kept for other clients that
@@ -179,6 +183,7 @@ def _render_context(messages: Sequence[Any]) -> str:
     write_blocks = [block for path, block in selected if path not in tail_paths]
     kept = _whole_blocks_within_cap(write_blocks)
     kept = _select_read_blocks(messages, task, tail_paths) + kept
+    kept = kept + _run_blocks_after_latest_user(messages)
 
     if kept:
         selected_text = "\n".join(kept)
@@ -363,6 +368,77 @@ def _read_blocks(messages: Sequence[Any]) -> list[tuple[str, str]]:
         if path:
             content = getattr(message, "content", None)
             blocks.append((path, _render_read_block(path, content or "")))
+    return blocks
+
+
+def _run_shaped_arguments(call: Any) -> dict[str, Any] | None:
+    """Parsed arguments of a run-shaped tool call (command, no filePath)."""
+    function = call.get("function", {}) if isinstance(call, dict) else {}
+    try:
+        arguments = json.loads(function.get("arguments", ""))
+    except (json.JSONDecodeError, TypeError):
+        return None
+    if (
+        isinstance(arguments, dict)
+        and arguments.get("command")
+        and "filePath" not in arguments
+    ):
+        return arguments
+    return None
+
+
+def _run_call_commands(messages: Sequence[Any]) -> dict[str, str]:
+    """tool_call_id -> command for every run-shaped call in the history."""
+    commands: dict[str, str] = {}
+    for message in messages:
+        for call in getattr(message, "tool_calls", ()) or ():
+            arguments = _run_shaped_arguments(call)
+            if arguments is not None and isinstance(call, dict) and call.get("id"):
+                commands[str(call["id"])] = str(arguments["command"])
+    return commands
+
+
+def _render_run_block(command: str, raw: str) -> str:
+    """A run result as a context block (issue #83 run grammar). The body is
+    indented two spaces so untrusted column-0 output can never look like a
+    ``[wrote ...]`` header to line-anchored workspace extraction; overflow
+    keeps the TAIL (pytest's summary lives at the end) and marks the header."""
+    flat = " ".join((raw or "").strip().split())
+    if not flat:
+        return f"assistant: [ran {command} (failed)] empty run result"
+    body = raw.strip()
+    header = f"assistant: [ran {command}]"
+    if len(body) > _RUN_OUTPUT_CAP:
+        body = body[-_RUN_OUTPUT_CAP:]
+        cut = body.find("\n")
+        body = body[cut + 1 :] if cut >= 0 else body
+        header = f"assistant: [ran {command} (truncated)]"
+    indented = "\n".join(
+        f"  {line}" if line.strip() else "" for line in body.splitlines()
+    )
+    return f"{header}\n{indented}"
+
+
+def _run_blocks_after_latest_user(messages: Sequence[Any]) -> list[str]:
+    """Run blocks answering THIS turn only — run output is ephemeral
+    verification evidence (unlike read blocks, which are durable workspace
+    state), so only results after the latest user message render."""
+    items = list(messages)
+    start = 0
+    for index in range(len(items) - 1, -1, -1):
+        content = getattr(items[index], "content", None)
+        if getattr(items[index], "role", None) == "user" and (content or "").strip():
+            start = index + 1
+            break
+    commands = _run_call_commands(items)
+    blocks: list[str] = []
+    for message in items[start:]:
+        if getattr(message, "role", None) != "tool":
+            continue
+        command = commands.get(getattr(message, "tool_call_id", None) or "")
+        if command:
+            content = getattr(message, "content", None)
+            blocks.append(_render_run_block(command, content or ""))
     return blocks
 
 
