@@ -14,13 +14,20 @@
 #   def divide(a, b): raise-on-zero division
 #   def percent(part, whole): divide(part, whole) * 100
 #
+# and metrics.py (turn 12's discovery target — no turn names the file, so
+# the serve must glob for the 'metrics' stem, read the match, and build):
+#
+#   def mean(values): sum/len, raise-on-empty ValueError
+#
 # Scoring (strict, per the trajectory table): a turn passes only when its
 # deliverable ships and is correct; honest rejects/refusals are misses and
 # noted as honest. Expected-behavior exceptions: turn 9 PASSES on an honest
 # refusal (the file does not exist — refusing IS the deliverable); turn 11
 # (the #83 run rung) PASSES when the delegated pytest run executes and the
 # verdict matches the client-side result — the honest verdict IS the
-# deliverable, whatever color the suite is.
+# deliverable, whatever color the suite is; turn 12 (the #83 discovery
+# rung) PASSES when the serve globs the unnamed module, reads the match,
+# and ships tests for it (test_metrics.py, green client-side).
 set -u
 REPO=${LADDER_REPO:?set LADDER_REPO to a seeded scratch repo}
 OUT=${LADDER_OUT:?set LADDER_OUT to an output dir}
@@ -39,6 +46,7 @@ PROMPTS=(
   "write tests for existing phantom.py"
   "what did the first thing I asked you to build do?"
   "run the tests"
+  "write tests for the metrics module"
 )
 i=0
 for p in "${PROMPTS[@]}"; do
