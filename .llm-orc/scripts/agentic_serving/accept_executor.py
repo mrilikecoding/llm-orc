@@ -166,6 +166,57 @@ def _inject_test_imports(tests: str, code: str) -> tuple[str, int]:
     return f"{prelude}\n\n{tests}", len(missing)
 
 
+def _calls_unbound_name(func: ast.AST, bound: set[str]) -> bool:
+    """Whether a test function calls a bare name outside ``bound`` — a
+    guaranteed NameError no code regeneration can convert."""
+    return any(
+        isinstance(n, ast.Call)
+        and isinstance(n.func, ast.Name)
+        and n.func.id not in bound
+        for n in ast.walk(func)
+    )
+
+
+def _excise_unbound_callable_tests(tests: str, code: str) -> tuple[str, int]:
+    """Tests minus the ones calling a name bound nowhere, and the count.
+
+    Spike 2026-07-10 (turn6_s2/turn6_s5): ``assert file_exists(...)`` — a
+    call to a bare name the tests never bind, the code deliverable never
+    defines, and neither builtins nor the injectable-module whitelist can
+    supply. The line NameErrors in every round; excising that one test and
+    running the remainder is honest, where name-mapping (``file_exists ->
+    os.path.exists``) would risk changing intent. Scope: top-level
+    ``test_*`` functions (per-test isolation's unit). Bounded: if excision
+    would drop ALL test units, the suite is returned unchanged so the
+    round rejects on the real NameError. The echoed (shipped) tests are
+    the excised suite, per the v0.18.7 repair convention.
+    """
+    try:
+        tree = ast.parse(tests)
+    except SyntaxError:
+        return tests, 0
+    try:
+        code_bound = _bound_names(ast.parse(code))
+    except SyntaxError:
+        code_bound = set()
+    bound = _bound_names(tree) | code_bound | _BUILTIN_NAMES | _INJECTABLE_MODULES
+    test_funcs = [
+        n
+        for n in tree.body
+        if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and n.name.startswith("test_")
+    ]
+    doomed = [f for f in test_funcs if _calls_unbound_name(f, bound)]
+    has_cases = any(isinstance(n, ast.ClassDef) for n in tree.body)
+    if not doomed or (len(doomed) == len(test_funcs) and not has_cases):
+        return tests, 0
+    lines = tests.splitlines()
+    for func in sorted(doomed, key=lambda f: f.lineno, reverse=True):
+        start = min([func.lineno, *(d.lineno for d in func.decorator_list)]) - 1
+        del lines[start : (func.end_lineno or func.lineno)]
+    return "\n".join(lines) + ("\n" if tests.endswith("\n") else ""), len(doomed)
+
+
 def _from_dependencies(envelope: dict[str, object]) -> dict[str, object] | None:
     """The ``{requirement, code, tests}`` contract from a dependency (the
     build-gated ``gather`` node), when the executor runs inside the ensemble.
@@ -409,6 +460,7 @@ def main() -> None:
     code = str(data.get("code", ""))
     tests = str(data.get("tests", ""))
     tests, tests_sanitized = _sanitize_tests(tests)
+    tests, tests_excised = _excise_unbound_callable_tests(tests, code)
     tests, tests_imports_injected = _inject_test_imports(tests, code)
     raw_workspace = data.get("workspace")
     workspace = (
@@ -430,6 +482,7 @@ def main() -> None:
                 "tests_pass": tests_pass,
                 "n_tests": n_tests,
                 "tests_sanitized": tests_sanitized,
+                "tests_excised": tests_excised,
                 "tests_imports_injected": tests_imports_injected,
                 "report": report,
             }

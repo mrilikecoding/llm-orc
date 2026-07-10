@@ -406,3 +406,79 @@ def test_unparseable_tests_skip_injection_and_sanitization() -> None:
     assert result["tests_sanitized"] == 0
     assert result["tests_imports_injected"] == 0
     assert result["tests_pass"] is False
+
+
+# --- unbound-callable excision (spike 2026-07-10: `file_exists` tic) ---
+
+_SAVE_LOAD_CODE = (
+    "import json\n"
+    "import os\n"
+    "def save_todos(todos):\n"
+    "    with open('todos.json', 'w') as f:\n"
+    "        json.dump(todos, f)\n"
+    "def load_todos():\n"
+    "    if not os.path.exists('todos.json'):\n"
+    "        return []\n"
+    "    with open('todos.json') as f:\n"
+    "        return json.load(f)\n"
+)
+
+# verbatim spike exemplar (turn6_s2 r1 / turn6_s5 r1+r2): file_exists is
+# bound nowhere — not a module, so import injection cannot reach it
+_UNBOUND_CALLABLE_TEST = (
+    "def test_save_todos_saves_todos_to_file():\n"
+    '    todos = ["Buy groceries", "Walk the dog"]\n'
+    "    save_todos(todos)\n"
+    '    assert file_exists("todos.json")\n'
+)
+
+_GOOD_ROUNDTRIP_TEST = (
+    "def test_load_todos_returns_saved_todos():\n"
+    '    todos = ["Buy groceries", "Walk the dog"]\n'
+    "    save_todos(todos)\n"
+    "    loaded = load_todos()\n"
+    "    assert loaded == todos\n"
+)
+
+
+def test_unbound_callable_test_is_excised_and_the_rest_run() -> None:
+    """A test calling a name bound nowhere (not tests, not code, not a
+    builtin, not injectable) can never run — no code regeneration defines
+    it. Excise that one test, run the remainder, echo the excised suite."""
+    result = _executor(
+        "save/load todos",
+        _SAVE_LOAD_CODE,
+        _UNBOUND_CALLABLE_TEST + _GOOD_ROUNDTRIP_TEST,
+    )
+    assert result["tests_excised"] == 1
+    assert "file_exists" not in result["tests"]
+    assert "test_load_todos_returns_saved_todos" in result["tests"]
+    assert result["tests_pass"] is True
+
+
+def test_excision_that_would_drop_all_tests_leaves_the_suite_unchanged() -> None:
+    """Bound: excising everything would judge an empty suite — leave the
+    suite alone so the round rejects honestly on the real NameError."""
+    result = _executor("save/load todos", _SAVE_LOAD_CODE, _UNBOUND_CALLABLE_TEST)
+    assert result["tests_excised"] == 0
+    assert "file_exists" in result["tests"]
+    assert result["tests_pass"] is False
+
+
+def test_call_to_a_code_bound_name_is_never_excised() -> None:
+    result = _executor("save/load todos", _SAVE_LOAD_CODE, _GOOD_ROUNDTRIP_TEST)
+    assert result["tests_excised"] == 0
+    assert result["tests_pass"] is True
+
+
+def test_call_to_a_fixture_parameter_is_never_excised() -> None:
+    """A called name bound as a test parameter (pytest fixture) is bound."""
+    tests = (
+        "def test_uses_factory(make_thing):\n"
+        "    thing = make_thing()\n"
+        "    assert thing != 0\n"
+        "def test_add():\n"
+        "    assert add(1, 2) == 3\n"
+    )
+    result = _executor("adds", "def add(a, b):\n    return a + b\n", tests)
+    assert result["tests_excised"] == 0
