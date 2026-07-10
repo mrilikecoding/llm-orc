@@ -17,9 +17,19 @@ import sys
 
 _RAN_HEADER_RE = re.compile(r"^assistant: \[ran (.+?)( \((failed|truncated)\))?\](.*)$")
 _NO_TESTS_RE = re.compile(r"\bno tests ran\b", re.IGNORECASE)
+# pytest's authoritative summary is its LAST line and always carries the
+# "in N.NNs" duration anchor — counts parse from that line ONLY, so
+# count-shaped text in captured stdout ("0 failed so far") can never shadow
+# the real result (review finding 2026-07-09). The last few lines are
+# scanned, latest match wins, to tolerate a client-appended trailer.
+_SUMMARY_SHAPE_RE = re.compile(
+    r"\b(?:\d+ (?:passed|failed|errors?)|no tests ran)\b.*\bin [\d.]+s\b",
+    re.IGNORECASE,
+)
 _FAILING_LINE_RE = re.compile(r"^(?:FAILED|ERROR)\b")
 _MAX_FAILING_LINES = 5
 _TAIL_LINES = 10
+_SUMMARY_SCAN_LINES = 3
 
 
 def _dispatch_text(raw: str) -> str:
@@ -62,8 +72,17 @@ def _latest_run(text: str) -> tuple[str, str, str, str] | None:
     return command, variant, detail, "\n".join(body_lines).strip()
 
 
-def _count(pattern: str, body: str) -> int | None:
-    match = re.search(pattern, body)
+def _summary_line(body: str) -> str:
+    """pytest's summary line, or "" when the output carries none."""
+    lines = [line.strip() for line in body.splitlines() if line.strip()]
+    for line in reversed(lines[-_SUMMARY_SCAN_LINES:]):
+        if _SUMMARY_SHAPE_RE.search(line):
+            return line
+    return ""
+
+
+def _count(pattern: str, summary: str) -> int | None:
+    match = re.search(pattern, summary)
     return int(match.group(1)) if match else None
 
 
@@ -71,17 +90,18 @@ def _verdict(command: str, variant: str, detail: str, body: str) -> str:
     if variant == "failed":
         reason = detail or "empty run result"
         return f"The test run could not execute: {reason}"
-    if _NO_TESTS_RE.search(body):
-        return f"Ran `{command}`: no tests ran."
-    failed = _count(r"\b(\d+) failed\b", body)
-    passed = _count(r"\b(\d+) passed\b", body)
-    errors = _count(r"\b(\d+) errors?\b", body)
-    if failed is None and passed is None and errors is None:
+    summary = _summary_line(body)
+    if not summary:
         tail = "\n".join(body.splitlines()[-_TAIL_LINES:])
         return (
             f"Ran `{command}`, but the output carried no pytest summary. "
             f"Output tail:\n{tail}"
         )
+    if _NO_TESTS_RE.search(summary):
+        return f"Ran `{command}`: no tests ran."
+    failed = _count(r"\b(\d+) failed\b", summary)
+    passed = _count(r"\b(\d+) passed\b", summary)
+    errors = _count(r"\b(\d+) errors?\b", summary)
     counts = ((failed, "failed"), (errors, "errored"), (passed, "passed"))
     parts = [f"{count} {label}" for count, label in counts if count]
     verdict = f"Ran `{command}`: {', '.join(parts) or '0 tests'}."

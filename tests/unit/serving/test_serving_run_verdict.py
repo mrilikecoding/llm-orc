@@ -89,3 +89,36 @@ def test_latest_run_block_wins() -> None:
 def test_missing_run_block_reports_honestly() -> None:
     verdict = _verdict("Current request: run the tests")
     assert "No test-run output" in verdict
+
+
+def test_count_shaped_text_in_captured_output_does_not_shadow_the_summary() -> None:
+    # review finding (2026-07-09): counts parse from pytest's LAST line, not
+    # the first count-shaped text in captured stdout
+    block = (
+        "assistant: [ran pytest -q]\n"
+        "  retry: 0 failed so far, 3 passed checkpoint\n"
+        "  FAILED test_calc.py::test_divide - ZeroDivisionError\n"
+        "  1 failed, 2 passed in 0.05s"
+    )
+    verdict = _verdict(_dispatch(block))
+    assert verdict.startswith("Ran `pytest -q`: 1 failed, 2 passed.")
+
+
+def test_no_tests_ran_in_stdout_does_not_shadow_a_real_summary() -> None:
+    block = (
+        "assistant: [ran pytest -q]\n"
+        "  printed: no tests ran here, just setup\n"
+        "  4 passed in 0.11s"
+    )
+    assert _verdict(_dispatch(block)) == "Ran `pytest -q`: 4 passed."
+
+
+def test_summaryless_output_with_count_shaped_noise_reports_honestly() -> None:
+    block = (
+        "assistant: [ran pytest -q]\n"
+        "  loaded 3 passed records from cache\n"
+        "  Segmentation fault"
+    )
+    verdict = _verdict(_dispatch(block))
+    assert "no pytest summary" in verdict
+    assert "Segmentation fault" in verdict
