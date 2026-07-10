@@ -49,6 +49,19 @@ _WRITE_TOOL = {
     },
 }
 
+_READ_TOOL_DEF = {
+    "type": "function",
+    "function": {
+        "name": "read",
+        "description": "Read a file from disk.",
+        "parameters": {
+            "type": "object",
+            "properties": {"filePath": {"type": "string"}},
+            "required": ["filePath"],
+        },
+    },
+}
+
 # A deterministic code_generation flow: one echo node emitting clean python, so
 # the build turn runs classify -> seat(code-seat -> code-generator -> envelope)
 # -> shape -> form-gate -> emit with no model tokens. The code seat wraps this
@@ -95,6 +108,7 @@ def serving_project(tmp_path: Path) -> Path:
     # The explain seat dispatch target — a top-level entry, since dispatch
     # discovery is non-recursive (WP-A8 discovery note b).
     (ensembles / "explainer.yaml").write_text(_ECHO_EXPLAINER)
+    shutil.copy(REAL_AGENTIC_SERVING / "need-files.yaml", ensembles / "need-files.yaml")
     return tmp_path
 
 
@@ -358,3 +372,114 @@ def test_wire_log_records_message_shape_when_enabled(
     # rolling prefix hash chain: same prefix -> same hashes across requests
     assert len(row["messages"][0]["prefix_hash"]) == 12
     assert "hello" not in wire_log.read_text()
+
+
+def test_invisible_named_file_turn_emits_a_read_tool_call(
+    serving_client: TestClient,
+) -> None:
+    """Pass 1 (issue #83): a turn naming a client-workspace file the serve
+    cannot see delegates a read through the permission seam instead of
+    dispatching a build that would reject."""
+    resp = serving_client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "ensemble-agent",
+            "messages": [
+                {"role": "user", "content": "fix the divide function in calc.py"}
+            ],
+            "tools": [_WRITE_TOOL, _READ_TOOL_DEF],
+        },
+    )
+
+    assert resp.status_code == 200
+    choice = resp.json()["choices"][0]
+    assert choice["finish_reason"] == "tool_calls"
+    call = choice["message"]["tool_calls"][0]
+    assert call["function"]["name"] == "read"
+    assert json.loads(call["function"]["arguments"]) == {"filePath": "calc.py"}
+
+
+def test_read_continuation_resumes_the_turn_and_ships_the_build(
+    serving_client: TestClient,
+) -> None:
+    """Pass 2 (issue #83): the client's read result re-enters the pipeline
+    (never the write-continuation ack) and the resumed turn ships a write."""
+    resp = serving_client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "ensemble-agent",
+            "messages": [
+                {"role": "user", "content": "fix the divide function in calc.py"},
+                {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "id": "call_r1",
+                            "type": "function",
+                            "function": {
+                                "name": "read",
+                                "arguments": '{"filePath": "calc.py"}',
+                            },
+                        }
+                    ],
+                },
+                {
+                    "role": "tool",
+                    "tool_call_id": "call_r1",
+                    "content": "def divide(a, b):\n    return a / b",
+                },
+            ],
+            "tools": [_WRITE_TOOL, _READ_TOOL_DEF],
+        },
+    )
+
+    assert resp.status_code == 200
+    choice = resp.json()["choices"][0]
+    assert choice["finish_reason"] == "tool_calls"
+    call = choice["message"]["tool_calls"][0]
+    assert call["function"]["name"] == "write"
+    args = json.loads(call["function"]["arguments"])
+    assert args["filePath"] == "calc.py"
+
+
+def test_failed_read_refuses_honestly_without_relooping(
+    serving_client: TestClient,
+) -> None:
+    """One read round per turn (issue #83): a failed client read refuses
+    with a reason — never a second read request, never a silent build."""
+    resp = serving_client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "ensemble-agent",
+            "messages": [
+                {"role": "user", "content": "fix the divide function in calc.py"},
+                {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "id": "call_r1",
+                            "type": "function",
+                            "function": {
+                                "name": "read",
+                                "arguments": '{"filePath": "calc.py"}',
+                            },
+                        }
+                    ],
+                },
+                {
+                    "role": "tool",
+                    "tool_call_id": "call_r1",
+                    "content": "Error: ENOENT: no such file calc.py",
+                },
+            ],
+            "tools": [_WRITE_TOOL, _READ_TOOL_DEF],
+        },
+    )
+
+    assert resp.status_code == 200
+    choice = resp.json()["choices"][0]
+    assert choice["finish_reason"] == "stop"
+    assert not choice["message"].get("tool_calls")
+    assert "could not read calc.py" in choice["message"]["content"]

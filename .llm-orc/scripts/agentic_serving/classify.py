@@ -66,12 +66,85 @@ _BUILD_RE = re.compile(
     r"\b(write|implement|create|build|generate|refactor|fix|add|code)\b",
     re.IGNORECASE,
 )
+# issue #83: a build verb that implies the named file already exists in the
+# client workspace. "write"/"create" stay fresh-create — requesting a read
+# for a file that does not exist yet would refuse a valid build.
+_EXISTING_RE = re.compile(
+    r"\b(fix|update|modify|refactor|edit|change|existing)\b", re.IGNORECASE
+)
+# Context-block headers (the caller's render grammar). Visible = untruncated
+# wrote block or successful read block; attempted = any read header. The
+# optional variant group keeps a "(truncated)" suffix out of the path.
+_VISIBLE_HEADER_RE = re.compile(
+    r"^assistant: \[(?:wrote|read) ([^\]]+?)"
+    r"( \((?:truncated|failed|oversize)\))?\]$",
+    re.MULTILINE,
+)
+_READ_ATTEMPT_RE = re.compile(
+    r"^assistant: \[read ([^\]]+?)( \((failed|oversize)\))?\]", re.MULTILINE
+)
+_READ_CAP_KB = 24
 
 
 def _extract_file(task: str) -> str:
     """A structural filename signal from the turn (e.g. 'in add.py')."""
     match = _FILE_RE.search(task)
     return match.group(1) if match else ""
+
+
+def _named_source_files(task: str) -> list[str]:
+    """Every named non-test source file, first-mention order, deduped."""
+    files: list[str] = []
+    for match in _FILE_RE.finditer(task):
+        path = match.group(1)
+        if path.rsplit("/", 1)[-1].startswith("test_"):
+            continue
+        if path not in files:
+            files.append(path)
+    return files
+
+
+def _visibility(context: str) -> tuple[set[str], dict[str, str]]:
+    """(visible basenames, attempted basename -> failure detail)."""
+    visible = {
+        path.rsplit("/", 1)[-1]
+        for path, variant in _VISIBLE_HEADER_RE.findall(context)
+        if not variant
+    }
+    attempted: dict[str, str] = {}
+    for path, _, variant in _READ_ATTEMPT_RE.findall(context):
+        basename = path.rsplit("/", 1)[-1]
+        if variant == "oversize":
+            attempted[basename] = f"file exceeds the {_READ_CAP_KB} KB read cap"
+        elif variant == "failed":
+            attempted[basename] = "client read failed"
+    return visible, attempted
+
+
+def _files_to_request(
+    task: str, context: str, tests_primary: bool, has_build_signal: bool
+) -> tuple[list[str], str]:
+    """(paths to request, refusal reason) — at most one is non-empty.
+
+    Deterministic one-round control (issue #83): a named source file that is
+    neither conversation-written nor client-read triggers ONE read request;
+    a file whose read was already attempted and still is not visible refuses.
+    """
+    wants_existing = tests_primary or (
+        has_build_signal and bool(_EXISTING_RE.search(task))
+    )
+    if not wants_existing:
+        return [], ""
+    visible, attempted = _visibility(context)
+    to_request: list[str] = []
+    for path in _named_source_files(task):
+        basename = path.rsplit("/", 1)[-1]
+        if basename in visible:
+            continue
+        if basename in attempted:
+            return [], f"could not read {path}: {attempted[basename]}"
+        to_request.append(path)
+    return to_request, ""
 
 
 def _turn(raw: str) -> dict:
@@ -117,8 +190,20 @@ def main() -> None:
         "test_"
     )
 
+    conversation_raw = str(turn.get("context", ""))
+    needs_files: list[str] = []
+    read_failed = ""
+    if not is_explain:
+        needs_files, read_failed = _files_to_request(
+            task, conversation_raw, tests_primary, has_build_signal
+        )
+
     if is_explain:
         target, kind, build, needs_decider = _EXPLAIN_SEAT, "explanation", False, False
+    elif needs_files or read_failed:
+        # issue #83: request the client files (or refuse a failed request)
+        # before any seat runs — the need-files shape is a cheap script echo.
+        target, kind, build, needs_decider = "need-files", "need_files", False, False
     elif tests_primary:
         # the deliverable IS a test file, run against the workspace alone
         # (issue #98) — never build-gated's code/tests duality
@@ -163,6 +248,8 @@ def main() -> None:
                 "dispatch_input": dispatch_input,
                 "build": build,
                 "needs_decider": needs_decider,
+                "needs_files": needs_files,
+                "read_failed": read_failed,
             }
         )
     )

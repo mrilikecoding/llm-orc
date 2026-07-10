@@ -1,0 +1,10 @@
+name: need-files
+description: |
+  issue #83 — the cheap dispatch target for a turn that must first request
+  client-workspace files. The routing decision (classify) already carries the
+  reads; this shape exists so the skeleton dispatches SOMETHING without
+  burning a build round. One deterministic script node, no model calls.
+serves: need-files
+agents:
+  - name: echo
+    script: scripts/agentic_serving/need_files_echo.py

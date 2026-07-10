@@ -16,6 +16,11 @@ from pathlib import Path
 from typing import Any
 
 REPO = Path(__file__).resolve().parents[3]
+
+# Add agentic_serving to path for direct imports of _workspace
+sys.path.insert(0, str(REPO / ".llm-orc" / "scripts" / "agentic_serving"))
+from accept_gather import _workspace  # type: ignore[import-not-found]  # noqa: E402
+
 GATHER = REPO / ".llm-orc" / "scripts" / "agentic_serving" / "accept_gather.py"
 EXECUTOR = REPO / ".llm-orc" / "scripts" / "agentic_serving" / "accept_executor.py"
 
@@ -408,3 +413,28 @@ def test_executor_reports_unittest_class_failures() -> None:
     }
     result = _executor_from_gather(gathered)
     assert result["tests_pass"] is False
+
+
+def test_read_block_materializes_into_the_workspace() -> None:
+    context = (
+        "user: write tests for existing storage.py\n"
+        "assistant: [read storage.py]\n"
+        "def put(k, v):\n"
+        "    return (k, v)"
+    )
+    workspace = _workspace(context)
+    assert workspace["storage.py"] == "def put(k, v):\n    return (k, v)"
+
+
+def test_failed_and_oversize_read_lines_never_materialize() -> None:
+    context = (
+        "assistant: [read gone.py (failed)] Error: ENOENT\n"
+        "assistant: [read big.py (oversize)]"
+    )
+    workspace = _workspace(context)
+    assert workspace == {}
+
+
+def test_truncated_wrote_block_still_never_materializes() -> None:
+    context = "assistant: [wrote storage.py (truncated)]\ndef put(k"
+    assert _workspace(context) == {}

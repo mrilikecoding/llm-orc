@@ -64,3 +64,22 @@ def test_form_gate_passes_the_accept_verdict_through() -> None:
     )
     assert gated["accept"] is False
     assert gated["accept_reason"] == "tests inadequate"
+
+
+def test_form_gate_passes_read_fields_through() -> None:
+    gated = _gate(
+        {
+            "build": False,
+            "file": "test_storage.py",
+            "content": "Requesting client files.",
+            "needs_files": ["storage.py"],
+            "read_failed": "",
+            "accept": None,
+            "accept_reason": "",
+            "seat_admitted": None,
+            "seat_contract_reason": "",
+        }
+    )
+    assert gated["needs_files"] == ["storage.py"]
+    assert gated["read_failed"] == ""
+    assert gated["valid"] is True

@@ -82,6 +82,10 @@ def main() -> None:
 
     file = classify.get("file", "solution.py")
     dispatch_input = classify.get("dispatch_input", "")
+    needs_files = classify.get("needs_files", [])
+    if not isinstance(needs_files, list):
+        needs_files = []
+    read_failed = str(classify.get("read_failed", ""))
 
     if classify.get("needs_decider"):
         target = _decider_target(_response(deps.get("decide", {})))
@@ -105,6 +109,8 @@ def main() -> None:
                 "file": file,
                 "dispatch_input": dispatch_input,
                 "build": build,
+                "needs_files": needs_files,
+                "read_failed": read_failed,
             }
         )
     )

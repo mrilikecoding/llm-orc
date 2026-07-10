@@ -137,8 +137,11 @@ def test_no_context_leaves_dispatch_input_as_the_bare_task() -> None:
 def test_write_tests_for_a_named_file_routes_to_the_tests_seat() -> None:
     """A test-primary turn (tests as the OBJECT): the deliverable is a test
     file run against the workspace, never build-gated's code/tests duality
-    (the shadowed-composite wrong-accept, issue #98)."""
-    decision = _classify({"task": "Write tests for storage.py"})
+    (the shadowed-composite wrong-accept, issue #98). The file is visible in
+    context so this exercises #98's routing concern in isolation from #83's
+    named-but-invisible-file trigger, covered separately below."""
+    context = "assistant: [wrote storage.py]\ndef put(k, v): pass"
+    decision = _classify({"task": "Write tests for storage.py", "context": context})
     assert decision["target"] == "tests-seat"
     assert decision["build"] is True
     assert decision["kind"] == "python_tests"
@@ -169,3 +172,86 @@ def test_explain_still_outranks_the_tests_signal() -> None:
     decision = _classify({"task": "what do the tests in test_foo.py cover?"})
     assert decision["build"] is False
     assert decision["target"] == "explainer"
+
+
+# --- named-but-invisible files route to need-files (#83) ---
+
+
+def test_tests_for_invisible_named_file_requests_a_client_read() -> None:
+    decision = _classify({"task": "write tests for existing storage.py"})
+    assert decision["target"] == "need-files"
+    assert decision["kind"] == "need_files"
+    assert decision["build"] is False
+    assert decision["needs_files"] == ["storage.py"]
+    assert decision["read_failed"] == ""
+
+
+def test_existing_marker_build_on_invisible_file_requests_a_client_read() -> None:
+    decision = _classify({"task": "fix the divide function in calc.py"})
+    assert decision["target"] == "need-files"
+    assert decision["needs_files"] == ["calc.py"]
+
+
+def test_fresh_create_never_requests_a_read() -> None:
+    decision = _classify({"task": "write a function that adds two numbers in add.py"})
+    assert decision["target"] == "code-seat"
+    assert decision["needs_files"] == []
+
+
+def test_visible_wrote_block_suppresses_the_read_request() -> None:
+    context = "assistant: [wrote storage.py]\ndef put(k, v): pass"
+    decision = _classify(
+        {"task": "write tests for existing storage.py", "context": context}
+    )
+    assert decision["target"] == "tests-seat"
+    assert decision["needs_files"] == []
+
+
+def test_visible_read_block_suppresses_the_read_request() -> None:
+    context = "assistant: [read storage.py]\ndef put(k, v): pass"
+    decision = _classify(
+        {"task": "write tests for existing storage.py", "context": context}
+    )
+    assert decision["target"] == "tests-seat"
+    assert decision["needs_files"] == []
+
+
+def test_truncated_wrote_block_still_requests_a_read() -> None:
+    context = "assistant: [wrote storage.py (truncated)]\ndef put(k"
+    decision = _classify(
+        {"task": "write tests for existing storage.py", "context": context}
+    )
+    assert decision["target"] == "need-files"
+    assert decision["needs_files"] == ["storage.py"]
+
+
+def test_failed_read_attempt_refuses_instead_of_relooping() -> None:
+    context = "assistant: [read storage.py (failed)] Error: ENOENT"
+    decision = _classify(
+        {"task": "write tests for existing storage.py", "context": context}
+    )
+    assert decision["target"] == "need-files"
+    assert decision["needs_files"] == []
+    assert "could not read storage.py" in decision["read_failed"]
+
+
+def test_oversize_read_attempt_refuses_with_cap_reason() -> None:
+    context = "assistant: [read storage.py (oversize)]"
+    decision = _classify(
+        {"task": "write tests for existing storage.py", "context": context}
+    )
+    assert decision["needs_files"] == []
+    assert "could not read storage.py" in decision["read_failed"]
+    assert "24" in decision["read_failed"]
+
+
+def test_explain_turn_never_requests_a_read() -> None:
+    decision = _classify({"task": "explain what storage.py does"})
+    assert decision["target"] == "explainer"
+    assert decision["needs_files"] == []
+
+
+def test_normal_decisions_carry_empty_read_fields() -> None:
+    decision = _classify({"task": "write a function that adds two numbers"})
+    assert decision["needs_files"] == []
+    assert decision["read_failed"] == ""

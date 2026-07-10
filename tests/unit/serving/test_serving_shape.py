@@ -114,3 +114,19 @@ def test_unreadable_routing_decision_fails_closed_to_prose() -> None:
     file write when the seat prose happens to parse as Python)."""
     out = _shape({}, {"results": {"out": {"response": "x = 1", "status": "success"}}})
     assert out["build"] is False
+
+
+def test_shape_passes_read_fields_from_the_routing_decision() -> None:
+    shaped = _shape(
+        {
+            "target": "need-files",
+            "kind": "need_files",
+            "file": "test_storage.py",
+            "build": False,
+            "needs_files": ["storage.py"],
+            "read_failed": "",
+        },
+        {"results": {"out": {"response": "Requesting client files."}}},
+    )
+    assert shaped["needs_files"] == ["storage.py"]
+    assert shaped["read_failed"] == ""
