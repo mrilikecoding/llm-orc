@@ -404,7 +404,13 @@ def _render_run_block(command: str, raw: str) -> str:
     """A run result as a context block (issue #83 run grammar). The body is
     indented two spaces so untrusted column-0 output can never look like a
     ``[wrote ...]`` header to line-anchored workspace extraction; overflow
-    keeps the TAIL (pytest's summary lives at the end) and marks the header."""
+    keeps the TAIL (pytest's summary lives at the end) and marks the header.
+
+    The command is flattened to one line before it enters the header: on
+    resume it comes from the wire (the client echoes the tool_call back),
+    and a fabricated newline-bearing command must not inject header-line
+    lookalikes at column 0."""
+    command = " ".join((command or "").split())
     flat = " ".join((raw or "").strip().split())
     if not flat:
         return f"assistant: [ran {command} (failed)] empty run result"
