@@ -95,3 +95,48 @@ TDD per repair with the spike's verbatim exemplars as fixtures; full
 suite; live replay of the two spike turns (expect turn6's never-accept
 rate to drop); recorded ladder rerun + trajectory row; independent
 adversarial review with the wrong-accept class as the named target.
+
+## Validation round (2026-07-10, 7 replays on the repaired branch)
+
+The repairs fired live: turn1_sv1 accepted round 1 WITH an in-flight
+rewrite; turn6_sv5 converted end-to-end (2 excisions + 1 rewrite +
+the fixed timeout → held round accepted a previously-fatal shape). Two
+defects the validation surfaced, both fixed on-branch:
+
+- **Runner crash on DID-NOT-RAISE:** pytest's `Failed` derives from
+  `BaseException`, so a repaired `pytest.raises` test whose expected
+  exception never raised crashed the runner child (fail-closed, but the
+  report was a truncated traceback — no evidence for the retry round).
+  The runner now catches `BaseException` (KeyboardInterrupt/SystemExit/
+  GeneratorExit still propagate).
+- **Attribute-form coverage gap:** every remaining turn6 reject
+  (sv1/sv3/sv4) was `except json.JSONDecodeError:` — the dotted form the
+  Name-only rewrite signature skipped. Widened; the declared-expectation
+  check matches the dotted name's last segment.
+
+Second review round (independent adversarial reviewer, wrong-accept as
+the named target) found and we fixed three wrong-accept vectors before
+merge: substring expectation-matching ("Unexpected ValueError" inverted a
+correct guard; "Error" matched inside "KeyError"), anywhere-in-body
+removal wrapping (neutered post-call existence assertions), and
+lambda-param/except-alias blindness in the binding scan (excised a good
+test). Post-fix seams, both fail-closed and accepted: negation tokens
+anywhere in a message refuse the rewrite ("Expected TypeError not
+raised" now costs a round instead of converting — tighten to
+expectation-adjacent negation if ladder evidence demands), and a setup
+removal after an `os.`-using fixture statement goes unwrapped when the
+code also binds `os` (a missed repair, never a wrong accept).
+
+Observed residual (1/7, not repaired here): import-guard boilerplate —
+tests wrapping the deliverable import in try/except and asserting
+`False, "<module> not found or function not implemented"` in the guard,
+which fails both rounds identically (turn1_sv2). Deterministic signature
+exists (strip the guard, let a real ImportError report honestly); left
+for ladder evidence to justify.
+
+One rewrite-ambiguity note for reviewers: a test whose handler declares
+"Expected FileNotFoundError" but whose NAME says "returns empty list"
+(self-contradictory authorship, turn6_sv5 r1) rewrites per the declared
+message, fails against return-empty code, and converges via the held
+round regenerating raising code. Honest both rounds; the ambiguity costs
+one round, never a wrong accept.

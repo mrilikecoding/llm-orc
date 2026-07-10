@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.18.10] - 2026-07-10
+
+### Added
+- Deterministic gate repairs, round 2 (from 11 live replay captures of
+  the battery's failing build turns — code wrong in 0 of 8 rejected
+  rounds; the tests were): unbound-callable test excision (a test
+  calling a name bound nowhere is removed, bounded so an excised-to-
+  empty suite still rejects); unguarded `os.remove`/`os.unlink` setup
+  wrapped in `contextlib.suppress(FileNotFoundError)`; inverted
+  exception-expectations (`except E: assert False, "expected E"`, bare
+  and dotted forms) rewritten to `with pytest.raises(E):`. All repairs
+  AST-grounded with exact signatures, echoed into the shipped artifact
+  with counts
+
+### Fixed
+- Adequacy check counts mutation-pattern asserts as value-bearing
+  (`add_todo(todos, "x"); assert todos == ["x"]` no longer false-rejects
+  and cascades into a worse resample)
+- The held TDD retry's code_writer ran under the 300s default timeout on
+  the system's longest input, shipping empty code — explicit 600s
+  headroom; the one convertible retry class now converts
+- pytest outcome exceptions (DID-NOT-RAISE) report as clean per-test
+  failures instead of crashing the runner child with a truncated report
+
 ## [0.18.9] - 2026-07-10
 
 ### Fixed
