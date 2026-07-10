@@ -24,14 +24,6 @@ from _helpers import response as _response
 from _helpers import terminal as _terminal
 
 
-
-
-
-
-
-
-
-
 def _trim_to_parse(code: str, max_drops: int = 10) -> str:
     """Drop trailing non-parsing lines (bounded) — seat models sometimes leave
     a prose usage line inside the fence. Valid code returns byte-identical;

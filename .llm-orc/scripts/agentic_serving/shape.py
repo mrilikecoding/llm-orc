@@ -17,9 +17,9 @@ gracefully rather than requiring every seat to envelope first.
 from __future__ import annotations
 
 import json
+import sys
 
 from _helpers import terminal as _terminal
-import sys
 
 
 def _deps(raw: str) -> dict:

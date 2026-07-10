@@ -24,10 +24,6 @@ from _helpers import response as _response
 from _helpers import terminal as _terminal
 
 
-
-
-
-
 def _executor_result(deps: dict[str, object]) -> dict[str, object]:
     try:
         parsed = json.loads(_response(deps.get("executor", {})))

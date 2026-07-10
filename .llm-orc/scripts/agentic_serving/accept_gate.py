@@ -55,41 +55,50 @@ def _extract_bool(resp: str, key: str) -> bool | None:
     return None
 
 
-def main() -> None:
-    raw = sys.stdin.read().strip()
-    deps: dict[str, object] = {}
+def _read_deps(raw: str) -> dict[str, object]:
     try:
         envelope = json.loads(raw)
-        if isinstance(envelope, dict):
-            found = envelope.get("dependencies", {})
-            deps = found if isinstance(found, dict) else {}
     except (json.JSONDecodeError, TypeError):
-        deps = {}
+        return {}
+    if isinstance(envelope, dict):
+        found = envelope.get("dependencies", {})
+        return found if isinstance(found, dict) else {}
+    return {}
 
-    tests_pass = _extract_bool(_dep_response(deps, "executor"), "tests_pass")
-    # the judge is a sub-ensemble seat (#84): its dep response is the nested
-    # child-result envelope — peel to the model's raw verdict (terminal() is
-    # a no-op on a bare verdict, so both shapes read)
+
+def _resolve_adequacy(
+    deps: dict[str, object], reasons: list[str]
+) -> tuple[bool, bool]:
+    """(tests_adequate, carried) from the judge verdict or the held flag.
+
+    The judge is a sub-ensemble seat (#84): its dep response is the nested
+    child-result envelope — peel to the model's raw verdict (terminal() is
+    a no-op on a bare verdict, so both shapes read). Held round (issue
+    #100): no judge seat — the held path only fires when round 1's judge
+    passed these exact tests, so the verdict carries deterministically;
+    the executor stays the live gate. No judge AND no held flag is a
+    miswired shape, not a free pass.
+    """
     tests_adequate = _extract_bool(
         _terminal(_dep_response(deps, "judge")), "tests_adequate"
     )
+    if tests_adequate is not None:
+        return tests_adequate, False
+    if _extract_bool(_dep_response(deps, "gather"), "held"):
+        return True, True
+    reasons.append("judge verdict unreadable")
+    return False, False
 
+
+def main() -> None:
+    deps = _read_deps(sys.stdin.read().strip())
+
+    tests_pass = _extract_bool(_dep_response(deps, "executor"), "tests_pass")
     reasons: list[str] = []
-    carried = False
     if tests_pass is None:
         tests_pass = False
         reasons.append("executor verdict unreadable")
-    if tests_adequate is None:
-        # held round (issue #100): no judge seat — the held path only fires
-        # when round 1's judge passed these exact tests, so the verdict
-        # carries deterministically; the executor stays the live gate.
-        # No judge AND no held flag is a miswired shape, not a free pass.
-        if _extract_bool(_dep_response(deps, "gather"), "held"):
-            tests_adequate = True
-            carried = True
-        else:
-            tests_adequate = False
-            reasons.append("judge verdict unreadable")
+    tests_adequate, carried = _resolve_adequacy(deps, reasons)
 
     accept = bool(tests_pass and tests_adequate)
     if not accept and not reasons:
