@@ -1,0 +1,10 @@
+name: need-run
+description: |
+  issue #83 run half — the cheap dispatch target for a turn that delegates a
+  test run to the client. The command rides the routing decision (classify);
+  this shape exists so the skeleton dispatches SOMETHING without burning a
+  model call. One deterministic script node.
+serves: need-run
+agents:
+  - name: echo
+    script: scripts/agentic_serving/need_run_echo.py
