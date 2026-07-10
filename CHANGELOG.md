@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.18.6] - 2026-07-09
+
+### Added
+- Client-file reads through the permission seam (issue #83, read half): a
+  turn naming a file the serve can't see delegates a `read` tool_call to
+  the client and resumes statelessly when the result comes back — the
+  read renders as an `[read <path>]` context block, materializes into the
+  accept-gate sandbox, and stays retrievable in later turns via the
+  lossless selection. "Write tests for existing foo.py" now ships gated
+  tests instead of rejecting on an invisible import
+- `need-files` shape: the cheap script-only dispatch target for a turn
+  that must first request client files (the reads request rides the
+  routing decision, not the seat envelope)
+- Tool-name resolution against the client's advertised tools for both
+  read and write outcomes (hardcoded names survive as fallbacks)
+
+### Changed
+- One read round per turn: a failed or oversize read refuses honestly
+  (`Refused: could not read <path>: <reason>`), never re-requests
+- Read-result normalization locked to the captured OpenCode wire format
+  (`<path>`/`<content>` tags, `N: ` line-number gutter, end-of-file
+  trailer; bare `File not found:` failures); a structural `<content>`
+  check outranks failure-prefix heuristics
+
 ## [0.18.5] - 2026-07-09
 
 ### Added
