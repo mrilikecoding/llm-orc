@@ -89,6 +89,7 @@ def _sanitize_tests(tests: str) -> tuple[str, int]:
 _INJECTABLE_MODULES = frozenset(
     {
         "collections",
+        "contextlib",
         "functools",
         "itertools",
         "json",
@@ -215,6 +216,58 @@ def _excise_unbound_callable_tests(tests: str, code: str) -> tuple[str, int]:
         start = min([func.lineno, *(d.lineno for d in func.decorator_list)]) - 1
         del lines[start : (func.end_lineno or func.lineno)]
     return "\n".join(lines) + ("\n" if tests.endswith("\n") else ""), len(doomed)
+
+
+def _is_bare_os_removal(stmt: ast.stmt) -> bool:
+    """A bare ``os.remove(...)`` / ``os.unlink(...)`` expression statement."""
+    if not (isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Call)):
+        return False
+    func = stmt.value.func
+    return (
+        isinstance(func, ast.Attribute)
+        and func.attr in ("remove", "unlink")
+        and isinstance(func.value, ast.Name)
+        and func.value.id == "os"
+    )
+
+
+def _guard_unconditional_removals(tests: str) -> tuple[str, int]:
+    """Tests with bare top-of-test-body removals suppressed, and the count.
+
+    Spike 2026-07-10 (turn6_s4 r1+r2): setup deletes a file that never
+    exists in the fresh per-test sandbox — per-test isolation itself
+    created this failure mode — and the FileNotFoundError fires before any
+    assert. A bare ``os.remove(...)`` / ``os.unlink(...)`` expression
+    statement directly in a test function's body (so never one already
+    inside try/with) is wrapped in ``with contextlib.suppress(
+    FileNotFoundError):``; the contextlib import arrives via the existing
+    injection mechanism. Same shape as import injection: the artifact
+    becomes self-consistent without touching what it asserts about the
+    code. The echoed (shipped) tests carry the wrap.
+    """
+    try:
+        tree = ast.parse(tests)
+    except SyntaxError:
+        return tests, 0
+    targets = [
+        stmt
+        for node in tree.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and node.name.startswith("test_")
+        for stmt in node.body
+        if _is_bare_os_removal(stmt)
+    ]
+    if not targets:
+        return tests, 0
+    lines = tests.splitlines()
+    for stmt in sorted(targets, key=lambda s: s.lineno, reverse=True):
+        start, end = stmt.lineno - 1, stmt.end_lineno or stmt.lineno
+        indent = " " * stmt.col_offset
+        block = [f"{indent}with contextlib.suppress(FileNotFoundError):"] + [
+            f"    {line}" for line in lines[start:end]
+        ]
+        lines[start:end] = block
+    return "\n".join(lines) + ("\n" if tests.endswith("\n") else ""), len(targets)
 
 
 def _from_dependencies(envelope: dict[str, object]) -> dict[str, object] | None:
@@ -461,6 +514,7 @@ def main() -> None:
     tests = str(data.get("tests", ""))
     tests, tests_sanitized = _sanitize_tests(tests)
     tests, tests_excised = _excise_unbound_callable_tests(tests, code)
+    tests, tests_removals_guarded = _guard_unconditional_removals(tests)
     tests, tests_imports_injected = _inject_test_imports(tests, code)
     raw_workspace = data.get("workspace")
     workspace = (
@@ -483,6 +537,7 @@ def main() -> None:
                 "n_tests": n_tests,
                 "tests_sanitized": tests_sanitized,
                 "tests_excised": tests_excised,
+                "tests_removals_guarded": tests_removals_guarded,
                 "tests_imports_injected": tests_imports_injected,
                 "report": report,
             }

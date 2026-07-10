@@ -471,6 +471,56 @@ def test_call_to_a_code_bound_name_is_never_excised() -> None:
     assert result["tests_pass"] is True
 
 
+def test_unguarded_os_remove_is_wrapped_in_suppress() -> None:
+    """Verbatim spike exemplar (turn6_s4 r1+r2): setup deletes a file that
+    never exists in the fresh per-test sandbox; FileNotFoundError fires
+    before the assert. The wrap makes setup idempotent without touching
+    what the test asserts about the code."""
+    tests = (
+        "def test_load_todos_returns_empty_list_on_missing_file():\n"
+        "    import os\n"
+        '    os.remove("todos.json")\n'
+        "    assert load_todos() == []\n"
+    )
+    result = _executor("save/load todos", _SAVE_LOAD_CODE, tests)
+    assert result["tests_removals_guarded"] == 1
+    assert "with contextlib.suppress(FileNotFoundError):" in result["tests"]
+    assert "import contextlib" in result["tests"]
+    assert result["tests_pass"] is True
+
+
+def test_os_unlink_is_guarded_like_os_remove() -> None:
+    tests = (
+        "import os\n"
+        "def test_missing_file():\n"
+        '    os.unlink("todos.json")\n'
+        "    assert load_todos() == []\n"
+    )
+    result = _executor("save/load todos", _SAVE_LOAD_CODE, tests)
+    assert result["tests_removals_guarded"] == 1
+    assert result["tests_pass"] is True
+
+
+def test_removal_already_inside_try_or_with_is_left_alone() -> None:
+    tests = (
+        "import os\n"
+        "import contextlib\n"
+        "def test_missing_file():\n"
+        "    with contextlib.suppress(FileNotFoundError):\n"
+        '        os.remove("todos.json")\n'
+        "    assert load_todos() == []\n"
+        "def test_missing_file_try():\n"
+        "    try:\n"
+        '        os.remove("todos.json")\n'
+        "    except FileNotFoundError:\n"
+        "        pass\n"
+        "    assert load_todos() == []\n"
+    )
+    result = _executor("save/load todos", _SAVE_LOAD_CODE, tests)
+    assert result["tests_removals_guarded"] == 0
+    assert result["tests_pass"] is True
+
+
 def test_call_to_a_fixture_parameter_is_never_excised() -> None:
     """A called name bound as a test parameter (pytest fixture) is bound."""
     tests = (
