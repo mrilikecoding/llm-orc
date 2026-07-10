@@ -17,6 +17,11 @@ description: |
 agents:
   - name: code_writer
     ensemble: code-generator
+    # the held-round input is the system's longest prompt (turn + reject
+    # report + held tests); the 300s default timed out the 3-call
+    # code-generator, shipped empty code, and killed the one convertible
+    # retry (spike 2026-07-10) — bounded by the dispatch/loop budget above
+    timeout_seconds: 600
 
   - name: gather
     script: scripts/agentic_serving/accept_gather.py
