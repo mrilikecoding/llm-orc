@@ -328,3 +328,32 @@ def test_bare_assert_on_an_assigned_local_is_kept() -> None:
     result = _executor("adds", "def add(a, b):\n    return a + b\n", tests)
     assert result["tests_sanitized"] == 0
     assert "assert result" in result["tests"]
+
+
+def test_missing_stdlib_and_pytest_imports_are_injected() -> None:
+    tests = (
+        "def test_raises():\n"
+        "    with pytest.raises(ValueError):\n"
+        "        boom()\n"
+        "def test_file():\n"
+        "    open('x.txt', 'w').write('1')\n"
+        "    assert os.path.exists('x.txt')\n"
+    )
+    code = "def boom():\n    raise ValueError('no')\n"
+    result = _executor("boom raises", code, tests)
+    assert result["tests_pass"] is True
+    assert result["tests_imports_injected"] == 2
+    assert result["tests"].startswith("import os\nimport pytest\n")
+
+
+def test_non_whitelisted_unbound_names_are_not_injected() -> None:
+    tests = "def test_x():\n    assert requests.get is not None\n"
+    result = _executor("http", "", tests)
+    assert result["tests_imports_injected"] == 0
+    assert result["tests_pass"] is False
+
+
+def test_already_imported_modules_are_not_reinjected() -> None:
+    tests = "import os\ndef test_x():\n    assert os.sep\n"
+    result = _executor("sep", "", tests)
+    assert result["tests_imports_injected"] == 0

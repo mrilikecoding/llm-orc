@@ -17,6 +17,7 @@ the contract and artifact to the isolated judge seat.
 from __future__ import annotations
 
 import ast
+import builtins
 import json
 import keyword
 import os
@@ -66,6 +67,72 @@ def _sanitize_tests(tests: str) -> tuple[str, int]:
             continue
         kept.append(line)
     return "\n".join(kept) + ("\n" if tests.endswith("\n") else ""), dropped
+
+
+# The 8b test-writer omits its own imports (live probe 2026-07-09:
+# os.path.exists / pytest.raises with no import lines) — a defect no code
+# regeneration can fix, since the code cannot define pytest. Deterministic
+# repair, same shape as gather's workspace-import injection: unbound
+# whitelisted module names get their import prepended, and the echoed
+# (shipped) tests carry it, making the artifact self-contained. Names
+# outside the whitelist stay uninjected and reject honestly.
+_INJECTABLE_MODULES = frozenset(
+    {
+        "collections", "functools", "itertools", "json", "math", "os",
+        "pathlib", "pytest", "re", "string", "sys", "tempfile", "time",
+        "unittest",
+    }
+)
+
+_BUILTIN_NAMES = frozenset(dir(builtins))
+
+
+def _param_names(args: ast.arguments) -> set[str]:
+    """Every name a function's parameter list binds, including *args/**kwargs."""
+    names = {a.arg for a in (*args.posonlyargs, *args.args, *args.kwonlyargs)}
+    if args.vararg:
+        names.add(args.vararg.arg)
+    if args.kwarg:
+        names.add(args.kwarg.arg)
+    return names
+
+
+def _bound_names(tree: ast.Module) -> set[str]:
+    """Every name the tests source binds: assignments, for/with targets (all
+    ``ast.Name`` in Store context), def/class names, function parameters, and
+    import aliases — the rest are candidates for import injection."""
+    bound = {
+        n.id
+        for n in ast.walk(tree)
+        if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Store)
+    }
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            bound.add(node.name)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            bound |= _param_names(node.args)
+        if isinstance(node, (ast.Import, ast.ImportFrom)):
+            bound |= {a.asname or a.name.split(".")[0] for a in node.names}
+    return bound
+
+
+def _inject_test_imports(tests: str) -> tuple[str, int]:
+    """Tests with missing whitelisted imports prepended, and the count."""
+    try:
+        tree = ast.parse(tests)
+    except SyntaxError:
+        return tests, 0
+    loaded = {
+        n.id
+        for n in ast.walk(tree)
+        if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Load)
+    }
+    unbound = loaded - _bound_names(tree) - _BUILTIN_NAMES
+    missing = sorted(unbound & _INJECTABLE_MODULES)
+    if not missing:
+        return tests, 0
+    prelude = "\n".join(f"import {name}" for name in missing)
+    return f"{prelude}\n\n{tests}", len(missing)
 
 
 def _from_dependencies(envelope: dict[str, object]) -> dict[str, object] | None:
@@ -290,6 +357,7 @@ def main() -> None:
     code = str(data.get("code", ""))
     tests = str(data.get("tests", ""))
     tests, tests_sanitized = _sanitize_tests(tests)
+    tests, tests_imports_injected = _inject_test_imports(tests)
     raw_workspace = data.get("workspace")
     workspace = (
         {str(k): str(v) for k, v in raw_workspace.items()}
@@ -310,6 +378,7 @@ def main() -> None:
                 "tests_pass": tests_pass,
                 "n_tests": n_tests,
                 "tests_sanitized": tests_sanitized,
+                "tests_imports_injected": tests_imports_injected,
                 "report": report,
             }
         )
