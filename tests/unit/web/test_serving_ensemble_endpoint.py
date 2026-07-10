@@ -62,6 +62,22 @@ _READ_TOOL_DEF = {
     },
 }
 
+_BASH_TOOL_DEF = {
+    "type": "function",
+    "function": {
+        "name": "bash",
+        "description": "Run a shell command.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "command": {"type": "string"},
+                "description": {"type": "string"},
+            },
+            "required": ["command"],
+        },
+    },
+}
+
 # A deterministic code_generation flow: one echo node emitting clean python, so
 # the build turn runs classify -> seat(code-seat -> code-generator -> envelope)
 # -> shape -> form-gate -> emit with no model tokens. The code seat wraps this
@@ -109,6 +125,10 @@ def serving_project(tmp_path: Path) -> Path:
     # discovery is non-recursive (WP-A8 discovery note b).
     (ensembles / "explainer.yaml").write_text(_ECHO_EXPLAINER)
     shutil.copy(REAL_AGENTIC_SERVING / "need-files.yaml", ensembles / "need-files.yaml")
+    shutil.copy(REAL_AGENTIC_SERVING / "need-run.yaml", ensembles / "need-run.yaml")
+    shutil.copy(
+        REAL_AGENTIC_SERVING / "run-verdict.yaml", ensembles / "run-verdict.yaml"
+    )
     return tmp_path
 
 
@@ -483,3 +503,118 @@ def test_failed_read_refuses_honestly_without_relooping(
     assert choice["finish_reason"] == "stop"
     assert not choice["message"].get("tool_calls")
     assert "could not read calc.py" in choice["message"]["content"]
+
+
+def test_run_turn_emits_a_bash_tool_call_with_the_closed_command(
+    serving_client: TestClient,
+) -> None:
+    """Pass 1 (issue #83 run half): a run turn delegates one deterministic
+    pytest command through the permission seam."""
+    resp = serving_client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "ensemble-agent",
+            "messages": [{"role": "user", "content": "run test_calc.py"}],
+            "tools": [_WRITE_TOOL, _READ_TOOL_DEF, _BASH_TOOL_DEF],
+        },
+    )
+
+    assert resp.status_code == 200
+    choice = resp.json()["choices"][0]
+    assert choice["finish_reason"] == "tool_calls"
+    call = choice["message"]["tool_calls"][0]
+    assert call["function"]["name"] == "bash"
+    arguments = json.loads(call["function"]["arguments"])
+    assert arguments["command"] == "pytest -q test_calc.py"
+
+
+def test_run_continuation_ships_the_deterministic_verdict(
+    serving_client: TestClient,
+) -> None:
+    """Pass 2 (issue #83 run half): the bash result re-enters the pipeline
+    and the run-verdict shape replies with pytest's own summary."""
+    resp = serving_client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "ensemble-agent",
+            "messages": [
+                {"role": "user", "content": "run the tests"},
+                {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "id": "call_b1",
+                            "type": "function",
+                            "function": {
+                                "name": "bash",
+                                "arguments": (
+                                    '{"command": "pytest -q",'
+                                    ' "description": "Run tests"}'
+                                ),
+                            },
+                        }
+                    ],
+                },
+                {
+                    "role": "tool",
+                    "tool_call_id": "call_b1",
+                    "content": ".....\n5 passed in 0.12s",
+                },
+            ],
+            "tools": [_WRITE_TOOL, _READ_TOOL_DEF, _BASH_TOOL_DEF],
+        },
+    )
+
+    assert resp.status_code == 200
+    choice = resp.json()["choices"][0]
+    assert choice["finish_reason"] == "stop"
+    assert not choice["message"].get("tool_calls")
+    assert choice["message"]["content"] == "Ran `pytest -q`: 5 passed."
+
+
+def test_failing_run_verdict_carries_the_failure_lines(
+    serving_client: TestClient,
+) -> None:
+    """An honest red verdict: counts from pytest's summary plus the FAILED
+    lines — never a silent success, never a second run request."""
+    resp = serving_client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "ensemble-agent",
+            "messages": [
+                {"role": "user", "content": "run the tests"},
+                {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "id": "call_b1",
+                            "type": "function",
+                            "function": {
+                                "name": "bash",
+                                "arguments": '{"command": "pytest -q"}',
+                            },
+                        }
+                    ],
+                },
+                {
+                    "role": "tool",
+                    "tool_call_id": "call_b1",
+                    "content": (
+                        "..F\n"
+                        "FAILED test_calc.py::test_divide - ZeroDivisionError\n"
+                        "1 failed, 2 passed in 0.05s"
+                    ),
+                },
+            ],
+            "tools": [_WRITE_TOOL, _READ_TOOL_DEF, _BASH_TOOL_DEF],
+        },
+    )
+
+    assert resp.status_code == 200
+    choice = resp.json()["choices"][0]
+    assert choice["finish_reason"] == "stop"
+    content = choice["message"]["content"]
+    assert content.startswith("Ran `pytest -q`: 1 failed, 2 passed.")
+    assert "FAILED test_calc.py::test_divide" in content
