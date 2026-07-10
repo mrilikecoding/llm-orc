@@ -342,7 +342,11 @@ def _discovery(
     wants_existing = tests_primary or (
         has_build_signal and bool(_EXISTING_RE.search(task))
     )
-    if not wants_existing or _named_source_files(task):
+    # A turn that names ANY file has nothing to discover — including
+    # test_*-named files, which _named_source_files deliberately excludes
+    # (review blocker 2026-07-10: "tests for test_storage.py" stemmed
+    # "test_storage" and burned a doomed glob round).
+    if not wants_existing or _extract_file(task):
         return "", "", ""
     stem = _module_stem(task)
     if not stem:
@@ -350,15 +354,31 @@ def _discovery(
     candidates = _globbed_candidates(context, stem)
     if candidates is None:
         visible, _ = _visibility(context)
-        match = next(
-            (name for name in visible if name.rsplit(".", 1)[0].lower() == stem),
-            "",
+        # The same candidate discipline as the globbed MATCH step (review
+        # blocker 2026-07-10: any-extension + set-order pick shipped a
+        # test_storage.json deliverable): .py only, not test_*, sorted for
+        # determinism; one match names the file, several refuse, none
+        # falls through to the glob request — the listing decides.
+        matches = sorted(
+            name
+            for name in visible
+            if name.rsplit(".", 1)[0].lower() == stem
+            and name.endswith(".py")
+            and not name.startswith("test_")
         )
-        if match:
+        if len(matches) == 1:
             # the stem IS a visible file — nothing to discover, but it is
             # still the turn's named file (live finding 2026-07-10: without
             # this a retried module turn shipped to test_solution.py)
-            return "", match, ""
+            return "", matches[0], ""
+        if len(matches) > 1:
+            listed = ", ".join(matches)
+            return (
+                "",
+                "",
+                f"multiple visible files match '{stem}': {listed}"
+                " — please name one",
+            )
         return stem, "", ""
     if len(candidates) == 1:
         return "", candidates[0], ""

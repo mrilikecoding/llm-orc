@@ -567,3 +567,44 @@ def test_visible_stem_names_the_file_for_the_tests_destination() -> None:
     )
     assert decision["target"] == "tests-seat"
     assert decision["file"] == "test_storage.py"
+
+
+def test_named_test_file_turn_never_globs() -> None:
+    # review blocker 1 (2026-07-10): "tests for test_storage.py" stemmed
+    # "test_storage" and burned a doomed glob round (the candidate rule
+    # excludes test_* basenames, so refusal was guaranteed). A turn that
+    # names ANY file has nothing to discover.
+    decision = _classify({"task": "write tests for test_storage.py"})
+    assert decision["target"] == "tests-seat"
+    assert decision["needs_glob"] == ""
+    assert decision["file"] == "test_storage.py"
+
+
+def test_extend_tests_for_named_test_file_never_globs() -> None:
+    decision = _classify({"task": "extend the tests for test_calc.py"})
+    assert decision["needs_glob"] == ""
+
+
+def test_visible_stem_match_applies_the_candidate_discipline() -> None:
+    # review blocker 2 (2026-07-10): the visible-stem shortcut matched any
+    # extension with a nondeterministic tie pick — a durable read block for
+    # storage.json produced a test_storage.json deliverable. Same rule as
+    # globbed candidates: .py only, not test_*, one-or-refuse.
+    context = "assistant: [read storage.json]\n  {}"
+    decision = _classify(
+        {"task": "write tests for the storage module", "context": context}
+    )
+    assert decision["target"] == "need-glob"
+    assert decision["needs_glob"] == "storage"
+
+
+def test_visible_stem_tie_between_py_and_json_prefers_the_py_file() -> None:
+    context = (
+        "assistant: [read storage.json]\n  {}\n"
+        "assistant: [read storage.py]\n  def save(): pass"
+    )
+    decision = _classify(
+        {"task": "write tests for the storage module", "context": context}
+    )
+    assert decision["target"] == "tests-seat"
+    assert decision["file"] == "test_storage.py"
