@@ -87,6 +87,8 @@ def main() -> None:
         needs_files = []
     read_failed = str(classify.get("read_failed", ""))
     needs_run = str(classify.get("needs_run", ""))
+    needs_glob = str(classify.get("needs_glob", ""))
+    glob_failed = str(classify.get("glob_failed", ""))
 
     if classify.get("needs_decider"):
         target = _decider_target(_response(deps.get("decide", {})))
@@ -113,6 +115,8 @@ def main() -> None:
                 "needs_files": needs_files,
                 "read_failed": read_failed,
                 "needs_run": needs_run,
+                "needs_glob": needs_glob,
+                "glob_failed": glob_failed,
             }
         )
     )

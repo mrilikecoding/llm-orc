@@ -9,11 +9,17 @@ form-gate refused degrades to a prose finish carrying the refusal reason: the
 serve never writes a deliverable that failed destination-validity.
 
     read failed:     {"finish": true, "content": "Refused: <read_failed reason>"}
+    glob failed:     {"finish": true, "content": "Refused: <glob_failed reason>"}
     needs files:     {"finish": false, "reads": ["<path>", ...]}
+    needs glob:      {"finish": false, "glob": "<stem>"}
     needs run:       {"finish": false, "run": "<command>"}
     build + valid:   {"finish": false, "file": "<path>", "content": "<source>"}
     build + refused: {"finish": true, "content": "Refused: <reason>"}
     non-build:       {"finish": true, "content": "<prose>"}
+
+The read/glob/run branches are mutually exclusive by construction — classify
+routes each turn to exactly one seam — so their order below only mirrors the
+failure-before-request style, never resolves a real conflict.
 """
 
 from __future__ import annotations
@@ -34,6 +40,32 @@ def _response(dep: object) -> str:
     return dep.get("response", "") if isinstance(dep, dict) else ""
 
 
+def _seam_outcome(gated: dict) -> dict | None:
+    """The issue-#83 delegation-seam outcome, or ``None`` when the turn
+    rides no seam (a build/prose turn). Failures refuse honestly before any
+    request fires — one round per seam per turn, never a re-request."""
+    read_failed = str(gated.get("read_failed", ""))
+    if read_failed:
+        return {"finish": True, "content": f"Refused: {read_failed}"}
+    glob_failed = str(gated.get("glob_failed", ""))
+    if glob_failed:
+        # issue #83 discovery: zero or ambiguous candidates refuse honestly.
+        return {"finish": True, "content": f"Refused: {glob_failed}"}
+    needs_files = gated.get("needs_files") or []
+    if needs_files:
+        # delegate the file reads to the client permission seam.
+        return {"finish": False, "reads": list(needs_files)}
+    needs_glob = str(gated.get("needs_glob", ""))
+    if needs_glob:
+        # issue #83 discovery: delegate one workspace listing.
+        return {"finish": False, "glob": needs_glob}
+    needs_run = str(gated.get("needs_run", ""))
+    if needs_run:
+        # issue #83 run half: delegate one closed-template test run.
+        return {"finish": False, "run": needs_run}
+    return None
+
+
 def main() -> None:
     deps = _deps(sys.stdin.read().strip())
     try:
@@ -47,21 +79,10 @@ def main() -> None:
     content = str(gated.get("content", ""))
     accept = gated.get("accept")
     seat_admitted = gated.get("seat_admitted")
-    needs_files = gated.get("needs_files") or []
-    read_failed = str(gated.get("read_failed", ""))
-    needs_run = str(gated.get("needs_run", ""))
 
-    if read_failed:
-        # issue #83: one read round per turn — a failed request refuses
-        # honestly, never re-requests.
-        outcome = {"finish": True, "content": f"Refused: {read_failed}"}
-    elif needs_files:
-        # issue #83: delegate the file reads to the client permission seam.
-        outcome = {"finish": False, "reads": list(needs_files)}
-    elif needs_run:
-        # issue #83 run half: delegate one closed-template test run to the
-        # client permission seam.
-        outcome = {"finish": False, "run": needs_run}
+    seam = _seam_outcome(gated)
+    if seam is not None:
+        outcome = seam
     elif seat_admitted is False:
         # The seat's output did not meet its own seat-owned contract (WP-E8;
         # ADR-046 §2). Refuse before shipping — a distinct, higher-priority gate
