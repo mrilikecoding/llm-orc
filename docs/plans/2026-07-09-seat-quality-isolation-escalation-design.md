@@ -1,7 +1,8 @@
-# Seat quality: per-test isolation, then bounded escalation (path item 4)
+# Seat quality: per-test isolation + bare-name-assert sanitizer (path item 4)
 
-**Status:** Approved design, 2026-07-09. Follows the v0.18.6 ladder rerun
-(4/10 strict; 3 misses from round-1 test quality).
+**Status:** Approved design, 2026-07-09 (rev 2 — escalation deferred on
+spike data). Follows the v0.18.6 ladder rerun (4/10 strict; 3 misses from
+round-1 test quality).
 
 ## Evidence (live probes, 2026-07-09, qwen3:8b seats)
 
@@ -61,16 +62,34 @@ is trivial on the rig.
 - Tests that genuinely require cross-test ordering now pass individually —
   acceptable; order-independence is the intended test semantics.
 
-### Slice 2 — round-3 escalation on exhausted retry
+### Slice 2′ — bare-name-assert sanitizer (replaces escalation; spike-grounded)
 
-`route_round` (the deterministic router) gains one rung: a reject whose
-held 8b retry also rejected dispatches ONE round 3 to `build-code-round`
-on a new **`agentic-tier-strong`** profile — shipped default
-**`qwen3:14b`** (local, fits the 32GB rig; operator-overridable via
-`*.local.yaml` like every tier). Same held tests, same gate; after round
-3, honest reject as today. Loop bound 2 → 3; the turn trace records the
-escalated round. Code seat only — test-writer escalation is class C
-territory, out of this arc.
+The 4-arm tier/thinking spike (2026-07-09, probe-2 held-round fixture,
+n=3 per arm) found every arm — {qwen3:8b, qwen3:14b} × {think on, off} —
+defines the required API and plateaus at exactly 3/4 held tests. The
+universal failure is the suite's stray `assert load` line: a value-free,
+bare-name assert referencing a symbol every model reads as a typo for
+`load_todos`. No tier or thinking mode converts a garbage test line.
+
+So the residual lever is deterministic: **strip `assert <bare-name>`
+statements from authored/held tests before execution** — an assert whose
+test expression is a bare `Name` node checks only object truthiness (a
+defined function is always truthy) and carries no test value. One small
+AST pass applied where tests are gathered for the executor; the shipped
+artifact carries the sanitized suite (what executed is what ships,
+preserving the #98 invariant). With it, the fixture accepts at round 1
+on the cheap seat in ~5s.
+
+### Escalation — deferred, measurement recorded
+
+Spike latency data: qwen3:14b think-off generates as fast as qwen3:8b
+think-off on this rig (4–13s vs 5–9s); think-on costs 10–20× wall on
+either model (52–105s). **If a measured class ever demands escalation,
+the rung is qwen3:14b think-off** (dominates 8b think-on: same
+conversion, ~1/10 the latency), via the existing
+`agentic-tier-escalated-general` profile. Not built now: no measured
+class converts under escalation that isolation + the sanitizer don't
+already fix. Loop bound stays 2.
 
 ## Validation
 
@@ -78,19 +97,21 @@ territory, out of this arc.
   bound and the executor isolation.
 - The two probe prompts above are the live regression fixtures. Probe 1
   must ACCEPT after slice 1 alone (its held-round code was right; only
-  test interference rejected it). Probe 2 clears its leakage failures
-  under slice 1 but its name divergence (class B) persists — it must
-  ACCEPT after slices 1+2 together (stochastic seat caveat: "accept
-  within two attempts" is the pass bar for both).
+  test interference rejected it). Probe 2 must ACCEPT after slices 1+2′
+  together (isolation clears the leakage asserts; the sanitizer clears
+  the stray `assert load`). Stochastic seat caveat: "accept within two
+  attempts" is the pass bar for both.
 - Full ladder rerun (`benchmarks/agentic_serving/ladder_battery.sh`),
   new trajectory row.
-- Record the arc's measurement: how many rejects survive isolation, and
-  of those, how many round-3 14b converts.
+- Record the arc's measurement: how many ladder rejects survive
+  isolation + the sanitizer.
 
 ## Out of scope
 
-- Test sanitizer for exception-message assertions (class C) — deferred
-  until it breaks a measured turn.
+- Escalation (deferred with its measurement — see above).
+- Sanitizing exception-message assertions (the other #98 residual) —
+  deferred until it breaks a measured turn; the sanitizer's boundary is
+  bare-name asserts only.
 - Test-writer seat escalation.
 - #83 run half (client-delegated execution, discovery) — next arc, per
   roadmap.
