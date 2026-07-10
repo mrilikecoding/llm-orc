@@ -48,6 +48,8 @@ _WRITE_TOOL_CANDIDATES = ("write", "write_file", "Write")
 _READ_TOOL_CANDIDATES = ("read", "read_file", "Read")
 _BASH_TOOL = "bash"
 _BASH_TOOL_CANDIDATES = ("bash", "shell", "terminal", "Bash")
+_GLOB_TOOL = "glob"
+_GLOB_TOOL_CANDIDATES = ("glob", "Glob")
 
 
 def _client_tool(
@@ -94,6 +96,23 @@ _RUN_OUTPUT_CAP = 4096
 # forge header tokens like a "(failed)" variant suffix).
 _RUN_COMMAND_RE = re.compile(r"^pytest -q(?: [\w./-]+)*$")
 _UNTRUSTED_COMMAND = "untrusted-command"
+# issue #83 discovery: the glob pattern is template-built from classify's
+# charset-checked stem, re-asserted here — an unsafe stem never enters the
+# pattern template (the run-command discipline).
+_GLOB_STEM_RE = re.compile(r"^[A-Za-z_]\w*$")
+# The closed pattern template the serve issues. On resume the pattern comes
+# back over the wire (the client echoes the tool_call), so it is validated
+# against the template before its stem may enter the rendered header — a
+# non-matching echo renders as a failed block under a fixed safe token.
+_GLOB_PATTERN_RE = re.compile(r"^\*\*/\*([A-Za-z_]\w*)\*$")
+_UNTRUSTED_STEM = "untrusted-stem"
+# Listing cap (discovery design bounds): the rendered block keeps at most
+# 50 paths, header-marked when cut; classify matches on the rendered block
+# only.
+_GLOB_MAX_PATHS = 50
+# A bare path line in a glob result — the only line shape that survives the
+# tolerant normalizer into the fenced body.
+_GLOB_PATH_LINE_RE = re.compile(r"^[\w./-]+$")
 # Legacy line-number gutter ("00001| ..."); strip it only when every
 # non-empty line carries one. Not what real OpenCode sends (captured wire,
 # 2026-07-09, shows the "N: " gutter below) — kept for other clients that
@@ -202,7 +221,8 @@ def _render_context(messages: Sequence[Any]) -> str:
     write_blocks = [block for path, block in selected if path not in tail_paths]
     kept = _whole_blocks_within_cap(write_blocks)
     kept = _select_read_blocks(messages, task, tail_paths) + kept
-    kept = kept + _run_blocks(items[boundary + 1 :])
+    post_user = items[boundary + 1 :]
+    kept = kept + _run_blocks(post_user) + _glob_blocks(post_user)
 
     if kept:
         selected_text = "\n".join(kept)
@@ -327,6 +347,15 @@ def _is_run_shaped(arguments: dict[str, Any]) -> bool:
 def _is_write_shaped(arguments: dict[str, Any]) -> bool:
     """A write tool call: filePath plus content."""
     return bool(arguments.get("filePath")) and "content" in arguments
+
+
+def _is_glob_shaped(arguments: dict[str, Any]) -> bool:
+    """A glob tool call: pattern, no filePath, no command."""
+    return (
+        bool(arguments.get("pattern"))
+        and "filePath" not in arguments
+        and "command" not in arguments
+    )
 
 
 def _call_field_map(
@@ -460,6 +489,72 @@ def _run_blocks(post_user: Sequence[Any]) -> list[str]:
     return blocks
 
 
+def _normalize_glob(raw: str) -> list[str]:
+    """Client glob output as a plain path list.
+
+    TODO(live-validation): the glob RESULT format is not yet wire-captured —
+    the advertised-tools capture (2026-07-10) covers only the argument
+    schema. Expected: newline-separated paths. Anything that does not parse
+    as a bare path line (a "Found N files" header, a truncation footer,
+    prose) is dropped defensively; lock this to the captured format once the
+    coordinator runs the live validation step.
+    """
+    paths: list[str] = []
+    for line in (raw or "").splitlines():
+        candidate = line.strip()
+        if candidate and _GLOB_PATH_LINE_RE.match(candidate):
+            paths.append(candidate)
+    return paths
+
+
+def _render_glob_block(pattern: str, raw: str) -> str:
+    """A glob result as a context block (issue #83 discovery grammar). The
+    body is one path per line, indented two spaces (fenced block grammar —
+    untrusted output can never put a header lookalike at column 0); the
+    listing keeps at most ``_GLOB_MAX_PATHS`` paths, header-marked when cut.
+    An empty listing is a single-line failed variant so classify refuses
+    honestly instead of re-requesting (one glob round per turn).
+
+    On resume the pattern comes from the wire (the client echoes the
+    tool_call back), so its stem enters the header only when the echo
+    matches the closed template the serve issues — the _RUN_COMMAND_RE
+    discipline. Glob blocks are never materialized: gather's header regex
+    does not know this block type.
+    """
+    match = _GLOB_PATTERN_RE.match(" ".join((pattern or "").split()))
+    if not match:
+        return (
+            f"assistant: [globbed {_UNTRUSTED_STEM} (failed)] "
+            "pattern echo did not match the issued template"
+        )
+    stem = match.group(1)
+    paths = _normalize_glob(raw)
+    if not paths:
+        return f"assistant: [globbed {stem} (failed)] empty glob result"
+    header = f"assistant: [globbed {stem}]"
+    if len(paths) > _GLOB_MAX_PATHS:
+        paths = paths[:_GLOB_MAX_PATHS]
+        header = f"assistant: [globbed {stem} (truncated)]"
+    return f"{header}\n{_indent_body(chr(10).join(paths))}"
+
+
+def _glob_blocks(post_user: Sequence[Any]) -> list[str]:
+    """Glob blocks answering THIS turn only — a workspace listing is
+    ephemeral discovery evidence like run output (the design's selection
+    rule): the chain's later passes still see it, later turns never
+    re-render a stale listing. Reads remain the durable state."""
+    patterns = _call_field_map(post_user, _is_glob_shaped, "pattern")
+    blocks: list[str] = []
+    for message in post_user:
+        if getattr(message, "role", None) != "tool":
+            continue
+        pattern = patterns.get(getattr(message, "tool_call_id", None) or "")
+        if pattern:
+            content = getattr(message, "content", None)
+            blocks.append(_render_glob_block(pattern, content or ""))
+    return blocks
+
+
 def _render_text(message: Any, role: str) -> str | None:
     """One line per message — block bodies stay the only multi-line content,
     keeping the transcript line-anchored for workspace extraction.
@@ -480,11 +575,13 @@ def _render_text(message: Any, role: str) -> str | None:
 
 
 def _resumes_turn(call: Any) -> bool:
-    """Read and run continuations resume the turn (issue #83) — their
-    results belong in context for another pipeline pass."""
+    """Read, run, and glob continuations resume the turn (issue #83) —
+    their results belong in context for another pipeline pass."""
     arguments = _parsed_arguments(call)
     return arguments is not None and (
-        _is_read_shaped(arguments) or _is_run_shaped(arguments)
+        _is_read_shaped(arguments)
+        or _is_run_shaped(arguments)
+        or _is_glob_shaped(arguments)
     )
 
 
@@ -576,6 +673,21 @@ def _outcome_chunks(
             id=f"call_{uuid.uuid4().hex[:8]}",
             name=_client_tool(tools, _BASH_TOOL_CANDIDATES, _BASH_TOOL),
             arguments=json.dumps({"command": str(run), "description": "Run tests"}),
+        )
+        return [ClientToolCall(tool_calls=(invocation,))]
+    glob_stem = str(outcome.get("glob") or "")
+    if glob_stem:
+        if not _GLOB_STEM_RE.match(glob_stem):
+            # defense in depth on classify's charset discipline: an unsafe
+            # stem never enters the pattern template
+            return [
+                ContentDelta(content="Refused: glob stem failed safety validation."),
+                Completion(finish_reason="stop"),
+            ]
+        invocation = ToolCallInvocation(
+            id=f"call_{uuid.uuid4().hex[:8]}",
+            name=_client_tool(tools, _GLOB_TOOL_CANDIDATES, _GLOB_TOOL),
+            arguments=json.dumps({"pattern": f"**/*{glob_stem}*"}),
         )
         return [ClientToolCall(tool_calls=(invocation,))]
     arguments = json.dumps(
