@@ -91,6 +91,19 @@ conversion, ~1/10 the latency), via the existing
 class converts under escalation that isolation + the sanitizer don't
 already fix. Loop bound stays 2.
 
+### Slice 3 — missing-import injection (amendment, live-evidence 2026-07-09)
+
+Task 5's regression probe surfaced a fourth class: the 8b's tests call
+`os.path.exists` / `pytest.raises` without importing `os`/`pytest`, so
+every round NameErrors on a defect no code regeneration can fix (code
+cannot define `pytest`). Deterministic repair, same shape as the existing
+workspace-import injection: AST-collect unbound names in the tests,
+intersect a fixed whitelist (`os, json, sys, re, math, time, pathlib,
+tempfile, itertools, functools, collections, string, unittest, pytest`),
+prepend the `import` lines before execution. The echoed (shipped) tests
+carry the injected imports — the artifact becomes self-contained. Names
+outside the whitelist stay uninjected and reject honestly.
+
 ## Validation
 
 - Per-slice TDD; hermetic runs through the real engine for the router
