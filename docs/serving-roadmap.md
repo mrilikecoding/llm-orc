@@ -33,6 +33,7 @@ model as the backend. Trajectory so far:
 | 2026-07-09 (v0.18.6) | 10-turn recorded ladder (`benchmarks/agentic_serving/ladder_battery.sh`, new baseline) | **4/10** | #83 rungs all to spec (read→tests 4/4 green mid-session; honest phantom refusal; honest cascade on an unbuilt dependency). Misses: 3 build rejects (round-1 test quality — path item 4's measured class), memory question mis-routed to build (decider flake; "did …?" is not structurally interrogative), deep recall named the latest build not the first (#82 prose-retrieval remainder). Strict scoring; not comparable to earlier unrecorded rows |
 | 2026-07-09 (seat-quality arc) | 10-turn recorded ladder, same seed | **7/10** | Every targeted class converted: memory question routes to explain and answers accurately (decider fix); the storage rung ships (isolation + sanitizer + import injection); its downstream cascade unblocks and the persistence integration is real (todo.py imports storage). Misses: 2 honest build rejects (thinner round-1 test-quality residual) and the known #82 deep-recall deferral. Regression probes: probe 1 accepts attempt 1, probe 2 within two |
 | 2026-07-10 (#83 run half) | 11-turn recorded ladder (run rung added; session resumed at turn 6 after an external process stop — continuity held on the append-only wire) | **6/11** | New rungs both green: turn 8 read→gated tests (client-run green), turn 11 delegated `pytest -q` with the verdict matching client ground truth exactly (6 passed); turn 9 honest phantom refusal. Misses: 3 honest build rejects (turns 2/4/6 — the stochastic 8b test-quality residual, 2–3 per run) plus turn 7 as their honest cascade, and the known #82 deep-recall miss. Zero dishonest outcomes; routing fired correctly on all 11 turns |
+| 2026-07-10 (fenced block grammar) | 11-turn recorded ladder, same battery | **5/11** | No fencing-attributable regression: all 11 routings fired correctly, read rung green, run rung verdict matched ground truth (6 passed), phantom refusal honest. Turn 1's honest build reject cascaded (turns 2/3/4/7 degrade downstream, deep recall skews) — run-to-run variance is dominated by whether turn 1 lands, i.e. the test-quality residual, now clearly the highest-leverage target. Spoof battery (separate live session): a read file carrying a forged "999 passed" transcript block could NOT suppress the real run — real delegation, honest red verdict |
 
 The Cycle-7 benchmark harness (`research/agentic-serving-corpus` branch,
 `benchmark-runs/`) is the automation to revive for a standing
@@ -99,21 +100,22 @@ deterministic accept gate (per-test-isolated executor + static adequacy
 into the shipped artifact). All-local (qwen3:8b) by default; operator
 seat overrides via `*.local.yaml`.
 
-**Handoff pointer (fresh-session start here):** NEXT is **block-body
-fencing** (the pre-meta-task blocker, scope widened 2026-07-10: read and
-write block bodies render untrusted content at column 0, which can both
-materialize phantom workspace files via gather AND spoof
-`has_run_block`/run_verdict into fabricating a test verdict for a run
-that never happened — one shared fenced/indented grammar for all block
-bodies, gather made robust, classify's detector covered). After it, in
-leverage order: #83 discovery (list/glob through the same seam — the
-meta-task rung's requirement), the #82 deep-recall remainder (still
-costs a ladder turn every run), and the build test-quality residual
-(2–3 honest rejects per 11-turn run is now the dominant score cost).
-The recorded battery is `benchmarks/agentic_serving/ladder_battery.sh`
-(11 turns; current score 6/11, every miss honest). Standing smaller
-follow-ups: the injector's scope-blind binding, and #107
-(content-parts message content crashes the render path — pre-existing).
+**Handoff pointer (fresh-session start here):** block-body fencing
+SHIPPED (v0.18.9 — the pre-meta-task blocker is closed; the spoof class
+is dead at unit, engine, and live levels). NEXT, in leverage order: the
+**build test-quality residual** (2–3 honest rejects per 11-turn run is
+now clearly the dominant score cost — turn 1's reject cascades through
+half the battery; the residual class is round-1 authored-test quality on
+the 8b seat, and the named next lever is structural per the 2026-07-09
+finding: shape change or escalation-on-signal, not a third prompt rule),
+then **#83 discovery** (list/glob through the same seam — the meta-task
+rung's requirement, now unblocked by fencing), then the #82 deep-recall
+remainder (still costs a ladder turn every run). The recorded battery is
+`benchmarks/agentic_serving/ladder_battery.sh` (11 turns; last scores
+6/11 and 5/11, every miss honest, variance dominated by turn 1's build).
+Standing smaller follow-ups: the injector's scope-blind binding, #107
+(content-parts message content crashes the render path — pre-existing),
+#106 (shape single-home + silent dispatch trace errors).
 
 Key empirical facts the next work builds on:
 
