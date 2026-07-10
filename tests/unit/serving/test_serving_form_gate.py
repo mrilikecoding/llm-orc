@@ -102,3 +102,25 @@ def test_form_gate_passes_needs_run_through() -> None:
     )
     assert gated["needs_run"] == "pytest -q"
     assert gated["valid"] is True
+
+
+def test_form_gate_passes_glob_fields_through() -> None:
+    gated = _gate(
+        {
+            "build": False,
+            "file": "solution.py",
+            "content": "Requesting a workspace listing.",
+            "needs_files": [],
+            "read_failed": "",
+            "needs_run": "",
+            "needs_glob": "storage",
+            "glob_failed": "",
+            "accept": None,
+            "accept_reason": "",
+            "seat_admitted": None,
+            "seat_contract_reason": "",
+        }
+    )
+    assert gated["needs_glob"] == "storage"
+    assert gated["glob_failed"] == ""
+    assert gated["valid"] is True

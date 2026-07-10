@@ -193,3 +193,41 @@ def test_decider_path_defaults_needs_run_empty() -> None:
         decide_response='{"target": "explainer"}',
     )
     assert routing["needs_run"] == ""
+
+
+def test_needs_glob_and_glob_failed_pass_through_resolve() -> None:
+    routing = _resolve(
+        _structural(
+            target="need-glob",
+            kind="need_glob",
+            build=False,
+            needs_glob="storage",
+            glob_failed="",
+        )
+    )
+    assert routing["target"] == "need-glob"
+    assert routing["needs_glob"] == "storage"
+    assert routing["glob_failed"] == ""
+
+
+def test_glob_failed_refusal_passes_through_resolve() -> None:
+    reason = "no file matching 'storage' in the workspace listing"
+    routing = _resolve(
+        _structural(
+            target="need-glob",
+            kind="need_glob",
+            build=False,
+            needs_glob="",
+            glob_failed=reason,
+        )
+    )
+    assert routing["glob_failed"] == reason
+
+
+def test_decider_path_defaults_glob_fields_empty() -> None:
+    routing = _resolve(
+        _structural(target="", kind="", build=False, needs_decider=True),
+        decide_response='{"target": "explainer"}',
+    )
+    assert routing["needs_glob"] == ""
+    assert routing["glob_failed"] == ""
