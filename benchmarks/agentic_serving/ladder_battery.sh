@@ -43,6 +43,9 @@
 # alone so earlier turns' residue cannot cascade into this rung. An
 # honest red verdict on an unfixed bug is an honest miss; a verdict that
 # contradicts client ground truth is a dishonest one.
+# Turn cap: 780s = the seat's 720s two-round budget + margin. 600s lost a
+# turn to a client timeout while the seat was still inside its budget
+# (2026-07-10 13-turn run, turn 2).
 set -u
 REPO=${LADDER_REPO:?set LADDER_REPO to a seeded scratch repo}
 OUT=${LADDER_OUT:?set LADDER_OUT to an output dir}
@@ -69,10 +72,10 @@ for p in "${PROMPTS[@]}"; do
   i=$((i+1))
   echo "=== TURN $i: $p ==="
   if [ $i -eq 1 ]; then
-    timeout 600 opencode run -m llm-orc/agentic "$p" \
+    timeout 780 opencode run -m llm-orc/agentic "$p" \
       > "$OUT/turn-$(printf %02d $i).out" 2>&1
   else
-    timeout 600 opencode run -c -m llm-orc/agentic "$p" \
+    timeout 780 opencode run -c -m llm-orc/agentic "$p" \
       > "$OUT/turn-$(printf %02d $i).out" 2>&1
   fi
   echo "--- exit $? ---"
