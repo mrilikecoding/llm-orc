@@ -235,6 +235,147 @@ class TestChatCompletionsRequestParsing:
 
         assert response.status_code == 200
 
+    def test_content_parts_message_normalizes_to_joined_text(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """List-shaped (content-parts) message content is legal on the
+        OpenAI wire (issue #107): the request parses and the caller sees
+        the text parts joined into one plain string, so every downstream
+        content read stays str-only."""
+        stub = _StubCaller()
+        client, _, _ = _build_client(monkeypatch, terminal=stub)
+
+        response = client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "primary",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": "explain"},
+                            {"type": "text", "text": "todo.py"},
+                        ],
+                    }
+                ],
+            },
+        )
+
+        assert response.status_code == 200
+        assert stub.contexts[0].messages[-1].content == "explain\ntodo.py"
+
+    def test_textless_parts_tool_result_is_accepted(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """An empty tool result as parts is wire-legal (silent-success
+        commands: ruff clean, touch) and its empty-STRING twin already
+        renders honestly; only USER messages feed the turn boundary, so
+        the blank-join rejection must not fire on other roles (PR #113
+        re-review finding)."""
+        stub = _StubCaller()
+        client, _, _ = _build_client(monkeypatch, terminal=stub)
+
+        response = client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "primary",
+                "messages": [
+                    {"role": "user", "content": "lint the repo"},
+                    {
+                        "role": "assistant",
+                        "content": None,
+                        "tool_calls": [
+                            {
+                                "id": "c1",
+                                "type": "function",
+                                "function": {
+                                    "name": "bash",
+                                    "arguments": '{"command": "ruff check ."}',
+                                },
+                            }
+                        ],
+                    },
+                    {
+                        "role": "tool",
+                        "tool_call_id": "c1",
+                        "content": [{"type": "text", "text": ""}],
+                    },
+                ],
+            },
+        )
+
+        assert response.status_code == 200
+        assert stub.contexts[0].messages[-1].content == ""
+
+    def test_textless_content_parts_message_is_rejected(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A parts message with no text (image-only, or text joining to
+        whitespace) would normalize to empty content, and empty user
+        content silently slides the turn boundary back to a stale task
+        (PR #113 review blocker). Textless parts 422 honestly instead."""
+        client, _, _ = _build_client(monkeypatch)
+
+        for parts in (
+            [{"type": "image_url", "image_url": {"url": "data:image/png;base64,x"}}],
+            [{"type": "text", "text": "   "}],
+            [],
+        ):
+            response = client.post(
+                "/v1/chat/completions",
+                json={
+                    "model": "primary",
+                    "messages": [
+                        {"role": "user", "content": "build todo.py"},
+                        {"role": "assistant", "content": "done"},
+                        {"role": "user", "content": parts},
+                    ],
+                },
+            )
+
+            assert response.status_code == 422, parts
+
+    def test_text_part_with_non_string_text_is_rejected(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """OpenAI 422s a text part whose ``text`` is not a string; without
+        the check, str() coercion leaks Python reprs ('None', "{'a': 1}")
+        into the transcript and session hash (PR #113 review)."""
+        client, _, _ = _build_client(monkeypatch)
+
+        for bad_text in (None, 123, {"a": 1}):
+            response = client.post(
+                "/v1/chat/completions",
+                json={
+                    "model": "primary",
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": [{"type": "text", "text": bad_text}],
+                        }
+                    ],
+                },
+            )
+
+            assert response.status_code == 422, bad_text
+
+    def test_content_part_missing_type_key_is_rejected(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A part with no ``type`` is invalid on the wire; dropping it from
+        the join silently discards the user's text (PR #113 review)."""
+        client, _, _ = _build_client(monkeypatch)
+
+        response = client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "primary",
+                "messages": [{"role": "user", "content": [{"text": "hello"}]}],
+            },
+        )
+
+        assert response.status_code == 422
+
 
 class TestRequestRouting:
     """``POST /v1/chat/completions`` routes every request through the serving caller.
