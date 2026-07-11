@@ -78,6 +78,13 @@ _BUILD_RE = re.compile(
 _EXISTING_RE = re.compile(
     r"\b(fix|update|modify|refactor|edit|change|existing)\b", re.IGNORECASE
 )
+# Chained fix-execution trigger: the task must be LED by a fix imperative —
+# mid-sentence "existing"/"change" are ordinary build prose (PR #115
+# review). Mirrors the caller's _FIX_CHAIN_RE; a regression test pins
+# pattern and flags equal.
+_FIX_VERB_RE = re.compile(
+    r"^\s*(?:fix|update|modify|refactor|edit|change)\b", re.IGNORECASE
+)
 # Context-block headers (the caller's render grammar). Visible = untruncated
 # wrote block or successful read block; attempted = any read header. The
 # optional variant group keeps a "(truncated)" suffix out of the path.
@@ -376,8 +383,7 @@ def _discovery(
             return (
                 "",
                 "",
-                f"multiple visible files match '{stem}': {listed}"
-                " — please name one",
+                f"multiple visible files match '{stem}': {listed} — please name one",
             )
         return stem, "", ""
     if len(candidates) == 1:
@@ -428,6 +434,7 @@ def _route(
     *,
     is_explain: bool,
     run_signal: bool,
+    fix_chain: bool,
     has_run_block: bool,
     needs_glob: str,
     glob_failed: str,
@@ -443,6 +450,16 @@ def _route(
     interrogative or marker-led turns), so "run the tests and tell me what
     failed" delegates the run instead of narrating one.
     """
+    if fix_chain and has_run_block:
+        # fix-execution verdict leg: the chained run came back — parse it.
+        return "run-verdict", "run_verdict", False, False
+    if fix_chain:
+        # fix-execution run leg: this turn's fix already shipped its write
+        # (wrote_path is structural, from the caller's post-boundary
+        # tool_calls); delegate ONE closed-template run to verify it
+        # client-side. Never re-enters the build — the branches below are
+        # unreachable while fix_chain holds.
+        return "need-run", "need_run", False, False
     if run_signal and has_run_block:
         # issue #83 run half: the client ran the command — the deliverable
         # is the deterministic verdict, one run round per turn.
@@ -505,10 +522,17 @@ def main() -> None:
     conversation_raw = str(turn.get("context", ""))
     has_run_block = bool(_RAN_HEADER_RE.search(conversation_raw))
 
+    # Chained fix-execution: a fix-intent turn whose gated build already
+    # shipped its write THIS turn chains into the run seam. wrote_path is
+    # structural (the caller derives it from post-boundary write tool_calls,
+    # never from context text — forged [wrote] lines cannot set it).
+    wrote_path = str(turn.get("wrote_path", ""))
+    fix_chain = bool(wrote_path) and bool(_FIX_VERB_RE.match(task))
+
     needs_glob = glob_file = glob_failed = ""
     needs_files: list[str] = []
     read_failed = ""
-    if not is_explain and not run_signal:
+    if not is_explain and not run_signal and not fix_chain:
         needs_glob, glob_file, glob_failed = _discovery(
             task, conversation_raw, tests_primary, has_build_signal
         )
@@ -522,11 +546,13 @@ def main() -> None:
         needs_files, read_failed = _files_to_request(
             task, conversation_raw, tests_primary, has_build_signal, glob_file
         )
-    needs_run = _run_test_command(task) if run_signal and not has_run_block else ""
+    wants_run = run_signal or fix_chain
+    needs_run = _run_test_command(task) if wants_run and not has_run_block else ""
 
     target, kind, build, needs_decider = _route(
         is_explain=is_explain,
         run_signal=run_signal,
+        fix_chain=fix_chain,
         has_run_block=has_run_block,
         needs_glob=needs_glob,
         glob_failed=glob_failed,

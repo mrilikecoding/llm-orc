@@ -93,6 +93,11 @@ def _verdict(command: str, variant: str, detail: str, body: str) -> str:
         return f"The test run could not execute: {reason}"
     summary = _summary_line(body)
     if not summary:
+        # summary-less bodies only — the duration-anchored summary line
+        # stays authoritative, so phrase-shaped stdout from a REAL run can
+        # never shadow the result (PR #115 review, both rounds)
+        if "rejected permission" in body.lower():
+            return f"The test run was not permitted by the client (`{command}`)."
         tail = "\n".join(body.splitlines()[-_TAIL_LINES:])
         return (
             f"Ran `{command}`, but the output carried no pytest summary. "
