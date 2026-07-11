@@ -1087,3 +1087,62 @@ class TestServingResolvesSessionIdentity:
         cold_identities = [i for i in registry._states if i.method == "cold_start"]
         assert len(cold_identities) == 2
         assert cold_identities[0] != cold_identities[1]
+
+
+class TestBlankUserContent:
+    """A blank latest user message silently slides the turn boundary back
+    to a stale task — the string-shaped twin of the #107 parts blocker
+    (PR #113 review's standing observation). Blank USER strings 422
+    honestly; other roles keep their wire-legal blanks."""
+
+    def test_blank_string_user_message_is_rejected(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        client, _, _ = _build_client(monkeypatch)
+
+        for blank in ("", "   "):
+            response = client.post(
+                "/v1/chat/completions",
+                json={
+                    "model": "primary",
+                    "messages": [
+                        {"role": "user", "content": "build todo.py"},
+                        {"role": "assistant", "content": "done"},
+                        {"role": "user", "content": blank},
+                    ],
+                },
+            )
+
+            assert response.status_code == 422, repr(blank)
+
+    def test_blank_tool_and_null_assistant_content_still_accepted(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        client, _, _ = _build_client(monkeypatch)
+
+        response = client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "primary",
+                "messages": [
+                    {"role": "user", "content": "lint the repo"},
+                    {
+                        "role": "assistant",
+                        "content": None,
+                        "tool_calls": [
+                            {
+                                "id": "c1",
+                                "type": "function",
+                                "function": {
+                                    "name": "bash",
+                                    "arguments": '{"command": "ruff check ."}',
+                                },
+                            }
+                        ],
+                    },
+                    {"role": "tool", "tool_call_id": "c1", "content": ""},
+                ],
+            },
+        )
+
+        assert response.status_code == 200

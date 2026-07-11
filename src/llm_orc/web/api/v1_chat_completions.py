@@ -175,18 +175,24 @@ class _ChatCompletionMessage(BaseModel):
         return value
 
     @model_validator(mode="after")
-    def _user_parts_carry_text(self) -> _ChatCompletionMessage:
-        """Reject a USER parts message whose text joins to blank.
+    def _user_content_carries_text(self) -> _ChatCompletionMessage:
+        """Reject a USER message whose content is blank — parts joining to
+        nothing (PR #113 review blocker) or a blank/empty string (the same
+        review's standing observation, the string-shaped twin).
 
         Empty user content silently slides the turn boundary back to a
-        stale task (PR #113 review blocker). Scoped to user messages:
-        only they feed ``_task_from``/``_latest_user_index``, and an
-        empty tool result as parts is wire-legal (silent-success
-        commands) with an honest empty-string render.
+        stale task. Scoped to user messages: only they feed
+        ``_task_from``/``_latest_user_index``, and an empty tool result is
+        wire-legal (silent-success commands) with an honest empty render.
+        ``content: null`` stays legal on every role per the OpenAI shape.
         """
-        if self.role == "user" and isinstance(self.content, list):
+        if self.role != "user" or self.content is None:
+            return self
+        if isinstance(self.content, list):
             if not _joined_text_parts(self.content).strip():
                 raise ValueError("user content parts carry no text to route on")
+        elif not self.content.strip():
+            raise ValueError("user content is blank; nothing to route on")
         return self
 
 
