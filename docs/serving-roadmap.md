@@ -131,9 +131,10 @@ follow-ups: #110, the injector's scope-blind binding, #106, the serve
 trace's ~280-char node-response truncation (blocks post-hoc held-round
 diagnosis), and the glob-result verbatim wire capture (the wire log is
 shape-only — a capture needs a body-dumping probe, not
-LLM_ORC_SERVE_WIRE_LOG). #107 is fixed on branch
-`worktree-fix-107-content-parts` (endpoint-boundary normalizer — the
-422 fired at pydantic before the caller could crash). Ops notes: the
+LLM_ORC_SERVE_WIRE_LOG). #107 is fixed (PR #113:
+endpoint-boundary `_text_content` normalizer — the 422 fired at
+pydantic before the caller could crash; textless/malformed parts
+lists still 422 honestly rather than sliding the turn boundary). Ops notes: the
 harness reaps tracked background serves/batteries mid-long-run — start
 them detached (nohup + disown) with a Monitor tail; give the rig
 cooling headroom between batteries.
