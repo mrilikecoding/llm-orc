@@ -184,10 +184,15 @@ class _ChatCompletionMessage(BaseModel):
         stale task. Scoped to user messages: only they feed
         ``_task_from``/``_latest_user_index``, and an empty tool result is
         wire-legal (silent-success commands) with an honest empty render.
-        ``content: null`` stays legal on every role per the OpenAI shape.
+        ``content: null`` stays legal on the other roles (an assistant
+        tool_calls turn carries null content per the OpenAI shape) but is
+        the third twin of the slide on user messages — OpenAI requires
+        user content, so it 422s here too (PR #116 review).
         """
-        if self.role != "user" or self.content is None:
+        if self.role != "user":
             return self
+        if self.content is None:
+            raise ValueError("user content is required")
         if isinstance(self.content, list):
             if not _joined_text_parts(self.content).strip():
                 raise ValueError("user content parts carry no text to route on")

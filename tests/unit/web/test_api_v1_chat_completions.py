@@ -1146,3 +1146,26 @@ class TestBlankUserContent:
         )
 
         assert response.status_code == 200
+
+    def test_null_content_user_message_is_rejected(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """PR #116 review: content: null on a USER message is the third twin
+        of the turn-boundary slide (the boundary scan skips it exactly like
+        blank strings and textless parts) and OpenAI requires user content —
+        422. Assistant null (tool_calls turns) stays legal."""
+        client, _, _ = _build_client(monkeypatch)
+
+        response = client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "primary",
+                "messages": [
+                    {"role": "user", "content": "build todo.py"},
+                    {"role": "assistant", "content": "done"},
+                    {"role": "user", "content": None},
+                ],
+            },
+        )
+
+        assert response.status_code == 422

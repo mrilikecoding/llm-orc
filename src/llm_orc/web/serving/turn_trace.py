@@ -128,7 +128,10 @@ def emit_turn_trace(
     """Build the turn trace, append it to ``<root>/turns.jsonl``, and write a
     one-line summary to stderr. Returns the trace so callers/tests can inspect
     it. Tracing must never break the serve, so IO failures are swallowed."""
-    trace = build_turn_trace(ensemble_name, result_dict)
+    try:
+        trace = build_turn_trace(ensemble_name, result_dict)
+    except Exception:  # noqa: BLE001 — tracing must never break the serve
+        trace = {"ensemble": ensemble_name, "execution_order": [], "nodes": []}
     try:
         root.mkdir(parents=True, exist_ok=True)
         with (root / "turns.jsonl").open("a", encoding="utf-8") as handle:
