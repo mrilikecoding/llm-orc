@@ -35,7 +35,7 @@ from typing import Any, Protocol
 
 from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from llm_orc.core.session.registry import SessionRegistry
 from llm_orc.web.api.sse_format import OpenAiSseFormatter, encode_tool_call_for_message
@@ -155,17 +155,15 @@ class _ChatCompletionMessage(BaseModel):
 
     @field_validator("content")
     @classmethod
-    def _parts_carry_text(
+    def _parts_are_well_shaped(
         cls, value: str | list[dict[str, Any]] | None
     ) -> str | list[dict[str, Any]] | None:
-        """Reject parts lists this text-only backend cannot route honestly.
+        """Reject malformed content parts on any role.
 
         Every part needs a string ``type`` (wire-invalid otherwise — a
         typeless text part would silently drop from the join); a text part
         needs a string ``text`` (str() coercion would leak Python reprs
-        into the transcript and session hash); and the join must be
-        non-blank — empty user content silently slides the turn boundary
-        back to a stale task (PR #113 review blocker).
+        into the transcript and session hash).
         """
         if not isinstance(value, list):
             return value
@@ -174,14 +172,29 @@ class _ChatCompletionMessage(BaseModel):
                 raise ValueError("content part requires a string 'type'")
             if part["type"] == "text" and not isinstance(part.get("text"), str):
                 raise ValueError("text content part requires a string 'text'")
-        if not _joined_text_parts(value).strip():
-            raise ValueError("content parts carry no text to route on")
         return value
+
+    @model_validator(mode="after")
+    def _user_parts_carry_text(self) -> _ChatCompletionMessage:
+        """Reject a USER parts message whose text joins to blank.
+
+        Empty user content silently slides the turn boundary back to a
+        stale task (PR #113 review blocker). Scoped to user messages:
+        only they feed ``_task_from``/``_latest_user_index``, and an
+        empty tool result as parts is wire-legal (silent-success
+        commands) with an honest empty-string render.
+        """
+        if self.role == "user" and isinstance(self.content, list):
+            if not _joined_text_parts(self.content).strip():
+                raise ValueError("user content parts carry no text to route on")
+        return self
 
 
 def _joined_text_parts(parts: list[dict[str, Any]]) -> str:
-    """Text parts joined into plain text; non-text parts (``image_url``, …)
-    carry nothing the serving layer can route on and are dropped."""
+    """VALIDATED text parts joined into plain text; non-text parts
+    (``image_url``, …) carry nothing the serving layer can route on and
+    are dropped. Callers must not hand this raw wire dicts — the bare
+    indexing assumes ``_parts_are_well_shaped`` ran."""
     return "\n".join(part["text"] for part in parts if part["type"] == "text")
 
 

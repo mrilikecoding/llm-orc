@@ -264,6 +264,49 @@ class TestChatCompletionsRequestParsing:
         assert response.status_code == 200
         assert stub.contexts[0].messages[-1].content == "explain\ntodo.py"
 
+    def test_textless_parts_tool_result_is_accepted(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """An empty tool result as parts is wire-legal (silent-success
+        commands: ruff clean, touch) and its empty-STRING twin already
+        renders honestly; only USER messages feed the turn boundary, so
+        the blank-join rejection must not fire on other roles (PR #113
+        re-review finding)."""
+        stub = _StubCaller()
+        client, _, _ = _build_client(monkeypatch, terminal=stub)
+
+        response = client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "primary",
+                "messages": [
+                    {"role": "user", "content": "lint the repo"},
+                    {
+                        "role": "assistant",
+                        "content": None,
+                        "tool_calls": [
+                            {
+                                "id": "c1",
+                                "type": "function",
+                                "function": {
+                                    "name": "bash",
+                                    "arguments": '{"command": "ruff check ."}',
+                                },
+                            }
+                        ],
+                    },
+                    {
+                        "role": "tool",
+                        "tool_call_id": "c1",
+                        "content": [{"type": "text", "text": ""}],
+                    },
+                ],
+            },
+        )
+
+        assert response.status_code == 200
+        assert stub.contexts[0].messages[-1].content == ""
+
     def test_textless_content_parts_message_is_rejected(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
