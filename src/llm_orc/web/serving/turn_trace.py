@@ -55,6 +55,42 @@ def _child_results(response: Any) -> dict[str, Any] | None:
     return results if isinstance(results, dict) else None
 
 
+def _diagnostics(response: Any) -> dict[str, Any] | None:
+    """The envelope's structured ``diagnostics`` dict when ``response`` is a
+    (possibly output-wrapped) envelope JSON. The small typed verdict fields —
+    accept, held_round, tests_pass/adequate — survive verbatim so a battery
+    post-mortem can answer gate questions the snippet cap otherwise eats
+    (issue #114); prose-sized string values still clip."""
+    if not isinstance(response, str):
+        return None
+    try:
+        data = json.loads(response)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(data, dict):
+        return None
+    for candidate in (data, data.get("output")):
+        if isinstance(candidate, dict):
+            diagnostics = candidate.get("diagnostics")
+            if isinstance(diagnostics, dict):
+                return {
+                    key: _snippet(value) if isinstance(value, str) else value
+                    for key, value in diagnostics.items()
+                }
+    return None
+
+
+def _seat_entry(name: str, node: Any) -> dict[str, Any]:
+    """One child-node trace entry: snippeted response plus the structured
+    envelope diagnostics when the node carries them."""
+    response = node.get("response") if isinstance(node, dict) else node
+    entry: dict[str, Any] = {"node": name, "response": _snippet(response)}
+    diagnostics = _diagnostics(response)
+    if diagnostics is not None:
+        entry["diagnostics"] = diagnostics
+    return entry
+
+
 def build_turn_trace(ensemble_name: str, result_dict: dict[str, Any]) -> dict[str, Any]:
     """Per-node introspection from the engine's execution result."""
     results = result_dict.get("results", {})
@@ -70,14 +106,7 @@ def build_turn_trace(ensemble_name: str, result_dict: dict[str, Any]) -> dict[st
             child = _child_results(response)
             if child is not None:
                 entry["seat"] = [
-                    {
-                        "node": child_name,
-                        "response": _snippet(
-                            child_node.get("response")
-                            if isinstance(child_node, dict)
-                            else child_node
-                        ),
-                    }
+                    _seat_entry(child_name, child_node)
                     for child_name, child_node in child.items()
                 ]
             nodes.append(entry)
