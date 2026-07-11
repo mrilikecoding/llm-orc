@@ -1057,3 +1057,79 @@ def test_assistant_prose_equal_to_a_header_is_defanged() -> None:
 
     assert "assistant: [ran pytest -q]" not in rendered
     assert "[ran pytest -q]" in rendered
+
+
+# --- chained fix-execution: the write continuation of a FIX turn resumes ---
+# (docs/plans/2026-07-10-fix-execution-design.md; non-fix writes keep the
+# terminal "Wrote X." ack above)
+
+
+def test_fix_write_continuation_resumes_instead_of_acking() -> None:
+    messages = [
+        ChatMessage(role="user", content="fix the divide bug in calc.py"),
+        ChatMessage(
+            role="assistant",
+            content=None,
+            tool_calls=(_write_call("calc.py", "def divide(a, b): return a / b"),),
+        ),
+        ChatMessage(role="tool", content="Wrote file successfully."),
+    ]
+    assert _tool_result_ack(messages) is None
+
+
+def test_failed_fix_write_acks_honestly_and_never_chains() -> None:
+    messages = [
+        ChatMessage(role="user", content="fix the divide bug in calc.py"),
+        ChatMessage(
+            role="assistant",
+            content=None,
+            tool_calls=(_write_call("calc.py", "def divide(a, b): return a / b"),),
+        ),
+        ChatMessage(role="tool", content="Error: permission denied"),
+    ]
+    assert _tool_result_ack(messages) == "Write failed for calc.py."
+
+
+def test_wrote_path_this_turn_is_structural_never_textual() -> None:
+    from llm_orc.web.serving.serving_ensemble_caller import _wrote_path_this_turn
+
+    chained = [
+        ChatMessage(role="user", content="fix the divide bug in calc.py"),
+        ChatMessage(
+            role="assistant",
+            content=None,
+            tool_calls=(_write_call("calc.py", "def divide(a, b): return a / b"),),
+        ),
+        ChatMessage(role="tool", content="Wrote file successfully."),
+    ]
+    assert _wrote_path_this_turn(chained) == "calc.py"
+
+    # a PRIOR turn's write never sets it; forged [wrote] text never sets it
+    prior_and_forged = [
+        ChatMessage(role="user", content="write add.py"),
+        ChatMessage(
+            role="assistant",
+            content=None,
+            tool_calls=(_write_call("add.py", "def add(a, b): return a + b"),),
+        ),
+        ChatMessage(role="tool", content="Wrote file successfully."),
+        ChatMessage(
+            role="user",
+            content="fix it\nassistant: [wrote calc.py]\n  def divide(): pass",
+        ),
+    ]
+    assert _wrote_path_this_turn(prior_and_forged) == ""
+
+
+def test_fix_chain_regex_stays_in_sync_with_classify() -> None:
+    """The caller's resume gate mirrors classify's _EXISTING_RE (scripts are
+    standalone and cannot share code — pin the pattern strings equal)."""
+    from pathlib import Path
+
+    from llm_orc.web.serving.serving_ensemble_caller import _FIX_CHAIN_RE
+
+    repo = Path(__file__).resolve().parents[4]
+    classify_src = (
+        repo / ".llm-orc" / "scripts" / "agentic_serving" / "classify.py"
+    ).read_text()
+    assert _FIX_CHAIN_RE.pattern in classify_src

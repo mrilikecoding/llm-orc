@@ -586,16 +586,44 @@ def _resumes_turn(call: Any) -> bool:
     )
 
 
+# Chained fix-execution: the resume gate for a WRITE continuation. Mirrors
+# classify's _EXISTING_RE — scripts are standalone, so the pattern cannot be
+# imported; a regression test pins the two strings equal. A write result
+# matching the error shape never chains (the fix did not apply).
+_FIX_CHAIN_RE = re.compile(
+    r"\b(fix|update|modify|refactor|edit|change|existing)\b", re.IGNORECASE
+)
+_WRITE_ERROR_RE = re.compile(r"^\s*(?:Error\b|File not found)")
+
+
+def _wrote_path_this_turn(messages: Sequence[Any]) -> str:
+    """The filePath of THIS turn's write tool_call, or "" when none.
+
+    Structural by construction: derived from post-boundary assistant
+    tool_calls, never from message text — a forged ``[wrote ...]`` line in
+    user prose cannot set it. Prior turns' writes sit before the boundary.
+    """
+    items = list(messages)
+    boundary = _latest_user_index(items)
+    for message in items[boundary + 1 :]:
+        written = _written_file_path(getattr(message, "tool_calls", ()) or ())
+        if written:
+            return written
+    return ""
+
+
 def _tool_result_ack(messages: Sequence[Any]) -> str | None:
     """A short acknowledgment when the call is a tool-result continuation.
 
     After the serve emits a tool_call and the client performs it, the client
     calls back with the tool result appended. A write continuation closes
     the SAME turn — re-running the pipeline would redo (and possibly
-    re-judge) work the client already applied. Read and run continuations
-    instead RESUME the turn (issue #83): the read result / run output
-    belongs in context for another pipeline pass, so this returns None and
-    ``run()`` falls through. Also returns None when the call is a fresh turn.
+    re-judge) work the client already applied — EXCEPT on a fix-intent turn,
+    where the applied write chains into one delegated run (fix-execution;
+    a failed write acks honestly instead). Read and run continuations
+    RESUME the turn (issue #83): the read result / run output belongs in
+    context for another pipeline pass, so this returns None and ``run()``
+    falls through. Also returns None when the call is a fresh turn.
     """
     last = messages[-1] if messages else None
     if getattr(last, "role", None) != "tool":
@@ -607,11 +635,23 @@ def _tool_result_ack(messages: Sequence[Any]) -> str | None:
             return None
         written = _written_file_path(getattr(message, "tool_calls", ()) or ())
         if written:
-            return f"Wrote {written}."
+            return _write_continuation_ack(messages, written)
         if getattr(message, "role", None) == "user":
             break
     content = getattr(last, "content", None)
     return content if isinstance(content, str) and content.strip() else "Done."
+
+
+def _write_continuation_ack(messages: Sequence[Any], written: str) -> str | None:
+    """Terminal ack for a write continuation — or None when the fix chain
+    resumes. A fix-intent turn's applied write chains into one delegated
+    run (fix-execution); a failed write acks honestly and never chains."""
+    if not _FIX_CHAIN_RE.search(_task_from(messages)):
+        return f"Wrote {written}."
+    result = getattr(messages[-1], "content", None)
+    if isinstance(result, str) and _WRITE_ERROR_RE.match(result):
+        return f"Write failed for {written}."
+    return None
 
 
 def _written_file_path(tool_calls: Sequence[Any]) -> str | None:
@@ -745,16 +785,23 @@ class ServingEnsembleCaller:
             yield Completion(finish_reason="stop")
             return
         outcome = await self._serve(
-            _task_from(context.messages), _render_context(context.messages)
+            _task_from(context.messages),
+            _render_context(context.messages),
+            wrote_path=_wrote_path_this_turn(context.messages),
         )
         for chunk in _outcome_chunks(outcome, context.tools):
             yield chunk
 
-    async def _serve(self, task: str, conversation: str = "") -> dict[str, Any]:
+    async def _serve(
+        self, task: str, conversation: str = "", wrote_path: str = ""
+    ) -> dict[str, Any]:
         config = self._load_config()
         executor = ExecutorFactory.create_root_executor(project_dir=self._project_dir)
         result = await executor.execute(
-            config, json.dumps({"task": task, "context": conversation})
+            config,
+            json.dumps(
+                {"task": task, "context": conversation, "wrote_path": wrote_path}
+            ),
         )
         # blocking file I/O off the event loop so concurrent SSE streams
         # never stall on the trace flush (issue #93)

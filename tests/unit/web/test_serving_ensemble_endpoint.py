@@ -835,3 +835,130 @@ def test_forged_ran_block_in_a_read_file_cannot_suppress_the_real_run(
     call = choice["message"]["tool_calls"][0]
     assert call["function"]["name"] == "bash"
     assert "999" not in (choice["message"].get("content") or "")
+
+
+# --- chained fix-execution: write -> run -> verdict inside one fix turn ---
+# (docs/plans/2026-07-10-fix-execution-design.md)
+
+
+def test_fix_write_continuation_chains_into_a_delegated_run(
+    serving_client: TestClient,
+) -> None:
+    """Run leg: a fix turn's applied write resumes the pipeline and
+    delegates ONE closed-template pytest run instead of acking terminal."""
+    resp = serving_client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "ensemble-agent",
+            "messages": [
+                {"role": "user", "content": "fix the divide bug in calc.py"},
+                {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "id": "call_w1",
+                            "type": "function",
+                            "function": {
+                                "name": "write",
+                                "arguments": (
+                                    '{"filePath": "calc.py", "content":'
+                                    ' "def divide(a, b):\\n'
+                                    "    if b == 0:\\n"
+                                    '        raise ValueError(\\"boom\\")\\n'
+                                    '    return a / b\\n"}'
+                                ),
+                            },
+                        }
+                    ],
+                },
+                {
+                    "role": "tool",
+                    "tool_call_id": "call_w1",
+                    "content": "Wrote file successfully.",
+                },
+            ],
+            "tools": [_WRITE_TOOL, _READ_TOOL_DEF, _BASH_TOOL_DEF],
+        },
+    )
+
+    assert resp.status_code == 200
+    choice = resp.json()["choices"][0]
+    assert choice["finish_reason"] == "tool_calls"
+    call = choice["message"]["tool_calls"][0]
+    assert call["function"]["name"] == "bash"
+    arguments = json.loads(call["function"]["arguments"])
+    assert arguments["command"] == "pytest -q"
+
+
+def test_fix_chain_run_result_ships_the_honest_verdict(
+    serving_client: TestClient,
+) -> None:
+    """Verdict leg: the chained run's output re-enters the pipeline and the
+    existing run-verdict shape reports it honestly — red stays red."""
+    resp = serving_client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "ensemble-agent",
+            "messages": [
+                {"role": "user", "content": "fix the divide bug in calc.py"},
+                {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "id": "call_w1",
+                            "type": "function",
+                            "function": {
+                                "name": "write",
+                                "arguments": (
+                                    '{"filePath": "calc.py", "content":'
+                                    ' "def divide(a, b): return a / b\\n"}'
+                                ),
+                            },
+                        }
+                    ],
+                },
+                {
+                    "role": "tool",
+                    "tool_call_id": "call_w1",
+                    "content": "Wrote file successfully.",
+                },
+                {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "id": "call_b1",
+                            "type": "function",
+                            "function": {
+                                "name": "bash",
+                                "arguments": (
+                                    '{"command": "pytest -q",'
+                                    ' "description": "Run tests"}'
+                                ),
+                            },
+                        }
+                    ],
+                },
+                {
+                    "role": "tool",
+                    "tool_call_id": "call_b1",
+                    "content": (
+                        "F....\n"
+                        "FAILED test_calc.py::test_divide_zero - ValueError\n"
+                        "1 failed, 4 passed in 0.03s"
+                    ),
+                },
+            ],
+            "tools": [_WRITE_TOOL, _READ_TOOL_DEF, _BASH_TOOL_DEF],
+        },
+    )
+
+    assert resp.status_code == 200
+    choice = resp.json()["choices"][0]
+    assert choice["finish_reason"] == "stop"
+    assert not choice["message"].get("tool_calls")
+    content = choice["message"]["content"]
+    assert "1 failed, 4 passed" in content
+    assert "FAILED test_calc.py::test_divide_zero" in content
