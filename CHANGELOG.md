@@ -7,6 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.18.12] - 2026-07-10
+
+### Added
+- Chained fix-execution (the roadmap's fix-execution rung): a turn LED
+  by a fix imperative (`fix|update|modify|refactor|edit|change` at task
+  start) whose gated build shipped its write now resumes on the write
+  continuation and chains ONE delegated `pytest -q` run, then the
+  deterministic run-verdict — the client's real suite judges the fix,
+  which the server-side accept gate structurally cannot (it never sees
+  client tests). Structural `wrote_path` (post-boundary tool_calls,
+  never context text); failed/denied/empty write results ack "Write
+  failed for X." and never chain; non-fix writes keep the terminal ack
+  byte-identical. Live-validated twice with honest red verdicts on
+  seat-accepted rewrites that did not fix the bug; the battery gains a
+  fix-execution rung (turn 13, seeded-red target)
+- Turn-trace envelope diagnostics (issue #114, structured half): the
+  typed verdict fields (accept, accept_reason, tests_pass,
+  tests_adequate, held_round) ride each seat child trace entry
+  verbatim, so held-round questions are answerable from a default
+  trace; prose-sized values still clip
+
+### Fixed
+- Content-parts wire robustness (closes #107): list-shaped message
+  content — legal on the OpenAI wire — normalizes to plain text at the
+  endpoint boundary; malformed parts (typeless, non-string text) 422 on
+  every role
+- The turn-boundary slide closed for all three blank-user-content
+  twins: textless parts, blank strings, and null — each 422s honestly
+  instead of silently re-executing a stale prior task (tool/assistant
+  blanks and assistant `content: null` stay wire-legal)
+- A permission-denied delegated run verdicts honestly as not-permitted
+  (never "Ran ..."), with pytest's duration-anchored summary line
+  staying authoritative over phrase-shaped stdout
+- Context-render tail decapitation no longer bleeds a cut write-body
+  into the kept `[ran]` block (a real "2 failed" could degrade to "no
+  pytest summary" on both the fix-chain and plain run paths)
+- The trace build degrades to a stub instead of crashing the request
+  path on hostile envelope shapes ("tracing must never break the
+  serve" now guards the build, not just the file write)
+
 ## [0.18.11] - 2026-07-10
 
 ### Added
