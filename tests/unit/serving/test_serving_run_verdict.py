@@ -141,3 +141,21 @@ def test_permission_denied_run_is_never_reported_as_ran() -> None:
     verdict = _verdict(_dispatch(block))
     assert "not permitted" in verdict
     assert not verdict.startswith("Ran")
+
+
+def test_denial_phrase_in_real_output_never_shadows_the_summary() -> None:
+    """PR #115 review round 2: the denial check ran before the summary
+    parse, so a completed run whose captured output mentioned 'rejected
+    permission' (PermissionError tests) was misreported as never-run. The
+    duration-anchored summary line stays authoritative; the denial verdict
+    applies only to summary-less bodies."""
+    block = (
+        "assistant: [ran pytest -q]\n"
+        "  ..F\n"
+        "  E   PermissionError: rejected permission for /etc/hosts\n"
+        "  FAILED test_auth.py::test_denied - PermissionError\n"
+        "  1 failed, 2 passed in 0.03s"
+    )
+    verdict = _verdict(_dispatch(block))
+    assert "1 failed, 2 passed" in verdict
+    assert "not permitted" not in verdict
