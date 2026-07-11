@@ -608,3 +608,71 @@ def test_visible_stem_tie_between_py_and_json_prefers_the_py_file() -> None:
     )
     assert decision["target"] == "tests-seat"
     assert decision["file"] == "test_storage.py"
+
+
+# --- chained fix-execution (write -> run -> verdict in one turn) ---
+# docs/plans/2026-07-10-fix-execution-design.md: a fix-intent turn whose
+# gated build already shipped this turn (wrote_path, structural from the
+# caller's post-boundary tool_calls — NEVER from context text) chains into
+# the existing run seam; the run block then flips it to run-verdict.
+
+
+def test_fix_turn_with_this_turn_write_chains_to_need_run() -> None:
+    decision = _classify(
+        {
+            "task": "fix the divide bug in calc.py",
+            "context": "assistant: [read calc.py]\n  def divide(a, b): return a / b",
+            "wrote_path": "calc.py",
+        }
+    )
+    assert decision["target"] == "need-run"
+    assert decision["needs_run"] == "pytest -q"
+    assert decision["build"] is False
+
+
+def test_fix_chain_with_run_block_routes_to_run_verdict() -> None:
+    context = (
+        "assistant: [read calc.py]\n  def divide(a, b): return a / b\n"
+        "assistant: [ran pytest -q]\n  1 failed, 4 passed in 0.02s"
+    )
+    decision = _classify(
+        {
+            "task": "fix the divide bug in calc.py",
+            "context": context,
+            "wrote_path": "calc.py",
+        }
+    )
+    assert decision["target"] == "run-verdict"
+    # the verdict derives from the conversation alone (forged-block defense)
+    assert "Current request" not in decision["dispatch_input"]
+
+
+def test_non_fix_build_with_a_write_does_not_chain() -> None:
+    # the caller never resumes a non-fix write; if one ever reaches classify,
+    # routing must stay the plain build decision, not the chain
+    decision = _classify(
+        {
+            "task": "write a function that adds two numbers in add.py",
+            "wrote_path": "add.py",
+        }
+    )
+    assert decision["target"] == "code-seat"
+
+
+def test_fix_turn_without_a_write_takes_the_read_seam_not_the_chain() -> None:
+    decision = _classify({"task": "fix the divide bug in calc.py"})
+    assert decision["target"] == "need-files"
+    assert decision["needs_files"] == ["calc.py"]
+
+
+def test_mid_sentence_edit_words_never_chain_even_with_a_write() -> None:
+    # PR #115 review: "existing"/"change" as mid-sentence prose are ordinary
+    # build words; only a leading fix imperative chains. (These turns keep
+    # their pre-existing routes — the read-first seam via _EXISTING_RE is
+    # untouched; they just never enter the run chain.)
+    for task in (
+        "write add.py so the existing tests pass",
+        "write tests for existing calc.py",
+    ):
+        decision = _classify({"task": task, "wrote_path": "add.py"})
+        assert decision["target"] not in ("need-run", "run-verdict"), task

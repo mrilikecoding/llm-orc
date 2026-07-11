@@ -207,6 +207,16 @@ def _render_context(messages: Sequence[Any]) -> str:
         # line-anchored, and a partial '[wrote ...]' header corrupts it
         cut = rendered.find("\n")
         rendered = rendered[cut + 1 :] if cut >= 0 else rendered
+        # and the cut block's remaining fence-indented body lines: headerless,
+        # they would continue whatever kept block precedes the tail — a [ran]
+        # block's summary drowned under them (PR #115 review)
+        tail_lines = rendered.split("\n")
+        start = 0
+        while start < len(tail_lines) and (
+            not tail_lines[start] or tail_lines[start].startswith("  ")
+        ):
+            start += 1
+        rendered = "\n".join(tail_lines[start:])
 
     task = _task_from(messages)
     # select over the FULL prior history, not just pre-tail messages: the
@@ -586,16 +596,60 @@ def _resumes_turn(call: Any) -> bool:
     )
 
 
+# Chained fix-execution: the resume gate for a WRITE continuation. Only a
+# task LED by a fix imperative chains — mid-sentence "existing"/"change"
+# are ordinary build prose (PR #115 review). Mirrors classify's
+# _FIX_VERB_RE — scripts are standalone, so the pattern cannot be
+# imported; a regression test pins pattern and flags equal.
+_FIX_CHAIN_RE = re.compile(
+    r"^\s*(?:fix|update|modify|refactor|edit|change)\b", re.IGNORECASE
+)
+
+
+def _write_result_failed(result: Any) -> bool:
+    """True when a write tool result carries a failure (or no evidence of
+    success): a failed write must never chain — the verdict would frame an
+    unapplied fix as verified. Mirrors the read path's lowercased prefixes
+    and adds the client permission-denial and empty-result shapes
+    (PR #115 review blocker)."""
+    if not isinstance(result, str) or not result.strip():
+        return True
+    lowered = result.strip().lower()
+    return (
+        lowered.startswith("error")
+        or lowered.startswith("file not found")
+        or "rejected permission" in lowered
+    )
+
+
+def _wrote_path_this_turn(messages: Sequence[Any]) -> str:
+    """The filePath of THIS turn's write tool_call, or "" when none.
+
+    Structural by construction: derived from post-boundary assistant
+    tool_calls, never from message text — a forged ``[wrote ...]`` line in
+    user prose cannot set it. Prior turns' writes sit before the boundary.
+    """
+    items = list(messages)
+    boundary = _latest_user_index(items)
+    for message in items[boundary + 1 :]:
+        written = _written_file_path(getattr(message, "tool_calls", ()) or ())
+        if written:
+            return written
+    return ""
+
+
 def _tool_result_ack(messages: Sequence[Any]) -> str | None:
     """A short acknowledgment when the call is a tool-result continuation.
 
     After the serve emits a tool_call and the client performs it, the client
     calls back with the tool result appended. A write continuation closes
     the SAME turn — re-running the pipeline would redo (and possibly
-    re-judge) work the client already applied. Read and run continuations
-    instead RESUME the turn (issue #83): the read result / run output
-    belongs in context for another pipeline pass, so this returns None and
-    ``run()`` falls through. Also returns None when the call is a fresh turn.
+    re-judge) work the client already applied — EXCEPT on a fix-intent turn,
+    where the applied write chains into one delegated run (fix-execution;
+    a failed write acks honestly instead). Read and run continuations
+    RESUME the turn (issue #83): the read result / run output belongs in
+    context for another pipeline pass, so this returns None and ``run()``
+    falls through. Also returns None when the call is a fresh turn.
     """
     last = messages[-1] if messages else None
     if getattr(last, "role", None) != "tool":
@@ -607,11 +661,22 @@ def _tool_result_ack(messages: Sequence[Any]) -> str | None:
             return None
         written = _written_file_path(getattr(message, "tool_calls", ()) or ())
         if written:
-            return f"Wrote {written}."
+            return _write_continuation_ack(messages, written)
         if getattr(message, "role", None) == "user":
             break
     content = getattr(last, "content", None)
     return content if isinstance(content, str) and content.strip() else "Done."
+
+
+def _write_continuation_ack(messages: Sequence[Any], written: str) -> str | None:
+    """Terminal ack for a write continuation — or None when the fix chain
+    resumes. A fix-led turn's applied write chains into one delegated
+    run (fix-execution); a failed write acks honestly and never chains."""
+    if not _FIX_CHAIN_RE.match(_task_from(messages)):
+        return f"Wrote {written}."
+    if _write_result_failed(getattr(messages[-1], "content", None)):
+        return f"Write failed for {written}."
+    return None
 
 
 def _written_file_path(tool_calls: Sequence[Any]) -> str | None:
@@ -745,16 +810,23 @@ class ServingEnsembleCaller:
             yield Completion(finish_reason="stop")
             return
         outcome = await self._serve(
-            _task_from(context.messages), _render_context(context.messages)
+            _task_from(context.messages),
+            _render_context(context.messages),
+            wrote_path=_wrote_path_this_turn(context.messages),
         )
         for chunk in _outcome_chunks(outcome, context.tools):
             yield chunk
 
-    async def _serve(self, task: str, conversation: str = "") -> dict[str, Any]:
+    async def _serve(
+        self, task: str, conversation: str = "", wrote_path: str = ""
+    ) -> dict[str, Any]:
         config = self._load_config()
         executor = ExecutorFactory.create_root_executor(project_dir=self._project_dir)
         result = await executor.execute(
-            config, json.dumps({"task": task, "context": conversation})
+            config,
+            json.dumps(
+                {"task": task, "context": conversation, "wrote_path": wrote_path}
+            ),
         )
         # blocking file I/O off the event loop so concurrent SSE streams
         # never stall on the trace flush (issue #93)

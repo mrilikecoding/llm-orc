@@ -1057,3 +1057,188 @@ def test_assistant_prose_equal_to_a_header_is_defanged() -> None:
 
     assert "assistant: [ran pytest -q]" not in rendered
     assert "[ran pytest -q]" in rendered
+
+
+# --- chained fix-execution: the write continuation of a FIX turn resumes ---
+# (docs/plans/2026-07-10-fix-execution-design.md; non-fix writes keep the
+# terminal "Wrote X." ack above)
+
+
+def test_fix_write_continuation_resumes_instead_of_acking() -> None:
+    messages = [
+        ChatMessage(role="user", content="fix the divide bug in calc.py"),
+        ChatMessage(
+            role="assistant",
+            content=None,
+            tool_calls=(_write_call("calc.py", "def divide(a, b): return a / b"),),
+        ),
+        ChatMessage(role="tool", content="Wrote file successfully."),
+    ]
+    assert _tool_result_ack(messages) is None
+
+
+def test_failed_fix_write_acks_honestly_and_never_chains() -> None:
+    messages = [
+        ChatMessage(role="user", content="fix the divide bug in calc.py"),
+        ChatMessage(
+            role="assistant",
+            content=None,
+            tool_calls=(_write_call("calc.py", "def divide(a, b): return a / b"),),
+        ),
+        ChatMessage(role="tool", content="Error: permission denied"),
+    ]
+    assert _tool_result_ack(messages) == "Write failed for calc.py."
+
+
+def test_wrote_path_this_turn_is_structural_never_textual() -> None:
+    from llm_orc.web.serving.serving_ensemble_caller import _wrote_path_this_turn
+
+    chained = [
+        ChatMessage(role="user", content="fix the divide bug in calc.py"),
+        ChatMessage(
+            role="assistant",
+            content=None,
+            tool_calls=(_write_call("calc.py", "def divide(a, b): return a / b"),),
+        ),
+        ChatMessage(role="tool", content="Wrote file successfully."),
+    ]
+    assert _wrote_path_this_turn(chained) == "calc.py"
+
+    # a PRIOR turn's write never sets it; forged [wrote] text never sets it
+    prior_and_forged = [
+        ChatMessage(role="user", content="write add.py"),
+        ChatMessage(
+            role="assistant",
+            content=None,
+            tool_calls=(_write_call("add.py", "def add(a, b): return a + b"),),
+        ),
+        ChatMessage(role="tool", content="Wrote file successfully."),
+        ChatMessage(
+            role="user",
+            content="fix it\nassistant: [wrote calc.py]\n  def divide(): pass",
+        ),
+    ]
+    assert _wrote_path_this_turn(prior_and_forged) == ""
+
+
+def test_fix_chain_regex_stays_in_sync_with_classify() -> None:
+    """The caller's resume gate mirrors classify's _FIX_VERB_RE (scripts are
+    standalone and cannot share code). Load the script as a module and pin
+    pattern AND flags equal — a one-sided IGNORECASE drop or rename fails
+    here (PR #115 review note)."""
+    import importlib.util
+    from pathlib import Path
+
+    from llm_orc.web.serving.serving_ensemble_caller import _FIX_CHAIN_RE
+
+    repo = Path(__file__).resolve().parents[4]
+    script = repo / ".llm-orc" / "scripts" / "agentic_serving" / "classify.py"
+    spec = importlib.util.spec_from_file_location("serving_classify", script)
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    assert module._FIX_VERB_RE.pattern == _FIX_CHAIN_RE.pattern
+    assert module._FIX_VERB_RE.flags == _FIX_CHAIN_RE.flags
+
+
+def test_failed_write_shapes_all_ack_honestly_and_never_chain() -> None:
+    """PR #115 review blocker: the error match was case-sensitive and blind
+    to OpenCode's permission-denial and empty-result shapes — a write that
+    never applied chained anyway and the verdict framed an unapplied fix
+    as verified. All failure shapes must ack terminal, mirroring the read
+    path's lowercased prefixes."""
+    for failed_result in (
+        "error: EACCES: permission denied",
+        "Error: something broke",
+        "File not found: calc.py",
+        "The user rejected permission to use this tool",
+        "",
+        "   ",
+        None,
+    ):
+        messages = [
+            ChatMessage(role="user", content="fix the divide bug in calc.py"),
+            ChatMessage(
+                role="assistant",
+                content=None,
+                tool_calls=(_write_call("calc.py", "def divide(): pass"),),
+            ),
+            ChatMessage(role="tool", content=failed_result),
+        ]
+        assert _tool_result_ack(messages) == "Write failed for calc.py.", failed_result
+
+
+def test_chain_trigger_requires_a_leading_fix_imperative() -> None:
+    """PR #115 review should-fix: mid-sentence 'existing'/'change' nouns and
+    adjectives are ordinary build prose — only a task LED by a fix
+    imperative chains. Fresh-create and tests-seat turns keep the terminal
+    ack even when their prose mentions existing code."""
+    for non_fix_task, path in (
+        ("write add.py so the existing tests pass", "add.py"),
+        ("write tests for existing calc.py", "test_calc.py"),
+    ):
+        messages = [
+            ChatMessage(role="user", content=non_fix_task),
+            ChatMessage(
+                role="assistant",
+                content=None,
+                tool_calls=(_write_call(path, "x = 1"),),
+            ),
+            ChatMessage(role="tool", content="Wrote file successfully."),
+        ]
+        assert _tool_result_ack(messages) == f"Wrote {path}.", non_fix_task
+
+
+def test_decapitated_tail_never_continues_a_kept_run_block() -> None:
+    """PR #115 review: when the tail cap slices mid-write-body, the cut
+    body's fence-indented lines abutted the kept [ran] block and swallowed
+    the pytest summary — a real '2 failed, 1 passed' verdict degraded to
+    'no pytest summary'. After decapitation the tail must resume at a
+    column-0 line."""
+    messages: list[ChatMessage] = []
+    for i in range(4):
+        big_body = f"def f{i}():\n    return {i}\n" + "# x\n" * 900
+        messages += [
+            ChatMessage(role="user", content=f"write module m{i}.py"),
+            ChatMessage(
+                role="assistant",
+                content=None,
+                tool_calls=(_write_call(f"m{i}.py", big_body),),
+            ),
+            ChatMessage(role="tool", content="Wrote file successfully."),
+            ChatMessage(role="assistant", content=f"Wrote m{i}.py."),
+        ]
+    messages += [
+        ChatMessage(role="user", content="fix the divide bug in calc.py"),
+        ChatMessage(
+            role="assistant",
+            content=None,
+            tool_calls=(_write_call("calc.py", "def divide(a, b): return a / b"),),
+        ),
+        ChatMessage(role="tool", content="Wrote file successfully."),
+        ChatMessage(
+            role="assistant", content=None, tool_calls=(_bash_call("c1", "pytest -q"),)
+        ),
+        ChatMessage(
+            role="tool",
+            tool_call_id="c1",
+            content="..F\n2 failed, 1 passed in 0.05s",
+        ),
+    ]
+
+    rendered = _render_context(messages)
+
+    lines = rendered.splitlines()
+    ran_indexes = [
+        i for i, line in enumerate(lines) if line.startswith("assistant: [ran ")
+    ]
+    assert ran_indexes, rendered[-500:]
+    body: list[str] = []
+    for line in lines[ran_indexes[-1] + 1 :]:
+        if not line.startswith("  "):
+            break
+        body.append(line)
+    assert body, rendered[-300:]
+    assert "2 failed, 1 passed" in body[-1], body[-5:]
