@@ -1,10 +1,13 @@
 # Chained fix-execution: write → run → verdict in one turn
 
-**Status:** Draft design, 2026-07-10 (post fresh-rig battery). The rung the
-roadmap names as pure composition of shipped seams. No new machinery is
-proposed here — two structural changes and one classify signal. Seam map
-evidence: this session's exploration of the caller and classify (file:line
-references below are v0.18.11).
+**Status:** Implemented 2026-07-10, same session as the design (branch
+worktree-fix-execution). Live-validated against real OpenCode: the full
+chain fired (need-files → code-seat → need-run → run-verdict) with an
+honest red verdict on a fix the seat failed to apply — the exact
+server-gate blind spot this rung closes — and a plain build turn stayed
+terminal. Rung-1 scope shipped as designed; no deviations from this text.
+Seam map evidence: this session's exploration of the caller and classify
+(file:line references below are v0.18.11).
 
 ## Problem
 

@@ -38,6 +38,7 @@ model as the backend. Trajectory so far:
 | 2026-07-10 (repairs round 2, post-review-fix) | 11-turn recorded ladder (resumed at turn 6 after a harness process reap; detached runner thereafter) | **6/11** | Three wrong-accept vectors from the adversarial review closed pre-merge (substring expectation match, anywhere-in-body removal wrap, lambda-param binding blindness) — the fixes are deliberately conservative and refuse ambiguous rewrites, trading conversions for gate honesty. 3 honest build rejects + cascade + #82. Named follow-up with evidence: tighten the negation refusal to expectation-adjacent tokens ("Expected TypeError not raised" currently refuses) |
 | 2026-07-10 (#83 discovery) | 12-turn recorded ladder (discovery rung added) | **3/12, infra-degraded** | The rung this battery validates PASSED clean: turn 12 globbed the unnamed metrics module, read the match, shipped test_metrics.py (green client-side). Run rung honest ("no tests ran" — accurate at that moment), phantom refusal honest. The rest is rig exhaustion after six batteries in one day: four turns timed out with EMPTY output (not rejects — the request died client- or model-side), cascading the todo chain. Zero dishonest outcomes. NOT comparable to the series; fresh-rig rerun is the next session's first act. Separate live probes (same code): 1-match chain, 0-match refusal, 2-match refusal all green |
 | 2026-07-10 (fresh-rig rerun, v0.18.11) | 12-turn recorded ladder, clean infra (12 turns in 12.5 min, zero timeouts) | **6/12** | All shipped rungs green: memory (turn 5), storage build (6), read→tests (8, 4 green client-side), phantom refusal (9), run delegation (11, verdict matched ground truth), discovery chain (12, glob→read→test_metrics.py green). Misses: turn 1 round-1 reject (code referenced an undefined `todo` name) cascading through 2/3/4/7, and turn 10 deep recall. **Two misses were NOT honest** — a first for the recorded series: turn 3 shipped hedged speculation about the never-built todo.py instead of saying so (grounded-explain gap), and turn 10 confidently named calc-tests as "the first thing built" (wrong under both readings; #82 evidence). Structural readings: turn-1 build success gates 5 of 12 turns, so run-to-run variance ≈ 5 points on one seat sample; the serve trace truncates node responses (~280 chars), leaving the held-round question undiagnosable post-hoc; the wire log is shape-only, so the verbatim glob capture remains outstanding |
+| 2026-07-10 (fix-execution rung) | 13-turn recorded ladder (fix rung added: seeded-red buggy.py; one 600s timeout) | **6/13** | THE NEW RUNG'S MECHANISM PROVED IN-BATTERY: turn 13 chained read → write → delegated `pytest -q` → verdict, and the verdict was honest and precise — the seat's fix added the guard with its own exception message ("scale of empty sequence") where the seeded test expects "no values", and the verdict surfaced the exact expected-vs-actual regex mismatch. Honest miss by the strict rule (the seeded test stayed red), and the failure report is precisely the carry a rung-2 re-fix loop needs — plus a cheap rung-1.5: read the visible test_<stem>.py when fixing <stem>.py so the fix sees the expected behavior. Also observed: turn 8's "tests for existing calc.py" triggered the chain via the "existing" verb after its tests-seat write (honest whole-suite report; not designed-for, informative in practice). Other passes: 5, 6, 8, 9, 11 (verdict matched ground truth), 12 (discovery chain green). Misses: turn 1 honest reject cascading 3/4/7, turn 2 a 600s client timeout (the seat's 720s two-round budget exceeds the battery cap — latency class, not a reject), turn 10 wrong recall (named storage.py, the first successful build, as "the first thing asked" — the todo ask came first; #82) |
 
 The Cycle-7 benchmark harness (`research/agentic-serving-corpus` branch,
 `benchmark-runs/`) is the automation to revive for a standing
@@ -104,40 +105,43 @@ deterministic accept gate (per-test-isolated executor + static adequacy
 into the shipped artifact). All-local (qwen3:8b) by default; operator
 seat overrides via `*.local.yaml`.
 
-**Handoff pointer (fresh-session start here):** the fresh-rig battery
-rerun is DONE (2026-07-10 late: **6/12 clean**, 12.5 min, zero
-timeouts — see the trajectory table; yesterday's 3/12 was infra, not
-regression). NEXT: the **fix-execution rung** (chain write → run →
-verdict inside one fix turn). The seams are mapped and exactly two
-structural blockers exist: a write continuation is terminal
-(`_resumes_turn` excludes write, `serving_ensemble_caller.py`) and
-classify suppresses the run signal whenever a fix/build verb is present
-(`classify.py` `_route`); the composition is fix-intent writes resume +
-a wrote-block→need-run signal mirroring `has_run_block`→run-verdict.
-The rerun also surfaced, in priority order behind fix-execution: the
-series' first two DISHONEST misses (turn 3 speculated about a
-never-built file — the grounded-explain gap; turn 10 wrong recall —
-#82), and a cross-turn-repair observation (turn 2 could have rebuilt
-the never-built todo.py from conversation intent instead of cascading —
-a detectable deterministic condition; sibling rung to fix-execution,
-not scope creep). Then: **rewrite negation-tightening**
-(expectation-adjacent tokens only;
-`docs/plans/2026-07-10-test-repair-round-2-design.md`), the **#82
-deep-recall remainder**, and the import-guard residual. The recorded
-battery is `benchmarks/agentic_serving/ladder_battery.sh` (series 4/10
-→ 7/10 → 6/11 → 5/11 → 9/11 → 6/11 → 3/12-infra → 6/12; run-to-run
-variance ≈ 5 points on whether turn 1's build lands). Standing smaller
-follow-ups: #110, the injector's scope-blind binding, #106, the serve
-trace's ~280-char node-response truncation (blocks post-hoc held-round
-diagnosis), and the glob-result verbatim wire capture (the wire log is
-shape-only — a capture needs a body-dumping probe, not
-LLM_ORC_SERVE_WIRE_LOG). #107 is fixed (PR #113:
-endpoint-boundary `_text_content` normalizer — the 422 fired at
-pydantic before the caller could crash; textless/malformed parts
-lists still 422 honestly rather than sliding the turn boundary). Ops notes: the
-harness reaps tracked background serves/batteries mid-long-run — start
-them detached (nohup + disown) with a Monitor tail; give the rig
-cooling headroom between batteries.
+**Handoff pointer (fresh-session start here):** the **fix-execution
+rung is IMPLEMENTED** (2026-07-10 late, branch worktree-fix-execution;
+design `docs/plans/2026-07-10-fix-execution-design.md`): a fix-intent
+turn's applied write resumes the pipeline and chains into the existing
+run seam (structural `wrote_path` from the caller's post-boundary
+tool_calls → classify `fix_chain` → need-run → run-verdict), so the
+client's real suite judges the fix — the blind spot the server-side
+gate structurally cannot cover. Live-proven twice: a real-OpenCode fix
+turn whose seat-accepted rewrite did NOT fix the bug got an honest red
+verdict from its own chained run, and battery turn 13 additionally
+surfaced the exact expected-vs-actual assertion mismatch in the
+verdict. NEXT, in leverage order: (1) **rung 2 — bounded re-fix on a
+red chained verdict**, carrying the verdict's failure report back into
+one held-style retry (the verdict already contains exactly the carry;
+composes with #100's machinery); (2) **rung 1.5 — read the visible
+test_<stem>.py when fixing <stem>.py** (deterministic, one read round;
+would likely have converted battery turn 13, whose fix invented its own
+exception message because it never saw the seeded test); (3) the
+**grounded-explain gap** (turn 3 keeps speculating about a never-built
+file) and **#82 deep recall** (turn 10 wrong again); (4) cross-turn
+repair (sibling rung, named in the design doc); (5) rewrite
+negation-tightening (`docs/plans/2026-07-10-test-repair-round-2-design.md`)
+and the import-guard residual. The recorded battery is
+`benchmarks/agentic_serving/ladder_battery.sh`, now 13 turns (series
+4/10 → 7/10 → 6/11 → 5/11 → 9/11 → 6/11 → 3/12-infra → 6/12 → 6/13;
+run-to-run variance ≈ 5 points on whether turn 1's build lands; turn
+2's 600s client timeout vs the seat's 720s two-round budget is a
+standing latency tension). Standing smaller follow-ups: #110, #114
+(trace truncation — blocks post-hoc held-round diagnosis), the
+injector's scope-blind binding, #106, the chain's "existing"-verb
+width (battery turn 8's tests-turn chained an honest whole-suite
+report — informative but undesigned; keep or narrow on review), and
+the glob-result verbatim wire capture (the wire log is shape-only — a
+capture needs a body-dumping probe, not LLM_ORC_SERVE_WIRE_LOG). Ops
+notes: the harness reaps tracked background serves/batteries
+mid-long-run — start them detached (nohup + disown) with a Monitor
+tail; give the rig cooling headroom between batteries.
 
 Key empirical facts the next work builds on:
 
