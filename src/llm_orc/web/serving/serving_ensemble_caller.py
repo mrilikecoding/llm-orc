@@ -207,6 +207,16 @@ def _render_context(messages: Sequence[Any]) -> str:
         # line-anchored, and a partial '[wrote ...]' header corrupts it
         cut = rendered.find("\n")
         rendered = rendered[cut + 1 :] if cut >= 0 else rendered
+        # and the cut block's remaining fence-indented body lines: headerless,
+        # they would continue whatever kept block precedes the tail — a [ran]
+        # block's summary drowned under them (PR #115 review)
+        tail_lines = rendered.split("\n")
+        start = 0
+        while start < len(tail_lines) and (
+            not tail_lines[start] or tail_lines[start].startswith("  ")
+        ):
+            start += 1
+        rendered = "\n".join(tail_lines[start:])
 
     task = _task_from(messages)
     # select over the FULL prior history, not just pre-tail messages: the
@@ -586,14 +596,30 @@ def _resumes_turn(call: Any) -> bool:
     )
 
 
-# Chained fix-execution: the resume gate for a WRITE continuation. Mirrors
-# classify's _EXISTING_RE — scripts are standalone, so the pattern cannot be
-# imported; a regression test pins the two strings equal. A write result
-# matching the error shape never chains (the fix did not apply).
+# Chained fix-execution: the resume gate for a WRITE continuation. Only a
+# task LED by a fix imperative chains — mid-sentence "existing"/"change"
+# are ordinary build prose (PR #115 review). Mirrors classify's
+# _FIX_VERB_RE — scripts are standalone, so the pattern cannot be
+# imported; a regression test pins pattern and flags equal.
 _FIX_CHAIN_RE = re.compile(
-    r"\b(fix|update|modify|refactor|edit|change|existing)\b", re.IGNORECASE
+    r"^\s*(?:fix|update|modify|refactor|edit|change)\b", re.IGNORECASE
 )
-_WRITE_ERROR_RE = re.compile(r"^\s*(?:Error\b|File not found)")
+
+
+def _write_result_failed(result: Any) -> bool:
+    """True when a write tool result carries a failure (or no evidence of
+    success): a failed write must never chain — the verdict would frame an
+    unapplied fix as verified. Mirrors the read path's lowercased prefixes
+    and adds the client permission-denial and empty-result shapes
+    (PR #115 review blocker)."""
+    if not isinstance(result, str) or not result.strip():
+        return True
+    lowered = result.strip().lower()
+    return (
+        lowered.startswith("error")
+        or lowered.startswith("file not found")
+        or "rejected permission" in lowered
+    )
 
 
 def _wrote_path_this_turn(messages: Sequence[Any]) -> str:
@@ -644,12 +670,11 @@ def _tool_result_ack(messages: Sequence[Any]) -> str | None:
 
 def _write_continuation_ack(messages: Sequence[Any], written: str) -> str | None:
     """Terminal ack for a write continuation — or None when the fix chain
-    resumes. A fix-intent turn's applied write chains into one delegated
+    resumes. A fix-led turn's applied write chains into one delegated
     run (fix-execution); a failed write acks honestly and never chains."""
-    if not _FIX_CHAIN_RE.search(_task_from(messages)):
+    if not _FIX_CHAIN_RE.match(_task_from(messages)):
         return f"Wrote {written}."
-    result = getattr(messages[-1], "content", None)
-    if isinstance(result, str) and _WRITE_ERROR_RE.match(result):
+    if _write_result_failed(getattr(messages[-1], "content", None)):
         return f"Write failed for {written}."
     return None
 

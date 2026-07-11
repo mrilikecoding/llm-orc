@@ -129,3 +129,15 @@ def test_skipped_only_summary_is_reported_not_treated_as_missing() -> None:
     verdict = _verdict(_dispatch(block))
     assert "3 skipped" in verdict
     assert "no pytest summary" not in verdict
+
+
+def test_permission_denied_run_is_never_reported_as_ran() -> None:
+    """PR #115 review: a client permission denial arrived as the run body
+    and the verdict said "Ran `pytest -q`, but ..." — nothing ran. The
+    denial shape gets an honest not-permitted verdict instead."""
+    block = (
+        "assistant: [ran pytest -q]\n  The user rejected permission to use this tool"
+    )
+    verdict = _verdict(_dispatch(block))
+    assert "not permitted" in verdict
+    assert not verdict.startswith("Ran")

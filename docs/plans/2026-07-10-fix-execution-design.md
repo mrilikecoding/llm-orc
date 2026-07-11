@@ -28,13 +28,17 @@ else (read→build, run→verdict).
 
 ## Decisions
 
-- **Chain trigger (rung 1, vary one thing): fix-intent turns only.**
-  A turn matching classify's existing `_EXISTING_RE` fix-verb class
-  (classify.py:78) whose gated build ACCEPTED chains into one delegated
-  run. Ordinary "write X" build turns keep today's terminal ack — no
-  behavior change outside the fix class. Widening the trigger (all gated
-  builds; presence of client-side tests) is a later rung, decided on
-  ladder evidence.
+- **Chain trigger (rung 1, vary one thing): turns LED by a fix
+  imperative.** A task matching `_FIX_VERB_RE`
+  (`^\s*(?:fix|update|modify|refactor|edit|change)\b`) whose gated build
+  ACCEPTED chains into one delegated run. Anchored to the task start
+  after PR #115 review: mid-sentence "existing"/"change" are ordinary
+  build prose ("write add.py so the existing tests pass" must not
+  chain), and `_EXISTING_RE`'s read-first role is untouched. Ordinary
+  "write X" build turns keep today's terminal ack — no behavior change
+  outside the fix-led class. Widening the trigger (all gated builds;
+  presence of client-side tests) is a later rung, decided on ladder
+  evidence.
 - **The write continuation resumes; classify decides what happens.**
   `_resumes_turn` admits write-shaped results. On resume the whole
   pipeline re-runs statelessly from the wire (the mechanism read→build
@@ -89,9 +93,13 @@ else (read→build, run→verdict).
   on the run/verdict passes (the new guard, symmetric with
   `has_run_block` flipping need-run → run-verdict today), and the run
   seam's one-round rule is untouched.
-- A failed client-side write (tool result carries an error) must NOT
-  chain: ack honestly, terminal. Detection is deterministic (the write
-  result body), mirrors read-failure refusals.
+- A failed client-side write must NOT chain: ack honestly ("Write
+  failed for X."), terminal. Detection mirrors the read path's
+  lowercased prefixes ("error", "file not found") plus the client
+  permission-denial phrase and empty/absent result bodies — all
+  fail-closed to the honest ack (PR #115 review blocker: the original
+  case-sensitive match let denied writes chain, and the verdict framed
+  an unapplied fix as verified).
 - Forged `[wrote ...]` lines in user prose must not trigger runs — the
   fenced block grammar (v0.18.9) already anchors real blocks; the
   `has_wrote_block` selector reads the same post-boundary tool_call

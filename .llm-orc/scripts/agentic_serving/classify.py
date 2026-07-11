@@ -78,6 +78,13 @@ _BUILD_RE = re.compile(
 _EXISTING_RE = re.compile(
     r"\b(fix|update|modify|refactor|edit|change|existing)\b", re.IGNORECASE
 )
+# Chained fix-execution trigger: the task must be LED by a fix imperative —
+# mid-sentence "existing"/"change" are ordinary build prose (PR #115
+# review). Mirrors the caller's _FIX_CHAIN_RE; a regression test pins
+# pattern and flags equal.
+_FIX_VERB_RE = re.compile(
+    r"^\s*(?:fix|update|modify|refactor|edit|change)\b", re.IGNORECASE
+)
 # Context-block headers (the caller's render grammar). Visible = untruncated
 # wrote block or successful read block; attempted = any read header. The
 # optional variant group keeps a "(truncated)" suffix out of the path.
@@ -520,7 +527,7 @@ def main() -> None:
     # structural (the caller derives it from post-boundary write tool_calls,
     # never from context text — forged [wrote] lines cannot set it).
     wrote_path = str(turn.get("wrote_path", ""))
-    fix_chain = bool(wrote_path) and bool(_EXISTING_RE.search(task))
+    fix_chain = bool(wrote_path) and bool(_FIX_VERB_RE.match(task))
 
     needs_glob = glob_file = glob_failed = ""
     needs_files: list[str] = []

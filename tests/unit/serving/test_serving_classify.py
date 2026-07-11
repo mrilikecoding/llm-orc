@@ -663,3 +663,16 @@ def test_fix_turn_without_a_write_takes_the_read_seam_not_the_chain() -> None:
     decision = _classify({"task": "fix the divide bug in calc.py"})
     assert decision["target"] == "need-files"
     assert decision["needs_files"] == ["calc.py"]
+
+
+def test_mid_sentence_edit_words_never_chain_even_with_a_write() -> None:
+    # PR #115 review: "existing"/"change" as mid-sentence prose are ordinary
+    # build words; only a leading fix imperative chains. (These turns keep
+    # their pre-existing routes — the read-first seam via _EXISTING_RE is
+    # untouched; they just never enter the run chain.)
+    for task in (
+        "write add.py so the existing tests pass",
+        "write tests for existing calc.py",
+    ):
+        decision = _classify({"task": task, "wrote_path": "add.py"})
+        assert decision["target"] not in ("need-run", "run-verdict"), task

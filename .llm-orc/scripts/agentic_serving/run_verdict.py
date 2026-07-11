@@ -91,6 +91,9 @@ def _verdict(command: str, variant: str, detail: str, body: str) -> str:
     if variant == "failed":
         reason = detail or "empty run result"
         return f"The test run could not execute: {reason}"
+    if "rejected permission" in body.lower():
+        # the client declined the command — nothing ran (PR #115 review)
+        return f"The test run was not permitted by the client (`{command}`)."
     summary = _summary_line(body)
     if not summary:
         tail = "\n".join(body.splitlines()[-_TAIL_LINES:])

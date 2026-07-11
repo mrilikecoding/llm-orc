@@ -134,9 +134,10 @@ run-to-run variance ≈ 5 points on whether turn 1's build lands; turn
 2's 600s client timeout vs the seat's 720s two-round budget is a
 standing latency tension). Standing smaller follow-ups: #110, #114
 (trace truncation — blocks post-hoc held-round diagnosis), the
-injector's scope-blind binding, #106, the chain's "existing"-verb
-width (battery turn 8's tests-turn chained an honest whole-suite
-report — informative but undesigned; keep or narrow on review), and
+injector's scope-blind binding, #106, the chain trigger (narrowed
+on PR #115 review to tasks LED by a fix imperative — battery turn 8's
+"tests for existing calc.py" chain no longer fires; re-widen only on
+ladder evidence), and
 the glob-result verbatim wire capture (the wire log is shape-only — a
 capture needs a body-dumping probe, not LLM_ORC_SERVE_WIRE_LOG). Ops
 notes: the harness reaps tracked background serves/batteries
