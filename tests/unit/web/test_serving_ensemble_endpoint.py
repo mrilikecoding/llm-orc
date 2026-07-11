@@ -414,6 +414,43 @@ def test_wire_log_records_message_shape_when_enabled(
     assert "hello" not in wire_log.read_text()
 
 
+def test_wire_log_normalizes_parts_content_to_text_length(
+    serving_project: Path,
+    serving_client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """A parts-shaped message logs its joined TEXT length (not the part
+    count) and hashes identically to its plain-string twin — the wire-log
+    call site shares the #107 boundary normalizer, and a revert to raw
+    ``message.content`` would silently diverge (PR #113 review note)."""
+    wire_log = tmp_path / "wire.jsonl"
+    monkeypatch.setenv("LLM_ORC_SERVE_WIRE_LOG", str(wire_log))
+
+    task = "explain what\nfoo.py does"
+    for content in (
+        task,
+        [
+            {"type": "text", "text": "explain what"},
+            {"type": "text", "text": "foo.py does"},
+        ],
+    ):
+        resp = serving_client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "ensemble-agent",
+                "messages": [{"role": "user", "content": content}],
+                "tools": [_WRITE_TOOL],
+            },
+        )
+        assert resp.status_code == 200
+
+    rows = [json.loads(line) for line in wire_log.read_text().strip().splitlines()]
+    string_row, parts_row = rows[-2]["messages"][0], rows[-1]["messages"][0]
+    assert parts_row["content_len"] == len(task)  # text length, not part count
+    assert parts_row["prefix_hash"] == string_row["prefix_hash"]  # true twins
+
+
 def test_invisible_named_file_turn_emits_a_read_tool_call(
     serving_client: TestClient,
 ) -> None:
