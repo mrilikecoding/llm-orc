@@ -25,7 +25,19 @@ SHELL_LANGS = {"bash", "sh", "shell", "console", "zsh", "text"}
 # the envelope writes it, route and gather read it.
 HELD_TESTS_MARKER = "[HELD TESTS: round 1 spec; regenerate ONLY the code]"
 
+# The convergent-fix sentinel (rung 2, docs/plans/2026-07-12-convergent-fix-
+# design.md): classify composes the fix-led write's content under this
+# marker in the re-fix dispatch_input; refix_gather reads it back out. One
+# constant — classify writes it, refix_gather reads it.
+PRIOR_CODE_MARKER = "[PRIOR CODE: this turn's write, before the re-fix]"
+
 _FENCE_RE = re.compile(r"```([a-zA-Z0-9_+-]*)\n(.*?)```", re.DOTALL)
+
+# A ``[ran <command>]`` block header, with its optional failed/truncated
+# variant and any inline trailing detail — shared by run_verdict (verdict
+# prose) and classify (rung 2's failure-shape routing signal), issue #83 /
+# convergent-fix rung 2.
+_RAN_HEADER_RE = re.compile(r"^assistant: \[ran (.+?)( \((failed|truncated)\))?\](.*)$")
 
 
 def payload(raw: str) -> dict[str, Any]:
@@ -101,6 +113,41 @@ def extract_code(text: str, *, drop_test_blocks: bool = False) -> str:
     if blocks:
         return "\n".join(block.strip() for block in blocks)
     return text.strip()
+
+
+def latest_ran_block(text: str) -> tuple[str, str, str, str] | None:
+    """(command, variant, inline detail, body) of the LAST ``[ran ...]``
+    block in ``text``, or ``None`` when no block is present.
+
+    The body is the block's two-space-indented lines, de-indented (a blank
+    line inside the body stays blank); untrusted output text can never be
+    confused with block headers since headers live only at column 0 (fenced
+    block grammar). Shared by run_verdict's verdict-prose parse and
+    classify's rung-2 failure-shape classification — moved out of
+    run_verdict so both read the identical block shape (no duplicate parser
+    to drift).
+    """
+    lines = text.splitlines()
+    found: tuple[int, re.Match[str]] | None = None
+    for index, line in enumerate(lines):
+        match = _RAN_HEADER_RE.match(line)
+        if match:
+            found = (index, match)
+    if found is None:
+        return None
+    index, match = found
+    body_lines: list[str] = []
+    for line in lines[index + 1 :]:
+        if line.startswith("  "):
+            body_lines.append(line[2:])
+        elif not line.strip():
+            body_lines.append("")
+        else:
+            break
+    command = match.group(1)
+    variant = match.group(3) or ""
+    detail = (match.group(4) or "").strip()
+    return command, variant, detail, "\n".join(body_lines).strip()
 
 
 def _is_pure_test_block(block: str) -> bool:
