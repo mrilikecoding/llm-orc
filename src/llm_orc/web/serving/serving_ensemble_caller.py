@@ -638,6 +638,41 @@ def _wrote_path_this_turn(messages: Sequence[Any]) -> str:
     return ""
 
 
+def _wrote_content_this_turn(messages: Sequence[Any]) -> str:
+    """The content of THIS turn's write tool_call, or "" when none.
+
+    Convergent-fix rung 2's re-fix producer needs the fix pass's "prior
+    code" — structural by construction, mirroring ``_wrote_path_this_turn``
+    (derived from post-boundary tool_calls, never from rendered context
+    text, which never carries THIS turn's write block at all).
+    """
+    items = list(messages)
+    boundary = _latest_user_index(items)
+    for message in items[boundary + 1 :]:
+        for call in getattr(message, "tool_calls", ()) or ():
+            arguments = _parsed_arguments(call)
+            if arguments is not None and _is_write_shaped(arguments):
+                return str(arguments.get("content", ""))
+    return ""
+
+
+def _write_count_this_turn(messages: Sequence[Any]) -> int:
+    """How many write tool_calls THIS turn has issued so far.
+
+    Convergent-fix rung 2's one-round bound (``has_refixed``) derives from
+    this: a count of 2 means the re-fix already shipped its write, so the
+    NEXT verdict pass must report honestly rather than re-fix again.
+    Structural, post-boundary only — mirrors ``_wrote_path_this_turn``.
+    """
+    items = list(messages)
+    boundary = _latest_user_index(items)
+    return sum(
+        1
+        for message in items[boundary + 1 :]
+        if _written_file_path(getattr(message, "tool_calls", ()) or ())
+    )
+
+
 def _tool_result_ack(messages: Sequence[Any]) -> str | None:
     """A short acknowledgment when the call is a tool-result continuation.
 
@@ -813,19 +848,32 @@ class ServingEnsembleCaller:
             _task_from(context.messages),
             _render_context(context.messages),
             wrote_path=_wrote_path_this_turn(context.messages),
+            wrote_content=_wrote_content_this_turn(context.messages),
+            write_count=_write_count_this_turn(context.messages),
         )
         for chunk in _outcome_chunks(outcome, context.tools):
             yield chunk
 
     async def _serve(
-        self, task: str, conversation: str = "", wrote_path: str = ""
+        self,
+        task: str,
+        conversation: str = "",
+        wrote_path: str = "",
+        wrote_content: str = "",
+        write_count: int = 0,
     ) -> dict[str, Any]:
         config = self._load_config()
         executor = ExecutorFactory.create_root_executor(project_dir=self._project_dir)
         result = await executor.execute(
             config,
             json.dumps(
-                {"task": task, "context": conversation, "wrote_path": wrote_path}
+                {
+                    "task": task,
+                    "context": conversation,
+                    "wrote_path": wrote_path,
+                    "wrote_content": wrote_content,
+                    "write_count": write_count,
+                }
             ),
         )
         # blocking file I/O off the event loop so concurrent SSE streams
