@@ -24,7 +24,14 @@ Latency is the accepted trade; correctness and memory are where we compete.
 Stated as the end state (2026-07-11): **llm-orc served agentically behind
 OpenCode should be as functional as Claude Code running a frontier model,
 and beyond it where composition wins, all through orchestrated small
-models.** That decomposes into two axes on top of the three levers above:
+models.** This is a literal engineering target, not an aspiration to
+steer by. Posture (practitioner, 2026-07-11): local-first; occasional
+hosted capability in a measured seat is acceptable when it is the
+cheapest path to the bar and costs are minimized (on-signal escalation,
+bounded slots), with every hosted seat carried as a named buy-back
+target for the next local-model generation (§The seat-capability
+ladder). That decomposes into two axes on top of the three levers
+above:
 
 - **Task generality.** The serve today routes a closed intent set (build,
   write-tests, explain, edit, read, run, glob, fix-chain) with honest
@@ -281,7 +288,9 @@ differentiator; these outrank score.
    twice); the named structural lever is escalation-on-signal to
    qwen3:14b think-off (`agentic-tier-escalated-general`), which the
    4-arm spike showed is latency-free on the rig. Trigger: a reject
-   whose failure class matches the known residual.
+   whose failure class matches the known residual. This is rung 1 of
+   the seat-capability ladder (§below, #119); run the post-repairs
+   seat A/B first, it decides how far up the ladder this class needs.
 4. **#110 artifact quality gate:** deterministic AST reject/repair for
    duplicate top-level defs and shadowed/dead code in accepted
    deliverables.
@@ -541,10 +550,76 @@ home for serving shapes (pick candidate 1 or 2; the regression pin
 holds meanwhile) · **#114 remainder** (prose-cap config knob) · **#95**
 dead-surface sweep (mechanical; Haiku-grade).
 
+## The seat-capability ladder (cross-cutting; #119)
+
+**Why now:** the doctrine "structure beats model size" comes from the
+2026-07-08 seat A/B, which predates BOTH rounds of deterministic gate
+repairs. The structural breakers it measured are gone; what remains
+(turn-1 test quality, spec-freedom divergence) is precisely what
+structure could not fix, so seat tier may matter today where it did
+not then. The doctrine is stale until re-measured.
+
+**Entry evidence (run before climbing):** the post-repairs seat A/B.
+Same-seed ladder, ONE seat varied (test-writer first), everything else
+constant: {qwen3:8b, qwen3:14b think-off, coder 30B-A3B, one cheap
+hosted}. One battery converts this whole section from doctrine to
+data. Cheap, and it reuses the existing battery machinery.
+
+**Local rungs (free, in order):**
+
+1. **qwen3:14b think-off** (`agentic-tier-escalated-general`): pulled,
+   measured latency-free on the rig.
+2. **A coder-tuned 30B-A3B MoE** (qwen3-coder class): ~3B active
+   params means near-8b generation speed with stronger code quality; a
+   q4 quant should fit the 32GB rig, though it is tight with two
+   models resident. Escalation-on-signal sidesteps the residency
+   problem by loading it only when triggered. Verify current
+   quants/sizes before committing. #90 (llama.cpp) makes this rung
+   cheaper to operate.
+3. **Think-on as a signaled splurge:** 10–20× latency, unpayable as a
+   default and trivial as a rare escalation on a turn that already
+   failed once.
+
+**Hosted rung (MiniMax-class, `.local.yaml`, untracked, opt-in).**
+Capability goes where design lives, never where structure already won.
+Sanctioned seats:
+
+- **Plan/decompose seat (WS-5):** one plan turn amortizes over ~30
+  turns of local execution, and design work is what the essay-004
+  evidence assigns to the capable tier.
+- **Composer baseline (WS-7):** ADR-047 pillar (c) already names a
+  capable-model-composed structure as the benchmark the
+  ensemble-composed version must beat; a cheap hosted seat there IS
+  the spec, not a compromise.
+- **Test-writer escalation, final rung:** after the local rungs fail,
+  before honest refusal.
+- **Elicit seat (WS-7):** choosing the clarifying question that closes
+  a spec freedom is design-adjacent judgment.
+
+**Cost-minimization rules:** escalation fires only on a deterministic
+signal (a reject matching a known residual class), never as a default;
+bounded slots with estimate-before-spend (standing free-first
+practice); hosted config lives only in untracked `.local.yaml`.
+
+**Buy-back ledger:** every hosted seat is a named IOU. Record the
+seat, the failure class that justified it, and the measurement; on
+each local-model generation, rerun the A/B and retire every hosted
+seat the new local tier converts. This ledger is the mechanism that
+keeps the literal all-small-models target reachable while the serve
+is useful in the meantime.
+
+**Where tier is never spent:** routing/classify, verification, and the
+run/read seams. Those are deterministic or zero-call already; a
+frontier model in the classify seat is paying frontier prices to run a
+regex.
+
 ## Sequencing
 
 - **Now (1–2 sessions):** WS-1, then WS-2; WS-8 revived in parallel.
-  These share the battery and convert its standing misses.
+  These share the battery and convert its standing misses. The
+  post-repairs seat A/B (§The seat-capability ladder) slots here too:
+  cheap, reuses the battery machinery, and decides the escalation
+  question with data.
 - **Next:** WS-3 items 1–2 (chain executor design + grep) → the
   meta-task rung (llm-orc half) → WS-4 as a parallel arc → meta-task
   plexus half → WS-3 items 3–5.
@@ -592,9 +667,12 @@ doc syncs, battery bookkeeping) go to Haiku-class.
    multi-round work statelessly inside the client's loop. Falsifier to
    watch: a client that caps tool rounds or compacts mid-chain (the
    wire watch exists).
-3. **All-local seats?** Holds as the default; the escalation rung is
-   measured and named (14b think-off is latency-free on the rig), and
-   WS-8 keeps the frontier comparison empirical rather than assumed.
+3. **All-local seats?** Revised 2026-07-11 (practitioner decision):
+   local-first holds, and occasional hosted capability in a measured
+   seat is sanctioned when it is the cheapest path to the bar and
+   costs are minimized. The buy-back ledger (§The seat-capability
+   ladder) keeps the literal all-small-models target reachable: hosted
+   seats retire as local generations convert their failure classes.
 4. **Legacy issue hygiene (recommendations, pending practitioner
    sign-off):** #31 superseded by the serving architecture (close,
    pointing at `docs/serving.md`) · #78 answered for serving by the
@@ -764,7 +842,8 @@ removal).
 
 Open, mapped to workstreams (filed 2026-07-11): **WS-1** #117
 (fix-execution completion) · **WS-2** #118 (grounded-explain) #119
-(escalation-on-signal) #110 (artifact quality) + #82's recall half ·
+(seat-capability ladder, cross-cutting) #110 (artifact quality) +
+#82's recall half ·
 **WS-3** #120 (chain executor) #121 (grep) #122 (edit) #123
 (multi-file) #124 (command registry) · **WS-4** #125 (Rust gate) ·
 **WS-5** #126 (plan substrate + 30-turn battery; #82's divergence half
