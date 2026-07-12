@@ -298,6 +298,25 @@ them. The client's loop continues as long as the serve emits
 tool_calls, so the serve can drive N-step work while the client
 executes everything: long-horizon's per-step mechanism.
 
+**Capability-map principle (named 2026-07-11):** the client executes
+only the tools it advertises, so the serve cannot add executable tools
+to a client. What the architecture affords instead is making the
+client's EFFECTIVE surface the union of its advertised tools and
+serve-native capabilities: the accept-gate sandbox, lossless memory,
+and (coming) plexus lenses are tools no client advertises. The split
+that preserves the invariants: workspace-touching actions always ride
+the client seam (permission boundary and workspace ground truth live
+there); serve-native capabilities never need the client. Delegation
+resolves through an ordered capability map, per request, from the
+advertised list: semantic intent → client tool (names and wire formats
+normalized per client; the read normalizer is OpenCode-locked today
+and becomes one adapter among N) → serve-native fallback where one
+legitimately exists → honest refusal. Net effect: the serve UPGRADES
+any client. A zero-tool OpenAI-compatible client still gets
+accept-gated builds and lossless memory (reads/runs fail closed to
+honest refusals, today's behavior); a rich client gets the full chain
+surface.
+
 1. **Chain executor (design-first).** Promote the ad-hoc chains
    (read→build, glob→read→build, write→run→verdict) into ONE
    deterministic chain-plan structure: classify emits a bounded step
@@ -324,7 +343,11 @@ executes everything: long-horizon's per-step mechanism.
 
 **Exit gate (meta-task rung entry):** a question about the llm-orc
 repo itself ("how does classify decide routing?") answered through the
-serve via a grep → read chain, grounded and honest.
+serve via a grep → read chain, grounded and honest. Plus a
+client-agnosticism probe (cheap; guards against OpenCode overfit): one
+battery slice through a second OpenAI-compatible client (Aider or
+Cline), with the format differences absorbed by per-client adapters in
+the capability map.
 
 ### WS-4: Language generalization (Rust first, for plexus)
 
@@ -358,7 +381,9 @@ resident orchestrator (the invariant holds).
    (client-visible, rides the wire, zero new storage). Spike both in
    one session; decide on evidence. Likely answer is both: record
    authoritative, todowrite as the visible mirror, but let the spike
-   say so.
+   say so. Capability-map tilt (2026-07-11): the server-side artifact
+   is client-agnostic; todowrite is an OpenCode-specific enhancement,
+   so the burden of proof sits on the mirror-first option.
 2. **Plan-shaped intent:** an ask bigger than one deliverable routes to
    a decompose shape; the plan lands in the substrate; each subsequent
    wire round advances one step via the WS-3 chain executor; progress
@@ -492,6 +517,13 @@ becomes a measurement instead of a claim.
 the current battery. Paid tokens, bounded: one battery per baseline
 per release checkpoint, estimate before running (standing free-first
 practice).
+
+**Named possibility, not an arm yet:** a hybrid arm, frontier harness
+plus llm-orc as MCP tools (the mirror-image integration posture:
+composition extending a capable harness's tool surface instead of
+serving beneath a client; the MCP server exists and plexus already
+consumes llm-orc this way). Would test composition-as-tool against
+composition-as-backend.
 
 **Exit gate:** a parity table in this doc, per release checkpoint:
 per-arm score / honesty / verification behavior / cost / latency.
