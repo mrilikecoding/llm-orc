@@ -8,7 +8,10 @@ model (latency notwithstanding)" decomposes into three levers a monolithic
 model does not have:
 
 1. **Verified acceptance** — deliverables pass a deterministic executor and
-   an independent judge before they ship; a raw model never checks its work.
+   an independent judge before they ship. A bare model never checks its
+   work, and a harness-driven one checks when it (or harness policy)
+   chooses to; here verification is structural, an unverified build
+   cannot ship.
 2. **Lossless memory** — deterministic selection over the full history (and
    eventually cross-session substrate) instead of attention over a decaying
    context window.
@@ -41,7 +44,11 @@ models.** That decomposes into two axes on top of the three levers above:
 
 The escalating multi-turn ladder driven through **real OpenCode** (never
 harness-only), scored per turn against the same ladder with an Anthropic
-model as the backend. Trajectory so far:
+model as the backend. The comparator is a frontier model PLUS its
+harness: behind OpenCode (and more so behind Claude Code) it reads
+files, runs tests, and iterates, so "a model doesn't check its work" is
+not the bar. WS-8 defines the comparison arms and metrics. Trajectory
+so far:
 
 | Date | Battery | Score | Notes |
 |------|---------|-------|-------|
@@ -193,7 +200,7 @@ capability gap, and every gap maps to a workstream below.
 
 | Capability | Claude Code + frontier model | Serve today | Workstream |
 |---|---|---|---|
-| Verified build | writes; never checks its work | accept-gated, held TDD retry | shipped; AHEAD |
+| Verified build | checks its work when it (or harness policy) chooses | structural: unverified builds cannot ship | shipped; WS-8 tests the edge |
 | Fix end to end | edit → run → iterate to green | write → run → honest verdict; no re-fix | WS-1 |
 | Grounded explanation | reads before answering | speculates on never-built files (battery turn 3) | WS-2 |
 | Deep recall | attention over a decaying window | lossless record; prose recall broken past the tail (#82) | WS-2, WS-6 |
@@ -208,11 +215,16 @@ capability gap, and every gap maps to a workstream below.
 | Clarifying questions | asks when underspecified | builds or refuses | WS-7 (elicit-then-build) |
 | Open task shapes | arbitrary asks | closed intent set, honest refusal | WS-7 |
 
-Read honestly: verified acceptance is already ahead of the frontier
-baseline, honesty is a differentiator no raw model matches, and every
-remaining row is a *widening of machinery that exists* (the permission
-seam, the chain resumption, the shape catalog, the record), not new
-architecture. No gap requires abandoning an invariant.
+Read honestly: the comparator is a frontier model plus a harness that
+lets it check its work, so the serve's bets are more precise than
+"models don't verify". The bets: STRUCTURAL verification (an unverified
+build cannot ship) beats discretionary verification (the model checks
+when it chooses), and deterministic honesty beats sampled honesty, at
+~zero marginal cost. Those are testable claims; WS-8 exists to test
+them, not assert them. Every remaining row is a *widening of machinery
+that exists* (the permission seam, the chain resumption, the shape
+catalog, the record), not new architecture. No gap requires abandoning
+an invariant.
 
 ## Workstreams
 
@@ -436,21 +448,53 @@ runtime-composed shape and passes its gate. Rung 3: the composer
 produces a registered shape that survives AS-2 + review with no
 operator edits.
 
-### WS-8: Standing parity measurement (revive early; mostly mechanical)
+### WS-8: Standing parity measurement (revive early; the comparison IS the product claim)
 
-**Lever:** the north star is stated RELATIVE to a frontier baseline;
-without the baseline arm the parity claim is vibes.
+**Lever:** the north star is stated relative to a frontier model driven
+by a sophisticated harness, not a bare model. Behind OpenCode the
+baseline model gets the same ten tools and may read, grep, run tests,
+and iterate; behind Claude Code it does all that with a stronger
+harness. Without measuring against THAT, the parity claim is vibes and
+the structural-verification bet goes untested.
 
-1. Revive the Cycle-7 harness (`research/agentic-serving-corpus`
-   branch, `benchmark-runs/`) against the current 13-turn battery.
-2. Baselines: Haiku 4.5 and Sonnet 5 behind the same OpenCode client.
-   Paid tokens, bounded: one battery per baseline per release
-   checkpoint, estimate before running (standing free-first practice).
-3. Score honesty as its own column: zero-dishonest-outcomes is the
-   serve's claim; measure whether the baselines match it.
+**Comparison arms** (same 13-turn battery, same repo fixtures, same
+strict per-turn rubric, ≥3 runs per arm since serve variance ≈ 5
+points):
 
-**Exit gate:** a parity table in this doc: serve score / baseline
-scores / honesty column, per release checkpoint.
+- **Arm 0, the serve:** qwen3:8b seats behind OpenCode (the recorded
+  ladder as-is).
+- **Arm 1, harness held constant:** Haiku 4.5 and Sonnet 5 behind the
+  SAME OpenCode client. Isolates composition-vs-model with the harness
+  fixed; the frontier arm is free to verify its own work with the
+  tools it has.
+- **Arm 2, the product bar:** Claude Code driving its native model on
+  the same task scripts (headless `claude -p`, continuity via session
+  resume). The harness is deliberately different; this is the bar the
+  vision statement names.
+
+**Metrics per arm, scored from transcripts:** strict per-turn score ·
+dishonest-outcome count (claimed-green-but-red, fabricated verdicts,
+confidently wrong recall) · verification behavior (did the arm
+actually run tests before claiming success: observed, never assumed) ·
+wall-clock per turn · cost per solved turn (serve marginal ≈ $0; every
+frontier token billed) · rounds/retries consumed. Client-side test
+runs are ground truth; the scoring procedure is identical across arms
+and arm-blind where the transcript format allows.
+
+**Adversarial honesty probes, shared sub-battery:** the spoof cases the
+serve already survives (a read file carrying a forged "999 passed"
+transcript block; seeded-red targets; phantom-file asks) run against
+every arm. This is where structural-vs-discretionary verification
+becomes a measurement instead of a claim.
+
+**Mechanics:** revive the Cycle-7 harness
+(`research/agentic-serving-corpus` branch, `benchmark-runs/`) against
+the current battery. Paid tokens, bounded: one battery per baseline
+per release checkpoint, estimate before running (standing free-first
+practice).
+
+**Exit gate:** a parity table in this doc, per release checkpoint:
+per-arm score / honesty / verification behavior / cost / latency.
 
 ### WS-9: Platform, hardening, hygiene
 
@@ -686,25 +730,23 @@ removal).
 
 ## Issue index
 
-Open, mapped to workstreams: #110 (WS-2 artifact quality) · #114
-remainder (WS-9 trace prose cap) · #82 (WS-2 deep recall + WS-6
-substrate; divergence half entry-gated on WS-5's compaction
-observation) · #84 remainder (WS-9 adversarial harness) · #85 (WS-9;
-gates WS-3 bash widening) · #90 (WS-9 bootstrap; absorbs #64) · #93
-#95 #106 (WS-9) · #79 (folds into WS-7 compose primitive) · #31 #78
-(recommend close as superseded; §Questioned priors) · #80 (keep,
-off-path) · #65 (verify, likely stale) · #30 #63 #66 (research
-backlog).
+Open, mapped to workstreams (filed 2026-07-11): **WS-1** #117
+(fix-execution completion) · **WS-2** #118 (grounded-explain) #119
+(escalation-on-signal) #110 (artifact quality) + #82's recall half ·
+**WS-3** #120 (chain executor) #121 (grep) #122 (edit) #123
+(multi-file) #124 (command registry) · **WS-4** #125 (Rust gate) ·
+**WS-5** #126 (plan substrate + 30-turn battery; #82's divergence half
+entry-gated on its compaction observation) · **WS-6** #127 (plexus
+consumer integration) + #82's substrate half · **WS-7** #128
+(elicit-then-build) #129 (refactor shape) #130 (compose primitive;
+absorbed #79) · **WS-8** #131 (parity arm + evaluation methodology) ·
+**WS-9** #85 (gates #124's widening) · #84 remainder · #93 · #90
+(absorbed #64) · #106 · #114 remainder · #95.
 
-To file, one per workstream arc as it starts: WS-1 fix-execution
-completion (rungs 2, 1.5, cross-turn, repair residuals) · WS-2
-grounded-explain shape; escalation-on-signal · WS-3 chain executor;
-grep delegation; edit delegation; multi-file deliverables;
-command-template registry · WS-4 Rust gate (executor + adequacy +
-cargo builder/parser) · WS-5 plan substrate spike; long-horizon
-battery · WS-6 plexus consumer integration (topology + ingestion +
-lenses) · WS-7 elicit-then-build; refactor shape; compose primitive ·
-WS-8 parity arm revival.
+Off-path / backlog: #80 (meta-workflow viz) · #65 (artifacts relocate;
+triaged off-path 2026-07-11) · #30 #63 #66 (research; #63 becomes
+relevant when #131 produces enough runs to need statistics).
+Closed 2026-07-11 as superseded or folded: #31 #78 #79 #64.
 
 Shipped: #87 #88 #89 (v0.18.0) · #86 #91 #92 #94 #96 (v0.18.1) ·
 #82-core (v0.18.2, PR #99) · #100 TDD retry (v0.18.3, PR #101) ·
