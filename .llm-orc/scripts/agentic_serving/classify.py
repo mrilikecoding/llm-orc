@@ -288,6 +288,34 @@ def _files_to_request(
     return to_request, ""
 
 
+# Rung 1.5, convergent-fix design (docs/plans/2026-07-12-convergent-fix-
+# design.md): a closed template, never model text — the stem is charset-
+# checked before it may enter the "test_<stem>.py" read request.
+_TARGET_STEM_RE = re.compile(r"^[A-Za-z_]\w*$")
+
+
+def _target_test_file(
+    task: str, named_basename: str, context: str, tests_primary: bool
+) -> str:
+    """The ``test_<stem>.py`` to read once before a fix-led turn's gated
+    build (rung 1.5): reuses the need-files read seam, skips (never
+    refuses) when absent or already attempted — unlike a named source file,
+    a missing test costs nothing but today's behavior.
+    """
+    if tests_primary or not _FIX_VERB_RE.match(task):
+        return ""
+    if not named_basename.endswith(".py") or named_basename.startswith("test_"):
+        return ""
+    stem = named_basename[: -len(".py")]
+    if not _TARGET_STEM_RE.match(stem):
+        return ""
+    test_name = f"test_{stem}.py"
+    visible, attempted = _visibility(context)
+    if test_name in visible or test_name in attempted:
+        return ""
+    return test_name
+
+
 def _module_stem(task: str) -> str:
     """The turn's single module stem, or "" (no stem, or multi-stem).
 
@@ -546,6 +574,15 @@ def main() -> None:
         needs_files, read_failed = _files_to_request(
             task, conversation_raw, tests_primary, has_build_signal, glob_file
         )
+        if not read_failed:
+            # rung 1.5 (convergent-fix design): batched into the same read
+            # round as the target-file request above, never causing a
+            # refusal on its own
+            target_test = _target_test_file(
+                task, named_basename, conversation_raw, tests_primary
+            )
+            if target_test and target_test not in needs_files:
+                needs_files = [*needs_files, target_test]
     wants_run = run_signal or fix_chain
     needs_run = _run_test_command(task) if wants_run and not has_run_block else ""
 

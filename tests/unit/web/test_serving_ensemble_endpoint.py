@@ -479,8 +479,11 @@ def test_invisible_named_file_turn_emits_a_read_tool_call(
 def test_read_continuation_resumes_the_turn_and_ships_the_build(
     serving_client: TestClient,
 ) -> None:
-    """Pass 2 (issue #83): the client's read result re-enters the pipeline
-    (never the write-continuation ack) and the resumed turn ships a write."""
+    """Pass 2 (issue #83): the client's read results re-enter the pipeline
+    (never the write-continuation ack) and the resumed turn ships a write.
+    rung 1.5 (convergent-fix design) batches a second read — test_calc.py —
+    into the same round as calc.py, so both results must resolve before the
+    build gates."""
     resp = serving_client.post(
         "/v1/chat/completions",
         json={
@@ -498,13 +501,26 @@ def test_read_continuation_resumes_the_turn_and_ships_the_build(
                                 "name": "read",
                                 "arguments": '{"filePath": "calc.py"}',
                             },
-                        }
+                        },
+                        {
+                            "id": "call_r2",
+                            "type": "function",
+                            "function": {
+                                "name": "read",
+                                "arguments": '{"filePath": "test_calc.py"}',
+                            },
+                        },
                     ],
                 },
                 {
                     "role": "tool",
                     "tool_call_id": "call_r1",
                     "content": "def divide(a, b):\n    return a / b",
+                },
+                {
+                    "role": "tool",
+                    "tool_call_id": "call_r2",
+                    "content": "File not found: test_calc.py",
                 },
             ],
             "tools": [_WRITE_TOOL, _READ_TOOL_DEF],
