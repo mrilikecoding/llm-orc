@@ -18,6 +18,25 @@ model does not have:
 
 Latency is the accepted trade; correctness and memory are where we compete.
 
+Stated as the end state (2026-07-11): **llm-orc served agentically behind
+OpenCode should be as functional as Claude Code running a frontier model,
+and beyond it where composition wins, all through orchestrated small
+models.** That decomposes into two axes on top of the three levers above:
+
+- **Task generality.** The serve today routes a closed intent set (build,
+  write-tests, explain, edit, read, run, glob, fix-chain) with honest
+  refusal outside it. Parity means evaluating any task's shape and
+  proceeding: catalog growth first, then the compose-at-runtime primitive,
+  then composer ensembles (the ADR-047 ladder, workstream 7).
+- **Long-horizon operation.** Parity means a session that runs for hours
+  and hundreds of turns on one piece of work without losing the thread.
+  The architecture already points the way: the client's agentic loop is
+  the long-horizon engine, and the serve is a deterministic next-action
+  function over a lossless record, resumed statelessly per wire round
+  (proven by the chained fix-execution turn). What's missing is a plan
+  substrate, longer bounded chains, and cross-session memory
+  (workstreams 5 and 6).
+
 ## How progress is measured
 
 The escalating multi-turn ladder driven through **real OpenCode** (never
@@ -81,68 +100,56 @@ Two generalizations the upper rungs force (named 2026-07-09):
   registers, the composer itself a verified ensemble rather than a lone
   model — are the generative rung.
 
-## Current state (2026-07-09)
+## Current state (2026-07-11, v0.18.12)
 
-Released today, in order: **v0.18.2** (PR #99 — Stage 2 core: wire
-observation + full-history selection + gate-runner TestCase support),
-**v0.18.3** (PR #101 — #100 TDD retry loop + live-diagnosis fixes),
-**v0.18.4** (PR #102 — #84 judge measurement + deterministic adequacy
-checker), **v0.18.5** (PR #103 — #98 write-tests shape + line-level
-failure reports), **v0.18.6** (PR #104 — #83 read half: client-file
-reads through the permission seam), **v0.18.7** (PR #105 — path item 4
-seat-quality half: per-test isolation, bare-name-assert sanitizer,
-missing-import injection, decider interrogative fix). Earlier: v0.18.0
-(agentic serving), v0.18.1 (review-debt sweep).
+Thirteen releases in three days. v0.18.2–v0.18.7 (2026-07-09): Stage 2
+memory core, #100 TDD retry, #84 deterministic adequacy, #98
+write-tests shape, #83 read half, seat-quality repairs round 1.
+v0.18.8–v0.18.12 (2026-07-10): #83 run half (client-delegated pytest,
+zero model calls), fenced block grammar (spoof-resistant context
+blocks, the named pre-meta-task blocker), deterministic gate repairs
+round 2 (excision, removal guard, raises rewrite, adequacy mutation
+fix, retry timeout), #83 discovery (one glob round,
+exactly-one-or-refuse), and chained fix-execution (write → run →
+verdict inside one fix turn), plus trace envelope diagnostics (#114
+structured half) and wire robustness (#107, blank-message 422s).
 
 Shipped capability: build (accept-gated, bounded TDD retry with held
 tests), write-tests (deliverable executed against the workspace),
-explain, edit-existing (conversation-written files), **client-file reads**
-(named-but-invisible files fetched via a read tool_call, one round,
-honest refusal on failure), within-session memory with lossless file
-selection, deterministic routing with a guarded decider, fully
+explain, edit-existing (conversation-written files), client-file reads
+(one round, honest refusal on failure), client-delegated test runs
+(closed pytest template, deterministic verdict, zero model calls),
+discovery (glob round for unnamed modules), chained fix-execution (the
+client's real suite judges the fix, the blind spot the server-side
+gate structurally cannot cover), within-session memory with lossless
+file selection, deterministic routing with a guarded decider, fully
 deterministic accept gate (per-test-isolated executor + static adequacy
-+ deterministic test repair: sanitizer and import injection, both echoed
-into the shipped artifact). All-local (qwen3:8b) by default; operator
-seat overrides via `*.local.yaml`.
++ two rounds of deterministic test repair, all echoed into the shipped
+artifact). All-local (qwen3:8b) by default; operator seat overrides via
+`*.local.yaml`.
 
-**Handoff pointer (fresh-session start here):** the **fix-execution
-rung is IMPLEMENTED** (2026-07-10 late, branch worktree-fix-execution;
-design `docs/plans/2026-07-10-fix-execution-design.md`): a fix-intent
-turn's applied write resumes the pipeline and chains into the existing
-run seam (structural `wrote_path` from the caller's post-boundary
-tool_calls → classify `fix_chain` → need-run → run-verdict), so the
-client's real suite judges the fix — the blind spot the server-side
-gate structurally cannot cover. Live-proven twice: a real-OpenCode fix
-turn whose seat-accepted rewrite did NOT fix the bug got an honest red
-verdict from its own chained run, and battery turn 13 additionally
-surfaced the exact expected-vs-actual assertion mismatch in the
-verdict. NEXT, in leverage order: (1) **rung 2 — bounded re-fix on a
-red chained verdict**, carrying the verdict's failure report back into
-one held-style retry (the verdict already contains exactly the carry;
-composes with #100's machinery); (2) **rung 1.5 — read the visible
-test_<stem>.py when fixing <stem>.py** (deterministic, one read round;
-would likely have converted battery turn 13, whose fix invented its own
-exception message because it never saw the seeded test); (3) the
-**grounded-explain gap** (turn 3 keeps speculating about a never-built
-file) and **#82 deep recall** (turn 10 wrong again); (4) cross-turn
-repair (sibling rung, named in the design doc); (5) rewrite
-negation-tightening (`docs/plans/2026-07-10-test-repair-round-2-design.md`)
-and the import-guard residual. The recorded battery is
+**Handoff pointer (fresh-session start here):** the plan is now
+§Workstreams below. Enter at **WS-1 (fix-execution completion: rung 2
+re-fix, rung 1.5 test-read)** unless a battery regression says
+otherwise, and revive the parity arm (WS-8) early: it is mostly
+mechanical and converts "we think we're closing the gap" into a
+number. The recorded battery is
 `benchmarks/agentic_serving/ladder_battery.sh`, now 13 turns (series
 4/10 → 7/10 → 6/11 → 5/11 → 9/11 → 6/11 → 3/12-infra → 6/12 → 6/13;
-run-to-run variance ≈ 5 points on whether turn 1's build lands; turn
-2's 600s client timeout vs the seat's 720s two-round budget is a
-standing latency tension). Standing smaller follow-ups: #110, #114
-(trace truncation — blocks post-hoc held-round diagnosis), the
-injector's scope-blind binding, #106, the chain trigger (narrowed
-on PR #115 review to tasks LED by a fix imperative — battery turn 8's
-"tests for existing calc.py" chain no longer fires; re-widen only on
-ladder evidence), and
-the glob-result verbatim wire capture (the wire log is shape-only — a
-capture needs a body-dumping probe, not LLM_ORC_SERVE_WIRE_LOG). Ops
-notes: the harness reaps tracked background serves/batteries
-mid-long-run — start them detached (nohup + disown) with a Monitor
-tail; give the rig cooling headroom between batteries.
+run-to-run variance ≈ 5 points rides on whether turn 1's build lands;
+turn 2's client timeout vs the seat's 720s two-round budget is a
+standing latency tension, battery cap now 780s). Standing smaller
+follow-ups, mapped to workstreams below: #110, #114 remainder (prose
+cap), the injector's scope-blind binding, #106, the chain trigger
+(narrowed on PR #115 review to tasks LED by a fix imperative; re-widen
+only on ladder evidence), rewrite negation-tightening
+(`docs/plans/2026-07-10-test-repair-round-2-design.md`), the
+import-guard residual, and the glob-result verbatim wire capture (the
+wire log is shape-only; a capture needs a body-dumping probe, not
+LLM_ORC_SERVE_WIRE_LOG). Ops notes: the harness reaps tracked
+background serves/batteries mid-long-run, so start them detached
+(nohup + disown) with a Monitor tail; give the rig cooling headroom
+between batteries.
 
 Key empirical facts the next work builds on:
 
@@ -175,7 +182,359 @@ Key empirical facts the next work builds on:
   judgment. Latency datum for the deferred escalation rung: 14b think-off
   generates as fast as 8b think-off on the rig; think-on costs 10–20×.
 
-## The path, in order of leverage
+## Gap analysis (2026-07-11): the serve vs Claude Code on a frontier model
+
+Grounded in OpenCode's advertised tool surface (wire-captured
+2026-07-10, `docs/plans/2026-07-10-opencode-advertised-tools.json`):
+`bash, edit, glob, grep, read, skill, task, todowrite, webfetch,
+write`. The serve exercises four of the ten (read, glob,
+bash-as-pytest-template, write). Each unused tool is a concrete
+capability gap, and every gap maps to a workstream below.
+
+| Capability | Claude Code + frontier model | Serve today | Workstream |
+|---|---|---|---|
+| Verified build | writes; never checks its work | accept-gated, held TDD retry | shipped; AHEAD |
+| Fix end to end | edit → run → iterate to green | write → run → honest verdict; no re-fix | WS-1 |
+| Grounded explanation | reads before answering | speculates on never-built files (battery turn 3) | WS-2 |
+| Deep recall | attention over a decaying window | lossless record; prose recall broken past the tail (#82) | WS-2, WS-6 |
+| Code search | grep + glob freely, many rounds | one glob round, exactly-one-or-refuse | WS-3 |
+| Surgical edits | `edit` (string replace) | whole-file writes only | WS-3 |
+| Multi-file change | many writes per turn | one deliverable per turn | WS-3 |
+| Command execution | `bash` behind permission | closed pytest template only | WS-3 (+ #85 gate) |
+| Non-Python work | any language | Python-gated; all else fails closed | WS-4 |
+| Long-horizon plan | todowrite + plan mode | none | WS-5 |
+| Cross-session memory | little to none | none yet; plexus rung designed | WS-6 (beyond parity) |
+| Docs/web lookup | WebSearch / WebFetch | none | WS-3 (webfetch, later) |
+| Clarifying questions | asks when underspecified | builds or refuses | WS-7 (elicit-then-build) |
+| Open task shapes | arbitrary asks | closed intent set, honest refusal | WS-7 |
+
+Read honestly: verified acceptance is already ahead of the frontier
+baseline, honesty is a differentiator no raw model matches, and every
+remaining row is a *widening of machinery that exists* (the permission
+seam, the chain resumption, the shape catalog, the record), not new
+architecture. No gap requires abandoning an invariant.
+
+## Workstreams
+
+Each workstream names its north-star lever, the evidence in hand, tasks
+sized for delegation, and a minimal exit gate (vary one thing). Design
+and review belong to the lead session (Opus-class); each task is scoped
+so a Sonnet-class implementer can run it TDD from a short design doc;
+Haiku-class handles mechanical sweeps. Every arc ends with a live
+real-OpenCode validation, a ladder rerun, and a trajectory-table row.
+
+### WS-1: Fix-execution completion (NEXT; designed)
+
+**Lever:** verified acceptance on the fix path; converts the battery's
+newest rung. Design: `docs/plans/2026-07-10-fix-execution-design.md`.
+
+1. **Rung 2, bounded re-fix on a red chained verdict.** Carry the
+   verdict's failure report (it already contains exactly the carry;
+   battery turn 13 proved the precision) into ONE held-style retry,
+   composing with #100's held machinery. Deterministic trigger, hard
+   round budget.
+2. **Rung 1.5, read the visible `test_<stem>.py` when fixing
+   `<stem>.py`.** One deterministic read round so the fix sees expected
+   behavior; would likely have converted battery turn 13 (its fix
+   invented its own exception message).
+3. **Cross-turn repair** (sibling rung, named in the design doc): a red
+   verdict in turn N grounds the re-fix in turn N+1 via the record.
+4. **Test-repair residuals:** negation-tightening ("Expected TypeError
+   not raised" currently refuses;
+   `docs/plans/2026-07-10-test-repair-round-2-design.md`) and the
+   injector's scope-blind binding.
+
+**Exit gate:** battery turn 13 converts (seeded-red goes green within
+the two-round budget) on a full ladder rerun.
+
+### WS-2: Honesty and reliability (the standing battery misses)
+
+**Lever:** the 2026-07-10 fresh-rig run produced the series' first two
+DISHONEST misses (hedged speculation on a never-built file; a
+confidently wrong "first thing built"). Honesty is the product's
+differentiator; these outrank score.
+
+1. **Grounded-explain shape** (catalog entry, path item 4's remaining
+   half): the explain seat consults the session record before
+   answering; a question about a never-shipped artifact gets "that
+   build was rejected; nothing shipped" instead of speculation; a
+   question naming a real file may ride the read seam. Deterministic
+   record-facts compose the seat input.
+2. **#82 deep recall:** deterministic retrieval for ordinal/temporal
+   prose queries ("the first thing I asked") over the lossless record.
+   Selection, never summarization; the record already has turn order,
+   so "first/last/before X" resolves structurally.
+3. **Turn-1 build reliability** (the ≈5-point variance source): the
+   round-1 test-quality residual. Prompt rules are saturated (measured
+   twice); the named structural lever is escalation-on-signal to
+   qwen3:14b think-off (`agentic-tier-escalated-general`), which the
+   4-arm spike showed is latency-free on the rig. Trigger: a reject
+   whose failure class matches the known residual.
+4. **#110 artifact quality gate:** deterministic AST reject/repair for
+   duplicate top-level defs and shadowed/dead code in accepted
+   deliverables.
+
+**Exit gate:** one full ladder run with ZERO dishonest outcomes; then
+variance measured over three same-seed runs (target: median ≥ 10/13).
+
+### WS-3: Client execution surface (single rounds → budgeted chains)
+
+**Lever:** task generality and the meta-task rung both need search,
+surgical edits, multi-file deliverables, and more commands. The
+permission seam and stateless chain resumption are proven; this widens
+them. The client's loop continues as long as the serve emits
+tool_calls, so the serve can drive N-step work while the client
+executes everything: long-horizon's per-step mechanism.
+
+1. **Chain executor (design-first).** Promote the ad-hoc chains
+   (read→build, glob→read→build, write→run→verdict) into ONE
+   deterministic chain-plan structure: classify emits a bounded step
+   plan, each wire round resumes from the record and executes the next
+   step, a hard round budget terminates. Touches classify, the
+   continuation handler, and the trace. This is the single most
+   leveraged design in the plan; everything below rides it.
+2. **grep delegation:** multi-match discovery with the glob discipline
+   generalized (template-built patterns from charset-checked stems,
+   never model text; deterministic candidate rule; refuse-with-
+   candidates on ambiguity, or carry top-N into a bounded read fan).
+3. **edit delegation:** surgical edits via the client's `edit` tool.
+   Gate implication: the sandbox must judge the post-edit file state,
+   so the chain is read-current → apply → gate → emit edit.
+4. **Multi-file deliverables:** N write tool_calls per turn; the gate
+   already materializes multi-file workspaces; the deliverable
+   contract and form_gate go per-file.
+5. **Command-template registry:** closed deterministic builders keyed
+   by intent (pytest today; `cargo test` lands with WS-4). Free-text
+   bash never ships without #85's sandbox posture and its own design
+   review.
+6. **webfetch delegation** (later, evidence-gated): docs lookup as a
+   read-shaped round when a ladder rung demands external knowledge.
+
+**Exit gate (meta-task rung entry):** a question about the llm-orc
+repo itself ("how does classify decide routing?") answered through the
+serve via a grep → read chain, grounded and honest.
+
+### WS-4: Language generalization (Rust first, for plexus)
+
+**Lever:** the gate is Python-scoped and fails closed on everything
+else; the meta-task rung's plexus half is the first concrete need.
+Seat swaps behind the same `{requirement, code, tests}` contract; the
+round, router, held carry, and gate composition are unchanged.
+
+1. **cargo runner half:** `cargo test` command builder + verdict parser
+   (the run-delegation design names the command builder and pytest
+   summary parser as the only pytest-aware seams).
+2. **Rust executor + adequacy:** sandboxed `cargo test` execution for
+   server-side gating; a Rust value-bearing-assert checker (start with
+   `#[test]` + `assert_eq!` discipline, extend from fixtures as the
+   Python one was).
+
+**Exit gate:** one Rust fix-execution probe against the plexus repo:
+locate, edit, `cargo test`, honest verdict.
+
+### WS-5: Long-horizon operation
+
+**Lever:** the second axis of the end state. Reframe: the client's
+agentic loop is the long-horizon engine; the serve is a deterministic
+next-action function over the lossless record, resumed statelessly per
+wire round. Long-horizon is therefore plan + memory + budget, not a
+resident orchestrator (the invariant holds).
+
+1. **Plan substrate spike (hold the fork open):** (a) a server-side
+   plan artifact in `core/session/` (authoritative, survives client
+   compaction) vs (b) a `todowrite` mirror through the permission seam
+   (client-visible, rides the wire, zero new storage). Spike both in
+   one session; decide on evidence. Likely answer is both: record
+   authoritative, todowrite as the visible mirror, but let the spike
+   say so.
+2. **Plan-shaped intent:** an ask bigger than one deliverable routes to
+   a decompose shape; the plan lands in the substrate; each subsequent
+   wire round advances one step via the WS-3 chain executor; progress
+   reports honestly from plan state.
+3. **Latency budget discipline:** per-chain-step budget accounting
+   against the client timeout (the 780s battery cap vs the seat's 720s
+   two-round budget is the standing datum); a chain that cannot finish
+   its next step inside budget reports state instead of dying.
+4. **Compaction observation:** #82's entry gate. A multi-hour session
+   WILL trigger OpenCode compaction; capture the wire
+   (`LLM_ORC_SERVE_WIRE_LOG` watches for it), then harden the
+   divergence classifier (collapsed-prefix → record authoritative;
+   rewritten tail → rebuild).
+
+**Exit gate:** a 30+ turn feature battery on a real repo where turn 30
+is still correctly advancing the turn-1 plan, with honest state
+reporting throughout.
+
+### WS-6: Memory beyond parity (#82 remainder → plexus lenses)
+
+**Lever:** lossless, cross-session, provenance-tracked memory is where
+composition PASSES a single model rather than chasing it.
+
+Plexus facts (surveyed 2026-07-11; repo `../../plexus`, v0.5.0):
+healthy (~31K LOC Rust, ~550 tests, zero TODOs, releases via Homebrew
+tap), exposed as an MCP server over stdio (18 tools: ingest, contexts,
+find_nodes/traverse/find_path, evidence_trail, explain_edge,
+shared_concepts, changes_since, load_spec) plus a multi-process
+shared-SQLite path with `changes_since` cursors. Its vision doc names
+exactly our shape: a multi-consumer substrate where llm-orc's serving
+layer is "just another consumer" with its own spec/lens. Two cautions:
+(a) today's integration runs the OTHER direction (plexus spawns
+`llm-orc m serve` for semantic extraction), so llm-orc-as-consumer
+must avoid a mutual-subprocess loop; (b) plain text ingest yields
+fragments + provenance but no concept structure, so semantic value needs
+tags at ingest, plexus's optional embeddings feature, or extraction
+through llm-orc. A working Python MCP client to crib from exists at
+`plexus/tools/play-harness/mcp_client.py`.
+
+1. **Topology decision (design-first):** llm-orc spawns `plexus mcp`
+   (stdio) vs shared SQLite + cursors. Design around the circularity;
+   independent connections to a shared DB is the likely clean answer.
+2. **Session-record ingestion:** turns ingest as
+   `{"text", tags, chain_name: <session-id>}` content (ADR-010
+   boundary: source material, push model, non-blocking). Map
+   turn/timestamp/speaker to node properties + chain grouping; plexus
+   provenance marks are file/line-shaped, don't force them.
+3. **Tag-at-ingest (semantic activation, deterministic first):**
+   classify already computes intent, files, and symbols per turn;
+   those routing facts become ingest tags for free, giving concept
+   structure with zero model calls. Embeddings/extraction are the
+   held-open upgrades if tag-based retrieval proves thin.
+4. **Lens queries per dispatch:** provenance-tracked slices augment
+   deterministic selection for deep-history questions; cross-session
+   via plexus context identity. `evidence_trail` gives every answer a
+   receipt.
+5. **#82 divergence classifier** stays entry-gated on WS-5's
+   compaction observation.
+
+**Exit gate:** a cross-session recall probe: a fact from session A
+answered in session B with an evidence trail attached.
+
+### WS-7: Task-shape generality (the ADR-047 ladder)
+
+**Lever:** the first axis of the end state; the composer-ensemble path
+re-elevated to north-star mechanism.
+
+1. **Catalog growth (manual rung):** elicit-then-build (clarifying
+   questions on underspecified asks: a parity behavior, and the honest
+   alternative to guessing spec-freedom); refactor shape;
+   grounded-explain lands in WS-2; the fix shape is live via the
+   chain. Each entry is a normal design → TDD → live-validate arc.
+2. **Compose-at-runtime primitive (enabling rung):** close the
+   feasibility spike's four named gaps (single-target dispatch;
+   scalar-only `${dep.field}` resolver; DAG frozen after parse; no
+   runtime-spec → EnsembleConfig path). Built when a flow demonstrably
+   needs a shape the catalog lacks (AS-11), TDD like
+   guard/loop/dispatch. Issue #79 is gap 2; fold it in.
+3. **Composer ensembles (generative rung):** compose from the
+   registry's validated parts; AS-2 validates the output before it
+   registers; acceptance deterministic, never trust-accumulation. The
+   capable-model-composed baseline vs ensemble-composed compose step
+   stays the open hypothesis to validate (ADR-047 pillar c).
+
+**Exit gates:** rung 2: one ladder task that refuses today runs on a
+runtime-composed shape and passes its gate. Rung 3: the composer
+produces a registered shape that survives AS-2 + review with no
+operator edits.
+
+### WS-8: Standing parity measurement (revive early; mostly mechanical)
+
+**Lever:** the north star is stated RELATIVE to a frontier baseline;
+without the baseline arm the parity claim is vibes.
+
+1. Revive the Cycle-7 harness (`research/agentic-serving-corpus`
+   branch, `benchmark-runs/`) against the current 13-turn battery.
+2. Baselines: Haiku 4.5 and Sonnet 5 behind the same OpenCode client.
+   Paid tokens, bounded: one battery per baseline per release
+   checkpoint, estimate before running (standing free-first practice).
+3. Score honesty as its own column: zero-dishonest-outcomes is the
+   serve's claim; measure whether the baselines match it.
+
+**Exit gate:** a parity table in this doc: serve score / baseline
+scores / honesty column, per release checkpoint.
+
+### WS-9: Platform, hardening, hygiene
+
+In dependency order, each a bounded arc: **#85** sandbox hardening
+(container/seccomp/rlimits; prerequisite for WS-3 bash widening and
+untrusted deployment) · **#84 remainder** (the adversarial harness vs a
+live non-cooperative builder; ADR-048's conditional-acceptance target)
+· **#93** hot-path caching + I/O off the event loop (prerequisite for
+multi-session and for WS-5's long sessions) · **#90** llama.cpp backend
+(one-command bootstrap; #64's llamafile ask folds in) · **#106** single
+home for serving shapes (pick candidate 1 or 2; the regression pin
+holds meanwhile) · **#114 remainder** (prose-cap config knob) · **#95**
+dead-surface sweep (mechanical; Haiku-grade).
+
+## Sequencing
+
+- **Now (1–2 sessions):** WS-1, then WS-2; WS-8 revived in parallel.
+  These share the battery and convert its standing misses.
+- **Next:** WS-3 items 1–2 (chain executor design + grep) → the
+  meta-task rung (llm-orc half) → WS-4 as a parallel arc → meta-task
+  plexus half → WS-3 items 3–5.
+- **Then:** WS-5 and WS-6 as parallel arcs (WS-5's compaction
+  observation feeds WS-6's divergence classifier; WS-6's ingestion
+  needs nothing from WS-5).
+- **Throughout:** WS-7 catalog entries land inside WS-2/WS-3 arcs; the
+  compose primitive waits for a demonstrated need; WS-9 items slot in
+  where named as prerequisites.
+- **Apex (self-hosting: the serve improving its own repo)** stays
+  evidence-designed: enter when the meta-task rung holds, judged by
+  shadow comparison (an agent driving the serve through OpenCode
+  judges its decisions against its own).
+
+## How to run this plan (delegation contract)
+
+Every arc: short design doc (`docs/plans/YYYY-MM-DD-*.md`) → TDD
+implementation → live real-OpenCode validation at the earliest runnable
+point (never harness-only) → ladder rerun + trajectory row →
+independent adversarial review with an explicit wrong-accept hunt
+before merge (three for three on catching real blockers). Batteries run
+detached (nohup + disown, Monitor tail), strict scoring, misses
+classified honest/dishonest. Lead session (Opus-class) owns designs,
+the WS-3 chain executor and WS-6 topology decisions, and reviews;
+implementer sessions (Sonnet-class) own scoped TDD tasks (each task
+above names its seams and validation); mechanical sweeps (WS-9 #95,
+doc syncs, battery bookkeeping) go to Haiku-class.
+
+## Questioned priors (2026-07-11 pass)
+
+1. **Rewrite llm-orc in Rust (integrating with plexus natively)?**
+   Assessed: not on the north-star critical path. Serve latency is
+   model inference, not Python (12 clean battery turns in 12.5 min is
+   model time); the engine's value is the declarative layer + gate
+   composition, which a rewrite freezes for months against a
+   ~2,800-test corpus; #93 retires the real concurrency debt cheaply.
+   The defensible slice of the idea ships anyway: plexus stays Rust
+   behind a process boundary (WS-6), per-language executors invoke
+   whatever runtimes the rig has (WS-4), and the serve delegates to
+   whatever tools the client advertises (WS-3). Revisit trigger: a
+   measured serve-side bottleneck caching can't fix, or a deployment
+   target Python can't reach.
+2. **"The client owns the loop" under long-horizon?** Holds,
+   strengthened: chained fix-execution proved the serve drives
+   multi-round work statelessly inside the client's loop. Falsifier to
+   watch: a client that caps tool rounds or compacts mid-chain (the
+   wire watch exists).
+3. **All-local seats?** Holds as the default; the escalation rung is
+   measured and named (14b think-off is latency-free on the rig), and
+   WS-8 keeps the frontier comparison empirical rather than assumed.
+4. **Legacy issue hygiene (recommendations, pending practitioner
+   sign-off):** #31 superseded by the serving architecture (close,
+   pointing at `docs/serving.md`) · #78 answered for serving by the
+   loop primitive + deterministic gates (close or re-scope to library
+   UX) · #79 folds into WS-7's compose primitive (close on fold) ·
+   #80 real but off-path (keep, deprioritized) · #64 folds into #90 ·
+   #65 likely stale post-collapse (verify, close) · #30/#66 stay as
+   research backlog · #63's statistical framework becomes relevant
+   once WS-8 produces enough runs to need it.
+
+## Appendix: the 2026-07-09 path items (history)
+
+> Superseded as a plan by §Workstreams (2026-07-11); kept for
+> measurement provenance. Since written: #83 shipped in full (read,
+> run, discovery, fix chain) and the read-block-grammar follow-up
+> shipped as v0.18.9's fencing.
 
 ### 1. TDD retry loop (#100) — SHIPPED in v0.18.3
 
@@ -327,14 +686,31 @@ removal).
 
 ## Issue index
 
-Path: #83 run half — client-delegated execution + discovery (NEXT — the
-read half shipped 2026-07-09; the run half completes the fix-execution
-rung's enabler) · #82 memory remainder (deep recall now costs a measured
-ladder turn) · shape-catalog growth (path item 4's remaining half:
-fix/refactor/grounded-explain/elicit-then-build) · #90 llama.cpp · #85
-sandbox hardening · #93/#95 remainders.
+Open, mapped to workstreams: #110 (WS-2 artifact quality) · #114
+remainder (WS-9 trace prose cap) · #82 (WS-2 deep recall + WS-6
+substrate; divergence half entry-gated on WS-5's compaction
+observation) · #84 remainder (WS-9 adversarial harness) · #85 (WS-9;
+gates WS-3 bash widening) · #90 (WS-9 bootstrap; absorbs #64) · #93
+#95 #106 (WS-9) · #79 (folds into WS-7 compose primitive) · #31 #78
+(recommend close as superseded; §Questioned priors) · #80 (keep,
+off-path) · #65 (verify, likely stale) · #30 #63 #66 (research
+backlog).
+
+To file, one per workstream arc as it starts: WS-1 fix-execution
+completion (rungs 2, 1.5, cross-turn, repair residuals) · WS-2
+grounded-explain shape; escalation-on-signal · WS-3 chain executor;
+grep delegation; edit delegation; multi-file deliverables;
+command-template registry · WS-4 Rust gate (executor + adequacy +
+cargo builder/parser) · WS-5 plan substrate spike; long-horizon
+battery · WS-6 plexus consumer integration (topology + ingestion +
+lenses) · WS-7 elicit-then-build; refactor shape; compose primitive ·
+WS-8 parity arm revival.
+
 Shipped: #87 #88 #89 (v0.18.0) · #86 #91 #92 #94 #96 (v0.18.1) ·
 #82-core (v0.18.2, PR #99) · #100 TDD retry (v0.18.3, PR #101) ·
 #84 deterministic adequacy (v0.18.4, PR #102) · #98 write-tests shape
 (v0.18.5, PR #103) · #83 read half (v0.18.6, PR #104) · path item 4
-seat-quality half (v0.18.7, PR #105).
+seat-quality half (v0.18.7, PR #105) · #83 run half (v0.18.8) · fenced
+block grammar (v0.18.9) · gate repairs round 2 (v0.18.10) · #83
+discovery (v0.18.11) · fix-execution chain + #107 + #114 structured
+half (v0.18.12, PRs #113 #115 #116).
