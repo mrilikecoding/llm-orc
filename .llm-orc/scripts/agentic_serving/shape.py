@@ -129,6 +129,7 @@ def main() -> None:
                 "needs_run": str(decision.get("needs_run", "")),
                 "needs_glob": str(decision.get("needs_glob", "")),
                 "glob_failed": str(decision.get("glob_failed", "")),
+                "not_grounded": str(decision.get("not_grounded", "")),
             }
         )
     )

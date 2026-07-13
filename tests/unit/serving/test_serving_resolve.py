@@ -231,3 +231,26 @@ def test_decider_path_defaults_glob_fields_empty() -> None:
     )
     assert routing["needs_glob"] == ""
     assert routing["glob_failed"] == ""
+
+
+def test_not_grounded_passes_through_resolve() -> None:
+    # grounded-explain design: not_grounded rides classify's own structural
+    # decision — never the guarded decider, so no _DERIVED entry is needed.
+    routing = _resolve(
+        _structural(
+            target="not-grounded",
+            kind="not_grounded",
+            build=False,
+            not_grounded="todo.py",
+        )
+    )
+    assert routing["target"] == "not-grounded"
+    assert routing["not_grounded"] == "todo.py"
+
+
+def test_decider_path_defaults_not_grounded_empty() -> None:
+    routing = _resolve(
+        _structural(target="", kind="", build=False, needs_decider=True),
+        decide_response='{"target": "explainer"}',
+    )
+    assert routing["not_grounded"] == ""

@@ -150,6 +150,9 @@ def serving_project(tmp_path: Path) -> Path:
         REAL_AGENTIC_SERVING / "run-verdict.yaml", ensembles / "run-verdict.yaml"
     )
     shutil.copy(REAL_AGENTIC_SERVING / "re-fix.yaml", ensembles / "re-fix.yaml")
+    shutil.copy(
+        REAL_AGENTIC_SERVING / "not-grounded.yaml", ensembles / "not-grounded.yaml"
+    )
     return tmp_path
 
 
@@ -325,6 +328,10 @@ def test_prior_turns_reach_the_seat_via_dispatch_input(
     reach the seat behind the 'Current request:' marker, so generation seats
     can resolve referents like "it" (memory design §Rung 1). The explainer is
     swapped for an input-echo script so the response reveals the seat input.
+
+    A conceptual explain (no named file) — a named-file explain grounds on
+    the wire's real content instead (grounded-explain design), covered
+    separately above.
     """
     (serving_project / "ensembles" / "explainer.yaml").write_text(
         "name: explainer\n"
@@ -340,7 +347,7 @@ def test_prior_turns_reach_the_seat_via_dispatch_input(
             "messages": [
                 {"role": "user", "content": "write is_even in even.py"},
                 {"role": "assistant", "content": "Done - is_even is in even.py."},
-                {"role": "user", "content": "explain what foo.py does"},
+                {"role": "user", "content": "explain what it does"},
             ],
             "tools": [_WRITE_TOOL],
         },
@@ -349,7 +356,7 @@ def test_prior_turns_reach_the_seat_via_dispatch_input(
     assert resp.status_code == 200
     content = resp.json()["choices"][0]["message"]["content"]
     assert "user: write is_even in even.py" in content
-    assert "Current request: explain what foo.py does" in content
+    assert "Current request: explain what it does" in content
 
 
 def test_explain_turn_returns_prose_not_a_tool_call(
@@ -360,12 +367,16 @@ def test_explain_turn_returns_prose_not_a_tool_call(
     returns prose, not a file"; ADR-046 §1). classify routes to the explain seat
     with build=false; marshal returns a prose finish with no file-writing
     tool_call.
+
+    A conceptual explain (no named file) — the grounded-explain gate
+    (docs/plans/2026-07-12-grounded-explain-design.md) only fires for a
+    real named-file target, covered separately below.
     """
     resp = serving_client.post(
         "/v1/chat/completions",
         json={
             "model": "ensemble-agent",
-            "messages": [{"role": "user", "content": "explain what foo.py does"}],
+            "messages": [{"role": "user", "content": "explain how recursion works"}],
             "tools": [_WRITE_TOOL],
         },
     )
@@ -376,7 +387,93 @@ def test_explain_turn_returns_prose_not_a_tool_call(
     assert not choice["message"].get("tool_calls")
     content = choice["message"]["content"]
     assert content
-    assert "foo.py" in content
+    assert "add" in content
+
+
+def test_explain_of_a_never_written_file_returns_the_honest_message(
+    serving_client: TestClient,
+) -> None:
+    """Battery turn 3 conversion (2026-07-10, docs/plans/2026-07-12-grounded-
+    explain-design.md): "explain how todo.py stores its state" with no
+    successful build or read of todo.py on the wire must get a
+    deterministic honest refusal, not hedged speculation. The explainer
+    seat's stub text must never appear — proof the seat was never called.
+    """
+    resp = serving_client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "ensemble-agent",
+            "messages": [
+                {"role": "user", "content": "explain how todo.py stores its state"}
+            ],
+            "tools": [_WRITE_TOOL],
+        },
+    )
+
+    assert resp.status_code == 200
+    choice = resp.json()["choices"][0]
+    assert choice["finish_reason"] == "stop"
+    assert not choice["message"].get("tool_calls")
+    content = choice["message"]["content"]
+    assert "todo.py" in content
+    assert "guessing" in content
+    assert "foo.py defines add" not in content
+
+
+def test_explain_of_a_visible_written_file_grounds_on_the_real_content(
+    serving_project: Path, serving_client: TestClient
+) -> None:
+    """Grounded-explain design: once add.py's write is visible on the wire,
+    an explain of it dispatches to the explainer seat with the file's REAL
+    content, not the rendered conversation alone. The explainer is swapped
+    for an input-echo script (mirrors test_prior_turns_reach_the_seat_via_
+    dispatch_input) so the response reveals the seat's actual input.
+    """
+    (serving_project / "ensembles" / "explainer.yaml").write_text(
+        "name: explainer\n"
+        "description: input-echo explain seat for the grounded-explain check\n"
+        "agents:\n"
+        "  - name: out\n"
+        '    script: "cat"\n'
+    )
+    resp = serving_client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "ensemble-agent",
+            "messages": [
+                {
+                    "role": "user",
+                    "content": "write a function that adds two numbers in add.py",
+                },
+                {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "id": "call_1",
+                            "type": "function",
+                            "function": {
+                                "name": "write",
+                                "arguments": json.dumps(
+                                    {
+                                        "filePath": "add.py",
+                                        "content": ("def add(a, b):\n    return a + b"),
+                                    }
+                                ),
+                            },
+                        }
+                    ],
+                },
+                {"role": "user", "content": "explain add.py"},
+            ],
+            "tools": [_WRITE_TOOL],
+        },
+    )
+
+    assert resp.status_code == 200
+    content = resp.json()["choices"][0]["message"]["content"]
+    assert "def add(a, b):" in content
+    assert "return a + b" in content
 
 
 def test_wire_log_records_message_shape_when_enabled(
