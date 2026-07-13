@@ -43,11 +43,19 @@ To create a new release:
    - Bug fix description
    ```
 
-3. **Commit changes**:
+3. **Re-pin the lock file and commit** (the version bump changes the
+   `llm-orchestra` pin in `uv.lock`, so capture it in the release commit
+   itself):
    ```bash
-   git add .
+   uv lock                       # re-pins uv.lock to the new version
+   git add pyproject.toml CHANGELOG.md uv.lock
    git commit -m "chore: Bump version to 0.2.2 and update changelog"
    ```
+   The pre-commit hook's `make lint` runs `uv` and would re-pin
+   `uv.lock` anyway; staging it here keeps the working tree clean after
+   the commit instead of leaving a stray `uv.lock` change to forget.
+   That stray change, deferred and forgotten, is the recurring chore
+   this step exists to prevent.
 
 4. **Create and push tag**:
    ```bash
@@ -61,14 +69,10 @@ To create a new release:
    gh release create v0.2.2 --title "Release v0.2.2" --notes "Release notes here"
    ```
 
-6. **Clean up lock file** (after automation completes):
-   ```bash
-   # Wait for workflows to complete, then commit any uv.lock changes
-   # Note: uv.lock gets updated during CI/PyPI publishing but isn't included in release commit
-   git add uv.lock
-   git commit -m "chore: update uv.lock for version 0.2.2 release"
-   git push origin main
-   ```
+6. **Lock file is already done.** `uv.lock` was captured in the release
+   commit (step 3), so there is no separate post-release lock-file
+   cleanup to remember. Only if a CI job legitimately changes `uv.lock`
+   (rare) do you commit that diff afterward.
 
 7. **Automation takes over**:
    - The workflow will automatically update the Homebrew formula
@@ -114,7 +118,7 @@ If the automation fails:
 - [ ] Create and push git tag
 - [ ] Create GitHub release
 - [ ] Verify automation worked
-- [ ] **Clean up lock file**: Commit any `uv.lock` changes after workflows complete
+- [ ] **Lock file** (`uv.lock`) staged in the release commit (step 3), not deferred
 - [ ] Test installation: `brew update && brew upgrade llm-orchestra`
 - [ ] Verify `llm-orc --version` shows correct version
 
