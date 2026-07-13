@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.18.13] - 2026-07-12
+
+### Added
+- Convergent fix (roadmap WS-1,
+  `docs/plans/2026-07-12-convergent-fix-design.md`), two additions to the
+  chained fix-execution rung:
+  - Rung 1.5, target-read: a fix-led turn targeting `<stem>.py` inserts
+    one deterministic read of the visible `test_<stem>.py` before the
+    gated build, so the fix sees the expected contract instead of
+    inventing one. Closed template (`test_` + charset-checked stem);
+    skipped silently when absent.
+  - Rung 2, route-on-failure-shape re-fix: a red client-side verdict is
+    classified deterministically. A localized failure (assertion /
+    exception-type / message mismatch, small count) gets ONE bounded
+    re-fix, a deterministic string-literal edit where the verdict pins it
+    (a `pytest.raises(match=)` mismatch with the actual value in captured
+    output), else a model edit reusing the code seat, with the candidate
+    re-gated through the accept executor before it ships. A structural
+    failure (NameError / ImportError / SyntaxError and their subclasses,
+    collection error, all-failing) keeps the honest reject with no wasted
+    round. A no-visible-test candidate is gated on a load smoke-check
+    before it can replace the original. Live-validated: combined-ladder
+    turn 13 converts (seeded-red goes green).
+- Grounded-explain (roadmap WS-2 item 1,
+  `docs/plans/2026-07-12-grounded-explain-design.md`): an explain turn
+  naming a file (`_FILE_RE` match, never the `solution.py` default) is
+  gated on wire visibility. A target visible on the wire
+  (`[wrote]`/`[read]` block) is explained from the real block content
+  with a do-not-guess instruction; a target NOT visible bypasses the
+  model seat entirely and emits a fixed honest refusal ("No `<file>` in
+  this session ..."); conceptual explains (no filename) are unchanged.
+  Deterministic and spoof-resistant (visibility reads column-0
+  render-grammar headers, never task text), fails closed to the honest
+  message. Live-validated: combined-ladder turn 3 grounded and honest.
+
 ## [0.18.12] - 2026-07-10
 
 ### Added
