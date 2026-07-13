@@ -57,19 +57,20 @@ _INTERROGATIVE_RE = re.compile(
     r"^(?:what|why|how|when|where|which|who)\b|^(?:did|have) you\b",
     re.IGNORECASE,
 )
-# #82 deep recall: a FIRST-anchored query over prior build-asks ("the first
-# thing I asked you to build", "the earliest thing you built"). The anchor
-# must bind to an ask/build referent so an ordinary explain with an ordinal
-# ("the first function in foo.py") is NOT swept in. Only "first"-type anchors
-# match: the selector answers builds[0] and phrases it "the first thing", so
-# matching "last/latest" here would be a confident wrong-accept (the first
-# entry returned for a last query). last/Nth/before-X anchors ladder later.
-# Detection only; the deterministic selection is over the caller's ledger.
+# #82 deep recall: a FIRST-anchored query about the "first thing" I/you
+# built ("what did the first thing I asked you to build do?"). This is an
+# INTERIM structural detector, deliberately tight to avoid the review's
+# false-positive hijacks ("the first argument to build()", "the first class
+# created in models.py"): it requires the exact "first thing" anchor plus a
+# first-person agent (I/you) bound to a build verb. The model-decider replaces
+# it next (WS-2), where a loose pre-filter gates a model that classifies recall
+# robustly; write-history SELECTION keeps the answer honest either way. Only
+# "first" matches (the selector answers ledger[0]); last/Nth ladder later.
 _RECALL_RE = re.compile(
-    r"\b(?:first|earliest|initial)\b[^?.!]*"
+    r"\bfirst thing\b[^?.!]*\b(?:i|you)\b[^?.!]*"
     r"\b(?:ask(?:ed)?|build|built|wrote|created?|made|implement(?:ed)?)\b"
-    r"|\b(?:ask(?:ed)?|build|built|wrote|created?|made|implement(?:ed)?)\b[^?.!]*"
-    r"\b(?:first|earliest|initial)\b",
+    r"|\b(?:i|you)\b[^?.!]*"
+    r"\b(?:build|built|wrote|created?|made)\b[^?.!]*\bfirst thing\b",
     re.IGNORECASE,
 )
 # Tests as the OBJECT of the request (issue #98): a build verb directly
@@ -547,32 +548,28 @@ def _failure_shape(context: str) -> str:
     return "localized"
 
 
-def _recall_answer(task: str, turn: dict, context: str) -> tuple[str, str, str]:
+def _recall_answer(
+    task: str, turn: dict, context: str, is_explain: bool
+) -> tuple[str, str, str]:
     """(case, ask, path) for an ordinal-recall turn — deterministic selection
-    over the caller's chronological build-ask ledger (#82 deep recall).
+    over the caller's write-history ledger (#82 deep recall).
 
-    ``case``: "grounded" (shipped + visible -> ride the grounded explainer via
-    a named_file injection), "built_deep" (shipped but windowed out of the
-    context -> name it, defer the body to a read), "rejected" (the first
-    build-ask shipped nothing), "none" (no build-ask in history), or ""
-    (not a recall turn). Selection over the ledger's structural outcomes,
-    never model judgment.
+    ``case``: "grounded" (the first shipped build is visible -> ride the
+    grounded explainer via a named_file injection), "built_deep" (shipped but
+    windowed out of the context -> name it, defer the body to a read), "none"
+    (nothing shipped this session), or "" (not a recall turn). The ledger is
+    shipped writes only, so there is no prose-inferred "rejected" case to
+    fabricate. Gated on ``is_explain`` so a build/refactor turn is never
+    rerouted (review finding 4).
     """
-    if not _RECALL_RE.search(task):
+    if not is_explain or not _RECALL_RE.search(task):
         return "", "", ""
     ledger = turn.get("recall_ledger") or []
-    builds = [
-        entry
-        for entry in ledger
-        if isinstance(entry, dict) and _BUILD_RE.search(str(entry.get("ask", "")))
-    ]
-    if not builds:
+    first = ledger[0] if ledger and isinstance(ledger[0], dict) else {}
+    path = str(first.get("path", ""))
+    ask = str(first.get("ask", ""))
+    if not path:
         return "none", "", ""
-    entry = builds[0]  # "first"; last/Nth anchors ladder later
-    ask = str(entry.get("ask", ""))
-    path = str(entry.get("path", ""))
-    if not entry.get("shipped"):
-        return "rejected", ask, ""
     visible, _ = _visibility(context)
     if path.rsplit("/", 1)[-1] in visible:
         return "grounded", ask, path
@@ -580,26 +577,26 @@ def _recall_answer(task: str, turn: dict, context: str) -> tuple[str, str, str]:
 
 
 def _recall_message(case: str, ask: str, path: str) -> str:
-    """The honest, deterministic recall answer for a non-grounded case. "first"
-    is the only anchor today; last/Nth phrasing lands with those anchors."""
+    """The honest, deterministic recall answer for a non-grounded case. Framed
+    as what SHIPPED (structural), never as an unverifiable "asked"."""
     if case == "none":
-        return "You haven't asked me to build anything yet."
-    if case == "rejected":
-        return (
-            f"The first thing you asked me to build was `{ask}`, but that build "
-            "was rejected. Nothing shipped, so I can't tell you what it did."
-        )
+        return "Nothing has been built in this session yet."
     if case == "built_deep":
         return (
-            f"The first thing you asked me to build was `{ask}`. I wrote "
-            f"`{path}` earlier in this session. Ask me to read `{path}` and "
-            "I'll explain what it does."
+            f"The first thing built in this session was `{path}` (from your "
+            f"request '{ask}'). Ask me to read `{path}` and I'll explain what "
+            "it does."
         )
     return ""
 
 
 def _recall_route(
-    task: str, turn: dict, context: str, named_file: str, named_basename: str
+    task: str,
+    turn: dict,
+    context: str,
+    is_explain: bool,
+    named_file: str,
+    named_basename: str,
 ) -> tuple[str, str, bool, str]:
     """Resolve an ordinal-recall turn to routing effects: (named_file,
     named_basename, is_recall_answer, recall_answer).
@@ -609,7 +606,9 @@ def _recall_route(
     body (no bespoke recall-grounded path); a non-grounded case sets the
     honest recall_answer message and the routing flag.
     """
-    recall_case, recall_ask, recall_path = _recall_answer(task, turn, context)
+    recall_case, recall_ask, recall_path = _recall_answer(
+        task, turn, context, is_explain
+    )
     if recall_case == "grounded":
         named_file = recall_path
         named_basename = recall_path.rsplit("/", 1)[-1]
@@ -723,7 +722,7 @@ def main() -> None:
     # the caller's chronological ledger. A non-grounded case (nothing shipped,
     # etc.) routes to the honest recall-answer instead of the guessing seat.
     named_file, named_basename, is_recall_answer, recall_answer = _recall_route(
-        task, turn, conversation_raw, named_file, named_basename
+        task, turn, conversation_raw, is_explain, named_file, named_basename
     )
 
     # Grounded explain (docs/plans/2026-07-12-grounded-explain-design.md): a

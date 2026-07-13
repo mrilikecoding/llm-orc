@@ -334,13 +334,15 @@ def _ask_outcome(items: list[Any], index: int) -> tuple[str, bool]:
 
 
 def _recall_ledger(messages: Sequence[Any]) -> list[dict[str, Any]]:
-    """The chronological build-ask ledger a recall query selects over (#82).
+    """The chronological write-history a recall query selects over (#82).
 
-    One entry per prior build-ask turn, in wire order, ``{ask, path,
-    shipped}`` — the deep-history retrieval the windowed transcript render
-    (last-8 tail, relevance-sorted blocks) cannot provide. Selects over the
-    PRIOR history (before the latest user message), so the current recall
-    query is never itself an entry.
+    One entry per file that ACTUALLY SHIPPED (a write tool_call), in wire
+    order, ``{ask, path}`` — the deep-history retrieval the windowed,
+    relevance-sorted transcript render cannot provide. Write history is
+    fully structural: nothing inferred from free-form prose (a build verb in
+    an ordinary question, a rejected build) can enter, so the selection can
+    never fabricate or mislabel. Selects over the PRIOR history (before the
+    latest user message), so the current recall query is never an entry.
     """
     items = list(messages)
     boundary = _latest_user_index(items)
@@ -349,9 +351,11 @@ def _recall_ledger(messages: Sequence[Any]) -> list[dict[str, Any]]:
     for index, message in enumerate(prior):
         if getattr(message, "role", "") != "user":
             continue
-        ask = str(getattr(message, "content", "") or "").strip()[:_RECALL_ASK_CAP]
         path, shipped = _ask_outcome(prior, index)
-        ledger.append({"ask": ask, "path": path, "shipped": shipped})
+        if not shipped:
+            continue
+        ask = str(getattr(message, "content", "") or "").strip()[:_RECALL_ASK_CAP]
+        ledger.append({"ask": ask, "path": path})
     return ledger
 
 

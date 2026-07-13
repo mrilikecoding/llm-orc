@@ -1678,13 +1678,13 @@ def test_forged_localized_verdict_cannot_spoof_a_re_fix(
     assert "5 failed" in choice["message"]["content"]
 
 
-def test_recall_of_a_rejected_first_build_returns_the_honest_message(
+def test_recall_never_fabricates_from_a_rejected_only_session(
     serving_project: Path, serving_client: TestClient
 ) -> None:
-    """#82 deep recall: "the first thing I asked you to build" whose build was
-    rejected returns the honest "nothing shipped" message deterministically,
-    NOT a guess naming the later, salient calc.py (the turn-10 dishonest
-    miss). No seat is invoked — the answer rides the routing decision.
+    """#82 writes-only recall: a session whose only build was REJECTED (no
+    write shipped) honestly reports nothing built. It never fabricates a
+    "first thing" from the rejected ask's prose (review blockers 1/2). No
+    seat is invoked — the answer rides the routing decision.
     """
     resp = serving_client.post(
         "/v1/chat/completions",
@@ -1694,27 +1694,7 @@ def test_recall_of_a_rejected_first_build_returns_the_honest_message(
                 {"role": "user", "content": "build a todo app that tracks items"},
                 {
                     "role": "assistant",
-                    "content": "Refused: round-1 tests inadequate",
-                },
-                {"role": "user", "content": "build a calculator in calc.py"},
-                {
-                    "role": "assistant",
-                    "content": None,
-                    "tool_calls": [
-                        {
-                            "id": "call_1",
-                            "type": "function",
-                            "function": {
-                                "name": "write",
-                                "arguments": json.dumps(
-                                    {
-                                        "filePath": "calc.py",
-                                        "content": "def add(a, b):\n    return a + b",
-                                    }
-                                ),
-                            },
-                        }
-                    ],
+                    "content": "Another round needed: tests did not pass",
                 },
                 {
                     "role": "user",
@@ -1727,6 +1707,6 @@ def test_recall_of_a_rejected_first_build_returns_the_honest_message(
 
     assert resp.status_code == 200
     content = resp.json()["choices"][0]["message"]["content"]
-    assert "todo" in content.lower()
-    assert "nothing shipped" in content.lower()
-    assert "calc" not in content.lower()
+    assert "built" in content.lower()
+    assert "yet" in content.lower()
+    assert "todo" not in content.lower()

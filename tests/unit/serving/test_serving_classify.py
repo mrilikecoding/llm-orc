@@ -1019,23 +1019,39 @@ def test_truncated_wrote_block_does_not_ground_the_explain() -> None:
     assert decision["target"] == "not-grounded"
 
 
-def test_recall_query_with_a_rejected_first_ask_routes_to_an_honest_message() -> None:
-    # #82 deep recall: "the first thing I asked you to build" whose build was
-    # rejected must not reach the guessing explainer seat — it routes to the
-    # deterministic recall-answer, honest that nothing shipped (turn-10 miss).
+def test_recall_selects_the_first_shipped_build_never_a_later_file() -> None:
+    # The turn-10 conversion at the routing layer: the first SHIPPED build
+    # (todo.py) is selected, never the later/salient calc.py. Selection is
+    # over the write-history ledger, so the answer is always true.
+    context = "assistant: [wrote todo.py]\n  def add_todo():\n      return 1"
     decision = _classify(
         {
             "task": "what did the first thing I asked you to build do?",
             "recall_ledger": [
-                {"ask": "build a todo app", "path": "", "shipped": False}
+                {"ask": "build a todo app", "path": "todo.py"},
+                {"ask": "build a calculator", "path": "calc.py"},
             ],
+            "context": context,
+        }
+    )
+    assert decision["target"] == "explainer"
+    assert decision["file"] == "todo.py"
+
+
+def test_recall_shipped_windowed_out_defers_to_a_read() -> None:
+    decision = _classify(
+        {
+            "task": "what did the first thing I asked you to build do?",
+            "recall_ledger": [{"ask": "build storage", "path": "storage.py"}],
+            "context": "",
         }
     )
     assert decision["target"] == "recall-answer"
-    assert decision["build"] is False
+    assert "storage.py" in decision["recall_answer"]
+    assert "read" in decision["recall_answer"].lower()
 
 
-def test_recall_query_with_no_prior_build_asks_says_nothing_asked() -> None:
+def test_recall_with_no_shipped_builds_says_nothing_built() -> None:
     decision = _classify(
         {
             "task": "what was the first thing I asked you to build?",
@@ -1043,52 +1059,35 @@ def test_recall_query_with_no_prior_build_asks_says_nothing_asked() -> None:
         }
     )
     assert decision["target"] == "recall-answer"
-    assert "anything yet" in decision["recall_answer"].lower()
+    assert "built" in decision["recall_answer"].lower()
+    assert "yet" in decision["recall_answer"].lower()
 
 
-def test_recall_rejected_first_ask_message_names_the_ask_and_says_nothing_shipped() -> (
-    None
-):
+def test_recall_does_not_hijack_an_unrelated_first_x_question() -> None:
+    # Review blocker 3: an ordinary question with an ordinal plus a build-ish
+    # word ("first argument to build()") must NOT be answered as recall.
     decision = _classify(
         {
-            "task": "what did the first thing I asked you to build do?",
-            "recall_ledger": [
-                {"ask": "build a todo app", "path": "", "shipped": False}
-            ],
+            "task": "what's the first argument to build()?",
+            "recall_ledger": [{"ask": "build storage", "path": "storage.py"}],
+            "context": "assistant: [wrote storage.py]\n  def store(): ...",
         }
     )
-    assert "todo" in decision["recall_answer"]
-    assert "nothing shipped" in decision["recall_answer"].lower()
+    assert decision["target"] != "recall-answer"
 
 
-def test_recall_shipped_and_visible_rides_the_grounded_explainer() -> None:
-    context = "assistant: [wrote storage.py]\n  def store():\n      return 1"
+def test_recall_does_not_fire_on_a_non_explain_build_turn() -> None:
+    # Review finding 4: the named_file injection is gated on is_explain, so a
+    # build/refactor turn is never rerouted to the recalled path.
     decision = _classify(
         {
-            "task": "what did the first thing I asked you to build do?",
-            "recall_ledger": [
-                {"ask": "build storage", "path": "storage.py", "shipped": True}
-            ],
-            "context": context,
+            "task": "refactor the first thing you built",
+            "recall_ledger": [{"ask": "build storage", "path": "storage.py"}],
+            "context": "assistant: [wrote storage.py]\n  def store(): ...",
         }
     )
-    assert decision["target"] == "explainer"
-    assert decision["file"] == "storage.py"
-
-
-def test_recall_shipped_but_windowed_out_names_the_file_and_defers_to_a_read() -> None:
-    decision = _classify(
-        {
-            "task": "what did the first thing I asked you to build do?",
-            "recall_ledger": [
-                {"ask": "build storage", "path": "storage.py", "shipped": True}
-            ],
-            "context": "",
-        }
-    )
-    assert decision["target"] == "recall-answer"
-    assert "storage.py" in decision["recall_answer"]
-    assert "read" in decision["recall_answer"].lower()
+    assert decision["target"] != "recall-answer"
+    assert decision["file"] != "storage.py"
 
 
 def test_last_anchor_recall_is_not_a_wrong_accept_and_stays_on_the_explainer() -> None:
@@ -1099,8 +1098,8 @@ def test_last_anchor_recall_is_not_a_wrong_accept_and_stays_on_the_explainer() -
         {
             "task": "what was the last thing you built?",
             "recall_ledger": [
-                {"ask": "build a todo app", "path": "todo.py", "shipped": True},
-                {"ask": "build a calculator", "path": "calc.py", "shipped": True},
+                {"ask": "build a todo app", "path": "todo.py"},
+                {"ask": "build a calculator", "path": "calc.py"},
             ],
             "context": "",
         }
