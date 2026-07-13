@@ -115,6 +115,15 @@ def test_row7_explain_grounded_routes_to_the_explainer_seat() -> None:
     )
 
 
+def test_defer_recall_falls_through_to_the_decider() -> None:
+    # #82 deep recall: a loose maybe_recall turn (is_explain, but the tight
+    # _RECALL_RE did NOT resolve it structurally) defers to the guarded
+    # model-decider rather than assuming the guessing explainer seat. It
+    # outranks _explain_explainer so an ambiguous ordinal question is never
+    # answered by speculation.
+    assert _decide(is_explain=True, defer_recall=True) == ("", "", False, True)
+
+
 def test_row8_build_needs_glob() -> None:
     assert _decide(needs_glob="storage") == (
         "need-glob",

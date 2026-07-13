@@ -1090,6 +1090,44 @@ def test_recall_does_not_fire_on_a_non_explain_build_turn() -> None:
     assert decision["file"] != "storage.py"
 
 
+def test_recall_fuzzy_first_phrasing_defers_to_the_decider() -> None:
+    # Detection layer 2 (#82): the tight _RECALL_RE only anchors the exact
+    # "first thing … I/you … build" phrasing. A fuzzy first-ordinal recall
+    # ("the earliest thing you built") is is_explain with no named file, so it
+    # defers to the guarded model-decider — needs_decider, empty target — with
+    # the honest first-build answer pre-computed for resolve to apply on a
+    # recall vote. Selection stays structural (ledger[0]), so the model only
+    # decides recall-vs-explain, never which file.
+    decision = _classify(
+        {
+            "task": "what was the earliest thing you built in this session?",
+            "recall_ledger": [
+                {"ask": "build a todo app", "path": "todo.py"},
+                {"ask": "build a calculator", "path": "calc.py"},
+            ],
+            "context": "",
+        }
+    )
+    assert decision["needs_decider"] is True
+    assert decision["target"] == ""
+    assert "todo.py" in decision["recall_answer"]
+
+
+def test_recall_fuzzy_first_with_a_named_file_stays_on_grounded_explain() -> None:
+    # The maybe_recall pre-filter requires NO named file: a first-ordinal
+    # explain that names a file belongs to grounded-explain, not recall
+    # deferral, so it never reaches the decider.
+    decision = _classify(
+        {
+            "task": "what does the first function in storage.py do?",
+            "recall_ledger": [{"ask": "build storage", "path": "storage.py"}],
+            "context": "assistant: [wrote storage.py]\n  def store(): ...",
+        }
+    )
+    assert decision["needs_decider"] is False
+    assert decision["target"] == "explainer"
+
+
 def test_last_anchor_recall_is_not_a_wrong_accept_and_stays_on_the_explainer() -> None:
     # MVP handles only the "first" anchor. A "last"/"latest" query must NOT be
     # answered with the FIRST entry (a confident wrong-accept); it stays on
