@@ -111,16 +111,21 @@ def _seat_entry(name: str, node: Any) -> dict[str, Any]:
     return entry
 
 
+def _classify_response(results: dict[str, Any]) -> Any:
+    """The classify node's raw (un-snippeted) response, for ``_chain_plan``
+    to read its routing decision from — ``None`` when the results carry no
+    classify node."""
+    classify_node = results.get("classify")
+    return classify_node.get("response") if isinstance(classify_node, dict) else None
+
+
 def build_turn_trace(ensemble_name: str, result_dict: dict[str, Any]) -> dict[str, Any]:
     """Per-node introspection from the engine's execution result."""
     results = result_dict.get("results", {})
     nodes: list[dict[str, Any]] = []
     classify_response: Any = None
     if isinstance(results, dict):
-        classify_node = results.get("classify")
-        classify_response = (
-            classify_node.get("response") if isinstance(classify_node, dict) else None
-        )
+        classify_response = _classify_response(results)
         for name, node in results.items():
             response = node.get("response") if isinstance(node, dict) else None
             entry: dict[str, Any] = {
