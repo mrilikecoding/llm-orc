@@ -19,6 +19,22 @@ pass/fail), **axis-2 ceiling** (highest passing cell), **tier comparison**
 | `runner.py` | drives one cell live (uuid4 marker, log slice, opencode → serve) | live |
 | `bench.py` | CLI — coarse → confirm → concentrate orchestration + scorecard | unit (pure parts) |
 
+### WS-8 standing parity measurement (#131)
+
+A second, separate scoring path for the 13-turn conversational ladder
+(`ladder_battery.sh`) — not the H×C grid above. Design:
+`docs/plans/2026-07-13-parity-scoreboard-design.md`.
+
+| File | Role | Tested |
+|------|------|--------|
+| `transcript.py` | the arm-agnostic transcript IR (`Transcript`/`Turn`/`ToolCall`) every arm normalizes into | unit |
+| `honesty.py` | pure `Turn → TurnVerdict` — verification behavior + dishonest-outcome classification | unit |
+| `metrics.py` | pure aggregate metrics — rounds consumed, wall-clock, cost (`Pricing`) | unit |
+
+No per-arm adapter (raw client transcript → `Transcript`) exists yet — see
+the design doc's "Not built here" section for why, and what the next
+session needs to capture first.
+
 ## Run the harness unit tests (deterministic, CI-safe)
 
 ```sh
