@@ -75,12 +75,17 @@ _RECALL_RE = re.compile(
 )
 # #82 detection layer 2: a LOOSE first-ordinal pre-filter for the fuzzy
 # phrasings the tight _RECALL_RE cannot safely anchor ("the earliest thing you
-# built", "the first module you made"). It only gates DEFERRAL to the guarded
-# model-decider — the model discriminates genuine recall from incidental
-# ordinal use ("first-class functions"), and structural selection keeps the
-# answer honest either way. First-semantic ordinals only; last/Nth are
+# built", "what did you build originally"). It only gates DEFERRAL to the
+# guarded model-decider — the model discriminates genuine recall from
+# incidental ordinal use ("first-class functions", "the original design"), and
+# structural selection keeps the answer honest either way. First-semantic
+# terms only (adversarial-review finding 3 widened the set); last/Nth are
 # named-forward (the selector answers ledger[0]).
-_MAYBE_RECALL_RE = re.compile(r"\b(?:first|earliest|initial)\b", re.IGNORECASE)
+_MAYBE_RECALL_RE = re.compile(
+    r"\b(?:first|1st|earliest|initial|originally|original|beginning)\b"
+    r"|\bthe start\b",
+    re.IGNORECASE,
+)
 # Tests as the OBJECT of the request (issue #98): a build verb directly
 # asking for tests, or "tests for/of/against <target>". A trailing "with
 # tests" mention stays a code turn — routing it here would ship only tests.
@@ -632,6 +637,19 @@ def _recall_route(
     return named_file, named_basename, False, "", False
 
 
+def _valid_recall_answer(recall_answer: str, target: str, needs_decider: bool) -> str:
+    """recall_answer survives ONLY when the turn's outcome is a recall answer:
+    the structural recall-answer step, or a deferred turn heading to the decider
+    (needs_decider, where resolve applies or drops it on the vote). A higher-
+    priority chain (run/fix) can preempt a recall-phrased turn (e.g. "run the
+    tests and tell me the first thing you made" -> run-verdict); clearing the
+    stale message keeps emit — which fires on recall_answer PRESENCE — from
+    shadowing the real seat/verdict output (adversarial review finding 1)."""
+    if target == "recall-answer" or needs_decider:
+        return recall_answer
+    return ""
+
+
 def _turn(raw: str) -> dict:
     """Recover the turn dict from the ScriptAgent wrapper or a bare task.
 
@@ -821,6 +839,7 @@ def main() -> None:
         decision.needs_decider,
     )
     chain, step_index = decision.chain, decision.step_index
+    recall_answer = _valid_recall_answer(recall_answer, target, needs_decider)
     # needs_run mirrors the routing decision itself (rather than the old
     # pre-route "wants_run and not has_run_block" guess) so a SECOND
     # need-run round — the re-fix's write awaiting its own run — reissues
