@@ -57,6 +57,12 @@ class SignalBundle:
     tests_primary: bool
     has_build_signal: bool
     kind_hint: str
+    # #82 deep recall: an ordinal-recall turn whose deterministic selection
+    # resolves to an honest message (rejected/none/built-deep), NOT the
+    # guessing explainer seat. Defaulted so existing bundles are unchanged;
+    # the shipped-and-visible case rides grounded-explain via a named_file
+    # injection instead, never this flag.
+    is_recall_answer: bool = False
 
 
 _Guard = Callable[[SignalBundle], bool]
@@ -143,6 +149,14 @@ def _explain_not_grounded(bundle: SignalBundle) -> bool:
     the deterministic honest refusal — the explainer seat is never called,
     so there is no speculation path."""
     return bundle.is_explain and bundle.explain_ungrounded
+
+
+def _explain_recall_answer(bundle: SignalBundle) -> bool:
+    """#82 deep recall: an ordinal-recall turn resolved to a deterministic
+    honest message (nothing shipped / never asked / built-deep). Ahead of
+    the explainer seat so recall never guesses; the shipped-and-visible
+    case does NOT set this flag and rides the grounded explainer instead."""
+    return bundle.is_recall_answer
 
 
 def _explain_explainer(bundle: SignalBundle) -> bool:
@@ -233,6 +247,13 @@ CHAIN_RUN = Chain(
 CHAIN_EXPLAIN = Chain(
     label="explain",
     steps=(
+        Step(
+            chain_label="explain",
+            target="recall-answer",
+            kind="recall",
+            build=False,
+            guard=_explain_recall_answer,
+        ),
         Step(
             chain_label="explain",
             target="not-grounded",
