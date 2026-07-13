@@ -303,15 +303,11 @@ CHAINS: tuple[Chain, ...] = (
     CHAIN_BUILD,
     CHAIN_DECIDER,
 )
-# The same rows, flattened in table order (row 1 first) — every row's guard
-# carries the FULL `_route` condition, chain-selecting signal included, so
-# there is no separate "chain applies" gate that could reorder anything.
-STEPS: tuple[Step, ...] = tuple(step for chain in CHAINS for step in chain.steps)
 
 
 def advance(bundle: SignalBundle) -> Decision:
-    """The first-match scan over ``CHAINS``/``STEPS``, in priority order —
-    the same order ``_route``/``_fix_chain_route`` checked its conditions.
+    """The first-match scan over ``CHAINS``, in priority order — the same
+    order ``_route``/``_fix_chain_route`` checked its conditions.
     ``needs_decider`` is derived from an empty target, mirroring ``_route``'s
     own invariant: every branch but the terminal fallthrough returns a
     non-empty target and ``needs_decider=False``; only the fallthrough
