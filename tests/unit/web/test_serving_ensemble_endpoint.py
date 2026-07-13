@@ -479,6 +479,87 @@ def test_explain_of_a_visible_written_file_grounds_on_the_real_content(
     assert "return a + b" in content
 
 
+@pytest.fixture
+def recall_decider_client(
+    serving_project: Path, monkeypatch: pytest.MonkeyPatch
+) -> TestClient:
+    """``serving_client`` with the model-backed ``decide`` node swapped for a
+    deterministic echo returning the recall vote. The decide node is the ONLY
+    model node on the deferred-recall path (#82 detection layer 2), so the whole
+    classify -> decide -> resolve -> emit wiring stays hermetic.
+    """
+    serving_yaml = serving_project / "ensembles" / "serving.yaml"
+    text = serving_yaml.read_text()
+    before, _, after = text.partition("  - name: decide")
+    _, _, resolve_onward = after.partition("  - name: resolve")
+    stub = (
+        "  - name: decide\n"
+        "    script: \"echo 'recall'\"\n"
+        "    depends_on: [classify]\n"
+        "    when: ${classify.needs_decider}\n"
+    )
+    serving_yaml.write_text(before + stub + "  - name: resolve" + resolve_onward)
+
+    def _caller() -> ServingEnsembleCaller:
+        return ServingEnsembleCaller(project_dir=serving_project, ensemble="serving")
+
+    monkeypatch.setattr(
+        v1_chat_completions, "get_serving_ensemble_caller", _caller, raising=False
+    )
+    return TestClient(create_app())
+
+
+def test_deferred_recall_vote_emits_the_honest_first_build_answer(
+    recall_decider_client: TestClient,
+) -> None:
+    """#82 detection layer 2, end to end (decide stubbed to a recall vote): a
+    FUZZY first-ordinal recall ("the earliest thing you built") the tight
+    _RECALL_RE cannot anchor defers to the guarded decider; a recall vote routes
+    to the recall-answer shape and emits the deterministic honest answer naming
+    the first SHIPPED build (todo.py), never a guess. The explainer echo text
+    must never appear — proof the guessing seat was bypassed.
+    """
+    resp = recall_decider_client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "ensemble-agent",
+            "messages": [
+                {"role": "user", "content": "build a todo app"},
+                {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "id": "call_1",
+                            "type": "function",
+                            "function": {
+                                "name": "write",
+                                "arguments": json.dumps(
+                                    {
+                                        "filePath": "todo.py",
+                                        "content": "def add_item(): ...",
+                                    }
+                                ),
+                            },
+                        }
+                    ],
+                },
+                {"role": "tool", "tool_call_id": "call_1", "content": "ok"},
+                {"role": "user", "content": "what was the earliest thing you built?"},
+            ],
+            "tools": [_WRITE_TOOL],
+        },
+    )
+
+    assert resp.status_code == 200
+    choice = resp.json()["choices"][0]
+    assert choice["finish_reason"] == "stop"
+    assert not choice["message"].get("tool_calls")
+    content = choice["message"]["content"]
+    assert "todo.py" in content
+    assert "foo.py defines add" not in content
+
+
 def test_wire_log_records_message_shape_when_enabled(
     serving_project: Path,
     serving_client: TestClient,

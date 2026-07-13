@@ -27,6 +27,10 @@ _DERIVED = {
     "explainer": ("explanation", False),
     "tests-seat": ("python_tests", True),
 }
+# #82 detection layer 2: the decider's recall vote is not a seat (no _DERIVED
+# entry); it routes to the recall-answer shape carrying classify's pre-computed
+# honest message. Recognized by the decider, handled specially in main().
+_RECALL_TARGET = "recall"
 # The intent -> serving shape mapping is now operator-curated (WP-C8): each shape
 # declares the intent it ``serves`` and the Shape Catalog derives the map from the
 # library, replacing the hardcoded default WP-D8 left here. ``build-gated`` serves
@@ -53,10 +57,12 @@ def _response(dep: object) -> str:
 def _decider_target(response: str) -> str:
     """A known seat target from the decider's output, or "" when none resolves.
 
-    Strict first: the first JSON object's ``target`` if it is a known seat.
+    Strict first: the first JSON object's ``target`` if it is a known target.
     Fallback: exactly one known token present in the raw text. No token, or an
     ambiguous both-tokens output, resolves to "" (deterministic dispatch fail).
+    The recognized set is the seat set plus ``recall`` (#82 detection layer 2).
     """
+    recognized = (*_DERIVED, _RECALL_TARGET)
     match = _JSON_RE.search(response or "")
     if match:
         try:
@@ -65,9 +71,9 @@ def _decider_target(response: str) -> str:
             obj = None
         if isinstance(obj, dict):
             target = obj.get("target")
-            if isinstance(target, str) and target in _DERIVED:
+            if isinstance(target, str) and target in recognized:
                 return target
-    present = [t for t in _DERIVED if t in (response or "")]
+    present = [t for t in recognized if t in (response or "")]
     return present[0] if len(present) == 1 else ""
 
 
@@ -94,7 +100,17 @@ def main() -> None:
 
     if classify.get("needs_decider"):
         target = _decider_target(_response(deps.get("decide", {})))
-        kind, build = _DERIVED.get(target, ("", False))
+        if target == _RECALL_TARGET:
+            # #82 detection layer 2: the model confirmed recall. Route to the
+            # recall-answer shape and keep classify's pre-computed honest
+            # message — selection was already structural.
+            target, kind, build = "recall-answer", "recall", False
+        else:
+            kind, build = _DERIVED.get(target, ("", False))
+            # A non-recall vote on a deferred turn: drop the pre-computed recall
+            # message so emit (which fires on its presence) does not shadow the
+            # seat's real output.
+            recall_answer = ""
     else:
         target = classify.get("target", "")
         kind = classify.get("kind", "")

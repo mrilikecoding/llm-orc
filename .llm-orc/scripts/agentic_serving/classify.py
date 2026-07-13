@@ -73,6 +73,14 @@ _RECALL_RE = re.compile(
     r"\b(?:build|built|wrote|created?|made)\b[^?.!]*\bfirst thing\b",
     re.IGNORECASE,
 )
+# #82 detection layer 2: a LOOSE first-ordinal pre-filter for the fuzzy
+# phrasings the tight _RECALL_RE cannot safely anchor ("the earliest thing you
+# built", "the first module you made"). It only gates DEFERRAL to the guarded
+# model-decider — the model discriminates genuine recall from incidental
+# ordinal use ("first-class functions"), and structural selection keeps the
+# answer honest either way. First-semantic ordinals only; last/Nth are
+# named-forward (the selector answers ledger[0]).
+_MAYBE_RECALL_RE = re.compile(r"\b(?:first|earliest|initial)\b", re.IGNORECASE)
 # Tests as the OBJECT of the request (issue #98): a build verb directly
 # asking for tests, or "tests for/of/against <target>". A trailing "with
 # tests" mention stays a code turn — routing it here would ship only tests.
@@ -548,22 +556,18 @@ def _failure_shape(context: str) -> str:
     return "localized"
 
 
-def _recall_answer(
-    task: str, turn: dict, context: str, is_explain: bool
-) -> tuple[str, str, str]:
-    """(case, ask, path) for an ordinal-recall turn — deterministic selection
-    over the caller's write-history ledger (#82 deep recall).
+def _recall_select(turn: dict, context: str) -> tuple[str, str, str]:
+    """(case, ask, path) — deterministic ordinal SELECTION over the caller's
+    write-history ledger (#82 deep recall), independent of detection.
 
     ``case``: "grounded" (the first shipped build is visible -> ride the
     grounded explainer via a named_file injection), "built_deep" (shipped but
-    windowed out of the context -> name it, defer the body to a read), "none"
-    (nothing shipped this session), or "" (not a recall turn). The ledger is
-    shipped writes only, so there is no prose-inferred "rejected" case to
-    fabricate. Gated on ``is_explain`` so a build/refactor turn is never
-    rerouted (review finding 4).
+    windowed out of the context -> name it, defer the body to a read), or
+    "none" (nothing shipped this session). The ledger is shipped writes only,
+    so there is no prose-inferred "rejected" case to fabricate. Selection is
+    structural, so the answer is always true; the two detection layers that
+    route turns here (structural _RECALL_RE, loose maybe_recall) sit on top.
     """
-    if not is_explain or not _RECALL_RE.search(task):
-        return "", "", ""
     ledger = turn.get("recall_ledger") or []
     first = ledger[0] if ledger and isinstance(ledger[0], dict) else {}
     path = str(first.get("path", ""))
@@ -597,24 +601,35 @@ def _recall_route(
     is_explain: bool,
     named_file: str,
     named_basename: str,
-) -> tuple[str, str, bool, str]:
+) -> tuple[str, str, bool, str, bool]:
     """Resolve an ordinal-recall turn to routing effects: (named_file,
-    named_basename, is_recall_answer, recall_answer).
+    named_basename, is_recall_answer, recall_answer, defer_recall).
 
-    A grounded case rewrites named_file to the ordinally-selected path so the
-    existing grounded-explain gate and dispatch ground the seat on its real
-    body (no bespoke recall-grounded path); a non-grounded case sets the
-    honest recall_answer message and the routing flag.
+    Two detection layers over one structural selector (#82 design doc):
+    - STRUCTURAL floor (``_RECALL_RE``): a tight-anchored recall resolves here
+      with NO decider — grounded rewrites named_file for inline grounded-
+      explain; a non-grounded case sets the honest recall_answer + the routing
+      flag.
+    - MODEL extension (``_MAYBE_RECALL_RE``): a loose first-ordinal explain the
+      tight regex missed, with no named file, defers to the guarded decider
+      (``defer_recall``). The honest answer is pre-computed for resolve to
+      apply on a recall vote; grounded collapses into the "ask me to read"
+      message on this path so resolve stays a thin merge.
+    A non-recall turn returns no effects.
     """
-    recall_case, recall_ask, recall_path = _recall_answer(
-        task, turn, context, is_explain
-    )
-    if recall_case == "grounded":
-        named_file = recall_path
-        named_basename = recall_path.rsplit("/", 1)[-1]
-    is_recall_answer = bool(recall_case) and recall_case != "grounded"
-    recall_answer = _recall_message(recall_case, recall_ask, recall_path)
-    return named_file, named_basename, is_recall_answer, recall_answer
+    if not is_explain:
+        return named_file, named_basename, False, "", False
+    if _RECALL_RE.search(task):
+        case, ask, path = _recall_select(turn, context)
+        if case == "grounded":
+            return path, path.rsplit("/", 1)[-1], False, "", False
+        return named_file, named_basename, True, _recall_message(case, ask, path), False
+    if not named_file and _MAYBE_RECALL_RE.search(task):
+        case, ask, path = _recall_select(turn, context)
+        msg_case = "built_deep" if case == "grounded" else case
+        message = _recall_message(msg_case, ask, path)
+        return named_file, named_basename, False, message, True
+    return named_file, named_basename, False, "", False
 
 
 def _turn(raw: str) -> dict:
@@ -721,8 +736,10 @@ def main() -> None:
     # #82 deep recall: an ordinal-recall query resolves deterministically over
     # the caller's chronological ledger. A non-grounded case (nothing shipped,
     # etc.) routes to the honest recall-answer instead of the guessing seat.
-    named_file, named_basename, is_recall_answer, recall_answer = _recall_route(
-        task, turn, conversation_raw, is_explain, named_file, named_basename
+    named_file, named_basename, is_recall_answer, recall_answer, defer_recall = (
+        _recall_route(
+            task, turn, conversation_raw, is_explain, named_file, named_basename
+        )
     )
 
     # Grounded explain (docs/plans/2026-07-12-grounded-explain-design.md): a
@@ -794,6 +811,7 @@ def main() -> None:
         has_build_signal=has_build_signal,
         kind_hint=str(turn.get("kind", "python_module")),
         is_recall_answer=is_recall_answer,
+        defer_recall=defer_recall,
     )
     decision = _advance(bundle)
     target, kind, build, needs_decider = (

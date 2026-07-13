@@ -56,6 +56,13 @@ agents:
       explanation, comparison, description, or answer, with no code artifact
       being requested.
 
+      Choose "recall" when the request asks WHICH thing was built or asked in
+      THIS session, in ordinal or temporal terms — "the first thing you built",
+      "the earliest module you made", "what did I ask for first". It is about
+      the session's own history, not a code concept. An ordinal that names a
+      code concept ("the first argument to a function", "first-class functions")
+      is "explainer", not "recall".
+
       Examples:
       "a function that checks whether a number is prime" -> {"target": "code-seat"}
       "a script to rename files in a folder" -> {"target": "code-seat"}
@@ -63,9 +70,12 @@ agents:
       "coverage for the storage module" -> {"target": "tests-seat"}
       "the difference between a list and a tuple" -> {"target": "explainer"}
       "how does async work in Python" -> {"target": "explainer"}
+      "the earliest thing you built in this session" -> {"target": "recall"}
+      "what was the first module you made" -> {"target": "recall"}
 
       Respond with ONLY a JSON object, no other text and no code fences:
-      {"target": "code-seat"}, {"target": "tests-seat"} or {"target": "explainer"}
+      {"target": "code-seat"}, {"target": "tests-seat"}, {"target": "explainer"}
+      or {"target": "recall"}
 
   - name: resolve
     script: scripts/agentic_serving/resolve.py

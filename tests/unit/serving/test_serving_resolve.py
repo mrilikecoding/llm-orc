@@ -254,3 +254,41 @@ def test_decider_path_defaults_not_grounded_empty() -> None:
         decide_response='{"target": "explainer"}',
     )
     assert routing["not_grounded"] == ""
+
+
+def test_decider_recall_vote_routes_to_the_recall_answer_shape() -> None:
+    # #82 detection layer 2: a deferred recall turn whose decider votes "recall"
+    # routes to the recall-answer shape, keeping classify's pre-computed honest
+    # message (selection was already structural — the model decided recall vs
+    # explain, never which file).
+    classify_decision = {
+        "target": "",
+        "kind": "",
+        "file": "solution.py",
+        "dispatch_input": "what was the earliest thing you built?",
+        "build": False,
+        "needs_decider": True,
+        "recall_answer": "The first thing built was `todo.py`. Ask me to read it.",
+    }
+    routing = _resolve(classify_decision, decide_response='{"target": "recall"}')
+    assert routing["target"] == "recall-answer"
+    assert routing["build"] is False
+    assert "todo.py" in routing["recall_answer"]
+
+
+def test_decider_non_recall_vote_drops_the_precomputed_recall_answer() -> None:
+    # If the decider votes a normal seat on a deferred turn, the pre-computed
+    # recall message MUST be dropped — emit fires on recall_answer PRESENCE, so
+    # leaving it would emit the recall message over the explainer's real output.
+    classify_decision = {
+        "target": "",
+        "kind": "",
+        "file": "solution.py",
+        "dispatch_input": "what is the first-class function pattern?",
+        "build": False,
+        "needs_decider": True,
+        "recall_answer": "The first thing built was `todo.py`. Ask me to read it.",
+    }
+    routing = _resolve(classify_decision, decide_response='{"target": "explainer"}')
+    assert routing["target"] == "explainer"
+    assert routing["recall_answer"] == ""
