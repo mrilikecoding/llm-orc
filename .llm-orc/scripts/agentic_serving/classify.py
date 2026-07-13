@@ -437,8 +437,16 @@ def _discovery(
 # the same one run_verdict reads) so a forged block in user text can never
 # feed the classifier — the selector is column-0-anchored block structure,
 # never raw text (spoof-probe requirement).
+# Includes the pytest-printed SUBCLASS names, not just the bases: an in-test
+# ``import missing`` reports FAILED (not a collection ERROR) with
+# ``ModuleNotFoundError`` — the ImportError subclass, the most common import
+# failure — and a bad indent reports IndentationError/TabError (SyntaxError
+# subclasses). Matching only the bases classified those localized and burned
+# a re-fix round, against the fail-closed-to-structural intent.
 _STRUCTURAL_ERROR_RE = re.compile(
-    r"^E\s+(?:NameError|ImportError|SyntaxError)\b", re.MULTILINE
+    r"^E\s+(?:NameError|ModuleNotFoundError|ImportError"
+    r"|IndentationError|TabError|SyntaxError)\b",
+    re.MULTILINE,
 )
 _FAILSHAPE_SUMMARY_RE = re.compile(
     r"\b(?:\d+ (?:passed|failed|errors?|skipped|deselected|xfailed|xpassed"
