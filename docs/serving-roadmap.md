@@ -382,6 +382,11 @@ surface.
    generalized (template-built patterns from charset-checked stems,
    never model text; deterministic candidate rule; refuse-with-
    candidates on ambiguity, or carry top-N into a bounded read fan).
+   **Build the deferred round-budget backstop here** (`max_rounds`/
+   `rounds_consumed`, the `Chain` slot reserved by the chain-executor
+   migration): the N-read fan is the first chain whose depth is NOT
+   already bounded by per-step idempotency, so this is the concrete need
+   the backstop was deferred to (§Current state Handoff pointer).
 3. **edit delegation:** surgical edits via the client's `edit` tool.
    Gate implication: the sandbox must judge the post-edit file state,
    so the chain is read-current → apply → gate → emit edit.
@@ -445,7 +450,11 @@ resident orchestrator (the invariant holds).
 3. **Latency budget discipline:** per-chain-step budget accounting
    against the client timeout (the 780s battery cap vs the seat's 720s
    two-round budget is the standing datum); a chain that cannot finish
-   its next step inside budget reports state instead of dying.
+   its next step inside budget reports state instead of dying. A
+   many-step decompose plan is the other trigger for the deferred
+   round-budget backstop (§Current state Handoff pointer) — its depth is
+   not bounded by per-step idempotency, so `max_rounds`/`rounds_consumed`
+   land here if grep (WS-3 item 2) has not already added them.
 4. **Compaction observation:** #82's entry gate. A multi-hour session
    WILL trigger OpenCode compaction; capture the wire
    (`LLM_ORC_SERVE_WIRE_LOG` watches for it), then harden the
