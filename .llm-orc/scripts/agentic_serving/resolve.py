@@ -90,6 +90,7 @@ def main() -> None:
     needs_glob = str(classify.get("needs_glob", ""))
     glob_failed = str(classify.get("glob_failed", ""))
     not_grounded = str(classify.get("not_grounded", ""))
+    recall_answer = str(classify.get("recall_answer", ""))
 
     if classify.get("needs_decider"):
         target = _decider_target(_response(deps.get("decide", {})))
@@ -119,6 +120,7 @@ def main() -> None:
                 "needs_glob": needs_glob,
                 "glob_failed": glob_failed,
                 "not_grounded": not_grounded,
+                "recall_answer": recall_answer,
             }
         )
     )
