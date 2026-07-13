@@ -33,6 +33,9 @@ import sys
 
 from _helpers import PRIOR_CODE_MARKER as _PRIOR_CODE_MARKER
 from _helpers import latest_ran_block as _latest_ran_block
+from chain_plan import _EXPLAIN_SEAT, _TESTS_SEAT
+from chain_plan import SignalBundle as _SignalBundle
+from chain_plan import advance as _advance
 
 _EXPLAIN_MARKERS = (
     "explain",
@@ -54,9 +57,6 @@ _INTERROGATIVE_RE = re.compile(
     r"^(?:what|why|how|when|where|which|who)\b|^(?:did|have) you\b",
     re.IGNORECASE,
 )
-_DEFAULT_CODE_SEAT = "code-seat"
-_EXPLAIN_SEAT = "explainer"
-_TESTS_SEAT = "tests-seat"
 # Tests as the OBJECT of the request (issue #98): a build verb directly
 # asking for tests, or "tests for/of/against <target>". A trailing "with
 # tests" mention stays a code turn — routing it here would ship only tests.
@@ -601,89 +601,6 @@ def _discover_and_read(
     )
 
 
-def _fix_chain_route(
-    needs_another_run: bool, has_refixed: bool, failure_shape: str
-) -> tuple[str, str, bool, bool]:
-    """The run/verdict/re-fix routing for a fix-led turn (fix-execution +
-    convergent-fix rung 2)."""
-    if needs_another_run:
-        # fix-execution run leg (rung 1) or rung 2's re-fix run leg: a write
-        # this turn — the fix's own or the re-fix's — has no run of its own
-        # yet. wrote_path/write_count are structural, from the caller's
-        # post-boundary tool_calls; delegate ONE closed-template run.
-        return "need-run", "need_run", False, False
-    if not has_refixed and failure_shape == "localized":
-        # rung 2, convergent-fix design: a red, localized verdict on a
-        # fix-led turn routes to the bounded one-round re-fix instead of
-        # today's honest-red terminal.
-        return "re-fix", "re_fix", True, False
-    # every write this turn has a matching run — the LATEST verdict is
-    # terminal (green, structural-red, or already-refixed).
-    return "run-verdict", "run_verdict", False, False
-
-
-def _route(
-    *,
-    is_explain: bool,
-    explain_ungrounded: bool,
-    run_signal: bool,
-    fix_chain: bool,
-    has_run_block: bool,
-    needs_another_run: bool,
-    has_refixed: bool,
-    failure_shape: str,
-    needs_glob: str,
-    glob_failed: str,
-    needs_files: list[str],
-    read_failed: str,
-    tests_primary: bool,
-    has_build_signal: bool,
-    kind_hint: str,
-) -> tuple[str, str, bool, bool]:
-    """(target, kind, build, needs_decider) — the deterministic routing chain.
-
-    Run outranks marker-based explain (run_signal is already false on
-    interrogative or marker-led turns), so "run the tests and tell me what
-    failed" delegates the run instead of narrating one.
-    """
-    if fix_chain:
-        return _fix_chain_route(needs_another_run, has_refixed, failure_shape)
-    if run_signal and has_run_block:
-        # issue #83 run half: the client ran the command — the deliverable
-        # is the deterministic verdict, one run round per turn.
-        return "run-verdict", "run_verdict", False, False
-    if run_signal:
-        # issue #83 run half: delegate one closed-template test run.
-        return "need-run", "need_run", False, False
-    if is_explain and explain_ungrounded:
-        # grounded-explain design: a real named-file target (never the
-        # "solution.py" default) with no visible build or read on the wire
-        # gets the deterministic honest refusal — the explainer seat is
-        # never called, so there is no speculation path.
-        return "not-grounded", "not_grounded", False, False
-    if is_explain:
-        return _EXPLAIN_SEAT, "explanation", False, False
-    if needs_glob or glob_failed:
-        # issue #83 discovery: one glob round (or its honest refusal) before
-        # the read seam. Exclusive with needs_files/read_failed by
-        # construction — a discovering turn names no source file, a reading
-        # turn does — so the order here only mirrors the seam chain
-        # (discover -> read -> build).
-        return "need-glob", "need_glob", False, False
-    if needs_files or read_failed:
-        # issue #83: request the client files (or refuse a failed request)
-        # before any seat runs — the need-files shape is a cheap script echo.
-        return "need-files", "need_files", False, False
-    if tests_primary:
-        # the deliverable IS a test file, run against the workspace alone
-        # (issue #98) — never build-gated's code/tests duality
-        return _TESTS_SEAT, "python_tests", True, False
-    if has_build_signal:
-        return _DEFAULT_CODE_SEAT, kind_hint, True, False
-    # No structural signal — hand the routing to the guarded model decider.
-    return "", "", False, True
-
-
 def main() -> None:
     turn = _turn(sys.stdin.read().strip())
     task = str(turn.get("task", "")).strip()
@@ -768,7 +685,7 @@ def main() -> None:
             named_file,
             named_basename,
         )
-    target, kind, build, needs_decider = _route(
+    bundle = _SignalBundle(
         is_explain=is_explain,
         explain_ungrounded=explain_ungrounded,
         run_signal=run_signal,
@@ -784,6 +701,13 @@ def main() -> None:
         tests_primary=tests_primary,
         has_build_signal=has_build_signal,
         kind_hint=str(turn.get("kind", "python_module")),
+    )
+    decision = _advance(bundle)
+    target, kind, build, needs_decider = (
+        decision.target,
+        decision.kind,
+        decision.build,
+        decision.needs_decider,
     )
     # needs_run mirrors the routing decision itself (rather than the old
     # pre-route "wants_run and not has_run_block" guess) so a SECOND
