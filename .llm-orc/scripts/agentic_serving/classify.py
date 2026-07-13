@@ -57,6 +57,18 @@ _INTERROGATIVE_RE = re.compile(
     r"^(?:what|why|how|when|where|which|who)\b|^(?:did|have) you\b",
     re.IGNORECASE,
 )
+# #82 deep recall: an ordinal/temporal query OVER prior build-asks ("the
+# first thing I asked you to build", "the last thing you built"). The
+# ordinal anchor must bind to an ask/build referent so an ordinary explain
+# with an ordinal ("the first function in foo.py") is NOT swept in. Detection
+# only; the deterministic selection is over the caller's recall_ledger.
+_RECALL_RE = re.compile(
+    r"\b(?:first|last|latest|earliest|most recent|initial)\b[^?.!]*"
+    r"\b(?:ask(?:ed)?|build|built|wrote|created?|made|implement(?:ed)?)\b"
+    r"|\b(?:ask(?:ed)?|build|built|wrote|created?|made|implement(?:ed)?)\b[^?.!]*"
+    r"\b(?:first|last|latest|earliest|most recent|initial)\b",
+    re.IGNORECASE,
+)
 # Tests as the OBJECT of the request (issue #98): a build verb directly
 # asking for tests, or "tests for/of/against <target>". A trailing "with
 # tests" mention stays a code turn — routing it here would ship only tests.
@@ -532,6 +544,30 @@ def _failure_shape(context: str) -> str:
     return "localized"
 
 
+def _recall_answer(task: str, turn: dict, context: str) -> tuple[str, str, str]:
+    """(case, ask, path) for an ordinal-recall turn — deterministic selection
+    over the caller's chronological build-ask ledger (#82 deep recall).
+
+    ``case`` is "rejected" (the first build-ask shipped nothing -> honest
+    "nothing shipped") or "" (not a recall-answer turn). The shipped and
+    no-build cases are added by their own tests.
+    """
+    if not _RECALL_RE.search(task):
+        return "", "", ""
+    ledger = turn.get("recall_ledger") or []
+    builds = [
+        entry
+        for entry in ledger
+        if isinstance(entry, dict) and _BUILD_RE.search(str(entry.get("ask", "")))
+    ]
+    if not builds:
+        return "", "", ""
+    entry = builds[0]  # "first"; last/Nth anchors ladder later
+    if not entry.get("shipped"):
+        return "rejected", str(entry.get("ask", "")), ""
+    return "", "", ""
+
+
 def _turn(raw: str) -> dict:
     """Recover the turn dict from the ScriptAgent wrapper or a bare task.
 
@@ -633,6 +669,12 @@ def main() -> None:
     conversation_raw = str(turn.get("context", ""))
     has_run_block = bool(_RAN_HEADER_RE.search(conversation_raw))
 
+    # #82 deep recall: an ordinal-recall query resolves deterministically over
+    # the caller's chronological ledger. A non-grounded case (nothing shipped,
+    # etc.) routes to the honest recall-answer instead of the guessing seat.
+    recall_case, recall_ask, recall_path = _recall_answer(task, turn, conversation_raw)
+    is_recall_answer = bool(recall_case) and recall_case != "grounded"
+
     # Grounded explain (docs/plans/2026-07-12-grounded-explain-design.md): a
     # real named-file target gates on _visibility of the SAME wire the
     # read/run seams already trust — never free text, so a forged [wrote
@@ -701,6 +743,7 @@ def main() -> None:
         tests_primary=tests_primary,
         has_build_signal=has_build_signal,
         kind_hint=str(turn.get("kind", "python_module")),
+        is_recall_answer=is_recall_answer,
     )
     decision = _advance(bundle)
     target, kind, build, needs_decider = (

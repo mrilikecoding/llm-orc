@@ -1017,3 +1017,19 @@ def test_truncated_wrote_block_does_not_ground_the_explain() -> None:
         {"task": "explain how todo.py stores its state", "context": context}
     )
     assert decision["target"] == "not-grounded"
+
+
+def test_recall_query_with_a_rejected_first_ask_routes_to_an_honest_message() -> None:
+    # #82 deep recall: "the first thing I asked you to build" whose build was
+    # rejected must not reach the guessing explainer seat — it routes to the
+    # deterministic recall-answer, honest that nothing shipped (turn-10 miss).
+    decision = _classify(
+        {
+            "task": "what did the first thing I asked you to build do?",
+            "recall_ledger": [
+                {"ask": "build a todo app", "path": "", "shipped": False}
+            ],
+        }
+    )
+    assert decision["target"] == "recall-answer"
+    assert decision["build"] is False
