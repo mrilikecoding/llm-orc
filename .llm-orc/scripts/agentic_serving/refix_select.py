@@ -6,6 +6,14 @@ sometimes echoes a copy of the test alongside the fix, and shipping both
 would embed the test suite in the deliverable). Emits the flat
 {requirement, code, tests} the accept executor verifies (accept_executor's
 own dependency scan picks this response up unmodified).
+
+When rung 1.5 found no visible test to re-gate against, a minimal smoke
+test is injected so the executor still verifies the candidate at least
+LOADS cleanly (the runner execs the code before any test, so a candidate
+that parses but fails to import fails this gate) — a re-fix must never
+clobber the original with an unvalidated whole-file regen (F3, merge-gate
+review). The smoke test is internal-only; the deliverable is the code
+alone.
 """
 
 from __future__ import annotations
@@ -18,6 +26,8 @@ from _helpers import extract_code as _extract_code
 from _helpers import payload as _payload
 from _helpers import response as _response
 from _helpers import terminal as _terminal
+
+_SMOKE_TEST = "def test_refix_candidate_loads_cleanly():\n    pass\n"
 
 
 def main() -> None:
@@ -38,14 +48,19 @@ def main() -> None:
         code = _extract_code(generated, drop_test_blocks=True)
         edit_kind = "model"
 
+    visible_test = str(gathered.get("visible_test", ""))
+    smoke_only = not visible_test.strip()
+    tests = _SMOKE_TEST if smoke_only else visible_test
+
     print(
         json.dumps(
             {
                 "requirement": str(gathered.get("task", "")),
                 "code": code,
-                "tests": str(gathered.get("visible_test", "")),
+                "tests": tests,
                 "target_file": str(gathered.get("target_file", "")),
                 "edit_kind": edit_kind,
+                "smoke_only": smoke_only,
             }
         )
     )
