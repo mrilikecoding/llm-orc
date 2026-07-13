@@ -1090,14 +1090,12 @@ def test_recall_does_not_fire_on_a_non_explain_build_turn() -> None:
     assert decision["file"] != "storage.py"
 
 
-def test_recall_fuzzy_first_phrasing_defers_to_the_decider() -> None:
-    # Detection layer 2 (#82): the tight _RECALL_RE only anchors the exact
-    # "first thing … I/you … build" phrasing. A fuzzy first-ordinal recall
-    # ("the earliest thing you built") is is_explain with no named file, so it
-    # defers to the guarded model-decider — needs_decider, empty target — with
-    # the honest first-build answer pre-computed for resolve to apply on a
-    # recall vote. Selection stays structural (ledger[0]), so the model only
-    # decides recall-vs-explain, never which file.
+def test_recall_fuzzy_first_windowed_out_answers_deterministically() -> None:
+    # Finding 2 fail-closed (#82): a fuzzy first-ordinal recall whose first
+    # build is windowed OUT of context (built_deep) routes STRUCTURALLY to the
+    # honest recall answer — NO decider. An ungrounded explainer could only
+    # guess here, so deep-history recall honesty must never depend on the cheap
+    # decider vote. Selection stays structural (ledger[0]).
     decision = _classify(
         {
             "task": "what was the earliest thing you built in this session?",
@@ -1108,16 +1106,39 @@ def test_recall_fuzzy_first_phrasing_defers_to_the_decider() -> None:
             "context": "",
         }
     )
+    assert decision["needs_decider"] is False
+    assert decision["target"] == "recall-answer"
+    assert "todo.py" in decision["recall_answer"]
+
+
+def test_recall_fuzzy_first_visible_defers_to_the_decider() -> None:
+    # When the first build IS visible (grounded), the explainer can answer from
+    # the wire, so a fuzzy first-ordinal recall defers to the decider
+    # (recall-vs-concept) rather than forcing the recall answer — the low-risk
+    # case where a mis-vote is not a deep-history guess. The honest answer is
+    # pre-computed for resolve to apply on a recall vote.
+    context = "assistant: [wrote todo.py]\n  def add_todo():\n      return 1"
+    decision = _classify(
+        {
+            "task": "what was the earliest thing you built in this session?",
+            "recall_ledger": [
+                {"ask": "build a todo app", "path": "todo.py"},
+                {"ask": "build a calculator", "path": "calc.py"},
+            ],
+            "context": context,
+        }
+    )
     assert decision["needs_decider"] is True
     assert decision["target"] == ""
     assert "todo.py" in decision["recall_answer"]
 
 
-def test_recall_widened_first_synonyms_defer_to_the_decider() -> None:
+def test_recall_widened_first_synonyms_are_recognized_when_windowed_out() -> None:
     # Adversarial review finding 3: genuine first-recall phrasings beyond the
     # {first,earliest,initial} set ("originally", "1st", "at the start", "the
-    # very beginning") must not route straight to the guessing explainer — they
-    # defer to the decider like any other fuzzy first-ordinal recall.
+    # very beginning") must not route straight to the guessing explainer. With
+    # the first build windowed out (context=""), the finding-2 fail-closed
+    # answers them deterministically (recall-answer, no decider).
     ledger = [{"ask": "build a todo app", "path": "todo.py"}]
     for task in (
         "what did you build originally?",
@@ -1126,8 +1147,8 @@ def test_recall_widened_first_synonyms_defer_to_the_decider() -> None:
         "what was the very beginning of what you wrote?",
     ):
         decision = _classify({"task": task, "recall_ledger": ledger, "context": ""})
-        assert decision["needs_decider"] is True, task
-        assert decision["target"] == "", task
+        assert decision["needs_decider"] is False, task
+        assert decision["target"] == "recall-answer", task
 
 
 def test_recall_fuzzy_first_with_a_named_file_stays_on_grounded_explain() -> None:
