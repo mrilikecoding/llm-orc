@@ -77,6 +77,44 @@ def test_seat_envelope_diagnostics_survive_the_snippet_cap() -> None:
     assert len(diagnostics["retry_input"]) <= 281
 
 
+def test_chain_plan_records_the_routed_chain_and_step() -> None:
+    """Issue #120: a multi-pass serving turn must be diagnosable from the
+    trace by which chain/step it routed to — read from the classify node's
+    FULL response (before snippeting), mirroring the seat-diagnostics test
+    above."""
+    import json
+
+    classify_response = json.dumps(
+        {
+            "target": "code-seat",
+            "chain": "build",
+            "step_index": 3,
+            "task": "x" * 5000,
+        }
+    )
+    result = {
+        "results": {"classify": {"status": "success", "response": classify_response}}
+    }
+
+    trace = build_turn_trace("serving", result)
+
+    assert trace["chain_plan"] == {
+        "chain": "build",
+        "step_index": 3,
+        "target": "code-seat",
+    }
+
+
+def test_chain_plan_omitted_when_classify_did_not_run() -> None:
+    """A toolless/short-circuit turn that never runs the serving ensemble
+    has no classify node at all — chain_plan is omitted, not an error."""
+    result = {"results": {"emit": {"status": "success", "response": "ok"}}}
+
+    trace = build_turn_trace("serving", result)
+
+    assert "chain_plan" not in trace
+
+
 def test_emit_never_propagates_a_trace_build_failure(tmp_path: Path) -> None:
     """PR #116 review: 'tracing must never break the serve' — a hostile
     child response (pathologically nested JSON raises RecursionError at
