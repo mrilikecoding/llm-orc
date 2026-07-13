@@ -118,14 +118,29 @@ to a structural fast-path (the role `_INTERROGATIVE_RE` already plays).
 It lives in classify only — the caller no longer carries a copy, so
 there is no regex-parity coupling to test.
 
-**Layer 2 — model extension (`maybe_recall` + the `decide` node).** A
-loose pre-filter — `is_explain` + a first-semantic term
-(first/1st/earliest/initial/originally/original/beginning/"the start";
-widened after adversarial-review finding 3, which found genuine recalls
-outside a narrower set reaching the guessing seat) and **no named file**
-(a named file already belongs to grounded-explain) — that did NOT match
-the tight regex sets a new `SignalBundle.defer_recall`. Last/Nth are
-named-forward (the selector answers `ledger[0]`). `_explain_explainer`'s guard becomes
+**Layer 2 — model extension (`maybe_recall` + the `decide` node), with a
+deterministic fail-closed.** A loose pre-filter — `is_explain` + a
+first-semantic term (first/1st/earliest/initial/originally/original/
+beginning/"the start"; widened after adversarial-review finding 3, which
+found genuine recalls outside a narrower set reaching the guessing seat)
+and **no named file** (a named file already belongs to grounded-explain)
+— that did NOT match the tight regex splits on the selection case
+(finding-2 fail-closed):
+
+- **built_deep** (the first build is windowed OUT of context): route
+  STRUCTURALLY to `recall-answer`, NO decider. An ungrounded explainer
+  could only guess here, so deep-history recall honesty stays
+  deterministic — this is the exact case #82 exists for. An over-fire on
+  a concept question that happens to trip the filter is
+  irrelevant-but-true, never a lie.
+- **grounded** (first build visible) or **none** (nothing shipped): set
+  `SignalBundle.defer_recall` → the `decide` node judges recall-vs-
+  concept. A mis-vote here is low-risk: grounded means the explainer can
+  answer from the visible wire, and none means there is no wrong file to
+  name. The honest answer is pre-computed for resolve to apply on a
+  recall vote.
+
+Last/Nth are named-forward (the selector answers `ledger[0]`). `_explain_explainer`'s guard becomes
 `is_explain and not defer_recall`, so a deferred turn matches no
 `CHAIN_EXPLAIN` step, falls through to `CHAIN_DECIDER`, and emits
 `needs_decider=true`. classify pre-computes the honest `recall_answer`
@@ -187,20 +202,20 @@ routing table" line).
   clears it too on any non-recall decider vote, and a recall vote with
   no pre-computed message falls back to the explainer, never an empty
   recall shape (finding 5).
-- **Structural floor honesty is deterministic; the deferred layer's
-  honesty depends on the decider (accepted tradeoff, finding 2).** The
-  measured turn-10 phrasing rides the tight `_RECALL_RE` floor, so its
-  honesty never depends on the model. On the deferred layer, a genuine
-  recall the cheap decider votes `explainer` for routes to the plain
-  (ungrounded) explainer, which can guess on deep history — the original
-  miss, reintroduced for fuzzy phrasings only. This is the inherent
-  model-detection tradeoff (the practitioner chose model detection this
-  session); the change still strictly improves on the pre-rework
-  regex-only baseline (which sent every fuzzy phrasing to the guessing
-  seat). The exit gate must stress the decider's recall-vs-explainer
-  accuracy on fuzzy phrasings, not only turn 10; if it proves
-  unreliable, the fork is to widen the structural floor or make the
-  deferred non-recall branch fail closed.
+- **Deep-history recall honesty is deterministic; the decider only judges
+  the low-risk cases (finding 2, fail-closed).** Both hard cases are
+  deterministic: the measured turn-10 phrasing rides the tight
+  `_RECALL_RE` floor, and a fuzzy first-recall whose first build is
+  windowed out (`built_deep`) routes structurally to the honest answer
+  with no decider (Layer 2 above). The decider is consulted only when the
+  explainer can itself be honest — grounded (first build visible) or none
+  (nothing to misname) — so a decider mis-vote there is not a
+  deep-history guess. This closes the finding-2 residual the review
+  named (calc.py windowed out, storage.py visible, "what was the earliest
+  thing you built?"): that turn is `built_deep`, so it answers `calc.py`
+  deterministically regardless of the decider. The live gate still
+  exercises a windowed-out fuzzy turn to confirm the structural routing
+  end-to-end.
 - **Fail closed to honesty (structural + decider-recall paths).** An
   empty/malformed `recall_ledger`, or a recall match with no shipped
   build → the honest "nothing built yet" message, never the guessing

@@ -631,6 +631,18 @@ def _recall_route(
         return named_file, named_basename, True, _recall_message(case, ask, path), False
     if not named_file and _MAYBE_RECALL_RE.search(task):
         case, ask, path = _recall_select(turn, context)
+        if case == "built_deep":
+            # Finding 2 fail-closed: the first build is windowed out of context,
+            # so an ungrounded explainer could only GUESS. Answer structurally
+            # (no decider) — deterministic honesty on the deep-history case #82
+            # exists for. Over-fire on a concept question is irrelevant-but-
+            # true, never a lie.
+            message = _recall_message(case, ask, path)
+            return named_file, named_basename, True, message, False
+        # grounded (first build visible) or none: the explainer can answer
+        # honestly (from the visible wire, or a concept explanation), so let the
+        # decider judge recall-vs-concept — a mis-vote here is not a deep-history
+        # guess. grounded collapses into the built_deep "ask me to read" message.
         msg_case = "built_deep" if case == "grounded" else case
         message = _recall_message(msg_case, ask, path)
         return named_file, named_basename, False, message, True
