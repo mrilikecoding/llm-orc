@@ -1213,12 +1213,19 @@ def test_fix_chain_regex_stays_in_sync_with_classify() -> None:
     pattern AND flags equal — a one-sided IGNORECASE drop or rename fails
     here (PR #115 review note)."""
     import importlib.util
+    import sys
     from pathlib import Path
 
     from llm_orc.web.serving.serving_ensemble_caller import _FIX_CHAIN_RE
 
     repo = Path(__file__).resolve().parents[4]
-    script = repo / ".llm-orc" / "scripts" / "agentic_serving" / "classify.py"
+    scripts_dir = repo / ".llm-orc" / "scripts" / "agentic_serving"
+    # classify.py imports its sibling _helpers at module scope, so the
+    # scripts dir must be on sys.path before exec_module — the engine sets
+    # sys.path[0] to the script's dir at runtime, this reproduces that.
+    if str(scripts_dir) not in sys.path:
+        sys.path.insert(0, str(scripts_dir))
+    script = scripts_dir / "classify.py"
     spec = importlib.util.spec_from_file_location("serving_classify", script)
     assert spec is not None
     assert spec.loader is not None
