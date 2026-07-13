@@ -709,6 +709,7 @@ def main() -> None:
         decision.build,
         decision.needs_decider,
     )
+    chain, step_index = decision.chain, decision.step_index
     # needs_run mirrors the routing decision itself (rather than the old
     # pre-route "wants_run and not has_run_block" guess) so a SECOND
     # need-run round — the re-fix's write awaiting its own run — reissues
@@ -788,6 +789,8 @@ def main() -> None:
                 "needs_glob": needs_glob,
                 "glob_failed": glob_failed,
                 "not_grounded": not_grounded,
+                "chain": chain,
+                "step_index": step_index,
             }
         )
     )

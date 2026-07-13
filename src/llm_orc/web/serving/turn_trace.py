@@ -80,6 +80,26 @@ def _diagnostics(response: Any) -> dict[str, Any] | None:
     return None
 
 
+_CHAIN_PLAN_KEYS = ("chain", "step_index", "target")
+
+
+def _chain_plan(response: Any) -> dict[str, Any] | None:
+    """The classify node's ``{chain, step_index, target}`` routing decision,
+    read from its FULL response (before snippeting) so the values survive
+    un-clipped — mirrors ``_diagnostics``. ``None`` when the response is
+    absent, unparseable, or missing a routing key (e.g. a toolless/short-
+    circuit turn that never runs the serving ensemble)."""
+    if not isinstance(response, str):
+        return None
+    try:
+        data = json.loads(response)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(data, dict) or not all(key in data for key in _CHAIN_PLAN_KEYS):
+        return None
+    return {key: data[key] for key in _CHAIN_PLAN_KEYS}
+
+
 def _seat_entry(name: str, node: Any) -> dict[str, Any]:
     """One child-node trace entry: snippeted response plus the structured
     envelope diagnostics when the node carries them."""
@@ -95,7 +115,12 @@ def build_turn_trace(ensemble_name: str, result_dict: dict[str, Any]) -> dict[st
     """Per-node introspection from the engine's execution result."""
     results = result_dict.get("results", {})
     nodes: list[dict[str, Any]] = []
+    classify_response: Any = None
     if isinstance(results, dict):
+        classify_node = results.get("classify")
+        classify_response = (
+            classify_node.get("response") if isinstance(classify_node, dict) else None
+        )
         for name, node in results.items():
             response = node.get("response") if isinstance(node, dict) else None
             entry: dict[str, Any] = {
@@ -110,11 +135,15 @@ def build_turn_trace(ensemble_name: str, result_dict: dict[str, Any]) -> dict[st
                     for child_name, child_node in child.items()
                 ]
             nodes.append(entry)
-    return {
+    trace: dict[str, Any] = {
         "ensemble": ensemble_name,
         "execution_order": result_dict.get("execution_order", []),
         "nodes": nodes,
     }
+    chain_plan = _chain_plan(classify_response)
+    if chain_plan is not None:
+        trace["chain_plan"] = chain_plan
+    return trace
 
 
 def summarize_turn_trace(trace: dict[str, Any]) -> str:
