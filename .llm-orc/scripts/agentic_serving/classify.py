@@ -529,6 +529,67 @@ def _turn(raw: str) -> dict:
     return {"task": ""}
 
 
+def _discover_and_read(
+    task: str,
+    context: str,
+    tests_primary: bool,
+    has_build_signal: bool,
+    named_file: str,
+    named_basename: str,
+) -> tuple[str, str, str, str, list[str], str]:
+    """The discover -> read seam (issue #83) plus rung 1.5's target-test read
+    batched into the same round: (named_file, named_basename, needs_glob,
+    glob_failed, needs_files, read_failed). A glob MATCH renames the turn's
+    file; the target-test read never causes a refusal on its own."""
+    needs_glob, glob_file, glob_failed = _discovery(
+        task, context, tests_primary, has_build_signal
+    )
+    if glob_file:
+        # issue #83 discovery MATCH step: the single candidate is the turn's
+        # named file — the EXISTING read seam takes over (invisible -> one
+        # read request; visible -> the seat builds against the right dest).
+        named_file = glob_file
+        named_basename = glob_file.rsplit("/", 1)[-1]
+    needs_files, read_failed = _files_to_request(
+        task, context, tests_primary, has_build_signal, glob_file
+    )
+    if not read_failed:
+        # rung 1.5 (convergent-fix design): batched into the same read round
+        # as the target-file request above, never refusing on its own.
+        target_test = _target_test_file(task, named_basename, context, tests_primary)
+        if target_test and target_test not in needs_files:
+            needs_files = [*needs_files, target_test]
+    return (
+        named_file,
+        named_basename,
+        needs_glob,
+        glob_failed,
+        needs_files,
+        read_failed,
+    )
+
+
+def _fix_chain_route(
+    needs_another_run: bool, has_refixed: bool, failure_shape: str
+) -> tuple[str, str, bool, bool]:
+    """The run/verdict/re-fix routing for a fix-led turn (fix-execution +
+    convergent-fix rung 2)."""
+    if needs_another_run:
+        # fix-execution run leg (rung 1) or rung 2's re-fix run leg: a write
+        # this turn — the fix's own or the re-fix's — has no run of its own
+        # yet. wrote_path/write_count are structural, from the caller's
+        # post-boundary tool_calls; delegate ONE closed-template run.
+        return "need-run", "need_run", False, False
+    if not has_refixed and failure_shape == "localized":
+        # rung 2, convergent-fix design: a red, localized verdict on a
+        # fix-led turn routes to the bounded one-round re-fix instead of
+        # today's honest-red terminal.
+        return "re-fix", "re_fix", True, False
+    # every write this turn has a matching run — the LATEST verdict is
+    # terminal (green, structural-red, or already-refixed).
+    return "run-verdict", "run_verdict", False, False
+
+
 def _route(
     *,
     is_explain: bool,
@@ -553,20 +614,7 @@ def _route(
     failed" delegates the run instead of narrating one.
     """
     if fix_chain:
-        if needs_another_run:
-            # fix-execution run leg (rung 1) or rung 2's re-fix run leg: a
-            # write this turn — the fix's own or the re-fix's — has no run
-            # of its own yet. wrote_path/write_count are structural, from
-            # the caller's post-boundary tool_calls; delegate ONE
-            # closed-template run to verify client-side.
-            return "need-run", "need_run", False, False
-        # every write this turn has a matching run — parse the LATEST one.
-        if not has_refixed and failure_shape == "localized":
-            # rung 2, convergent-fix design: a red, localized verdict on a
-            # fix-led turn routes to the bounded one-round re-fix instead
-            # of today's honest-red terminal.
-            return "re-fix", "re_fix", True, False
-        return "run-verdict", "run_verdict", False, False
+        return _fix_chain_route(needs_another_run, has_refixed, failure_shape)
     if run_signal and has_run_block:
         # issue #83 run half: the client ran the command — the deliverable
         # is the deterministic verdict, one run round per turn.
@@ -652,32 +700,25 @@ def main() -> None:
         else ""
     )
 
-    needs_glob = glob_file = glob_failed = ""
+    needs_glob = glob_failed = ""
     needs_files: list[str] = []
     read_failed = ""
     if not is_explain and not run_signal and not fix_chain:
-        needs_glob, glob_file, glob_failed = _discovery(
-            task, conversation_raw, tests_primary, has_build_signal
+        (
+            named_file,
+            named_basename,
+            needs_glob,
+            glob_failed,
+            needs_files,
+            read_failed,
+        ) = _discover_and_read(
+            task,
+            conversation_raw,
+            tests_primary,
+            has_build_signal,
+            named_file,
+            named_basename,
         )
-        if glob_file:
-            # issue #83 discovery MATCH step: the single candidate is the
-            # turn's named file — the EXISTING read seam takes over
-            # (invisible -> one read request fires; visible -> the seat
-            # builds against it with the right destination)
-            named_file = glob_file
-            named_basename = glob_file.rsplit("/", 1)[-1]
-        needs_files, read_failed = _files_to_request(
-            task, conversation_raw, tests_primary, has_build_signal, glob_file
-        )
-        if not read_failed:
-            # rung 1.5 (convergent-fix design): batched into the same read
-            # round as the target-file request above, never causing a
-            # refusal on its own
-            target_test = _target_test_file(
-                task, named_basename, conversation_raw, tests_primary
-            )
-            if target_test and target_test not in needs_files:
-                needs_files = [*needs_files, target_test]
     target, kind, build, needs_decider = _route(
         is_explain=is_explain,
         run_signal=run_signal,
