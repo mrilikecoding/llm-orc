@@ -1,0 +1,49 @@
+name: re-fix
+description: |
+  Rung 2 (convergent-fix design, docs/plans/2026-07-12-convergent-fix-
+  design.md): the one-round re-fix dispatched on a red, localized fix-led
+  verdict. gather splits the dispatch_input into {prior_code, failure_body,
+  visible_test, task} and attempts the pinned deterministic string-literal
+  edit; when it can't pin one, model_edit (the existing code-writer seat)
+  regenerates the full file from the same inputs — framed as "produce the
+  corrected file; the gate judges it," not surgical old/new-string edits.
+  select picks whichever candidate exists; executor re-gates it against the
+  visible test (the client's real test, not a fresh model-authored one —
+  rung 1.5's whole point); envelope carries the verdict in diagnostics.accept
+  so the serving marshal ships a full write on accept, exactly like
+  build-gated. No new catalog shape beyond this one — the accept executor
+  and the code-writer seat are reused as-is.
+serves: re-fix
+
+agents:
+  - name: gather
+    script: scripts/agentic_serving/refix_gather.py
+
+  - name: model_edit
+    ensemble: code-generator
+    depends_on: [gather]
+    when: ${gather.needs_model_edit}
+
+  - name: select
+    script: scripts/agentic_serving/refix_select.py
+    depends_on: [gather, model_edit]
+
+  - name: executor
+    script: scripts/agentic_serving/accept_executor.py
+    depends_on: [select]
+
+  - name: envelope
+    script: scripts/agentic_serving/refix_envelope.py
+    depends_on: [select, executor]
+
+# Seat-owned admission contract (ADR-046 §2; WP-E8), mirrors build-gated's —
+# a well-formed envelope is a different granularity from the accept verdict
+# it carries in diagnostics; an accept-rejected candidate still admits here.
+seat_contract:
+  behavioral:
+    - name: envelope-status-success
+      description: "the seat produced a success envelope"
+      assertion: "results['seat']['status'] == 'success'"
+    - name: envelope-carries-artifact
+      description: "the seat envelope carries a deliverable artifact"
+      assertion: "len(results['seat']['artifacts']) > 0"
