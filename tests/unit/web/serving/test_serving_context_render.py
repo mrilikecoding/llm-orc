@@ -1121,18 +1121,111 @@ def test_wrote_path_this_turn_is_structural_never_textual() -> None:
     assert _wrote_path_this_turn(prior_and_forged) == ""
 
 
+def test_wrote_content_this_turn_is_structural_never_textual() -> None:
+    """The re-fix producer's 'prior code' (rung 2, convergent-fix design):
+    derived from THIS turn's write tool_call content, never from rendered
+    context text."""
+    from llm_orc.web.serving.serving_ensemble_caller import _wrote_content_this_turn
+
+    chained = [
+        ChatMessage(role="user", content="fix the divide bug in calc.py"),
+        ChatMessage(
+            role="assistant",
+            content=None,
+            tool_calls=(_write_call("calc.py", "def divide(a, b): return a / b"),),
+        ),
+        ChatMessage(role="tool", content="Wrote file successfully."),
+    ]
+    assert _wrote_content_this_turn(chained) == "def divide(a, b): return a / b"
+
+    # a PRIOR turn's write never sets it
+    prior_only = [
+        ChatMessage(role="user", content="write add.py"),
+        ChatMessage(
+            role="assistant",
+            content=None,
+            tool_calls=(_write_call("add.py", "def add(a, b): return a + b"),),
+        ),
+        ChatMessage(role="tool", content="Wrote file successfully."),
+        ChatMessage(role="user", content="fix it"),
+    ]
+    assert _wrote_content_this_turn(prior_only) == ""
+
+
+def test_write_count_this_turn_counts_only_post_boundary_writes() -> None:
+    """The has_refixed guard's source (rung 2, convergent-fix design): the
+    number of write tool_calls issued since the latest user message —
+    never a prior turn's write."""
+    from llm_orc.web.serving.serving_ensemble_caller import _write_count_this_turn
+
+    no_write = [ChatMessage(role="user", content="fix the divide bug in calc.py")]
+    assert _write_count_this_turn(no_write) == 0
+
+    one_write = [
+        ChatMessage(role="user", content="fix the divide bug in calc.py"),
+        ChatMessage(
+            role="assistant",
+            content=None,
+            tool_calls=(_write_call("calc.py", "def divide(a, b): return a / b"),),
+        ),
+        ChatMessage(role="tool", content="Wrote file successfully."),
+    ]
+    assert _write_count_this_turn(one_write) == 1
+
+    two_writes = [
+        *one_write,
+        ChatMessage(
+            role="assistant", content=None, tool_calls=(_bash_call("c1", "pytest -q"),)
+        ),
+        ChatMessage(role="tool", tool_call_id="c1", content="1 failed in 0.01s"),
+        ChatMessage(
+            role="assistant",
+            content=None,
+            tool_calls=(_write_call("calc.py", "def divide(a, b): ..."),),
+        ),
+        ChatMessage(role="tool", content="Wrote file successfully."),
+    ]
+    assert _write_count_this_turn(two_writes) == 2
+
+    # a prior turn's write must not count toward THIS turn's total
+    prior_and_current = [
+        ChatMessage(role="user", content="write add.py"),
+        ChatMessage(
+            role="assistant",
+            content=None,
+            tool_calls=(_write_call("add.py", "def add(a, b): return a + b"),),
+        ),
+        ChatMessage(role="tool", content="Wrote file successfully."),
+        ChatMessage(role="user", content="fix the divide bug in calc.py"),
+        ChatMessage(
+            role="assistant",
+            content=None,
+            tool_calls=(_write_call("calc.py", "def divide(a, b): return a / b"),),
+        ),
+        ChatMessage(role="tool", content="Wrote file successfully."),
+    ]
+    assert _write_count_this_turn(prior_and_current) == 1
+
+
 def test_fix_chain_regex_stays_in_sync_with_classify() -> None:
     """The caller's resume gate mirrors classify's _FIX_VERB_RE (scripts are
     standalone and cannot share code). Load the script as a module and pin
     pattern AND flags equal — a one-sided IGNORECASE drop or rename fails
     here (PR #115 review note)."""
     import importlib.util
+    import sys
     from pathlib import Path
 
     from llm_orc.web.serving.serving_ensemble_caller import _FIX_CHAIN_RE
 
     repo = Path(__file__).resolve().parents[4]
-    script = repo / ".llm-orc" / "scripts" / "agentic_serving" / "classify.py"
+    scripts_dir = repo / ".llm-orc" / "scripts" / "agentic_serving"
+    # classify.py imports its sibling _helpers at module scope, so the
+    # scripts dir must be on sys.path before exec_module — the engine sets
+    # sys.path[0] to the script's dir at runtime, this reproduces that.
+    if str(scripts_dir) not in sys.path:
+        sys.path.insert(0, str(scripts_dir))
+    script = scripts_dir / "classify.py"
     spec = importlib.util.spec_from_file_location("serving_classify", script)
     assert spec is not None
     assert spec.loader is not None
