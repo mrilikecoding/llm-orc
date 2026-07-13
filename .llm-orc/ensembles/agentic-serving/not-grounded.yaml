@@ -1,0 +1,13 @@
+name: not-grounded
+description: |
+  grounded-explain design (docs/plans/2026-07-12-grounded-explain-design.md)
+  — the dispatch target for an explain turn naming a real file target that
+  has no visible build or read on the wire. The honest refusal message
+  rides the ROUTING decision (classify -> resolve -> shape -> form_gate ->
+  emit), never this seat's output; this node only satisfies the skeleton's
+  dispatch step with a minimal ADR-024 envelope, at zero model cost — the
+  explainer seat is never invoked, so no speculation path exists.
+serves: not-grounded
+agents:
+  - name: echo
+    script: scripts/agentic_serving/not_grounded_echo.py

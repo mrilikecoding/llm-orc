@@ -13,6 +13,7 @@ serve never writes a deliverable that failed destination-validity.
     needs files:     {"finish": false, "reads": ["<path>", ...]}
     needs glob:      {"finish": false, "glob": "<stem>"}
     needs run:       {"finish": false, "run": "<command>"}
+    not grounded:    {"finish": true, "content": "No `<target>` in this session..."}
     build + valid:   {"finish": false, "file": "<path>", "content": "<source>"}
     build + refused: {"finish": true, "content": "Refused: <reason>"}
     non-build:       {"finish": true, "content": "<prose>"}
@@ -26,6 +27,16 @@ from __future__ import annotations
 
 import json
 import sys
+
+# grounded-explain design (docs/plans/2026-07-12-grounded-explain-design.md):
+# a deterministic, non-speculative honest message — never "Refused:", since
+# nothing was requested and refused; the turn is answered honestly instead of
+# guessed. classify supplies the target basename via ``not_grounded``.
+_NOT_GROUNDED_MESSAGE = (
+    "No `{target}` in this session (no successful build or read of it), so "
+    "I can't explain its internals without guessing. If it's in your "
+    "workspace, ask me to read it."
+)
 
 
 def _deps(raw: str) -> dict:
@@ -63,6 +74,13 @@ def _seam_outcome(gated: dict) -> dict | None:
     if needs_run:
         # issue #83 run half: delegate one closed-template test run.
         return {"finish": False, "run": needs_run}
+    not_grounded = str(gated.get("not_grounded", ""))
+    if not_grounded:
+        # grounded-explain design: the target named in an explain turn has
+        # no visible build or read on the wire — the explainer seat was
+        # never called, so there is no speculation path to guard here.
+        message = _NOT_GROUNDED_MESSAGE.format(target=not_grounded)
+        return {"finish": True, "content": message}
     return None
 
 
