@@ -744,9 +744,13 @@ def test_mid_sentence_edit_words_never_chain_even_with_a_write() -> None:
 
 
 def _refix_turn(run_body: str, write_count: int = 1) -> dict[str, object]:
+    # every run-body line carries the renderer's two-space indent — a
+    # multi-line body whose later lines land at column 0 would fall OUTSIDE
+    # the block and silently drop the summary/traceback the classifier reads
+    indented = "\n".join(f"  {line}" for line in run_body.splitlines())
     context = (
         "assistant: [read calc.py]\n  def divide(a, b): return a / b\n"
-        f"assistant: [ran pytest -q]\n  {run_body}"
+        f"assistant: [ran pytest -q]\n{indented}"
     )
     return {
         "task": "fix the divide bug in calc.py",
@@ -783,6 +787,38 @@ def test_structural_name_error_stays_on_the_honest_red_terminal_even_with_passes
     )
     decision = _classify(_refix_turn(body))
     assert decision["target"] == "run-verdict"
+
+
+def test_structural_traceback_error_without_an_error_count_stays_structural() -> None:
+    # a NameError raised INSIDE a test body reports as FAILED (not a
+    # collection ERROR), so the summary has no error count — the traceback
+    # regex is the only structural signal, and it must fire
+    body = (
+        "F.\n"
+        "E   NameError: name 'undefined_name' is not defined\n"
+        "1 failed, 1 passed in 0.02s"
+    )
+    decision = _classify(_refix_turn(body))
+    assert decision["target"] == "run-verdict"
+
+
+def test_structural_module_not_found_error_stays_structural() -> None:
+    # ModuleNotFoundError is an ImportError SUBCLASS — the most common
+    # import failure. It must fail closed to structural, not waste a re-fix
+    body = (
+        "F.\n"
+        "E   ModuleNotFoundError: No module named 'foo'\n"
+        "1 failed, 2 passed in 0.02s"
+    )
+    decision = _classify(_refix_turn(body))
+    assert decision["target"] == "run-verdict"
+
+
+def test_structural_indentation_and_tab_errors_stay_structural() -> None:
+    for name in ("IndentationError", "TabError"):
+        body = f"F.\nE   {name}: unexpected indent\n1 failed, 2 passed in 0.02s"
+        decision = _classify(_refix_turn(body))
+        assert decision["target"] == "run-verdict", name
 
 
 def test_structural_zero_collected_stays_on_the_honest_red_terminal() -> None:
