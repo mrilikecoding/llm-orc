@@ -72,6 +72,7 @@ so far:
 | 2026-07-10 (#83 discovery) | 12-turn recorded ladder (discovery rung added) | **3/12, infra-degraded** | The rung this battery validates PASSED clean: turn 12 globbed the unnamed metrics module, read the match, shipped test_metrics.py (green client-side). Run rung honest ("no tests ran" — accurate at that moment), phantom refusal honest. The rest is rig exhaustion after six batteries in one day: four turns timed out with EMPTY output (not rejects — the request died client- or model-side), cascading the todo chain. Zero dishonest outcomes. NOT comparable to the series; fresh-rig rerun is the next session's first act. Separate live probes (same code): 1-match chain, 0-match refusal, 2-match refusal all green |
 | 2026-07-10 (fresh-rig rerun, v0.18.11) | 12-turn recorded ladder, clean infra (12 turns in 12.5 min, zero timeouts) | **6/12** | All shipped rungs green: memory (turn 5), storage build (6), read→tests (8, 4 green client-side), phantom refusal (9), run delegation (11, verdict matched ground truth), discovery chain (12, glob→read→test_metrics.py green). Misses: turn 1 round-1 reject (code referenced an undefined `todo` name) cascading through 2/3/4/7, and turn 10 deep recall. **Two misses were NOT honest** — a first for the recorded series: turn 3 shipped hedged speculation about the never-built todo.py instead of saying so (grounded-explain gap), and turn 10 confidently named calc-tests as "the first thing built" (wrong under both readings; #82 evidence). Structural readings: turn-1 build success gates 5 of 12 turns, so run-to-run variance ≈ 5 points on one seat sample; the serve trace truncates node responses (~280 chars), leaving the held-round question undiagnosable post-hoc; the wire log is shape-only, so the verbatim glob capture remains outstanding |
 | 2026-07-10 (fix-execution rung) | 13-turn recorded ladder (fix rung added: seeded-red buggy.py; one 600s timeout) | **6/13** | THE NEW RUNG'S MECHANISM PROVED IN-BATTERY: turn 13 chained read → write → delegated `pytest -q` → verdict, and the verdict was honest and precise — the seat's fix added the guard with its own exception message ("scale of empty sequence") where the seeded test expects "no values", and the verdict surfaced the exact expected-vs-actual regex mismatch. Honest miss by the strict rule (the seeded test stayed red), and the failure report is precisely the carry a rung-2 re-fix loop needs — plus a cheap rung-1.5: read the visible test_<stem>.py when fixing <stem>.py so the fix sees the expected behavior. Also observed: turn 8's "tests for existing calc.py" triggered the chain via the "existing" verb after its tests-seat write (honest whole-suite report; not designed-for, informative in practice). Other passes: 5, 6, 8, 9, 11 (verdict matched ground truth), 12 (discovery chain green). Misses: turn 1 honest reject cascading 3/4/7, turn 2 a 600s client timeout (the seat's 720s two-round budget exceeds the battery cap — latency class, not a reject), turn 10 wrong recall (named storage.py, the first successful build, as "the first thing asked" — the todo ask came first; #82) |
+| 2026-07-12 (convergent-fix + grounded-explain, merged) | 13-turn recorded ladder, real OpenCode on merged main (baseline 8b) | **10/13** | Both WS-1 and WS-2 item 1 validated live. Turn 13 CONVERTED (convergent-fix exit gate met): rung 1.5 read `test_buggy.py` before fixing, so the fix saw the expected "no values" contract and wrote the correct guard on the first try (`10 passed`, seeded-red now green), deterministic where every prior run's turn 13 missed on a self-invented message. Turn 3 grounded and honest (grounded-explain): todo.py was built, so the gate explained the real content and correctly reflected only `add_todo_item`, not turn 2's rejected `complete_todo`. No regressions on the read/run/discovery/refusal rungs. The one dishonest outcome is turn 10 (named calc.py, the seeded file, as "the first thing built"), i.e. #82 deep recall (WS-2 item 2), NOT in this session's scope. Rung 2 (re-fix) did not need to fire live because rung 1.5 made the first fix correct; it stays hermetic + server-validated. Part of the lift over 6/13 is turn-1/6 landing (variance); the two feature validations are causal. |
 
 The Cycle-7 benchmark harness (`research/agentic-serving-corpus` branch,
 `benchmark-runs/`) is the automation to revive for a standing
@@ -114,7 +115,7 @@ Two generalizations the upper rungs force (named 2026-07-09):
   registers, the composer itself a verified ensemble rather than a lone
   model — are the generative rung.
 
-## Current state (2026-07-11, v0.18.12)
+## Current state (2026-07-12, v0.18.13 pending)
 
 Thirteen releases in three days. v0.18.2–v0.18.7 (2026-07-09): Stage 2
 memory core, #100 TDD retry, #84 deterministic adequacy, #98
@@ -127,6 +128,19 @@ fix, retry timeout), #83 discovery (one glob round,
 exactly-one-or-refuse), and chained fix-execution (write → run →
 verdict inside one fix turn), plus trace envelope diagnostics (#114
 structured half) and wire robustness (#107, blank-message 422s).
+
+2026-07-12 (v0.18.13 pending): **convergent fix** (rung 1.5 target-read,
+read the visible `test_<stem>.py` before a fix builds; rung 2
+route-on-failure-shape re-fix, where a localized red verdict goes to a
+deterministic or model edit and a structural one to an honest reject)
+and **grounded-explain** (an explain turn naming a file answers from
+wire visibility or refuses honestly, never speculates) both landed
+behind two rounds of independent adversarial review, and both validated
+through real OpenCode on the combined ladder (10/13: turn 13 converts
+via rung 1.5, turn 3 grounded and honest; the one dishonest outcome is
+#82 deep recall, out of scope). The post-repairs seat A/B also ran
+(§#119): 14b test-writer is not a clean win, so "structure beats model
+size" holds.
 
 Shipped capability: build (accept-gated, bounded TDD retry with held
 tests), write-tests (deliverable executed against the workspace),
@@ -142,14 +156,20 @@ deterministic accept gate (per-test-isolated executor + static adequacy
 artifact). All-local (qwen3:8b) by default; operator seat overrides via
 `*.local.yaml`.
 
-**Handoff pointer (fresh-session start here):** the plan is now
-§Workstreams below. Enter at **WS-1 (fix-execution completion: rung 2
-re-fix, rung 1.5 test-read)** unless a battery regression says
-otherwise, and revive the parity arm (WS-8) early: it is mostly
-mechanical and converts "we think we're closing the gap" into a
+**Handoff pointer (fresh-session start here):** WS-1 (convergent fix)
+and WS-2 item 1 (grounded-explain) LANDED 2026-07-12 and validated live
+(trajectory row above). Enter at **WS-3, the chain executor**: the
+general deterministic chain-plan primitive that the ad-hoc chains
+(read→build, glob→read→build, write→run→verdict, and now
+convergent-fix's re-fix) migrate onto. Per the 2026-07-12 decision we
+landed the ad-hoc chains first and generalize now, with all four
+instances as evidence; grounded-explain's explain→read case is a named
+WS-3 consumer. Standing dishonest miss still open: **#82 deep recall**
+(WS-2 item 2, turn 10). Revive the parity arm (WS-8) early: it is
+mostly mechanical and converts "we think we're closing the gap" into a
 number. The recorded battery is
 `benchmarks/agentic_serving/ladder_battery.sh`, now 13 turns (series
-4/10 → 7/10 → 6/11 → 5/11 → 9/11 → 6/11 → 3/12-infra → 6/12 → 6/13;
+4/10 → 7/10 → 6/11 → 5/11 → 9/11 → 6/11 → 3/12-infra → 6/12 → 6/13 → 10/13;
 run-to-run variance ≈ 5 points rides on whether turn 1's build lands;
 turn 2's client timeout vs the seat's 720s two-round budget is a
 standing latency tension, battery cap now 780s). Standing smaller
@@ -242,7 +262,14 @@ so a Sonnet-class implementer can run it TDD from a short design doc;
 Haiku-class handles mechanical sweeps. Every arc ends with a live
 real-OpenCode validation, a ladder rerun, and a trajectory-table row.
 
-### WS-1: Fix-execution completion (NEXT; designed)
+### WS-1: Fix-execution completion (LANDED 2026-07-12)
+
+**Status:** rung 1.5 (target-read) and rung 2 (route-on-failure-shape
+re-fix) landed via convergent fix
+(`docs/plans/2026-07-12-convergent-fix-design.md`), through two rounds
+of independent adversarial review, and validated live (combined ladder
+turn 13 converts via rung 1.5). Open tail: cross-turn repair and the
+test-repair residuals (items 3-4 below).
 
 **Lever:** verified acceptance on the fix path; converts the battery's
 newest rung. Design: `docs/plans/2026-07-10-fix-execution-design.md`.
@@ -273,12 +300,17 @@ DISHONEST misses (hedged speculation on a never-built file; a
 confidently wrong "first thing built"). Honesty is the product's
 differentiator; these outrank score.
 
-1. **Grounded-explain shape** (catalog entry, path item 4's remaining
-   half): the explain seat consults the session record before
-   answering; a question about a never-shipped artifact gets "that
-   build was rejected; nothing shipped" instead of speculation; a
-   question naming a real file may ride the read seam. Deterministic
-   record-facts compose the seat input.
+1. **Grounded-explain shape** (LANDED 2026-07-12,
+   `docs/plans/2026-07-12-grounded-explain-design.md`): shipped as a
+   deterministic wire-visibility gate. No session-record store was built
+   (none is wired); grounding derives from `_visibility` over the
+   append-only wire, the explain seat is bypassed entirely on an
+   ungrounded named-file turn (honest refusal, never speculation), and
+   the explain->read case for a real client file is deferred to WS-3's
+   chain executor. Original intent: the explain seat consults the
+   session record before answering; a question about a never-shipped
+   artifact gets "that build was rejected; nothing shipped" instead of
+   speculation; a question naming a real file may ride the read seam.
 2. **#82 deep recall:** deterministic retrieval for ordinal/temporal
    prose queries ("the first thing I asked") over the lossless record.
    Selection, never summarization; the record already has turn order,
@@ -564,6 +596,23 @@ Same-seed ladder, ONE seat varied (test-writer first), everything else
 constant: {qwen3:8b, qwen3:14b think-off, coder 30B-A3B, one cheap
 hosted}. One battery converts this whole section from doctrine to
 data. Cheap, and it reuses the existing battery machinery.
+
+**Entry-evidence result (2026-07-12, first probe): 14b test-writer is
+not a clean win.** One clean all-local run varied only the test-writer
+seat (qwen3:8b -> qwen3:14b think-off), everything else constant. Score
+9/13 vs the 8b baseline 6/13, zero dishonest outcomes, but the gain is
+confound, not test quality: turn 1 landed (the known ~5-point variance
+source, gating 3/4/10 downstream) plus a turn-2 latency artifact
+(baseline timed out; 14b think-off is fast), while the two turns that
+DIRECTLY measure test-writer quality REGRESSED (turn 6 storage tests
+judged inadequate, turn 8 calc tests failed; both passed at 8b). The
+tier change made the direct signal worse, so "structure beats model
+size" is not refuted and the test-writer should not escalate on this
+evidence. The rigorous >=3-run-per-seat settle moves to WS-8. Side
+finding: turns 3 and 10 were honest here only because turn 1 landed
+(real todo.py to explain and recall); had turn 1 rejected, both go
+dishonest, which is exactly the fragility grounded-explain (WS-2) and
+#82 remove, so the probe argues FOR the honesty work.
 
 **Local rungs (free, in order):**
 
