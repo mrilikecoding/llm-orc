@@ -34,6 +34,17 @@ _MATCH_MISMATCH_RE = re.compile(
 
 _FILE_RE = re.compile(r"\b([\w./-]+\.py)\b")
 
+# The PRIOR_CODE marker only counts at COLUMN 0 (F4, merge-gate review):
+# classify composes it on its own line at column 0, and every rendered
+# read/wrote/ran body is two-space indented, so a marker-lookalike inside a
+# client-read file body can never win the split — the same column-0
+# discipline every block parser uses (fenced block grammar). ``\n`` after
+# the marker is consumed here so prior_code keeps the write's own leading
+# whitespace.
+_PRIOR_CODE_SPLIT_RE = re.compile(
+    r"(?m)^" + re.escape(_PRIOR_CODE_MARKER) + r"\n"
+)
+
 # A file block in the rendered context ([wrote ...] or [read ...]) — mirrors
 # accept_gather.py's _FILE_HEADER_RE/_workspace: body lines carry a two-
 # space indent the renderer added, so a header lookalike in untrusted
@@ -59,20 +70,22 @@ def _split_dispatch_input(text: str) -> tuple[str, str, str]:
     out from the rest, exactly as accept_gather does."""
     conversation, task = text, ""
     prior_code = ""
-    if _PRIOR_CODE_MARKER in text:
-        conversation, rest = text.split(_PRIOR_CODE_MARKER, 1)
-        conversation = conversation.strip()
-        # the marker's own trailing newline is formatting, not content —
-        # strip only that, never the write's own trailing whitespace, so
+    marker = _PRIOR_CODE_SPLIT_RE.search(text)
+    if marker:
+        conversation = text[: marker.start()].strip()
+        # the marker line (and its trailing newline) is consumed by the
+        # regex; rest keeps the write's own leading/trailing whitespace so
         # the candidate stays byte-identical to the fix pass's write apart
         # from the pinned literal
-        rest = rest.removeprefix("\n")
+        rest = text[marker.end() :]
+        # the real "Current request:" is the LAST one classify appends, so
+        # rsplit ignores a lookalike sitting inside the prior code
         if _REQUEST_MARKER in rest:
-            prior_code, task = rest.split(_REQUEST_MARKER, 1)
+            prior_code, task = rest.rsplit(_REQUEST_MARKER, 1)
         else:
             prior_code = rest
     elif _REQUEST_MARKER in text:
-        conversation, task = text.split(_REQUEST_MARKER, 1)
+        conversation, task = text.rsplit(_REQUEST_MARKER, 1)
         conversation = conversation.strip()
     return conversation, prior_code, task.strip()
 
