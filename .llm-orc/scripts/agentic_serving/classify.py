@@ -256,6 +256,38 @@ def _visibility(context: str) -> tuple[set[str], dict[str, str]]:
     return visible, attempted
 
 
+def _visible_target_body(context: str, basename: str) -> str:
+    """The LATEST visible ``[wrote <path>]``/``[read <path>]`` block's body
+    for ``basename`` (grounded-explain design, docs/plans/2026-07-12-
+    grounded-explain-design.md): the real material a grounded explain
+    dispatch quotes. Fenced block grammar — the header lives at column 0
+    and the body is two-space indented (the same shape ``latest_ran_block``
+    reads), so a forged header inside another block's indented body can
+    never be selected; "last wins" mirrors ``_globbed_candidates``.
+    """
+    lines = context.splitlines()
+    start = -1
+    for index, line in enumerate(lines):
+        match = _VISIBLE_HEADER_RE.match(line)
+        if (
+            match
+            and not match.group(2)
+            and match.group(1).rsplit("/", 1)[-1] == basename
+        ):
+            start = index
+    if start < 0:
+        return ""
+    body_lines: list[str] = []
+    for line in lines[start + 1 :]:
+        if line.startswith("  "):
+            body_lines.append(line[2:])
+        elif not line.strip():
+            body_lines.append("")
+        else:
+            break
+    return "\n".join(body_lines).strip()
+
+
 def _files_to_request(
     task: str,
     context: str,
@@ -593,6 +625,7 @@ def _fix_chain_route(
 def _route(
     *,
     is_explain: bool,
+    explain_ungrounded: bool,
     run_signal: bool,
     fix_chain: bool,
     has_run_block: bool,
@@ -622,6 +655,12 @@ def _route(
     if run_signal:
         # issue #83 run half: delegate one closed-template test run.
         return "need-run", "need_run", False, False
+    if is_explain and explain_ungrounded:
+        # grounded-explain design: a real named-file target (never the
+        # "solution.py" default) with no visible build or read on the wire
+        # gets the deterministic honest refusal — the explainer seat is
+        # never called, so there is no speculation path.
+        return "not-grounded", "not_grounded", False, False
     if is_explain:
         return _EXPLAIN_SEAT, "explanation", False, False
     if needs_glob or glob_failed:
@@ -677,6 +716,16 @@ def main() -> None:
     conversation_raw = str(turn.get("context", ""))
     has_run_block = bool(_RAN_HEADER_RE.search(conversation_raw))
 
+    # Grounded explain (docs/plans/2026-07-12-grounded-explain-design.md): a
+    # real named-file target gates on _visibility of the SAME wire the
+    # read/run seams already trust — never free text, so a forged [wrote
+    # ...] line in the user's own task prose cannot flip the gate (spoof-
+    # probe requirement). Conceptual explains (no named_file) never gate.
+    explain_ungrounded = False
+    if is_explain and named_file:
+        explain_visible, _ = _visibility(conversation_raw)
+        explain_ungrounded = named_basename not in explain_visible
+
     # Chained fix-execution: a fix-intent turn whose gated build already
     # shipped its write THIS turn chains into the run seam. wrote_path is
     # structural (the caller derives it from post-boundary write tool_calls,
@@ -721,6 +770,7 @@ def main() -> None:
         )
     target, kind, build, needs_decider = _route(
         is_explain=is_explain,
+        explain_ungrounded=explain_ungrounded,
         run_signal=run_signal,
         fix_chain=fix_chain,
         has_run_block=has_run_block,
@@ -740,6 +790,10 @@ def main() -> None:
     # need-run round — the re-fix's write awaiting its own run — reissues
     # the same closed-template command instead of going silently empty.
     needs_run = _run_test_command(task) if target == "need-run" else ""
+    # grounded-explain design: the target named in an explain turn with no
+    # visible build or read on the wire — emit.py composes the honest
+    # message from it; empty for every other routing decision.
+    not_grounded = named_file if target == "not-grounded" else ""
 
     if target == _TESTS_SEAT:
         if named_basename.startswith("test_"):
@@ -780,6 +834,19 @@ def main() -> None:
             f"{_PRIOR_CODE_MARKER}\n{wrote_content}\n\n"
             f"Current request: {task}"
         )
+    elif target == _EXPLAIN_SEAT and named_file:
+        # grounded-explain design: named_file present here always means
+        # grounded (the ungrounded case routes to "not-grounded" above) —
+        # point the seat AT the target's real wire content and instruct it
+        # to explain that, not to recall or guess.
+        block_body = _visible_target_body(conversation_raw, named_basename)
+        dispatch_input = (
+            f"Conversation so far:\n{conversation}\n\n"
+            f"The actual current content of {named_file}:\n{block_body}\n\n"
+            f"Current request: {task}\n\n"
+            f"Explain {named_file}'s ACTUAL content shown above — do not "
+            "guess or invent behavior it does not have."
+        )
 
     print(
         json.dumps(
@@ -796,6 +863,7 @@ def main() -> None:
                 "needs_run": needs_run,
                 "needs_glob": needs_glob,
                 "glob_failed": glob_failed,
+                "not_grounded": not_grounded,
             }
         )
     )
