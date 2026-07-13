@@ -73,7 +73,7 @@ so far:
 | 2026-07-10 (fresh-rig rerun, v0.18.11) | 12-turn recorded ladder, clean infra (12 turns in 12.5 min, zero timeouts) | **6/12** | All shipped rungs green: memory (turn 5), storage build (6), read→tests (8, 4 green client-side), phantom refusal (9), run delegation (11, verdict matched ground truth), discovery chain (12, glob→read→test_metrics.py green). Misses: turn 1 round-1 reject (code referenced an undefined `todo` name) cascading through 2/3/4/7, and turn 10 deep recall. **Two misses were NOT honest** — a first for the recorded series: turn 3 shipped hedged speculation about the never-built todo.py instead of saying so (grounded-explain gap), and turn 10 confidently named calc-tests as "the first thing built" (wrong under both readings; #82 evidence). Structural readings: turn-1 build success gates 5 of 12 turns, so run-to-run variance ≈ 5 points on one seat sample; the serve trace truncates node responses (~280 chars), leaving the held-round question undiagnosable post-hoc; the wire log is shape-only, so the verbatim glob capture remains outstanding |
 | 2026-07-10 (fix-execution rung) | 13-turn recorded ladder (fix rung added: seeded-red buggy.py; one 600s timeout) | **6/13** | THE NEW RUNG'S MECHANISM PROVED IN-BATTERY: turn 13 chained read → write → delegated `pytest -q` → verdict, and the verdict was honest and precise — the seat's fix added the guard with its own exception message ("scale of empty sequence") where the seeded test expects "no values", and the verdict surfaced the exact expected-vs-actual regex mismatch. Honest miss by the strict rule (the seeded test stayed red), and the failure report is precisely the carry a rung-2 re-fix loop needs — plus a cheap rung-1.5: read the visible test_<stem>.py when fixing <stem>.py so the fix sees the expected behavior. Also observed: turn 8's "tests for existing calc.py" triggered the chain via the "existing" verb after its tests-seat write (honest whole-suite report; not designed-for, informative in practice). Other passes: 5, 6, 8, 9, 11 (verdict matched ground truth), 12 (discovery chain green). Misses: turn 1 honest reject cascading 3/4/7, turn 2 a 600s client timeout (the seat's 720s two-round budget exceeds the battery cap — latency class, not a reject), turn 10 wrong recall (named storage.py, the first successful build, as "the first thing asked" — the todo ask came first; #82) |
 | 2026-07-12 (convergent-fix + grounded-explain, merged) | 13-turn recorded ladder, real OpenCode on merged main (baseline 8b) | **10/13** | Both WS-1 and WS-2 item 1 validated live. Turn 13 CONVERTED (convergent-fix exit gate met): rung 1.5 read `test_buggy.py` before fixing, so the fix saw the expected "no values" contract and wrote the correct guard on the first try (`10 passed`, seeded-red now green), deterministic where every prior run's turn 13 missed on a self-invented message. Turn 3 grounded and honest (grounded-explain): todo.py was built, so the gate explained the real content and correctly reflected only `add_todo_item`, not turn 2's rejected `complete_todo`. No regressions on the read/run/discovery/refusal rungs. The one dishonest outcome is turn 10 (named calc.py, the seeded file, as "the first thing built"), i.e. #82 deep recall (WS-2 item 2), NOT in this session's scope. Rung 2 (re-fix) did not need to fire live because rung 1.5 made the first fix correct; it stays hermetic + server-validated. Part of the lift over 6/13 is turn-1/6 landing (variance); the two feature validations are causal. |
-| 2026-07-13 (WS-3 chain-executor migration, branch `feat/120-chain-executor`) | 13-turn recorded ladder, real OpenCode on the branch (baseline 8b) | **11/13** | NO-OP VALIDATION of the byte-identical `_route` → declarative chain-plan-table migration (WS-3 item 1 / #120). Routing fired identically on all 13 turns: build (1/2/6), grounded-explain (3, reflected the real `complete_todo`), tests-seat (4), memory-explain (5), build/fix (7), read → build (8), honest phantom refusal (9), recall-explain (10), run-delegation (11, verdict matched ground truth), glob → read → build (12), full fix-chain (13). All shipped deliverables green (full suite 15 passed client-side; T13 seeded-red converged). The one dishonest outcome is turn 10 (#82 deep recall, named calc.py as "the first thing built"), UNCHANGED from the 10/13 baseline and out of scope. Turn 7 an honest over-conservative gate reject (the accept sandbox lacked storage.py to verify the cross-module import; the persist code landed real and green client-side). The lift over 10/13 is turn-2 landing (variance), not a behavior change: the migration is byte-identical (`classify._route`/`_fix_chain_route` deleted, `advance()` live; the unmodified subprocess-driven classify suite anchors it hermetically). Branch not merged; live-validated pending practitioner merge. |
+| 2026-07-13 (WS-3 chain-executor migration, branch `feat/120-chain-executor`) | 13-turn recorded ladder, real OpenCode on the branch (baseline 8b) | **11/13** | NO-OP VALIDATION of the byte-identical `_route` → declarative chain-plan-table migration (WS-3 item 1 / #120). Routing fired identically on all 13 turns: build (1/2/6), grounded-explain (3, reflected the real `complete_todo`), tests-seat (4), memory-explain (5), build/fix (7), read → build (8), honest phantom refusal (9), recall-explain (10), run-delegation (11, verdict matched ground truth), glob → read → build (12), full fix-chain (13). All shipped deliverables green (full suite 15 passed client-side; T13 seeded-red converged). The one dishonest outcome is turn 10 (#82 deep recall, named calc.py as "the first thing built"), UNCHANGED from the 10/13 baseline and out of scope. Turn 7 an honest over-conservative gate reject (the accept sandbox lacked storage.py to verify the cross-module import; the persist code landed real and green client-side). The lift over 10/13 is turn-2 landing (variance), not a behavior change: the migration is byte-identical (`classify._route`/`_fix_chain_route` deleted, `advance()` live; the unmodified subprocess-driven classify suite anchors it hermetically). Merged to main 2026-07-13 (fast-forward, commits b0745af..c50cfa6). |
 
 The Cycle-7 benchmark harness (`research/agentic-serving-corpus` branch,
 `benchmark-runs/`) is the automation to revive for a standing
@@ -116,7 +116,7 @@ Two generalizations the upper rungs force (named 2026-07-09):
   registers, the composer itself a verified ensemble rather than a lone
   model — are the generative rung.
 
-## Current state (2026-07-12, v0.18.13 pending)
+## Current state (2026-07-13, v0.18.13 released; WS-3 chain-executor migration merged)
 
 Thirteen releases in three days. v0.18.2–v0.18.7 (2026-07-09): Stage 2
 memory core, #100 TDD retry, #84 deterministic adequacy, #98
@@ -159,18 +159,27 @@ artifact). All-local (qwen3:8b) by default; operator seat overrides via
 
 **Handoff pointer (fresh-session start here):** WS-1 (convergent fix)
 and WS-2 item 1 (grounded-explain) LANDED 2026-07-12 and validated live
-(trajectory row above). Enter at **WS-3, the chain executor**: the
-general deterministic chain-plan primitive that the ad-hoc chains
-(read→build, glob→read→build, write→run→verdict, and now
-convergent-fix's re-fix) migrate onto. Per the 2026-07-12 decision we
-landed the ad-hoc chains first and generalize now, with all four
-instances as evidence; grounded-explain's explain→read case is a named
-WS-3 consumer. Standing dishonest miss still open: **#82 deep recall**
+(trajectory row above). **WS-3's chain executor LANDED + merged 2026-07-13** (commits
+b0745af..c50cfa6): `classify._route`/`_fix_chain_route` are now the
+declarative `chain_plan.py` table + `advance()` (byte-identical,
+Opus-reviewed row-by-row, live real-OpenCode no-op 11/13 with routing
+identical on all 13 turns; design
+`docs/plans/2026-07-12-chain-executor-design.md`). Enter at **WS-3 item
+2, grep→read** — the meta-task rung's entry and the "lands as data"
+proof that the substrate works (a new chain is a guard function + a
+`Step` row, no routing-brain surgery); it needs the grep-tool
+wire-capture first (the read/glob procedure), and grounded-explain's
+explain→grep→read is its named consumer. Held decision to make first:
+the **round-budget backstop** (`max_rounds`/`rounds_consumed` + an
+honest-exhausted emit), DEFERRED as a never-fires YAGNI fork (per-step
+idempotency already terminates every current chain; the `Chain`
+dataclass reserves the slot) — build it with the first chain whose
+depth isn't structurally bounded (WS-5 plans, or grep's read-fan). Standing dishonest miss still open: **#82 deep recall**
 (WS-2 item 2, turn 10). Revive the parity arm (WS-8) early: it is
 mostly mechanical and converts "we think we're closing the gap" into a
 number. The recorded battery is
 `benchmarks/agentic_serving/ladder_battery.sh`, now 13 turns (series
-4/10 → 7/10 → 6/11 → 5/11 → 9/11 → 6/11 → 3/12-infra → 6/12 → 6/13 → 10/13;
+4/10 → 7/10 → 6/11 → 5/11 → 9/11 → 6/11 → 3/12-infra → 6/12 → 6/13 → 10/13 → 11/13;
 run-to-run variance ≈ 5 points rides on whether turn 1's build lands;
 turn 2's client timeout vs the seat's 720s two-round budget is a
 standing latency tension, battery cap now 780s). Standing smaller
@@ -359,13 +368,16 @@ accept-gated builds and lossless memory (reads/runs fail closed to
 honest refusals, today's behavior); a rich client gets the full chain
 surface.
 
-1. **Chain executor (design-first).** Promote the ad-hoc chains
-   (read→build, glob→read→build, write→run→verdict) into ONE
-   deterministic chain-plan structure: classify emits a bounded step
-   plan, each wire round resumes from the record and executes the next
-   step, a hard round budget terminates. Touches classify, the
-   continuation handler, and the trace. This is the single most
-   leveraged design in the plan; everything below rides it.
+1. **Chain executor (LANDED 2026-07-13, merged).** Promoted the ad-hoc
+   chains (read→build, glob→read→build, write→run→verdict, convergent
+   re-fix) into ONE declarative structure: `chain_plan.py`'s 12-row
+   `CHAINS` table + first-match `advance(bundle)`, a byte-identical
+   transpose of `classify._route`/`_fix_chain_route` (the routing brain
+   was classify, not the caller). Trace records `{chain, step_index,
+   target}`. The hard round budget was DEFERRED (never-fires YAGNI; the
+   `Chain` slot is reserved). Design:
+   `docs/plans/2026-07-12-chain-executor-design.md`. This was the single
+   most leveraged design; grep/edit/multi-file and WS-5 plans ride it.
 2. **grep delegation:** multi-match discovery with the glob discipline
    generalized (template-built patterns from charset-checked stems,
    never model text; deterministic candidate rule; refuse-with-
