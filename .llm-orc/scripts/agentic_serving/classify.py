@@ -31,6 +31,9 @@ import json
 import re
 import sys
 
+from _helpers import PRIOR_CODE_MARKER as _PRIOR_CODE_MARKER
+from _helpers import latest_ran_block as _latest_ran_block
+
 _EXPLAIN_MARKERS = (
     "explain",
     "what does",
@@ -288,6 +291,34 @@ def _files_to_request(
     return to_request, ""
 
 
+# Rung 1.5, convergent-fix design (docs/plans/2026-07-12-convergent-fix-
+# design.md): a closed template, never model text — the stem is charset-
+# checked before it may enter the "test_<stem>.py" read request.
+_TARGET_STEM_RE = re.compile(r"^[A-Za-z_]\w*$")
+
+
+def _target_test_file(
+    task: str, named_basename: str, context: str, tests_primary: bool
+) -> str:
+    """The ``test_<stem>.py`` to read once before a fix-led turn's gated
+    build (rung 1.5): reuses the need-files read seam, skips (never
+    refuses) when absent or already attempted — unlike a named source file,
+    a missing test costs nothing but today's behavior.
+    """
+    if tests_primary or not _FIX_VERB_RE.match(task):
+        return ""
+    if not named_basename.endswith(".py") or named_basename.startswith("test_"):
+        return ""
+    stem = named_basename[: -len(".py")]
+    if not _TARGET_STEM_RE.match(stem):
+        return ""
+    test_name = f"test_{stem}.py"
+    visible, attempted = _visibility(context)
+    if test_name in visible or test_name in attempted:
+        return ""
+    return test_name
+
+
 def _module_stem(task: str) -> str:
     """The turn's single module stem, or "" (no stem, or multi-stem).
 
@@ -401,6 +432,74 @@ def _discovery(
     )
 
 
+# Rung 2, convergent-fix design: a deterministic failure-shape signal over
+# the LATEST [ran ...] block, read via the shared block parser (_helpers,
+# the same one run_verdict reads) so a forged block in user text can never
+# feed the classifier — the selector is column-0-anchored block structure,
+# never raw text (spoof-probe requirement).
+# Includes the pytest-printed SUBCLASS names, not just the bases: an in-test
+# ``import missing`` reports FAILED (not a collection ERROR) with
+# ``ModuleNotFoundError`` — the ImportError subclass, the most common import
+# failure — and a bad indent reports IndentationError/TabError (SyntaxError
+# subclasses). Matching only the bases classified those localized and burned
+# a re-fix round, against the fail-closed-to-structural intent.
+_STRUCTURAL_ERROR_RE = re.compile(
+    r"^E\s+(?:NameError|ModuleNotFoundError|ImportError"
+    r"|IndentationError|TabError|SyntaxError)\b",
+    re.MULTILINE,
+)
+_FAILSHAPE_SUMMARY_RE = re.compile(
+    r"\b(?:\d+ (?:passed|failed|errors?|skipped|deselected|xfailed|xpassed"
+    r"|warnings?)|no tests ran)\b.*\bin [\d.]+s\b",
+    re.IGNORECASE,
+)
+_FAILSHAPE_TAIL_LINES = 3
+# The "small threshold" the design names without pinning a number; kept
+# local and named so ladder evidence can retune it without touching the
+# routing shape.
+_LOCALIZED_MAX_FAILED = 3
+
+
+def _failshape_count(pattern: str, summary: str) -> int:
+    match = re.search(pattern, summary)
+    return int(match.group(1)) if match else 0
+
+
+def _failure_shape(context: str) -> str:
+    """"structural" or "localized" for the LATEST ``[ran ...]`` block.
+
+    Fails CLOSED to structural: a collection ERROR, a NameError/ImportError/
+    SyntaxError in the traceback, zero tests collected, every test failing,
+    more than the small threshold failing, or an unparseable summary all
+    stay structural — only a summary with at least one pass and a small,
+    non-error failure count is localized.
+    """
+    run = _latest_ran_block(context)
+    if run is None:
+        return "structural"
+    _, variant, _, body = run
+    if variant == "failed":
+        return "structural"  # the run command itself never executed
+    if _STRUCTURAL_ERROR_RE.search(body):
+        return "structural"
+    lines = [line.strip() for line in body.splitlines() if line.strip()]
+    summary = ""
+    for line in reversed(lines[-_FAILSHAPE_TAIL_LINES:]):
+        if _FAILSHAPE_SUMMARY_RE.search(line):
+            summary = line
+            break
+    if not summary:
+        return "structural"
+    failed = _failshape_count(r"\b(\d+) failed\b", summary)
+    passed = _failshape_count(r"\b(\d+) passed\b", summary)
+    errors = _failshape_count(r"\b(\d+) errors?\b", summary)
+    if errors > 0 or passed == 0:
+        return "structural"
+    if not (1 <= failed <= _LOCALIZED_MAX_FAILED):
+        return "structural"
+    return "localized"
+
+
 def _turn(raw: str) -> dict:
     """Recover the turn dict from the ScriptAgent wrapper or a bare task.
 
@@ -430,12 +529,76 @@ def _turn(raw: str) -> dict:
     return {"task": ""}
 
 
+def _discover_and_read(
+    task: str,
+    context: str,
+    tests_primary: bool,
+    has_build_signal: bool,
+    named_file: str,
+    named_basename: str,
+) -> tuple[str, str, str, str, list[str], str]:
+    """The discover -> read seam (issue #83) plus rung 1.5's target-test read
+    batched into the same round: (named_file, named_basename, needs_glob,
+    glob_failed, needs_files, read_failed). A glob MATCH renames the turn's
+    file; the target-test read never causes a refusal on its own."""
+    needs_glob, glob_file, glob_failed = _discovery(
+        task, context, tests_primary, has_build_signal
+    )
+    if glob_file:
+        # issue #83 discovery MATCH step: the single candidate is the turn's
+        # named file — the EXISTING read seam takes over (invisible -> one
+        # read request; visible -> the seat builds against the right dest).
+        named_file = glob_file
+        named_basename = glob_file.rsplit("/", 1)[-1]
+    needs_files, read_failed = _files_to_request(
+        task, context, tests_primary, has_build_signal, glob_file
+    )
+    if not read_failed:
+        # rung 1.5 (convergent-fix design): batched into the same read round
+        # as the target-file request above, never refusing on its own.
+        target_test = _target_test_file(task, named_basename, context, tests_primary)
+        if target_test and target_test not in needs_files:
+            needs_files = [*needs_files, target_test]
+    return (
+        named_file,
+        named_basename,
+        needs_glob,
+        glob_failed,
+        needs_files,
+        read_failed,
+    )
+
+
+def _fix_chain_route(
+    needs_another_run: bool, has_refixed: bool, failure_shape: str
+) -> tuple[str, str, bool, bool]:
+    """The run/verdict/re-fix routing for a fix-led turn (fix-execution +
+    convergent-fix rung 2)."""
+    if needs_another_run:
+        # fix-execution run leg (rung 1) or rung 2's re-fix run leg: a write
+        # this turn — the fix's own or the re-fix's — has no run of its own
+        # yet. wrote_path/write_count are structural, from the caller's
+        # post-boundary tool_calls; delegate ONE closed-template run.
+        return "need-run", "need_run", False, False
+    if not has_refixed and failure_shape == "localized":
+        # rung 2, convergent-fix design: a red, localized verdict on a
+        # fix-led turn routes to the bounded one-round re-fix instead of
+        # today's honest-red terminal.
+        return "re-fix", "re_fix", True, False
+    # every write this turn has a matching run — the LATEST verdict is
+    # terminal (green, structural-red, or already-refixed).
+    return "run-verdict", "run_verdict", False, False
+
+
 def _route(
     *,
     is_explain: bool,
     run_signal: bool,
     fix_chain: bool,
     has_run_block: bool,
+    needs_another_run: bool,
+    has_refixed: bool,
+    failure_shape: str,
     needs_glob: str,
     glob_failed: str,
     needs_files: list[str],
@@ -450,16 +613,8 @@ def _route(
     interrogative or marker-led turns), so "run the tests and tell me what
     failed" delegates the run instead of narrating one.
     """
-    if fix_chain and has_run_block:
-        # fix-execution verdict leg: the chained run came back — parse it.
-        return "run-verdict", "run_verdict", False, False
     if fix_chain:
-        # fix-execution run leg: this turn's fix already shipped its write
-        # (wrote_path is structural, from the caller's post-boundary
-        # tool_calls); delegate ONE closed-template run to verify it
-        # client-side. Never re-enters the build — the branches below are
-        # unreachable while fix_chain holds.
-        return "need-run", "need_run", False, False
+        return _fix_chain_route(needs_another_run, has_refixed, failure_shape)
     if run_signal and has_run_block:
         # issue #83 run half: the client ran the command — the deliverable
         # is the deterministic verdict, one run round per turn.
@@ -529,31 +684,49 @@ def main() -> None:
     wrote_path = str(turn.get("wrote_path", ""))
     fix_chain = bool(wrote_path) and bool(_FIX_VERB_RE.match(task))
 
-    needs_glob = glob_file = glob_failed = ""
+    # Rung 2 (convergent-fix design): write_count is structural (the
+    # caller's post-boundary write tool_call count); run_count is read from
+    # the rendered [ran ...] blocks the SAME way has_run_block is — never
+    # from raw text. needs_another_run means a write this turn (the fix's
+    # own, or the re-fix's) has no run of its own yet; has_refixed is the
+    # one-round bound (the re-fix already shipped its write this turn).
+    write_count = int(turn.get("write_count", 0) or 0)
+    run_count = len(_RAN_HEADER_RE.findall(conversation_raw))
+    needs_another_run = fix_chain and run_count < write_count
+    has_refixed = write_count >= 2
+    failure_shape = (
+        _failure_shape(conversation_raw)
+        if fix_chain and not needs_another_run and run_count >= 1
+        else ""
+    )
+
+    needs_glob = glob_failed = ""
     needs_files: list[str] = []
     read_failed = ""
     if not is_explain and not run_signal and not fix_chain:
-        needs_glob, glob_file, glob_failed = _discovery(
-            task, conversation_raw, tests_primary, has_build_signal
+        (
+            named_file,
+            named_basename,
+            needs_glob,
+            glob_failed,
+            needs_files,
+            read_failed,
+        ) = _discover_and_read(
+            task,
+            conversation_raw,
+            tests_primary,
+            has_build_signal,
+            named_file,
+            named_basename,
         )
-        if glob_file:
-            # issue #83 discovery MATCH step: the single candidate is the
-            # turn's named file — the EXISTING read seam takes over
-            # (invisible -> one read request fires; visible -> the seat
-            # builds against it with the right destination)
-            named_file = glob_file
-            named_basename = glob_file.rsplit("/", 1)[-1]
-        needs_files, read_failed = _files_to_request(
-            task, conversation_raw, tests_primary, has_build_signal, glob_file
-        )
-    wants_run = run_signal or fix_chain
-    needs_run = _run_test_command(task) if wants_run and not has_run_block else ""
-
     target, kind, build, needs_decider = _route(
         is_explain=is_explain,
         run_signal=run_signal,
         fix_chain=fix_chain,
         has_run_block=has_run_block,
+        needs_another_run=needs_another_run,
+        has_refixed=has_refixed,
+        failure_shape=failure_shape,
         needs_glob=needs_glob,
         glob_failed=glob_failed,
         needs_files=needs_files,
@@ -562,6 +735,11 @@ def main() -> None:
         has_build_signal=has_build_signal,
         kind_hint=str(turn.get("kind", "python_module")),
     )
+    # needs_run mirrors the routing decision itself (rather than the old
+    # pre-route "wants_run and not has_run_block" guess) so a SECOND
+    # need-run round — the re-fix's write awaiting its own run — reissues
+    # the same closed-template command instead of going silently empty.
+    needs_run = _run_test_command(task) if target == "need-run" else ""
 
     if target == _TESTS_SEAT:
         if named_basename.startswith("test_"):
@@ -589,6 +767,19 @@ def main() -> None:
         # column-0 [ran ...] block in it would win the latest-block scan
         # and fabricate a verdict (independent review, 2026-07-10).
         dispatch_input = conversation
+    elif target == "re-fix":
+        # Rung 2 (convergent-fix design): the re-fix producer needs the
+        # fix pass's prior code alongside the conversation (which already
+        # carries the failure report and, when rung 1.5 fired, the visible
+        # test) — composed under the shared PRIOR_CODE_MARKER sentinel
+        # (mirrors the existing HELD_TESTS_MARKER convention) so
+        # refix_gather can split it back out deterministically.
+        wrote_content = str(turn.get("wrote_content", ""))
+        dispatch_input = (
+            f"Conversation so far:\n{conversation}\n\n"
+            f"{_PRIOR_CODE_MARKER}\n{wrote_content}\n\n"
+            f"Current request: {task}"
+        )
 
     print(
         json.dumps(
