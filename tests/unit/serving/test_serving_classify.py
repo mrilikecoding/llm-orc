@@ -1089,3 +1089,20 @@ def test_recall_shipped_but_windowed_out_names_the_file_and_defers_to_a_read() -
     assert decision["target"] == "recall-answer"
     assert "storage.py" in decision["recall_answer"]
     assert "read" in decision["recall_answer"].lower()
+
+
+def test_last_anchor_recall_is_not_a_wrong_accept_and_stays_on_the_explainer() -> None:
+    # MVP handles only the "first" anchor. A "last"/"latest" query must NOT be
+    # answered with the FIRST entry (a confident wrong-accept); it stays on
+    # today's explainer path until the last-anchor selection lands.
+    decision = _classify(
+        {
+            "task": "what was the last thing you built?",
+            "recall_ledger": [
+                {"ask": "build a todo app", "path": "todo.py", "shipped": True},
+                {"ask": "build a calculator", "path": "calc.py", "shipped": True},
+            ],
+            "context": "",
+        }
+    )
+    assert decision["target"] != "recall-answer"
