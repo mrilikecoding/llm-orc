@@ -27,9 +27,10 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 
-# The canonical seat-target strings (moved from classify.py so this table
-# and classify's post-routing composition share one definition — a rename
-# can't desync the two).
+# The canonical seat-target strings (moved from classify.py). Two of the
+# three — _EXPLAIN_SEAT and _TESTS_SEAT — are imported back into classify.py
+# for its post-routing composition, so a rename can't desync the two;
+# _DEFAULT_CODE_SEAT is referenced only here.
 _DEFAULT_CODE_SEAT = "code-seat"
 _EXPLAIN_SEAT = "explainer"
 _TESTS_SEAT = "tests-seat"
@@ -286,6 +287,9 @@ CHAIN_BUILD = Chain(
 CHAIN_DECIDER = Chain(
     label="decider",
     steps=(
+        # The ONLY step with an empty target — advance() derives
+        # needs_decider from `not step.target`, so any future non-decider
+        # step must carry a non-empty target.
         Step(
             chain_label="decider",
             target="",
