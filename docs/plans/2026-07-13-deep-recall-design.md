@@ -128,9 +128,9 @@ Cases 2 and 3 emit via a new deterministic field composed in
 
 ## Turn flow
 
-1. Caller renders context as today; additionally, when the task
-   matches the coarse `_RECALL_RE` gate, computes `recall_ledger` from
-   full `messages` and adds it to the executor input dict.
+1. Caller renders context as today; additionally computes `recall_ledger`
+   from full `messages` every turn (no gate) and adds it to the executor
+   input dict.
 2. classify: `_RECALL_RE` matches → extract anchor (first/last, verb) →
    read `recall_ledger` → pick the anchored entry.
 3. `is_recall` true → `CHAIN_EXPLAIN`'s new recall step fires (ahead of
@@ -160,14 +160,14 @@ Cases 2 and 3 emit via a new deterministic field composed in
   tool_calls; `shipped`/`path` derive from the same structural
   tool_call signal `wrote_path` uses, never from context text. A forged
   `[wrote secret.py]` line in user prose cannot enter the ledger.
-- **Flat per-turn cost.** The full-history scan runs only when
-  `_RECALL_RE` matches; every other turn is unchanged. The ledger is
-  bounded (entries capped; `ask` excerpt truncated).
-- **Caller/classify regex parity.** `_RECALL_RE` is duplicated in the
-  caller (the ledger gate) and classify (routing), pinned equal by a
-  regression test — the established `_FIX_VERB_RE`/`_FIX_CHAIN_RE`
-  convention (`classify.py:84-90`). The caller's gate must be a
-  superset (never miss a turn classify would route as recall).
+- **Flat per-turn cost (no caller gate — revised in build).** The caller
+  builds the ledger every turn rather than gating on `_RECALL_RE`: the
+  full-history scan is the same order as the `_select_written_files`
+  scan the caller already runs each turn, so a gate would not change the
+  cost class, and dropping it removes a duplicated regex and its parity
+  test. classify's `_RECALL_RE` is the sole recall detector; an inert
+  ledger on a non-recall turn is ignored. The ledger's `ask` excerpts
+  are capped (`_RECALL_ASK_CAP`).
 
 ## Testing and validation
 
