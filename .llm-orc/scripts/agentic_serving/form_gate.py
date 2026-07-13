@@ -85,6 +85,7 @@ def main() -> None:
                 "needs_run": str(shaped.get("needs_run", "")),
                 "needs_glob": str(shaped.get("needs_glob", "")),
                 "glob_failed": str(shaped.get("glob_failed", "")),
+                "not_grounded": str(shaped.get("not_grounded", "")),
             }
         )
     )

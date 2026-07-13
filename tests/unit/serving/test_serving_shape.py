@@ -165,3 +165,18 @@ def test_shape_passes_glob_fields_from_the_routing_decision() -> None:
     )
     assert shaped["needs_glob"] == "storage"
     assert shaped["glob_failed"] == ""
+
+
+def test_shape_passes_not_grounded_from_the_routing_decision() -> None:
+    shaped = _shape(
+        {
+            "target": "not-grounded",
+            "kind": "not_grounded",
+            "file": "solution.py",
+            "build": False,
+            "not_grounded": "todo.py",
+        },
+        {"status": "ok", "primary": "Not grounded in this session."},
+    )
+    assert shaped["not_grounded"] == "todo.py"
+    assert shaped["build"] is False

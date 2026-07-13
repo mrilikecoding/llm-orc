@@ -124,3 +124,22 @@ def test_form_gate_passes_glob_fields_through() -> None:
     assert gated["needs_glob"] == "storage"
     assert gated["glob_failed"] == ""
     assert gated["valid"] is True
+
+
+def test_form_gate_passes_not_grounded_through() -> None:
+    gated = _gate(
+        {
+            "build": False,
+            "file": "solution.py",
+            "content": "Not grounded in this session.",
+            "needs_files": [],
+            "read_failed": "",
+            "not_grounded": "todo.py",
+            "accept": None,
+            "accept_reason": "",
+            "seat_admitted": None,
+            "seat_contract_reason": "",
+        }
+    )
+    assert gated["not_grounded"] == "todo.py"
+    assert gated["valid"] is True
