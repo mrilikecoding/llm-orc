@@ -77,6 +77,10 @@ _CTX_TEXT_CAP = 500
 _CTX_FILE_CAP = 2000
 _CTX_TAIL_CAP = 4000
 _CTX_SELECTED_CAP = 4000
+# recall ledger (#82): the ask excerpt is a short label the recall answer
+# quotes ("the first thing you asked was <excerpt>"), never a prompt body,
+# so a tight cap keeps the structured field small on long sessions.
+_RECALL_ASK_CAP = 200
 
 _CTX_FILE_RE = re.compile(r"\b[\w./-]+\.(?:py|js|ts|json|md|txt|ya?ml|sh|go|rs)\b")
 _CTX_TOKEN_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]{2,}")
@@ -303,6 +307,52 @@ def _select_written_files(history: Sequence[Any], task: str) -> list[tuple[str, 
 
     items = list(latest.items())
     return sorted(items, key=lambda item: (not referenced(item),))
+
+
+def _message_write_path(message: Any) -> str:
+    """The filePath of the message's first write tool_call, or "" — the same
+    structural write signal ``_render_write``/``wrote_path`` read, never
+    context text, so a forged ``[wrote ...]`` line cannot forge an outcome."""
+    for call in getattr(message, "tool_calls", ()) or ():
+        arguments = _parsed_arguments(call)
+        if arguments is not None and _is_write_shaped(arguments):
+            return str(arguments.get("filePath", ""))
+    return ""
+
+
+def _ask_outcome(items: list[Any], index: int) -> tuple[str, bool]:
+    """(written path, shipped) for the build-ask at ``index``: the first write
+    in the assistant turn(s) before the next user message. No write ->
+    ("", False), the rejected outcome."""
+    for message in items[index + 1 :]:
+        if getattr(message, "role", "") == "user":
+            break
+        path = _message_write_path(message)
+        if path:
+            return path, True
+    return "", False
+
+
+def _recall_ledger(messages: Sequence[Any]) -> list[dict[str, Any]]:
+    """The chronological build-ask ledger a recall query selects over (#82).
+
+    One entry per prior build-ask turn, in wire order, ``{ask, path,
+    shipped}`` — the deep-history retrieval the windowed transcript render
+    (last-8 tail, relevance-sorted blocks) cannot provide. Selects over the
+    PRIOR history (before the latest user message), so the current recall
+    query is never itself an entry.
+    """
+    items = list(messages)
+    boundary = _latest_user_index(items)
+    prior = items[:boundary] if boundary >= 0 else []
+    ledger: list[dict[str, Any]] = []
+    for index, message in enumerate(prior):
+        if getattr(message, "role", "") != "user":
+            continue
+        ask = str(getattr(message, "content", "") or "").strip()[:_RECALL_ASK_CAP]
+        path, shipped = _ask_outcome(prior, index)
+        ledger.append({"ask": ask, "path": path, "shipped": shipped})
+    return ledger
 
 
 def _indent_body(text: str) -> str:
