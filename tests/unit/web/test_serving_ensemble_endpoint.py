@@ -911,7 +911,10 @@ def test_fix_chain_run_result_ships_the_honest_verdict(
     serving_client: TestClient,
 ) -> None:
     """Verdict leg: the chained run's output re-enters the pipeline and the
-    existing run-verdict shape reports it honestly — red stays red."""
+    existing run-verdict shape reports it honestly — red stays red. This is
+    the STRUCTURAL case (every test failing): rung 2 (convergent-fix
+    design) leaves it unchanged. The localized case, which now routes to
+    the bounded re-fix, is covered separately."""
     resp = serving_client.post(
         "/v1/chat/completions",
         json={
@@ -961,9 +964,9 @@ def test_fix_chain_run_result_ships_the_honest_verdict(
                     "role": "tool",
                     "tool_call_id": "call_b1",
                     "content": (
-                        "F....\n"
+                        "FFFFF\n"
                         "FAILED test_calc.py::test_divide_zero - ValueError\n"
-                        "1 failed, 4 passed in 0.03s"
+                        "5 failed in 0.03s"
                     ),
                 },
             ],
@@ -976,5 +979,5 @@ def test_fix_chain_run_result_ships_the_honest_verdict(
     assert choice["finish_reason"] == "stop"
     assert not choice["message"].get("tool_calls")
     content = choice["message"]["content"]
-    assert "1 failed, 4 passed" in content
+    assert "5 failed" in content
     assert "FAILED test_calc.py::test_divide_zero" in content
