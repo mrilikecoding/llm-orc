@@ -1,9 +1,11 @@
 # Deep recall: deterministic ordinal selection, never a guess
 
-**Status:** Designed 2026-07-13 (brainstormed with the practitioner;
-approved, Approach B). Not yet implemented. This is #82's WS-2 item 2
-(the recall half) — a separate deliverable from grounded-explain
-(WS-2 item 1, shipped v0.18.13), whose machinery it reuses.
+**Status:** Designed 2026-07-13, reconciled 2026-07-13 after the
+adversarial review. Selection (write-history ledger) implemented and
+live-validated (11/13, zero-dishonest, pre-review code). Detection is
+being reworked to the two-layer design below. This is #82's WS-2 item 2
+(the recall half) — a separate deliverable from grounded-explain (WS-2
+item 1, shipped v0.18.13), whose machinery it reuses.
 
 ## Problem
 
@@ -12,8 +14,9 @@ The standing dishonest miss: battery turn 10
 thing I asked you to build do?", ships a confidently-WRONG file — it
 names `calc.py` (a seeded read) or `storage.py` (a later build) as
 "the first thing built". Every recorded run since the rung existed
-carries this miss. Honesty is the product's differentiator; a
-confidently-wrong recall is worse than a low score.
+carried this miss until the selection ledger landed. Honesty is the
+product's differentiator; a confidently-wrong recall is worse than a
+low score.
 
 It is NOT a routing miss. Turn 10 correctly reaches the `explainer`
 seat (`_INTERROGATIVE_RE` fires on "what…", `is_explain=True`,
@@ -22,13 +25,10 @@ lands `CHAIN_EXPLAIN`'s `_explain_explainer` step). The miss is that
 the material the seat receives has **no chronological order** to select
 from:
 
-- The transcript render is windowed to the last 8 conversational
-  messages (`_CTX_MAX_MESSAGES = 8`,
-  `serving_ensemble_caller.py:197`), so by turn 10 the first ask is
-  gone.
+- The transcript render is windowed to the last N conversational
+  messages, so by turn 10 the first ask is gone.
 - The written-file blocks that DO come from full history are re-sorted
-  **relevance-first, not chronologically** (`_select_written_files`
-  sort key, `serving_ensemble_caller.py:305`).
+  relevance-first, not chronologically.
 - The render-grammar headers (`[wrote <path>]`, `[read <path>]`) carry
   no index, sequence, or timestamp.
 
@@ -36,178 +36,197 @@ So an LLM asked for the *first* build answers by salience/recency and
 names a later or seeded file. No deterministic component ever selects
 by turn sequence.
 
-## Key finding (selection must be caller-side; the record stays unwired)
+## Recall has two jobs; honesty lives in only one
 
-Two facts scope the fix:
+The load-bearing split (decided with the practitioner):
 
-- **Files retrieve from deep history; prose asks do not.**
-  `_select_written_files` already selects file bodies from the FULL
-  `messages` sequence — but classify only ever sees the caller's
-  windowed, relevance-sorted `context` string
-  (`classify.py:633,738`). The chronological full history lives ONLY in
-  the caller (`serving_ensemble_caller.py`, the `messages` sequence).
-  So the ordinal SELECTION cannot happen in classify from the context
-  it is handed — it must be computed where the ordered history is.
-- **The lossless server-side record is deliberately unwired and stays
-  that way here.** `core/session/artifacts.py` is "reserved for
-  roadmap Stage 2 (issue #82)" but not invoked on the serving path.
-  Wiring it is #82's OTHER half (the server-side record + divergence
-  classifier), entry-gated on WS-5's compaction observation (WS-6).
-  This design needs none of it: the append-only wire (`messages`) is a
-  sufficient ordered record. No new store, no new seat.
+- **SELECTION** — "which build was first?" This is where honesty lives.
+  A model choosing "which was first" IS the original turn-10 miss, so
+  selection must be **deterministic-structural over an ordered record**.
+- **DETECTION** — "is this an ordinal-recall query?" This is fuzzy NL.
+  Because selection is structural, a detection error over-firing recall
+  is irrelevant-but-true, never a lie. But a detection error that
+  UNDER-fires (a genuine recall turn missed) routes to the guessing
+  explainer seat — the original dishonest miss reintroduced. So
+  detection cannot be a pure model vote either.
 
-## Decisions
+The doctrine applied: determinism for the answer, model judgment only
+for bounded routing, with a structural floor under the routing so the
+known-hard phrasing never depends on the model.
 
-**Approach B — deterministic structural selection, then grounded
-explain.** The model never does ordinal reasoning (the thing that is
-failing). A deterministic component selects the anchored turn from the
-ordered record; the seat only PHRASES a description of one selected,
-grounded artifact — exactly grounded-explain's role. This is the
-roadmap's "selection, never summarization". (Rejected: Approach A,
-handing the seat an ordered ledger to reason over — it keeps model
-ordinal reasoning and re-opens the miss on a longer history.)
+## Selection (implemented): the write-history ledger
 
-**The seam split mirrors how the system already works:**
+Two facts scope where selection runs:
 
-- **Caller provides the ordered selection data as a STRUCTURED turn
-  field**, not new context text. On a recall-shaped turn the caller
-  scans full `messages` in wire order and builds a bounded
-  `recall_ledger`: one entry per build-ask turn, in chronological
-  order, `{ask, path, shipped}` — `ask` a short excerpt of the user's
-  request, `path`/`shipped` its structural outcome (an assistant
-  `[wrote <path>]` tool_call after that ask → shipped; none → rejected).
-  Passed alongside `wrote_path`/`write_count` in the executor input
-  dict (`serving_ensemble_caller.py:869-877`). Spoof-safe by
-  construction: built from message ROLES and write TOOL_CALLS, never
-  parsed from free text, and delivered as structured data classify
-  never has to parse out of a string.
+- **Files retrieve from deep history; prose asks do not.** classify only
+  ever sees the caller's windowed, relevance-sorted `context` string.
+  The chronological full history lives ONLY in the caller (the
+  `messages` sequence). So the ordinal SELECTION cannot happen in
+  classify from the context it is handed — it is computed in the caller.
+- **The lossless server-side record stays unwired here.**
+  `core/session/artifacts.py` is reserved for #82's OTHER half (the
+  server-side record + divergence classifier), entry-gated on WS-5's
+  compaction observation (WS-6). This design needs none of it: the
+  append-only wire (`messages`) is a sufficient ordered record.
 
-- **classify detects the recall query, picks the anchor, and routes.**
-  A new `_RECALL_RE` (regex on the task alone) detects the ordinal-
-  recall shape and its anchor; classify reads `recall_ledger`, picks
-  the anchored entry deterministically, and sets a new
-  `SignalBundle.is_recall`. A new `Step` in `CHAIN_EXPLAIN` **ahead of**
-  `_explain_explainer` fires on it, so a recall turn never falls
-  through to the ungrounded seat.
+**The ledger is shipped writes only.** On every turn the caller
+(`serving_ensemble_caller._recall_ledger`) scans full `messages` in wire
+order and builds a bounded `recall_ledger`: one `{ask, path}` entry per
+shipped write, in chronological order — `ask` a short excerpt of the
+user request that preceded the write, `path` the write's structural
+destination (from an assistant `[wrote <path>]` tool_call). There is no
+`shipped`/`rejected` field: the ledger records what SHIPPED, so there is
+no prose-inferred "rejected" case to fabricate (adversarial-review
+blocker 1/2). Spoof-safe by construction: built from message ROLES and
+write TOOL_CALLS, never parsed from free text, delivered as a structured
+turn field classify never has to parse out of a string.
 
-**Anchor keyed off the query verb** (the roadmap's stated-correct
-reading — "the todo ask came first"):
+**classify selects deterministically over the ledger**
+(`_recall_answer`): the first entry is the first build. Three cases,
+reusing grounded-explain's visible/not-visible split:
 
-- "the first thing I **asked** (to build)" → ask-anchored: the FIRST
-  `recall_ledger` entry, shipped or not.
-- "the first thing **built/wrote**" → build-anchored: the first entry
-  with `shipped=True`.
-- "first" → earliest; "last"/"latest"/"most recent" → newest. (Nth,
-  "before X", and absolute-time forms are named-forward, not built.)
-
-**Three answer cases, reusing grounded-explain's visible/not-visible
-split:**
-
-1. **Selected entry shipped AND its body is visible** (`_visibility`
-   over the current context has the basename) → route to the
-   `explainer` seat grounded on that file's real body (the existing
-   `elif target == _EXPLAIN_SEAT and named_file` dispatch at
-   `classify.py:762-774`, pointed at the recall-selected path). The
-   seat describes "what it does" from real content.
-2. **Selected entry shipped but its body is NOT visible** (deep
-   history, windowed out) → a deterministic honest message that names
-   the real artifact and defers the body to a read: "The first thing
-   you asked me to build was `<ask>` — I wrote `<path>`. Ask me to
-   read `<path>` and I'll explain what it does." This is the same
-   not-visible → read integration point grounded-explain names; the
-   read capability arrives via the WS-3 chain executor, NOT a
+1. **grounded** — the first shipped build's basename is visible in the
+   current context (`_visibility`). Ride the grounded explainer on that
+   real body (inject the selected `path` as `named_file`; the existing
+   `elif target == _EXPLAIN_SEAT and named_file` dispatch grounds the
+   seat). The seat describes "what it does" from real content.
+2. **built_deep** — shipped but windowed out of context. A deterministic
+   honest message names the artifact and defers the body to a read:
+   "The first thing built in this session was `<path>` (from your
+   request '<ask>'). Ask me to read `<path>` and I'll explain what it
+   does." The read arrives via the WS-3 chain executor later, not a
    hand-rolled chain here.
-3. **Selected entry rejected, or no build ask exists** → a
-   deterministic honest message: "The first thing you asked me to
-   build was `<ask>`, but that build was rejected — nothing shipped, so
-   I can't tell you what it does." / "You haven't asked me to build
-   anything yet." No seat is called; there is no speculation path.
+3. **none** — nothing shipped this session: "Nothing has been built in
+   this session yet." No seat is called; there is no speculation path.
 
-Cases 2 and 3 emit via a new deterministic field composed in
-`emit.py`, exactly as `not_grounded` does (`emit.py:77-83`).
+Only "first" is selected today (the selector answers `ledger[0]`);
+last/Nth ladder later (Named forward directions).
+
+## Detection (this rework): structural floor + model extension
+
+Two detection layers feed the one selector. Selection is unchanged.
+
+**Layer 1 — structural floor (`_RECALL_RE`, classify only).** A tight
+regex requiring the "first thing" anchor bound to a first-person agent
+(I/you) and a build verb. On a match (with `is_explain`), recall
+resolves structurally the way it does today: grounded → `named_file`
+injection → inline grounded-explain; built_deep/none → `is_recall_answer`
++ message, `CHAIN_EXPLAIN`'s recall step. **No decider.** This is
+turn-10's measured phrasing; its honesty is deterministic and never
+depends on the model. The regex is demoted from "the detection brain"
+to a structural fast-path (the role `_INTERROGATIVE_RE` already plays).
+It lives in classify only — the caller no longer carries a copy, so
+there is no regex-parity coupling to test.
+
+**Layer 2 — model extension (`maybe_recall` + the `decide` node).** A
+loose pre-filter — `is_explain` + an ordinal word (first/last/earliest/…)
+and **no named file** (a named file already belongs to grounded-explain)
+— that did NOT match the tight regex sets a new
+`SignalBundle.defer_recall`. `_explain_explainer`'s guard becomes
+`is_explain and not defer_recall`, so a deferred turn matches no
+`CHAIN_EXPLAIN` step, falls through to `CHAIN_DECIDER`, and emits
+`needs_decider=true`. classify pre-computes the honest `recall_answer`
+from the ledger and passes it through without applying it. The `decide`
+node (`serving.yaml`) gains `recall` in its closed target set with
+examples. `resolve` applies the vote: `decide=="recall"` →
+`target="recall-answer"`, `build=False`, `kind="recall"` (the
+pre-computed `recall_answer` already passes through); any other vote →
+the existing `_DERIVED` path (a file-less conceptual explain routes to
+the plain explainer, which is correct — there is nothing to be
+dishonest about).
+
+**Deliberate simplification vs the first sketch.** On the DEFERRED path,
+grounded collapses into `recall-answer` ("the first thing built was
+`<path>`; ask me to read it") rather than reconstructing the inline
+grounded-explainer routing in `resolve`. The tight-regex path keeps full
+inline grounded-explain for the measured turn-10 phrasing; only
+*fuzzy*-phrased grounded recalls take one extra read round instead of an
+inline answer. Honest either way, and `resolve` stays a thin merge
+instead of a second routing brain (preserves the WS-3 "chain_plan is the
+routing table" line).
 
 ## Turn flow
 
 1. Caller renders context as today; additionally computes `recall_ledger`
    from full `messages` every turn (no gate) and adds it to the executor
    input dict.
-2. classify: `_RECALL_RE` matches → extract anchor (first/last, verb) →
-   read `recall_ledger` → pick the anchored entry.
-3. `is_recall` true → `CHAIN_EXPLAIN`'s new recall step fires (ahead of
-   the plain explainer step).
-4. Answer case selected deterministically:
-   a. shipped + visible → grounded explainer seat on the picked path.
-   b. shipped + not visible → honest "ask me to read `<path>`" message.
-   c. rejected / none → honest "rejected, nothing shipped" / "nothing
-      asked yet" message.
-5. Non-recall explain turns are untouched (the recall step's guard is
-   false), so conceptual and grounded/ungrounded explains behave
-   exactly as today.
+2. classify computes `is_explain`, the ledger selection, and the two
+   detection layers:
+   - `_RECALL_RE` match → structural recall (grounded / built_deep /
+     none) resolved in `CHAIN_EXPLAIN`. No decider.
+   - else `maybe_recall` (loose, file-less) → `defer_recall=true`,
+     pre-compute `recall_answer`, fall through to `CHAIN_DECIDER`
+     (`needs_decider=true`).
+   - else → today's explain/build/run/fix routing, untouched.
+3. On the deferred path the `decide` node votes; `resolve` merges:
+   `recall` → `recall-answer` shape with the pre-computed message; any
+   seat vote → `_DERIVED`.
+4. Non-recall explain turns are untouched (both detection layers are
+   false), so conceptual and grounded/ungrounded explains behave exactly
+   as today.
 
 ## Bounds and error handling
 
-- **The recall gate is precise about intent, not just keywords.**
-  `_RECALL_RE` requires an ordinal/temporal anchor bound to an
-  ask/build referent ("first/last … asked/built/wrote/created"), so a
-  plain "what did you do?" or "explain the first function in foo.py"
-  does not trip it. Turn 5 ("did you see my previous query?") is a
-  memory question with no ordinal-over-builds anchor → stays on today's
-  explainer path.
-- **Fail closed to honesty.** An empty or ambiguous `recall_ledger`, a
-  recall match whose anchor cannot be resolved, or a malformed field →
-  the honest "nothing asked yet" message, never the guessing seat.
+- **Precise about intent, not just keywords.** The tight `_RECALL_RE`
+  requires the anchored "first thing … I/you … build" shape, so a plain
+  "what did you do?" or "explain the first function in foo.py" does not
+  trip it. The loose `maybe_recall` requires `is_explain` + an ordinal
+  word + no named file, and the model backstops it, so over-firing costs
+  an extra decider call, never a wrong answer.
+- **Fail closed to honesty.** An empty/malformed `recall_ledger`, or a
+  recall match with no shipped build → the honest "nothing built yet"
+  message, never the guessing seat. A deferred turn the decider does not
+  vote `recall` for is a file-less conceptual explain — correct on the
+  plain explainer.
 - **Spoof-safe.** The ledger is structured data from roles + write
-  tool_calls; `shipped`/`path` derive from the same structural
-  tool_call signal `wrote_path` uses, never from context text. A forged
-  `[wrote secret.py]` line in user prose cannot enter the ledger.
-- **Flat per-turn cost (no caller gate — revised in build).** The caller
-  builds the ledger every turn rather than gating on `_RECALL_RE`: the
-  full-history scan is the same order as the `_select_written_files`
-  scan the caller already runs each turn, so a gate would not change the
-  cost class, and dropping it removes a duplicated regex and its parity
-  test. classify's `_RECALL_RE` is the sole recall detector; an inert
-  ledger on a non-recall turn is ignored. The ledger's `ask` excerpts
-  are capped (`_RECALL_ASK_CAP`).
+  tool_calls; `path` derives from the same structural tool_call signal
+  `wrote_path` uses, never from context text. A forged `[wrote
+  secret.py]` line in user prose cannot enter the ledger.
+- **Flat per-turn cost.** The caller builds the ledger every turn (no
+  gate): the full-history scan is the same order as the written-file
+  scan the caller already runs, so a gate would not change the cost
+  class. An inert ledger on a non-recall turn is ignored. `ask` excerpts
+  are capped.
 
 ## Testing and validation
 
-- **Hermetic classify + chain_plan units:** ordinal detection (first
-  vs last, asked vs built), anchor pick over a fixture `recall_ledger`,
-  the three answer cases (shipped-visible, shipped-not-visible,
-  rejected/none), and the negative guards (turn 5, conceptual explain,
-  "first function in foo.py" all stay off the recall path).
+- **Hermetic classify + chain_plan units:** structural detection (the
+  tight regex fires on the turn-10 phrasing, stays off "first function
+  in foo.py" / turn 5 / conceptual explain), the three selection cases
+  (grounded-visible, built-deep, none) over a fixture `recall_ledger`,
+  and the deferred path (`maybe_recall` sets `defer_recall`,
+  `_explain_explainer` suppressed, `needs_decider=true`).
+- **Decider-vote units (stubbed decide):** a fixture swaps the decide
+  model for an echo returning `{"target":"recall"}`; assert `resolve`
+  routes a deferred turn to `recall-answer` with the pre-computed
+  message on a `recall` vote, and to the plain explainer on an
+  `explainer` vote.
 - **Caller unit:** `recall_ledger` built from a full-history fixture
-  where the first ask is past the 8-message window and a later build
-  outranks it by relevance — the ledger still lists the first ask
-  first, with the correct `shipped` outcome.
+  where the first build is past the context window and a later build
+  outranks it by relevance — the ledger still lists the first build
+  first.
 - **Spoof probe:** a forged `[wrote todo.py]` line in the user's task
-  prose cannot make a rejected first-ask read as shipped.
-- **Regex parity regression:** caller and classify `_RECALL_RE` equal.
+  prose cannot enter the ledger.
 - **Live real-OpenCode at the earliest runnable point:** the exact
-  turn-10 conversation — first build rejected, then "what did the first
-  thing I asked you to build do?" returns the honest "rejected, nothing
-  shipped" message (not a guessed file); and a variant where the first
-  ask shipped returns a grounded (or ask-me-to-read) answer naming the
-  correct path.
-- **Ladder:** the exit gate is one full run with ZERO dishonest
-  outcomes (turn 10 converts), no regression on the other rungs, then
-  variance measured over three same-seed runs (WS-2 exit: median ≥
-  10/13).
+  turn-10 conversation returns the correct first-built file (grounded or
+  ask-me-to-read), never a guess; and a fuzzy-phrased variant
+  ("what was the earliest thing you built here?") exercises the deferred
+  decider path.
+- **Ladder:** the exit gate is one full run with ZERO dishonest outcomes
+  (turn 10 converts), no regression on the other rungs, then variance
+  measured over three same-seed runs (WS-2 exit: median ≥ 10/13).
 
 ## Named forward directions (not built here)
 
 - **Richer recall grammar:** last/latest/most-recent (the immediate
-  sibling of "first"; `_RECALL_RE` deliberately excludes it today so a
-  last-query can never wrong-accept the first entry — it needs
-  `builds[-1]` selection and "most recent" phrasing), then Nth ("the
+  sibling of "first"; needs `ledger[-1]` selection), then Nth ("the
   third thing"), "before/after X", and absolute-time forms, laddered
   from battery evidence (minimal-gate-first).
-- **Deep-history body via the WS-3 read chain:** case 2's "ask me to
-  read `<path>`" becomes an automatic read→explain chain once the WS-3
-  chain executor carries explain→read (grounded-explain's named
-  integration point). Same deterministic selection feeds it.
-- **Store-derived recall:** when `SessionArtifactStore` /
-  `core/session/artifacts.py` is wired (#82's other half, WS-6,
-  compaction-gated), the ledger moves from wire-derived to
-  store-derived with the same observable behavior and cross-session
-  reach.
+- **Deep-history body via the WS-3 read chain:** the built_deep "ask me
+  to read `<path>`" message becomes an automatic read→explain chain once
+  the WS-3 chain executor carries explain→read (grounded-explain's named
+  integration point). The same deterministic selection feeds it.
+- **Store-derived recall:** when `core/session/artifacts.py` is wired
+  (#82's other half, WS-6, compaction-gated), the ledger moves from
+  wire-derived to store-derived with the same observable behavior and
+  cross-session reach.
