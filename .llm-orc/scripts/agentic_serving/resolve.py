@@ -100,16 +100,22 @@ def main() -> None:
 
     if classify.get("needs_decider"):
         target = _decider_target(_response(deps.get("decide", {})))
-        if target == _RECALL_TARGET:
-            # #82 detection layer 2: the model confirmed recall. Route to the
-            # recall-answer shape and keep classify's pre-computed honest
-            # message — selection was already structural.
+        if target == _RECALL_TARGET and recall_answer:
+            # #82 detection layer 2: the model confirmed recall and classify
+            # pre-computed the honest answer. Route to the recall-answer shape
+            # and keep the message — selection was already structural.
             target, kind, build = "recall-answer", "recall", False
         else:
+            if target == _RECALL_TARGET:
+                # finding 5: a recall vote with no pre-computed message (the
+                # decider mis-fired on a non-deferred turn) is not actionable —
+                # fall back to the explainer, never a degenerate empty recall
+                # shape.
+                target = "explainer"
             kind, build = _DERIVED.get(target, ("", False))
-            # A non-recall vote on a deferred turn: drop the pre-computed recall
-            # message so emit (which fires on its presence) does not shadow the
-            # seat's real output.
+            # A non-recall outcome on a deferred turn: drop the pre-computed
+            # recall message so emit (which fires on its presence) does not
+            # shadow the seat's real output.
             recall_answer = ""
     else:
         target = classify.get("target", "")

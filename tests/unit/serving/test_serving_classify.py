@@ -1113,6 +1113,23 @@ def test_recall_fuzzy_first_phrasing_defers_to_the_decider() -> None:
     assert "todo.py" in decision["recall_answer"]
 
 
+def test_recall_widened_first_synonyms_defer_to_the_decider() -> None:
+    # Adversarial review finding 3: genuine first-recall phrasings beyond the
+    # {first,earliest,initial} set ("originally", "1st", "at the start", "the
+    # very beginning") must not route straight to the guessing explainer — they
+    # defer to the decider like any other fuzzy first-ordinal recall.
+    ledger = [{"ask": "build a todo app", "path": "todo.py"}]
+    for task in (
+        "what did you build originally?",
+        "what was the 1st thing you made?",
+        "which module did you create at the start?",
+        "what was the very beginning of what you wrote?",
+    ):
+        decision = _classify({"task": task, "recall_ledger": ledger, "context": ""})
+        assert decision["needs_decider"] is True, task
+        assert decision["target"] == "", task
+
+
 def test_recall_fuzzy_first_with_a_named_file_stays_on_grounded_explain() -> None:
     # The maybe_recall pre-filter requires NO named file: a first-ordinal
     # explain that names a file belongs to grounded-explain, not recall
@@ -1126,6 +1143,23 @@ def test_recall_fuzzy_first_with_a_named_file_stays_on_grounded_explain() -> Non
     )
     assert decision["needs_decider"] is False
     assert decision["target"] == "explainer"
+
+
+def test_run_recall_compound_does_not_leak_the_recall_message() -> None:
+    # Adversarial review finding 1: a run-led turn that ALSO mentions "the first
+    # thing you made" must NOT carry a recall_answer. The run chain outranks the
+    # recall step (target=run-verdict, needs_decider=False), so a stale message
+    # would shadow the run verdict at emit (which fires on recall_answer
+    # presence). recall_answer is valid only when the OUTCOME is a recall answer.
+    decision = _classify(
+        {
+            "task": "run the tests and tell me the first thing you made",
+            "recall_ledger": [{"ask": "build a calculator", "path": "calc.py"}],
+            "context": "assistant: [ran pytest -q]\n  1 passed in 0.01s",
+        }
+    )
+    assert decision["target"] == "run-verdict"
+    assert decision["recall_answer"] == ""
 
 
 def test_last_anchor_recall_is_not_a_wrong_accept_and_stays_on_the_explainer() -> None:

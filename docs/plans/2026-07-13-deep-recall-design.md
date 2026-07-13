@@ -119,10 +119,13 @@ It lives in classify only — the caller no longer carries a copy, so
 there is no regex-parity coupling to test.
 
 **Layer 2 — model extension (`maybe_recall` + the `decide` node).** A
-loose pre-filter — `is_explain` + an ordinal word (first/last/earliest/…)
-and **no named file** (a named file already belongs to grounded-explain)
-— that did NOT match the tight regex sets a new
-`SignalBundle.defer_recall`. `_explain_explainer`'s guard becomes
+loose pre-filter — `is_explain` + a first-semantic term
+(first/1st/earliest/initial/originally/original/beginning/"the start";
+widened after adversarial-review finding 3, which found genuine recalls
+outside a narrower set reaching the guessing seat) and **no named file**
+(a named file already belongs to grounded-explain) — that did NOT match
+the tight regex sets a new `SignalBundle.defer_recall`. Last/Nth are
+named-forward (the selector answers `ledger[0]`). `_explain_explainer`'s guard becomes
 `is_explain and not defer_recall`, so a deferred turn matches no
 `CHAIN_EXPLAIN` step, falls through to `CHAIN_DECIDER`, and emits
 `needs_decider=true`. classify pre-computes the honest `recall_answer`
@@ -170,14 +173,38 @@ routing table" line).
 - **Precise about intent, not just keywords.** The tight `_RECALL_RE`
   requires the anchored "first thing … I/you … build" shape, so a plain
   "what did you do?" or "explain the first function in foo.py" does not
-  trip it. The loose `maybe_recall` requires `is_explain` + an ordinal
-  word + no named file, and the model backstops it, so over-firing costs
-  an extra decider call, never a wrong answer.
-- **Fail closed to honesty.** An empty/malformed `recall_ledger`, or a
-  recall match with no shipped build → the honest "nothing built yet"
-  message, never the guessing seat. A deferred turn the decider does not
-  vote `recall` for is a file-less conceptual explain — correct on the
-  plain explainer.
+  trip it. The loose `maybe_recall` requires `is_explain` + a
+  first-semantic term + no named file, and the model backstops it, so
+  over-firing costs an extra decider call, never a wrong answer.
+- **`recall_answer` is valid only when the outcome is a recall answer**
+  (adversarial-review finding 1). classify pre-computes the message
+  before `advance()` picks the target, but a higher-priority chain
+  (run/fix) can preempt a recall-phrased turn (e.g. "run the tests and
+  tell me the first thing you made" → `run-verdict`). classify clears
+  `recall_answer` whenever the final target is neither `recall-answer`
+  nor a deferred turn heading to the decider, so `emit` — which fires on
+  its presence — can never shadow the real verdict/seat output. resolve
+  clears it too on any non-recall decider vote, and a recall vote with
+  no pre-computed message falls back to the explainer, never an empty
+  recall shape (finding 5).
+- **Structural floor honesty is deterministic; the deferred layer's
+  honesty depends on the decider (accepted tradeoff, finding 2).** The
+  measured turn-10 phrasing rides the tight `_RECALL_RE` floor, so its
+  honesty never depends on the model. On the deferred layer, a genuine
+  recall the cheap decider votes `explainer` for routes to the plain
+  (ungrounded) explainer, which can guess on deep history — the original
+  miss, reintroduced for fuzzy phrasings only. This is the inherent
+  model-detection tradeoff (the practitioner chose model detection this
+  session); the change still strictly improves on the pre-rework
+  regex-only baseline (which sent every fuzzy phrasing to the guessing
+  seat). The exit gate must stress the decider's recall-vs-explainer
+  accuracy on fuzzy phrasings, not only turn 10; if it proves
+  unreliable, the fork is to widen the structural floor or make the
+  deferred non-recall branch fail closed.
+- **Fail closed to honesty (structural + decider-recall paths).** An
+  empty/malformed `recall_ledger`, or a recall match with no shipped
+  build → the honest "nothing built yet" message, never the guessing
+  seat.
 - **Spoof-safe.** The ledger is structured data from roles + write
   tool_calls; `path` derives from the same structural tool_call signal
   `wrote_path` uses, never from context text. A forged `[wrote

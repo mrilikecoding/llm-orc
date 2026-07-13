@@ -276,6 +276,25 @@ def test_decider_recall_vote_routes_to_the_recall_answer_shape() -> None:
     assert "todo.py" in routing["recall_answer"]
 
 
+def test_recall_vote_without_a_precomputed_message_falls_back_to_explainer() -> None:
+    # Adversarial review finding 5: a recall vote on a turn where classify did
+    # NOT pre-compute a message (the cheap decider mis-fired on a non-deferred
+    # ambiguous turn) must not dispatch a degenerate empty recall shape — fall
+    # back to the explainer.
+    classify_decision = {
+        "target": "",
+        "kind": "",
+        "file": "solution.py",
+        "dispatch_input": "sort this data for me",
+        "build": False,
+        "needs_decider": True,
+        "recall_answer": "",
+    }
+    routing = _resolve(classify_decision, decide_response='{"target": "recall"}')
+    assert routing["target"] == "explainer"
+    assert routing["recall_answer"] == ""
+
+
 def test_decider_non_recall_vote_drops_the_precomputed_recall_answer() -> None:
     # If the decider votes a normal seat on a deferred turn, the pre-computed
     # recall message MUST be dropped — emit fires on recall_answer PRESENCE, so
