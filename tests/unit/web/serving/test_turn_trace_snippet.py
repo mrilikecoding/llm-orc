@@ -115,6 +115,49 @@ def test_chain_plan_omitted_when_classify_did_not_run() -> None:
     assert "chain_plan" not in trace
 
 
+def test_chain_plan_omitted_when_classify_response_is_not_json() -> None:
+    """A classify node present but carrying a non-JSON string (e.g. a raw
+    model reply that never resolved to the routing envelope) must not
+    raise — chain_plan is omitted, not an error."""
+    result = {
+        "results": {"classify": {"status": "success", "response": "not json at all"}}
+    }
+
+    trace = build_turn_trace("serving", result)
+
+    assert "chain_plan" not in trace
+
+
+def test_chain_plan_omitted_when_classify_response_is_not_a_dict() -> None:
+    """Valid JSON that parses to a list (or any non-dict) has no routing
+    keys to read — chain_plan is omitted, not an error."""
+    import json
+
+    classify_response = json.dumps(["build", "code-seat", 3])
+    result = {
+        "results": {"classify": {"status": "success", "response": classify_response}}
+    }
+
+    trace = build_turn_trace("serving", result)
+
+    assert "chain_plan" not in trace
+
+
+def test_chain_plan_omitted_when_classify_response_is_missing_a_key() -> None:
+    """A dict response missing one of chain/step_index/target (partial or
+    malformed classify output) is graceful-omitted rather than raising."""
+    import json
+
+    classify_response = json.dumps({"target": "code-seat", "chain": "build"})
+    result = {
+        "results": {"classify": {"status": "success", "response": classify_response}}
+    }
+
+    trace = build_turn_trace("serving", result)
+
+    assert "chain_plan" not in trace
+
+
 def test_emit_never_propagates_a_trace_build_failure(tmp_path: Path) -> None:
     """PR #116 review: 'tracing must never break the serve' — a hostile
     child response (pathologically nested JSON raises RecursionError at
