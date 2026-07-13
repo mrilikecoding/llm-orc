@@ -7,9 +7,12 @@ the serving marshal (shape/form_gate/emit — all unmodified) ships a full
 write on accept.
 
 When no visible test exists to re-gate against (rung 1.5 found none, or the
-client's failing suite lives outside test_<stem>.py), the candidate ships
-unconditionally: the client's own pytest re-run is the true verifier in
-that case, and the internal executor gate has nothing to check it against.
+client's failing suite lives outside test_<stem>.py), select injects a
+smoke test so the executor still confirms the candidate LOADS cleanly
+before it can ship — a re-fix must never clobber the original with an
+unvalidated whole-file regen (F3, merge-gate review). A candidate that
+fails to load is rejected here, the original preserved; the client's own
+pytest re-run remains the semantic verifier once a loadable fix ships.
 """
 
 from __future__ import annotations
@@ -43,17 +46,25 @@ def main() -> None:
         selected = {}
 
     code = str(selected.get("code", ""))
-    tests = str(selected.get("tests", ""))
     edit_kind = str(selected.get("edit_kind", ""))
+    smoke_only = bool(selected.get("smoke_only", False))
     summary = code.splitlines()[0][:80] if code.strip() else "re-fix deliverable"
 
-    if tests.strip():
-        tests_pass, report = _executor_verdict(deps)
-        accept = tests_pass
-        reason = report or ("tests pass" if accept else "tests did not pass")
+    # Always the executor verdict now (F3): with a visible test it re-gates
+    # the fix against the client's real test; without one, select injected a
+    # smoke test so the executor still confirms the candidate LOADS cleanly
+    # before it can clobber the original. A candidate that fails either gate
+    # is rejected here -> honest-red terminal, original preserved.
+    tests_pass, report = _executor_verdict(deps)
+    accept = tests_pass
+    if smoke_only:
+        reason = (
+            "candidate loads cleanly; no visible test, the client run verifies"
+            if accept
+            else f"re-fix candidate failed to load: {report}"
+        )
     else:
-        accept = True
-        reason = "no visible test to re-gate against; shipping for the client run"
+        reason = report or ("tests pass" if accept else "tests did not pass")
 
     envelope = {
         "status": "success",

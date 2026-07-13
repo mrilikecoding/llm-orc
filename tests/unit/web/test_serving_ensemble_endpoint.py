@@ -1312,6 +1312,144 @@ def test_model_edit_path_ships_a_corrected_write_then_reports_green(
     assert "2 passed" in choice2["message"]["content"]
 
 
+# A candidate that PARSES (form-gate passes) but fails to IMPORT at load —
+# the exact gap F3 closes: without the smoke gate it would ship and clobber
+# the original with something worse.
+_ECHO_BAD_IMPORT_FIX = (
+    "name: code-generator\n"
+    "description: echo flow emitting a candidate that parses but fails to import\n"
+    "agents:\n"
+    "  - name: out\n"
+    "    script: \"echo 'import nonexistent_zzz_module_for_refix'\"\n"
+)
+
+
+def test_no_visible_test_unloadable_candidate_does_not_clobber_the_original(
+    serving_project: Path, serving_client: TestClient
+) -> None:
+    """F3 (merge-gate review): rung 1.5 found no test to re-gate against
+    (the read failed), the failure came from the client's wider suite, and
+    the model regen parses but fails to import. The injected smoke test
+    catches the load failure in the accept sandbox, so the re-fix refuses
+    honestly and never ships a write — the original file is preserved."""
+    (serving_project / "ensembles" / "code-generator.yaml").write_text(
+        _ECHO_BAD_IMPORT_FIX
+    )
+    resp = serving_client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "ensemble-agent",
+            "messages": [
+                {"role": "user", "content": "fix the sum bug in adder.py"},
+                {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [_read_tool_call("r1", "test_adder.py")],
+                },
+                {
+                    "role": "tool",
+                    "tool_call_id": "r1",
+                    "content": "File not found: test_adder.py",
+                },
+                {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [
+                        _write_tool_call(
+                            "w1", "adder.py", "def add(a, b): return a - b\n"
+                        )
+                    ],
+                },
+                {
+                    "role": "tool",
+                    "tool_call_id": "w1",
+                    "content": "Wrote file successfully.",
+                },
+                {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [_bash_tool_call("b1")],
+                },
+                {
+                    "role": "tool",
+                    "tool_call_id": "b1",
+                    "content": "F.\nE   assert -1 == 5\n1 failed, 2 passed in 0.02s",
+                },
+            ],
+            "tools": [_WRITE_TOOL, _READ_TOOL_DEF, _BASH_TOOL_DEF],
+        },
+    )
+
+    assert resp.status_code == 200
+    choice = resp.json()["choices"][0]
+    # honest-red terminal, NO write tool_call — the original is never touched
+    assert choice["finish_reason"] == "stop"
+    assert not choice["message"].get("tool_calls")
+    assert "Another round needed" in choice["message"]["content"]
+
+
+def test_no_visible_test_loadable_candidate_still_ships(
+    serving_project: Path, serving_client: TestClient
+) -> None:
+    """The companion to the reject case: the smoke gate lets a LOADABLE
+    candidate through, so a genuine fix still ships when rung 1.5 found no
+    test — the client's own re-run remains the semantic verifier."""
+    (serving_project / "ensembles" / "code-generator.yaml").write_text(_ECHO_ADDER_FIX)
+    resp = serving_client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "ensemble-agent",
+            "messages": [
+                {"role": "user", "content": "fix the sum bug in adder.py"},
+                {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [_read_tool_call("r1", "test_adder.py")],
+                },
+                {
+                    "role": "tool",
+                    "tool_call_id": "r1",
+                    "content": "File not found: test_adder.py",
+                },
+                {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [
+                        _write_tool_call(
+                            "w1", "adder.py", "def add(a, b): return a - b\n"
+                        )
+                    ],
+                },
+                {
+                    "role": "tool",
+                    "tool_call_id": "w1",
+                    "content": "Wrote file successfully.",
+                },
+                {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [_bash_tool_call("b1")],
+                },
+                {
+                    "role": "tool",
+                    "tool_call_id": "b1",
+                    "content": "F.\nE   assert -1 == 5\n1 failed, 2 passed in 0.02s",
+                },
+            ],
+            "tools": [_WRITE_TOOL, _READ_TOOL_DEF, _BASH_TOOL_DEF],
+        },
+    )
+
+    assert resp.status_code == 200
+    choice = resp.json()["choices"][0]
+    assert choice["finish_reason"] == "tool_calls"
+    call = choice["message"]["tool_calls"][0]
+    assert call["function"]["name"] == "write"
+    args = json.loads(call["function"]["arguments"])
+    assert args["filePath"] == "adder.py"
+    assert "return a + b" in args["content"]
+
+
 def test_one_round_bound_reports_a_still_red_re_fix_honestly(
     serving_client: TestClient,
 ) -> None:
