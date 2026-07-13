@@ -74,7 +74,7 @@ so far:
 | 2026-07-10 (fix-execution rung) | 13-turn recorded ladder (fix rung added: seeded-red buggy.py; one 600s timeout) | **6/13** | THE NEW RUNG'S MECHANISM PROVED IN-BATTERY: turn 13 chained read → write → delegated `pytest -q` → verdict, and the verdict was honest and precise — the seat's fix added the guard with its own exception message ("scale of empty sequence") where the seeded test expects "no values", and the verdict surfaced the exact expected-vs-actual regex mismatch. Honest miss by the strict rule (the seeded test stayed red), and the failure report is precisely the carry a rung-2 re-fix loop needs — plus a cheap rung-1.5: read the visible test_<stem>.py when fixing <stem>.py so the fix sees the expected behavior. Also observed: turn 8's "tests for existing calc.py" triggered the chain via the "existing" verb after its tests-seat write (honest whole-suite report; not designed-for, informative in practice). Other passes: 5, 6, 8, 9, 11 (verdict matched ground truth), 12 (discovery chain green). Misses: turn 1 honest reject cascading 3/4/7, turn 2 a 600s client timeout (the seat's 720s two-round budget exceeds the battery cap — latency class, not a reject), turn 10 wrong recall (named storage.py, the first successful build, as "the first thing asked" — the todo ask came first; #82) |
 | 2026-07-12 (convergent-fix + grounded-explain, merged) | 13-turn recorded ladder, real OpenCode on merged main (baseline 8b) | **10/13** | Both WS-1 and WS-2 item 1 validated live. Turn 13 CONVERTED (convergent-fix exit gate met): rung 1.5 read `test_buggy.py` before fixing, so the fix saw the expected "no values" contract and wrote the correct guard on the first try (`10 passed`, seeded-red now green), deterministic where every prior run's turn 13 missed on a self-invented message. Turn 3 grounded and honest (grounded-explain): todo.py was built, so the gate explained the real content and correctly reflected only `add_todo_item`, not turn 2's rejected `complete_todo`. No regressions on the read/run/discovery/refusal rungs. The one dishonest outcome is turn 10 (named calc.py, the seeded file, as "the first thing built"), i.e. #82 deep recall (WS-2 item 2), NOT in this session's scope. Rung 2 (re-fix) did not need to fire live because rung 1.5 made the first fix correct; it stays hermetic + server-validated. Part of the lift over 6/13 is turn-1/6 landing (variance); the two feature validations are causal. |
 | 2026-07-13 (WS-3 chain-executor migration, branch `feat/120-chain-executor`) | 13-turn recorded ladder, real OpenCode on the branch (baseline 8b) | **11/13** | NO-OP VALIDATION of the byte-identical `_route` → declarative chain-plan-table migration (WS-3 item 1 / #120). Routing fired identically on all 13 turns: build (1/2/6), grounded-explain (3, reflected the real `complete_todo`), tests-seat (4), memory-explain (5), build/fix (7), read → build (8), honest phantom refusal (9), recall-explain (10), run-delegation (11, verdict matched ground truth), glob → read → build (12), full fix-chain (13). All shipped deliverables green (full suite 15 passed client-side; T13 seeded-red converged). The one dishonest outcome is turn 10 (#82 deep recall, named calc.py as "the first thing built"), UNCHANGED from the 10/13 baseline and out of scope. Turn 7 an honest over-conservative gate reject (the accept sandbox lacked storage.py to verify the cross-module import; the persist code landed real and green client-side). The lift over 10/13 is turn-2 landing (variance), not a behavior change: the migration is byte-identical (`classify._route`/`_fix_chain_route` deleted, `advance()` live; the unmodified subprocess-driven classify suite anchors it hermetically). Merged to main 2026-07-13 (fast-forward, commits b0745af..c50cfa6). |
-| 2026-07-13 (#82 deep recall, branch `feat/82-deep-recall`) | 13-turn recorded ladder, real OpenCode on the branch (baseline 8b) | **11/13, ZERO dishonest** | THE STANDING DISHONEST MISS CONVERTED. Turn 10 ("what did the first thing I asked you to build do?") grounded on `todo.py`'s real `add_todo` content and named the FIRST ask, never the later/salient calc.py/storage.py/phantom.py every prior run guessed — the deterministic ordinal-selection ledger (caller-side, full-history) picked the first build-ask (shipped + visible → grounded case, `named_file` injected into grounded-explain's existing dispatch). No regression on the unchanged routing: turn 3 grounded-explain honest (reflected only the real `add_todo`, turn 2's `complete_todo` was rejected), turn 5 memory accurate, turn 8 read→build, turn 9 honest phantom refusal, turn 11 run-verdict matched ground truth (1 failed 7 passed), turn 12 glob→read→build discovery, turn 13 seeded-red converged (10 passed via rung 1.5's test-read). The 2 misses are honest rejects (turn 2 round-1 test quality, turn 7 over-conservative persist gate), unchanged residuals unrelated to #82. **Meets WS-2's zero-dishonest exit gate.** Pre-merge adversarial review pending. |
+| 2026-07-13 (#82 deep recall, branch `feat/82-deep-recall`) | 13-turn recorded ladder, real OpenCode on the branch (baseline 8b) | **11/13, ZERO dishonest** | THE STANDING DISHONEST MISS CONVERTED. Turn 10 ("what did the first thing I asked you to build do?") grounded on `todo.py`'s real `add_todo` content and named the FIRST ask, never the later/salient calc.py/storage.py/phantom.py every prior run guessed — the deterministic ordinal-selection ledger (caller-side, full-history) picked the first build-ask (shipped + visible → grounded case, `named_file` injected into grounded-explain's existing dispatch). No regression on the unchanged routing: turn 3 grounded-explain honest (reflected only the real `add_todo`, turn 2's `complete_todo` was rejected), turn 5 memory accurate, turn 8 read→build, turn 9 honest phantom refusal, turn 11 run-verdict matched ground truth (1 failed 7 passed), turn 12 glob→read→build discovery, turn 13 seeded-red converged (10 passed via rung 1.5's test-read). The 2 misses are honest rejects (turn 2 round-1 test quality, turn 7 over-conservative persist gate), unchanged residuals unrelated to #82. **Caveat: this ran the PRE-review regex+`shipped`-field code.** The subsequent adversarial review found 3 blockers on that prose-inference approach (a `_BUILD_RE` false positive mislabeling a non-build; an unimplemented asked-vs-built branch reporting a shipped build as "nothing shipped"; `_RECALL_RE` hijacking unrelated "first … build()" questions), so selection was reworked to be write-history-anchored (shipped writes only) and detection moves to the model-decider (see Handoff pointer). Turn 10 converts on both; the reworked code needs a live re-validation before merge. |
 
 The Cycle-7 benchmark harness (`research/agentic-serving-corpus` branch,
 `benchmark-runs/`) is the automation to revive for a standing
@@ -117,7 +117,7 @@ Two generalizations the upper rungs force (named 2026-07-09):
   registers, the composer itself a verified ensemble rather than a lone
   model — are the generative rung.
 
-## Current state (2026-07-13, v0.18.13 released; WS-3 chain-executor migration merged)
+## Current state (2026-07-13, v0.18.13 released; WS-3 merged; #82 deep-recall arc live on branch `feat/82-deep-recall`, unmerged)
 
 Thirteen releases in three days. v0.18.2–v0.18.7 (2026-07-09): Stage 2
 memory core, #100 TDD retry, #84 deterministic adequacy, #98
@@ -158,29 +158,91 @@ deterministic accept gate (per-test-isolated executor + static adequacy
 artifact). All-local (qwen3:8b) by default; operator seat overrides via
 `*.local.yaml`.
 
-**Handoff pointer (fresh-session start here):** WS-1 (convergent fix)
-and WS-2 item 1 (grounded-explain) LANDED 2026-07-12 and validated live
-(trajectory row above). **WS-3's chain executor LANDED + merged 2026-07-13** (commits
-b0745af..c50cfa6): `classify._route`/`_fix_chain_route` are now the
-declarative `chain_plan.py` table + `advance()` (byte-identical,
-Opus-reviewed row-by-row, live real-OpenCode no-op 11/13 with routing
-identical on all 13 turns; design
-`docs/plans/2026-07-12-chain-executor-design.md`). Enter at **WS-3 item
-2, grep→read** — the meta-task rung's entry and the "lands as data"
-proof that the substrate works (a new chain is a guard function + a
-`Step` row, no routing-brain surgery); it needs the grep-tool
-wire-capture first (the read/glob procedure), and grounded-explain's
-explain→grep→read is its named consumer. Held decision to make first:
-the **round-budget backstop** (`max_rounds`/`rounds_consumed` + an
-honest-exhausted emit), DEFERRED as a never-fires YAGNI fork (per-step
-idempotency already terminates every current chain; the `Chain`
-dataclass reserves the slot) — build it with the first chain whose
-depth isn't structurally bounded (WS-5 plans, or grep's read-fan). Standing dishonest miss still open: **#82 deep recall**
-(WS-2 item 2, turn 10). Revive the parity arm (WS-8) early: it is
-mostly mechanical and converts "we think we're closing the gap" into a
-number. The recorded battery is
+**Handoff pointer (fresh-session start here):** The ACTIVE ARC is **#82
+deep recall (WS-2 item 2)** — the standing dishonest miss (turn 10) — on
+branch `feat/82-deep-recall` (unmerged; WS-1 convergent-fix, WS-2 item 1
+grounded-explain, and WS-3 chain executor all landed+merged earlier,
+commits through c50cfa6).
+
+_Architecture decided with the practitioner this session (the
+load-bearing split):_ recall has TWO jobs — **DETECTION** ("is this an
+ordinal-recall query?") and **SELECTION** ("which build was first?").
+Recall's honesty lives entirely in SELECTION: a model choosing "which
+was first" IS the original turn-10 dishonest miss, so selection must be
+deterministic-structural over the **write-history ledger** (shipped
+writes only, `{ask, path}`, built caller-side from the full message
+history — spoof-safe, never prose-inferred). DETECTION is fuzzy NL where
+regexes are brittle, so it belongs in the guarded model-decider; because
+selection is structural, a detection error is irrelevant-but-true, never
+a lie. This is the doctrine correctly applied (model judgment for
+bounded routing, determinism for the answer); the first pass mis-applied
+it by making detection a deterministic regex.
+
+_Done on the branch:_ the write-history ledger (`_recall_ledger`,
+caller), classify write-history selection (grounded / built_deep / none,
+NO `_BUILD_RE`, NO fabricated "rejected"), the `recall-answer` shape +
+emit + resolve/shape/form_gate field flow, an interim TIGHT `_RECALL_RE`
+detector, and the `is_explain` injection gate. Live-validated **11/13
+zero-dishonest** (turn 10 CONVERTED) — BUT that ladder ran the
+PRE-review regex+`shipped`-field code; the write-history rework is NOT
+yet re-validated live (turn 10 should still convert: todo ships →
+grounded path).
+
+_Adversarial review (author-independent wrong-accept hunt — thrice-proven
+gate) found 3 blockers + 1 finding on the first (prose-inference)
+approach._ CLOSED: blocker 1 (`_BUILD_RE` mislabels a non-build like "fix
+my understanding" as the first build) and blocker 2 (false "nothing
+shipped" for a build that shipped) — both fixed by write-history
+selection; finding 4 (injection not `is_explain`-gated) — fixed.
+MITIGATED, not yet eliminated: blocker 3 (`_RECALL_RE` hijacks unrelated
+"first … build()" questions) — the tight interim regex cuts it and
+structural selection makes any residual false trigger irrelevant-but-true.
+
+**Enter here: the model-decider DETECTION swap** (completes the
+practitioner-chosen full architecture and eliminates blocker 3). Design:
+(1) add `recall` to the `decide` node's closed target set + prompt
+examples (`serving.yaml`); (2) classify replaces the interim `_RECALL_RE`
+gate with a LOOSE `maybe_recall` pre-filter (`is_explain` + an ordinal
+word) that sets `needs_decider`, and pre-computes BOTH the recall answer
+(grounded dispatch on a visible first-write, else the built_deep/none
+message) AND the plain-explainer fallback; (3) `resolve` applies the
+model's vote — `decide=="recall"` → the pre-computed recall routing
+(grounded → explainer on `recall_path`, else `recall-answer`), else the
+explainer fallback (add `recall` to `_DERIVED`/`_decider_target`).
+Hermetic tests stub the decide node (fixture swaps the decide model for
+an echo returning `{"target":"recall"}`). THEN: re-validate live on the
+13-turn ladder (serve on :8765 from the branch, `uv run llm-orc serve` —
+global 0.18.5 lacks the changes), re-run the adversarial review,
+reconcile the STALE design doc (`docs/plans/2026-07-13-deep-recall-
+design.md` still describes the `{ask,path,shipped}`/rejected/regex design
+— rewrite to write-history + model-detection), then merge with consent.
+
+_After #82:_ **WS-3 item 2, grep→read** — the meta-task rung's entry and
+the "lands as data" proof (a new chain is a guard function + a `Step`
+row); needs the grep-tool wire-capture first; grounded-explain's
+explain→grep→read is its consumer. Held decision there: the
+**round-budget backstop** (`max_rounds`/`rounds_consumed` + honest-
+exhausted emit), DEFERRED as a never-fires YAGNI fork (per-step
+idempotency terminates every current chain; the `Chain` slot is
+reserved) — build it with the first chain whose depth isn't structurally
+bounded (grep's read-fan, or WS-5 plans).
+
+_WS-8 (parity scoreboard, #131):_ scoping DONE on branch
+`feat/131-parity-scoreboard` (unmerged, ready for review) — design doc +
+arm-agnostic transcript IR + metrics scorer (29 tests). Key finding:
+**"revive the Cycle-7 harness" is STALE** — that harness scores a dead
+ReAct log format; WS-8 is a NEW build (corpus entry + `opencode run`
+runner + client-observed-transcript scorer). The raw→IR adapter needs a
+real capture (`opencode run --format json`), which #82's live
+re-validation can produce. _Cost model (practitioner authorized
+2026-07-13):_ Arm 2 (Claude Code native) runs FREE via dispatched
+subagents; Arm 1 (Haiku/Sonnet) via OpenCode Go, paid but authorized
+within a ~$12/hr limit; full paid comparison est. ~$5–12 (9 sessions);
+GO given, measure one real turn's token count before spending.
+
+The recorded battery is
 `benchmarks/agentic_serving/ladder_battery.sh`, now 13 turns (series
-4/10 → 7/10 → 6/11 → 5/11 → 9/11 → 6/11 → 3/12-infra → 6/12 → 6/13 → 10/13 → 11/13;
+4/10 → 7/10 → 6/11 → 5/11 → 9/11 → 6/11 → 3/12-infra → 6/12 → 6/13 → 10/13 → 11/13 → 11/13-#82-pre-review;
 run-to-run variance ≈ 5 points rides on whether turn 1's build lands;
 turn 2's client timeout vs the seat's 720s two-round budget is a
 standing latency tension, battery cap now 780s). Standing smaller
@@ -576,11 +638,22 @@ transcript block; seeded-red targets; phantom-file asks) run against
 every arm. This is where structural-vs-discretionary verification
 becomes a measurement instead of a claim.
 
-**Mechanics:** revive the Cycle-7 harness
-(`research/agentic-serving-corpus` branch, `benchmark-runs/`) against
-the current battery. Paid tokens, bounded: one battery per baseline
-per release checkpoint, estimate before running (standing free-first
-practice).
+**Mechanics (revised 2026-07-13 — "revive Cycle-7" is stale):** the
+Cycle-7 harness scores a dead ReAct log format (`"turn decision:"`
+lines, zero hits in `src/`), so there is nothing to revive — WS-8 is a
+NEW build. Scoping is DONE on branch `feat/131-parity-scoreboard`
+(unmerged): the arm-agnostic transcript IR + metrics scorer
+(`benchmarks/agentic_serving/{transcript,honesty,metrics}.py`, 29 tests)
+already exist. Remaining: a corpus entry for the continuous 13-turn
+conversation, an `opencode run` runner, and the raw→IR adapter (needs a
+real `opencode run --format json` capture — #82's live re-validation can
+produce it; do NOT guess the schema). Arms: **Arm 0** (serve/qwen3:8b) —
+free; **Arm 2** (Claude Code native) — free via dispatched subagents
+here; **Arm 1** (Haiku 4.5 / Sonnet 5 behind OpenCode) — paid via
+OpenCode Go, practitioner-authorized within a ~$12/hr limit, est. ~$5–12
+for the full comparison (9 sessions), measure one real turn's token
+count before spending. Bounded: one battery per baseline per release
+checkpoint, estimate before running (standing free-first practice).
 
 **Named possibility, not an arm yet:** a hybrid arm, frontier harness
 plus llm-orc as MCP tools (the mirror-image integration posture:
