@@ -266,3 +266,12 @@ def test_normal_decisions_carry_empty_not_grounded() -> None:
         }
     )
     assert outcome == {"finish": True, "content": "It adds two numbers."}
+
+
+def test_recall_answer_field_emits_the_honest_message() -> None:
+    # #82 deep recall: the deterministic recall answer rides the routing
+    # decision (a composed string field), emitted as a prose finish with no
+    # seat involvement — the same shape as the not_grounded honest message.
+    message = "You haven't asked me to build anything yet."
+    outcome = _emit({"recall_answer": message})
+    assert outcome == {"finish": True, "content": message}

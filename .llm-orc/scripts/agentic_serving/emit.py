@@ -81,6 +81,11 @@ def _seam_outcome(gated: dict) -> dict | None:
         # never called, so there is no speculation path to guard here.
         message = _NOT_GROUNDED_MESSAGE.format(target=not_grounded)
         return {"finish": True, "content": message}
+    recall_answer = str(gated.get("recall_answer", ""))
+    if recall_answer:
+        # #82 deep recall: the deterministic ordinal-selection answer, composed
+        # by classify from the chronological ledger. No seat, no guessing.
+        return {"finish": True, "content": recall_answer}
     return None
 
 

@@ -1,0 +1,15 @@
+name: recall-answer
+description: |
+  #82 deep recall (docs/plans/2026-07-13-deep-recall-design.md) — the
+  dispatch target for an ordinal-recall turn ("the first thing I asked you
+  to build") whose deterministic selection over the caller's chronological
+  ledger resolves to an honest message (nothing shipped / never asked /
+  built-deep). The message rides the ROUTING decision (classify -> resolve
+  -> shape -> form_gate -> emit), never this seat's output; this node only
+  satisfies the skeleton's dispatch step with a minimal ADR-024 envelope, at
+  zero model cost. The explainer seat is never invoked, so no ordinal
+  reasoning is ever handed to a model.
+serves: recall-answer
+agents:
+  - name: echo
+    script: scripts/agentic_serving/recall_echo.py

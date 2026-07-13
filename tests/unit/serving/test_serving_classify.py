@@ -1033,3 +1033,59 @@ def test_recall_query_with_a_rejected_first_ask_routes_to_an_honest_message() ->
     )
     assert decision["target"] == "recall-answer"
     assert decision["build"] is False
+
+
+def test_recall_query_with_no_prior_build_asks_says_nothing_asked() -> None:
+    decision = _classify(
+        {
+            "task": "what was the first thing I asked you to build?",
+            "recall_ledger": [],
+        }
+    )
+    assert decision["target"] == "recall-answer"
+    assert "anything yet" in decision["recall_answer"].lower()
+
+
+def test_recall_rejected_first_ask_message_names_the_ask_and_says_nothing_shipped() -> (
+    None
+):
+    decision = _classify(
+        {
+            "task": "what did the first thing I asked you to build do?",
+            "recall_ledger": [
+                {"ask": "build a todo app", "path": "", "shipped": False}
+            ],
+        }
+    )
+    assert "todo" in decision["recall_answer"]
+    assert "nothing shipped" in decision["recall_answer"].lower()
+
+
+def test_recall_shipped_and_visible_rides_the_grounded_explainer() -> None:
+    context = "assistant: [wrote storage.py]\n  def store():\n      return 1"
+    decision = _classify(
+        {
+            "task": "what did the first thing I asked you to build do?",
+            "recall_ledger": [
+                {"ask": "build storage", "path": "storage.py", "shipped": True}
+            ],
+            "context": context,
+        }
+    )
+    assert decision["target"] == "explainer"
+    assert decision["file"] == "storage.py"
+
+
+def test_recall_shipped_but_windowed_out_names_the_file_and_defers_to_a_read() -> None:
+    decision = _classify(
+        {
+            "task": "what did the first thing I asked you to build do?",
+            "recall_ledger": [
+                {"ask": "build storage", "path": "storage.py", "shipped": True}
+            ],
+            "context": "",
+        }
+    )
+    assert decision["target"] == "recall-answer"
+    assert "storage.py" in decision["recall_answer"]
+    assert "read" in decision["recall_answer"].lower()

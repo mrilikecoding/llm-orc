@@ -900,6 +900,7 @@ class ServingEnsembleCaller:
             wrote_path=_wrote_path_this_turn(context.messages),
             wrote_content=_wrote_content_this_turn(context.messages),
             write_count=_write_count_this_turn(context.messages),
+            recall_ledger=_recall_ledger(context.messages),
         )
         for chunk in _outcome_chunks(outcome, context.tools):
             yield chunk
@@ -911,6 +912,7 @@ class ServingEnsembleCaller:
         wrote_path: str = "",
         wrote_content: str = "",
         write_count: int = 0,
+        recall_ledger: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         config = self._load_config()
         executor = ExecutorFactory.create_root_executor(project_dir=self._project_dir)
@@ -923,6 +925,7 @@ class ServingEnsembleCaller:
                     "wrote_path": wrote_path,
                     "wrote_content": wrote_content,
                     "write_count": write_count,
+                    "recall_ledger": recall_ledger or [],
                 }
             ),
         )

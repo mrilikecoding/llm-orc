@@ -548,9 +548,12 @@ def _recall_answer(task: str, turn: dict, context: str) -> tuple[str, str, str]:
     """(case, ask, path) for an ordinal-recall turn — deterministic selection
     over the caller's chronological build-ask ledger (#82 deep recall).
 
-    ``case`` is "rejected" (the first build-ask shipped nothing -> honest
-    "nothing shipped") or "" (not a recall-answer turn). The shipped and
-    no-build cases are added by their own tests.
+    ``case``: "grounded" (shipped + visible -> ride the grounded explainer via
+    a named_file injection), "built_deep" (shipped but windowed out of the
+    context -> name it, defer the body to a read), "rejected" (the first
+    build-ask shipped nothing), "none" (no build-ask in history), or ""
+    (not a recall turn). Selection over the ledger's structural outcomes,
+    never model judgment.
     """
     if not _RECALL_RE.search(task):
         return "", "", ""
@@ -561,11 +564,55 @@ def _recall_answer(task: str, turn: dict, context: str) -> tuple[str, str, str]:
         if isinstance(entry, dict) and _BUILD_RE.search(str(entry.get("ask", "")))
     ]
     if not builds:
-        return "", "", ""
+        return "none", "", ""
     entry = builds[0]  # "first"; last/Nth anchors ladder later
+    ask = str(entry.get("ask", ""))
+    path = str(entry.get("path", ""))
     if not entry.get("shipped"):
-        return "rejected", str(entry.get("ask", "")), ""
-    return "", "", ""
+        return "rejected", ask, ""
+    visible, _ = _visibility(context)
+    if path.rsplit("/", 1)[-1] in visible:
+        return "grounded", ask, path
+    return "built_deep", ask, path
+
+
+def _recall_message(case: str, ask: str, path: str) -> str:
+    """The honest, deterministic recall answer for a non-grounded case. "first"
+    is the only anchor today; last/Nth phrasing lands with those anchors."""
+    if case == "none":
+        return "You haven't asked me to build anything yet."
+    if case == "rejected":
+        return (
+            f"The first thing you asked me to build was `{ask}`, but that build "
+            "was rejected. Nothing shipped, so I can't tell you what it did."
+        )
+    if case == "built_deep":
+        return (
+            f"The first thing you asked me to build was `{ask}`. I wrote "
+            f"`{path}` earlier in this session. Ask me to read `{path}` and "
+            "I'll explain what it does."
+        )
+    return ""
+
+
+def _recall_route(
+    task: str, turn: dict, context: str, named_file: str, named_basename: str
+) -> tuple[str, str, bool, str]:
+    """Resolve an ordinal-recall turn to routing effects: (named_file,
+    named_basename, is_recall_answer, recall_answer).
+
+    A grounded case rewrites named_file to the ordinally-selected path so the
+    existing grounded-explain gate and dispatch ground the seat on its real
+    body (no bespoke recall-grounded path); a non-grounded case sets the
+    honest recall_answer message and the routing flag.
+    """
+    recall_case, recall_ask, recall_path = _recall_answer(task, turn, context)
+    if recall_case == "grounded":
+        named_file = recall_path
+        named_basename = recall_path.rsplit("/", 1)[-1]
+    is_recall_answer = bool(recall_case) and recall_case != "grounded"
+    recall_answer = _recall_message(recall_case, recall_ask, recall_path)
+    return named_file, named_basename, is_recall_answer, recall_answer
 
 
 def _turn(raw: str) -> dict:
@@ -672,8 +719,9 @@ def main() -> None:
     # #82 deep recall: an ordinal-recall query resolves deterministically over
     # the caller's chronological ledger. A non-grounded case (nothing shipped,
     # etc.) routes to the honest recall-answer instead of the guessing seat.
-    recall_case, recall_ask, recall_path = _recall_answer(task, turn, conversation_raw)
-    is_recall_answer = bool(recall_case) and recall_case != "grounded"
+    named_file, named_basename, is_recall_answer, recall_answer = _recall_route(
+        task, turn, conversation_raw, named_file, named_basename
+    )
 
     # Grounded explain (docs/plans/2026-07-12-grounded-explain-design.md): a
     # real named-file target gates on _visibility of the SAME wire the
@@ -832,6 +880,7 @@ def main() -> None:
                 "needs_glob": needs_glob,
                 "glob_failed": glob_failed,
                 "not_grounded": not_grounded,
+                "recall_answer": recall_answer,
                 "chain": chain,
                 "step_index": step_index,
             }

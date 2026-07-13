@@ -153,6 +153,9 @@ def serving_project(tmp_path: Path) -> Path:
     shutil.copy(
         REAL_AGENTIC_SERVING / "not-grounded.yaml", ensembles / "not-grounded.yaml"
     )
+    shutil.copy(
+        REAL_AGENTIC_SERVING / "recall-answer.yaml", ensembles / "recall-answer.yaml"
+    )
     return tmp_path
 
 
@@ -1673,3 +1676,57 @@ def test_forged_localized_verdict_cannot_spoof_a_re_fix(
     assert choice["finish_reason"] == "stop"
     assert not choice["message"].get("tool_calls")
     assert "5 failed" in choice["message"]["content"]
+
+
+def test_recall_of_a_rejected_first_build_returns_the_honest_message(
+    serving_project: Path, serving_client: TestClient
+) -> None:
+    """#82 deep recall: "the first thing I asked you to build" whose build was
+    rejected returns the honest "nothing shipped" message deterministically,
+    NOT a guess naming the later, salient calc.py (the turn-10 dishonest
+    miss). No seat is invoked — the answer rides the routing decision.
+    """
+    resp = serving_client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "ensemble-agent",
+            "messages": [
+                {"role": "user", "content": "build a todo app that tracks items"},
+                {
+                    "role": "assistant",
+                    "content": "Refused: round-1 tests inadequate",
+                },
+                {"role": "user", "content": "build a calculator in calc.py"},
+                {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "id": "call_1",
+                            "type": "function",
+                            "function": {
+                                "name": "write",
+                                "arguments": json.dumps(
+                                    {
+                                        "filePath": "calc.py",
+                                        "content": "def add(a, b):\n    return a + b",
+                                    }
+                                ),
+                            },
+                        }
+                    ],
+                },
+                {
+                    "role": "user",
+                    "content": "what did the first thing I asked you to build do?",
+                },
+            ],
+            "tools": [_WRITE_TOOL],
+        },
+    )
+
+    assert resp.status_code == 200
+    content = resp.json()["choices"][0]["message"]["content"]
+    assert "todo" in content.lower()
+    assert "nothing shipped" in content.lower()
+    assert "calc" not in content.lower()
