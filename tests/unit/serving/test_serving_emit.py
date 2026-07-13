@@ -209,3 +209,60 @@ def test_glob_failed_emits_an_honest_refusal() -> None:
     assert outcome["content"] == (
         "Refused: no file matching 'storage' in the workspace listing"
     )
+
+
+def test_not_grounded_emits_the_honest_message_without_a_seat_call() -> None:
+    # grounded-explain design (docs/plans/2026-07-12-grounded-explain-
+    # design.md): the message is deterministic and non-speculative — no
+    # "Refused:" prefix, since this is not a request refusal, it is an
+    # honest report that the target was never seen on the wire.
+    outcome = _emit(
+        {
+            "build": False,
+            "file": "solution.py",
+            "content": "Not grounded in this session.",
+            "valid": True,
+            "reason": "ok",
+            "needs_files": [],
+            "read_failed": "",
+            "needs_run": "",
+            "needs_glob": "",
+            "glob_failed": "",
+            "not_grounded": "todo.py",
+            "accept": None,
+            "accept_reason": "",
+            "seat_admitted": None,
+            "seat_contract_reason": "",
+        }
+    )
+    assert outcome == {
+        "finish": True,
+        "content": (
+            "No `todo.py` in this session (no successful build or read of "
+            "it), so I can't explain its internals without guessing. If "
+            "it's in your workspace, ask me to read it."
+        ),
+    }
+
+
+def test_normal_decisions_carry_empty_not_grounded() -> None:
+    outcome = _emit(
+        {
+            "build": False,
+            "file": "solution.py",
+            "content": "It adds two numbers.",
+            "valid": True,
+            "reason": "ok",
+            "needs_files": [],
+            "read_failed": "",
+            "needs_run": "",
+            "needs_glob": "",
+            "glob_failed": "",
+            "not_grounded": "",
+            "accept": None,
+            "accept_reason": "",
+            "seat_admitted": None,
+            "seat_contract_reason": "",
+        }
+    )
+    assert outcome == {"finish": True, "content": "It adds two numbers."}
