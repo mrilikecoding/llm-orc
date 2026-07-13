@@ -57,16 +57,19 @@ _INTERROGATIVE_RE = re.compile(
     r"^(?:what|why|how|when|where|which|who)\b|^(?:did|have) you\b",
     re.IGNORECASE,
 )
-# #82 deep recall: an ordinal/temporal query OVER prior build-asks ("the
-# first thing I asked you to build", "the last thing you built"). The
-# ordinal anchor must bind to an ask/build referent so an ordinary explain
-# with an ordinal ("the first function in foo.py") is NOT swept in. Detection
-# only; the deterministic selection is over the caller's recall_ledger.
+# #82 deep recall: a FIRST-anchored query over prior build-asks ("the first
+# thing I asked you to build", "the earliest thing you built"). The anchor
+# must bind to an ask/build referent so an ordinary explain with an ordinal
+# ("the first function in foo.py") is NOT swept in. Only "first"-type anchors
+# match: the selector answers builds[0] and phrases it "the first thing", so
+# matching "last/latest" here would be a confident wrong-accept (the first
+# entry returned for a last query). last/Nth/before-X anchors ladder later.
+# Detection only; the deterministic selection is over the caller's ledger.
 _RECALL_RE = re.compile(
-    r"\b(?:first|last|latest|earliest|most recent|initial)\b[^?.!]*"
+    r"\b(?:first|earliest|initial)\b[^?.!]*"
     r"\b(?:ask(?:ed)?|build|built|wrote|created?|made|implement(?:ed)?)\b"
     r"|\b(?:ask(?:ed)?|build|built|wrote|created?|made|implement(?:ed)?)\b[^?.!]*"
-    r"\b(?:first|last|latest|earliest|most recent|initial)\b",
+    r"\b(?:first|earliest|initial)\b",
     re.IGNORECASE,
 )
 # Tests as the OBJECT of the request (issue #98): a build verb directly

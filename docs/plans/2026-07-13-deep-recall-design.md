@@ -196,9 +196,12 @@ Cases 2 and 3 emit via a new deterministic field composed in
 
 ## Named forward directions (not built here)
 
-- **Richer recall grammar:** Nth ("the third thing"), "before/after
-  X", and absolute-time forms, laddered from battery evidence
-  (minimal-gate-first).
+- **Richer recall grammar:** last/latest/most-recent (the immediate
+  sibling of "first"; `_RECALL_RE` deliberately excludes it today so a
+  last-query can never wrong-accept the first entry — it needs
+  `builds[-1]` selection and "most recent" phrasing), then Nth ("the
+  third thing"), "before/after X", and absolute-time forms, laddered
+  from battery evidence (minimal-gate-first).
 - **Deep-history body via the WS-3 read chain:** case 2's "ask me to
   read `<path>`" becomes an automatic read→explain chain once the WS-3
   chain executor carries explain→read (grounded-explain's named
