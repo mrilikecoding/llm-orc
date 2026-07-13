@@ -1141,6 +1141,70 @@ def test_deterministic_edit_path_ships_a_corrected_write_then_reports_green(
     assert "2 passed" in choice2["message"]["content"]
 
 
+def test_re_fixed_write_awaiting_its_own_run_gets_a_real_bash_call(
+    serving_client: TestClient,
+) -> None:
+    """The re-fix's write has landed but has no run of its own yet
+    (write_count=2, run_count=1) - the caller must re-dispatch a real
+    need-run round, not parse the FIRST run's now-stale verdict and not
+    emit an empty command."""
+    resp = serving_client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "ensemble-agent",
+            "messages": [
+                {"role": "user", "content": "fix the divide bug in calc.py"},
+                {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [
+                        _write_tool_call(
+                            "w1", "calc.py", "def divide(a, b): return a / b\n"
+                        )
+                    ],
+                },
+                {
+                    "role": "tool",
+                    "tool_call_id": "w1",
+                    "content": "Wrote file successfully.",
+                },
+                {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [_bash_tool_call("b1")],
+                },
+                {
+                    "role": "tool",
+                    "tool_call_id": "b1",
+                    "content": "F....\n1 failed, 4 passed in 0.02s",
+                },
+                {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [
+                        _write_tool_call(
+                            "w2", "calc.py", "def divide(a, b): return a // b\n"
+                        )
+                    ],
+                },
+                {
+                    "role": "tool",
+                    "tool_call_id": "w2",
+                    "content": "Wrote file successfully.",
+                },
+            ],
+            "tools": [_WRITE_TOOL, _READ_TOOL_DEF, _BASH_TOOL_DEF],
+        },
+    )
+
+    assert resp.status_code == 200
+    choice = resp.json()["choices"][0]
+    assert choice["finish_reason"] == "tool_calls"
+    call = choice["message"]["tool_calls"][0]
+    assert call["function"]["name"] == "bash"
+    assert json.loads(call["function"]["arguments"])["command"] == "pytest -q"
+
+
 _ADDER_BUGGY = "def add(a, b):\n    return a - b\n"
 _TEST_ADDER = (
     "import pytest\n"
