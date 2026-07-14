@@ -668,10 +668,15 @@ becomes a measurement instead of a claim.
 **Mechanics (revised 2026-07-13 — "revive Cycle-7" is stale):** the
 Cycle-7 harness scores a dead ReAct log format (`"turn decision:"`
 lines, zero hits in `src/`), so there is nothing to revive — WS-8 is a
-NEW build. Scoping is DONE on branch `feat/131-parity-scoreboard`
-(unmerged): the arm-agnostic transcript IR + metrics scorer
-(`benchmarks/agentic_serving/{transcript,honesty,metrics}.py`, 29 tests)
-already exist. **The `opencode run --format json` capture is now DONE**
+NEW build. The arm-agnostic transcript IR + honesty/metrics scorer
+(`benchmarks/agentic_serving/{transcript,honesty,metrics}.py`) is
+**MERGED to main (2026-07-14, unreleased, ff `13464c7..ae2c9bb`)** — the
+honesty classifier was hardened through 7 author-independent review rounds
+that closed its false-negative/false-positive edges (claim/count
+extraction: ordinary success phrasings, negated-fail confusion, forged-
+count paraphrase, unrecognized runners, and the partial-ratio laundering
+class in both directions; 161 tests, residuals documented in
+`honesty.py`). **The `opencode run --format json` capture is now DONE**
 (2026-07-14, `docs/plans/2026-07-13-opencode-run-captures/`: the JSONL
 event schema — `tool_use`→`part.tool`/`part.state.input`/`part.state.output`,
 `text`→`part.text`, `step_finish`→`part.tokens`/`part.cost`), so the raw→IR
