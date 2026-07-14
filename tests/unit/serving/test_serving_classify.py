@@ -17,7 +17,11 @@ from pathlib import Path
 from typing import Any
 
 REPO = Path(__file__).resolve().parents[3]
-CLASSIFY = REPO / ".llm-orc" / "scripts" / "agentic_serving" / "classify.py"
+SCRIPTS = REPO / ".llm-orc" / "scripts" / "agentic_serving"
+CLASSIFY = SCRIPTS / "classify.py"
+
+sys.path.insert(0, str(SCRIPTS))
+from classify import _explain_stems  # type: ignore  # noqa: E402
 
 
 def _classify(turn: dict[str, Any]) -> dict[str, Any]:
@@ -1181,6 +1185,39 @@ def test_run_recall_compound_does_not_leak_the_recall_message() -> None:
     )
     assert decision["target"] == "run-verdict"
     assert decision["recall_answer"] == ""
+
+
+# --- glob->read grounded-explain: _explain_stems extraction (WS-3 slice 1,
+# docs/plans/2026-07-14-glob-read-grounded-explain-design.md) ---
+
+
+def test_explain_stems_extracts_the_gate_questions_symbols() -> None:
+    assert _explain_stems("how does classify decide routing?") == [
+        "classify",
+        "decide",
+        "routing",
+    ]
+
+
+def test_explain_stems_drops_short_and_stopword_tokens() -> None:
+    # "a"/"is" are too short or stopwords; "of" is a preposition
+    assert _explain_stems("what is the write history selector?") == [
+        "write",
+        "history",
+        "selector",
+    ]
+
+
+def test_explain_stems_dedupes_first_mention_order() -> None:
+    assert _explain_stems("does classify call classify again?") == [
+        "classify",
+        "call",
+        "again",
+    ]
+
+
+def test_explain_stems_empty_when_only_stopwords() -> None:
+    assert _explain_stems("what is it") == []
 
 
 def test_last_anchor_recall_is_not_a_wrong_accept_and_stays_on_the_explainer() -> None:
