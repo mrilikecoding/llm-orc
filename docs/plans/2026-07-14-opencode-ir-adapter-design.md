@@ -44,10 +44,19 @@ One `opencode run` invocation = one battery turn = one JSONL stream.
     `input.get("path")` (read/write/glob), else `None`
   - `result_text` = `str(part.state.output)` (verbatim; never summarized —
     the honesty check pattern-matches it)
-- **input_tokens / output_tokens**: sum `part.tokens.input` / `.output` over
-  all `step_finish` events. If BOTH sums are 0 (the local unbilled signal),
-  set both to `None` so `metrics.turn_cost` returns `None` and Arm 0 is $0 by
-  construction (design intent); otherwise the summed counts (paid arms).
+- **input_tokens / output_tokens**: sum `part.tokens.input` (fresh input) and
+  `part.tokens.output + part.tokens.reasoning` (reasoning bills at the output
+  rate) over all `step_finish` events. If BOTH sums are 0 (the local unbilled
+  signal), set both to `None` so `metrics.turn_cost` returns `None` and Arm 0
+  is $0 by construction; otherwise the summed counts. **`tokens.cache.*` is
+  EXCLUDED** (cache-read/write bill at 0.1x/1.25x rates the flat `Pricing`
+  can't express, and opencode's paid token shape isn't captured yet), so the
+  cost figure is FRESH-token cost — a lower bound on a cache-heavy paid turn.
+  Documented + pinned by test; close it in Arc D with a real paid capture
+  (grow the IR/Pricing for cache).
+- **tool-call dedup**: `tool_use` events are deduped by `callID` keeping the
+  terminal state, so a paid stream emitting pending -> completed for one call
+  is one round, not two.
 - **wall_seconds**: `(max_timestamp - min_timestamp) / 1000.0` over all events
   carrying a `timestamp`; `None` when fewer than two timestamps.
 
