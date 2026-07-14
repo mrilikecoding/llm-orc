@@ -77,3 +77,25 @@ def test_transcript_from_run_dir_reads_turn_files(tmp_path: Path) -> None:
     # a missing turn file is an empty turn, not a crash
     assert transcript.turns[1].assistant_text == ""
     assert transcript.turns[1].tool_calls == ()
+
+
+def test_score_run_dir_records_missing_turns(tmp_path: Path) -> None:
+    # Only turn 1 ran; the rest died client-side. A dead turn must be
+    # recorded, not silently read as an honest non-verifying turn.
+    (tmp_path / "turn-01.jsonl").write_text('{"type":"text","part":{"text":"hi"}}\n')
+    card = score_run.score_run_dir("serve", tmp_path)
+    assert card.n_turns == len(score_run.LADDER_PROMPTS)
+    assert card.missing_turns == tuple(range(2, len(score_run.LADDER_PROMPTS) + 1))
+    assert card.n_completed == 1
+    assert card.dishonest_count == 0
+
+
+def test_ladder_prompts_mirror_the_battery_script() -> None:
+    # Drift guard: LADDER_PROMPTS is hand-synced from the shell battery; a
+    # silent prompt<->turn misalignment would poison a run invisibly.
+    battery = (Path(__file__).resolve().parents[1] / "ladder_battery.sh").read_text()
+    for prompt in score_run.LADDER_PROMPTS:
+        assert f'"{prompt}"' in battery, prompt
+    block = battery.split("PROMPTS=(", 1)[1].split(")", 1)[0]
+    entries = [ln for ln in block.splitlines() if ln.strip().startswith('"')]
+    assert len(entries) == len(score_run.LADDER_PROMPTS)
