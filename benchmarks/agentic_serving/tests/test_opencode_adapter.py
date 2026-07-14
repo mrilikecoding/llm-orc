@@ -145,6 +145,53 @@ class TestTokensAndWall:
         assert turn.input_tokens == 300
         assert turn.output_tokens == 30
 
+    def test_reasoning_tokens_fold_into_output(self) -> None:
+        # Reasoning bills at the output rate (Anthropic), so it belongs in
+        # output_tokens, not dropped.
+        events = [
+            {
+                "type": "step_finish",
+                "part": {"tokens": {"input": 100, "output": 40, "reasoning": 10}},
+            }
+        ]
+        turn = oa.turn_from_events(events, index=1, prompt="x")
+        assert turn.input_tokens == 100
+        assert turn.output_tokens == 50
+
+    def test_cache_tokens_are_excluded_documented_limit(self) -> None:
+        # Cache-read/write bill at 0.1x/1.25x, no slot in the flat Pricing and
+        # no real paid capture yet — excluded, so cost is fresh-token cost.
+        # This test PINS that deferral (documented, not silent).
+        events = [
+            {
+                "type": "step_finish",
+                "part": {
+                    "tokens": {
+                        "input": 200,
+                        "output": 30,
+                        "cache": {"read": 8000, "write": 100},
+                    }
+                },
+            }
+        ]
+        turn = oa.turn_from_events(events, index=1, prompt="x")
+        assert turn.input_tokens == 200
+        assert turn.output_tokens == 30
+
+    def test_all_cache_input_with_output_is_not_mislabeled_arm0(self) -> None:
+        # A paid turn served entirely from cache-read input, but with real
+        # generation, must not collapse to the Arm-0 None (only genuinely
+        # tokenless turns do).
+        events = [
+            {
+                "type": "step_finish",
+                "part": {"tokens": {"input": 0, "output": 50, "cache": {"read": 9000}}},
+            }
+        ]
+        turn = oa.turn_from_events(events, index=1, prompt="x")
+        assert turn.input_tokens == 0
+        assert turn.output_tokens == 50
+
 
 class TestEdges:
     def test_empty_stream_is_an_empty_turn(self) -> None:
@@ -161,6 +208,59 @@ class TestEdges:
         ]
         turn = oa.turn_from_events(events, index=1, prompt="x")
         assert turn.assistant_text == "first\nsecond"
+
+    def test_duplicate_callid_states_dedup_to_the_terminal_one(self) -> None:
+        # A paid stream may emit pending -> completed for one callID; that is
+        # one round, and the completed output is ground truth.
+        events = [
+            {
+                "type": "tool_use",
+                "part": {
+                    "tool": "bash",
+                    "callID": "c1",
+                    "state": {
+                        "status": "pending",
+                        "input": {"command": "pytest -q"},
+                        "output": "",
+                    },
+                },
+            },
+            {
+                "type": "tool_use",
+                "part": {
+                    "tool": "bash",
+                    "callID": "c1",
+                    "state": {
+                        "status": "completed",
+                        "input": {"command": "pytest -q"},
+                        "output": "3 passed",
+                    },
+                },
+            },
+        ]
+        turn = oa.turn_from_events(events, index=1, prompt="x")
+        assert len(turn.tool_calls) == 1
+        assert turn.tool_calls[0].result_text == "3 passed"
+
+    def test_tool_events_without_callid_are_all_kept(self) -> None:
+        events = [
+            {
+                "type": "tool_use",
+                "part": {
+                    "tool": "read",
+                    "state": {"input": {"filePath": "a.py"}, "output": "x"},
+                },
+            },
+            {
+                "type": "tool_use",
+                "part": {
+                    "tool": "read",
+                    "state": {"input": {"filePath": "b.py"}, "output": "y"},
+                },
+            },
+        ]
+        turn = oa.turn_from_events(events, index=1, prompt="x")
+        assert [c.path for c in turn.tool_calls] == ["a.py", "b.py"]
 
 
 class TestTranscript:

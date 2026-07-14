@@ -43,6 +43,8 @@ def _tool_call(part: dict[str, Any]) -> ToolCall:
     output = state.get("output", "")
     command = args.get("command") if name in _RUN_TOOLS else None
     path = args.get("filePath") or args.get("pattern") or args.get("path")
+    # Captured tool outputs are plain strings; str() is a fallback if a paid
+    # arm ever emits structured output (not expected — revisit on capture).
     return ToolCall(
         name=name,
         command=command,
@@ -54,7 +56,7 @@ def _tool_call(part: dict[str, Any]) -> ToolCall:
 def turn_from_events(events: list[dict[str, Any]], *, index: int, prompt: str) -> Turn:
     """Build one :class:`Turn` from a turn's ordered opencode events."""
     texts: list[str] = []
-    tool_calls: list[ToolCall] = []
+    tool_events: dict[str, dict[str, Any]] = {}
     input_sum = 0
     output_sum = 0
     timestamps: list[int] = []
@@ -68,11 +70,26 @@ def turn_from_events(events: list[dict[str, Any]], *, index: int, prompt: str) -
         if etype == "text":
             texts.append(str(part.get("text", "")))
         elif etype == "tool_use":
-            tool_calls.append(_tool_call(part))
+            # Dedup by callID keeping the terminal state, so a paid stream
+            # that emits pending -> completed for one call counts as ONE
+            # round (rounds_consumed). Insertion order = execution order.
+            call_id = str(part.get("callID") or f"_noid_{len(tool_events)}")
+            tool_events[call_id] = part
         elif etype == "step_finish":
             tokens = part.get("tokens", {}) or {}
             input_sum += int(tokens.get("input", 0) or 0)
-            output_sum += int(tokens.get("output", 0) or 0)
+            # Reasoning bills at the OUTPUT rate (Anthropic), so fold it into
+            # output. Cache-read/write tokens are EXCLUDED: they bill at
+            # 0.1x/1.25x rates a flat `Pricing` can't express, and opencode's
+            # paid-path token shape isn't captured yet. So cost here is
+            # FRESH-token cost — a lower bound on a cache-heavy paid turn;
+            # close it in Arc D with a real paid capture (grow IR/Pricing for
+            # cache). Documented, pinned by test, not silently dropped.
+            output_sum += int(tokens.get("output", 0) or 0) + int(
+                tokens.get("reasoning", 0) or 0
+            )
+
+    tool_calls = [_tool_call(part) for part in tool_events.values()]
 
     # Zero tokens is the local unbilled (Arm-0) signal: map to None so
     # metrics.turn_cost returns None and the arm is $0 by construction.
