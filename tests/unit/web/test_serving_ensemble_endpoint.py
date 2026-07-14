@@ -427,12 +427,13 @@ def test_bare_symbol_explain_globs_before_any_prose_answer(
     }
 
 
-def test_bare_symbol_explain_zero_glob_matches_refuses_never_writes(
+def test_bare_symbol_explain_zero_glob_matches_answers_conceptually(
     serving_client: TestClient,
 ) -> None:
-    """The zero-candidate case refuses honestly — the explain path never
-    falls back to a silent write, and never speculates once discovery has
-    already been attempted and come up empty."""
+    """The zero-candidate case falls through to the conceptual explainer — the
+    slice only ADDS grounding, it never removes the general-answer capability.
+    Discovery already ran and matched nothing, so the turn answers from general
+    knowledge (prose, no tool_call) rather than refusing or re-globbing."""
     resp = serving_client.post(
         "/v1/chat/completions",
         json={
@@ -467,7 +468,12 @@ def test_bare_symbol_explain_zero_glob_matches_refuses_never_writes(
     choice = resp.json()["choices"][0]
     assert choice["finish_reason"] == "stop"
     assert not choice["message"].get("tool_calls")
-    assert "no file matching" in choice["message"]["content"]
+    content = choice["message"]["content"]
+    # the hermetic echo explainer seat answered (it contains "add") — proof
+    # the turn reached the conceptual seat, not an honest-refusal message
+    assert content
+    assert "no file matching" not in content
+    assert "add" in content
 
 
 def test_explain_of_a_never_written_file_returns_the_honest_message(

@@ -650,8 +650,13 @@ def _explain_discover(
         basename = candidate.rsplit("/", 1)[-1]
         return candidate, basename, "", "", needs_files, read_failed
     if not candidates:
-        refusal = f"no file matching '{stem_list}' in the workspace listing"
-        return "", "", "", refusal, [], ""
+        # No repo file matched the stems — fall through to the conceptual
+        # explainer (general-knowledge answer, today's behavior) rather than
+        # refusing: the slice only ADDS grounding, it never removes the
+        # general-answer capability. Loop-safe — the [globbed] listing
+        # already exists in context, so _explain_glob_candidates returns []
+        # (not None), and these all-empty signals never re-set needs_glob.
+        return "", "", "", "", [], ""
     listed = ", ".join(candidates)
     refusal = (
         f"multiple files match '{stem_list}' in the workspace listing: {listed}"
