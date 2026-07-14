@@ -166,16 +166,35 @@ deterministic accept gate (per-test-isolated executor + static adequacy
 artifact). All-local (qwen3:8b) by default; operator seat overrides via
 `*.local.yaml`.
 
-**Handoff pointer (fresh-session start here):** **#82 deep recall (WS-2
-item 2) is DONE and MERGED** (branch `feat/82-deep-recall` → main,
-2026-07-13). The standing dishonest miss (turn 10) is converted and the
-recall arc is closed. Next entry point: **WS-3 item 2, grep→read** (the
-meta-task rung, §After #82 below), with **WS-8 revived in parallel** —
-the #82 re-validation confirmed `opencode run` works cleanly on the
-branch, so WS-8's needed `opencode run --format json` capture is
-straightforward to grab (the raw→IR adapter needs it; do NOT guess the
-schema — the #82 battery output was plain-text and ephemeral, so capture
-a fresh one).
+**Handoff pointer (fresh-session start here):** the **meta-task rung's
+first slice — glob→read grounded-explain** — is DONE on branch
+`feat/glob-read-grounded-explain` (validated live + author-independent
+review APPROVE; narrow-but-honest; pending merge). **Reframe that
+supersedes "grep→read first":** a real-repo spike REFUTED naive
+deterministic content-grep (a question about a central concept names the
+repo's MOST-common strings — classify/decide/routing = 100/52/64 files —
+so bare-token grep would refuse even the exit-gate question); the clean
+deterministic signal is the FILENAME stem, which discovery-glob already
+has. So slice 1 routes a bare-symbol explain (no filename) through
+glob→read→grounded-explain and closes a live SPECULATION hole (bare-symbol
+explains used to guess, not refuse). Grounds a bare-symbol question only
+when it NAMES the file (every significant filename component appears in the
+question); else it falls through to a conceptual answer. **Named next
+rungs (do NOT lose — §After #82):** (1) **recall recovery** — partial
+naming ("the dispatcher" → `agent_dispatcher.py`) misses today; recover
+it with distinctive-component matching (the spike's file-rarity signal);
+(2) **content-grep** for symbols that are NOT filenames (`_route`,
+`normalize`) — rung 2, a guarded model proposes the pattern +
+charset-sanitize + grep find-or-refuse backstop; (3) the **opencode-glob
+dot-dir limitation** — glob can't reach `.llm-orc/` (even explicitly), so
+the serve's own scripts are undiscoverable; blocks the self-referential
+gate, deferred to the self-hosting apex (likely a capability-map
+serve-native lookup). **WS-8 in parallel:** the `opencode run --format
+json` schema + the grep/glob-brace wire formats were captured this session
+(`docs/plans/2026-07-13-opencode-run-captures/`), so the raw→IR adapter is
+unblocked. **Ops unblock:** `opencode run` wedges under the agent Bash
+sandbox — run captures with `dangerouslyDisableSandbox` + nohup-detach
+(see memory `opencode-run-wedge`).
 
 _Architecture that shipped (the load-bearing split):_ recall has TWO
 jobs — DETECTION ("is this an ordinal-recall query?") and SELECTION
@@ -211,10 +230,18 @@ run/fix chain preemption and shadowing the real verdict at emit). Design
 doc: `docs/plans/2026-07-13-deep-recall-design.md` (reconciled to the
 shipped two-layer + fail-closed design).
 
-_After #82:_ **WS-3 item 2, grep→read** — the meta-task rung's entry and
-the "lands as data" proof (a new chain is a guard function + a `Step`
-row); needs the grep-tool wire-capture first; grounded-explain's
-explain→grep→read is its consumer. Held decision there: the
+_After #82 (LANDED, slice 1):_ **the meta-task rung entered as
+glob→read grounded-explain**, not grep (spike reframe, §Handoff pointer) —
+the "lands as data" proof shipped (new `CHAIN_EXPLAIN` glob/read rows =
+guard functions + `Step` rows; branch `feat/glob-read-grounded-explain`,
+design `docs/plans/2026-07-14-glob-read-grounded-explain-design.md`, spike
+evidence `docs/plans/2026-07-14-grep-read-spikes/`). Grounded-explain's
+explain→glob→read is now real. **Open rungs, in priority:** (1) **recall
+recovery** (distinctive-component matching so partial names ground — the
+spike's file-rarity signal; slice 1 grounds only fully-named files); (2)
+**content-grep** for non-filename symbols (rung 2, model-proposed pattern
++ backstop); (3) the **`.llm-orc/` dot-dir discovery limitation**
+(self-referential gate, apex). Held decision there: the
 **round-budget backstop** (`max_rounds`/`rounds_consumed` + honest-
 exhausted emit), DEFERRED as a never-fires YAGNI fork (per-step
 idempotency terminates every current chain; the `Chain` slot is

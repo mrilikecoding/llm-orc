@@ -1,10 +1,39 @@
 # glob→read grounded-explain (meta-task rung, slice 1) — design
 
-**Status:** designed 2026-07-14 (WS-3, the meta-task rung's entry). Supersedes
-the roadmap's "grep→read first" framing: a real-repo spike refuted deterministic
-content-grep, so the reliable deterministic rung is glob-by-filename first;
-content-grep becomes rung 2 (Approach B). Evidence:
-`docs/plans/2026-07-14-grep-read-spikes/`.
+**Status:** LANDED 2026-07-14 (branch `feat/glob-read-grounded-explain`),
+validated live + author-independent review APPROVE. Supersedes the roadmap's
+"grep→read first" framing: a real-repo spike refuted deterministic content-grep,
+so the reliable deterministic rung is glob-by-filename first; content-grep
+becomes rung 2 (Approach B). Evidence: `docs/plans/2026-07-14-grep-read-spikes/`.
+
+**Two decisions/corrections after review (this section is the source of truth,
+overriding the pre-implementation wording below):**
+1. **0-match → conceptual fall-through, NOT refuse** (practitioner decision).
+   A bare-symbol explain that matches no file answers from general knowledge
+   (today's behavior preserved), so the slice only ADDS grounding. Older text
+   below saying "0-candidate refuses honestly" is superseded — a 0-match repo
+   symbol that isn't a filename can still get a conceptual (speculative) answer;
+   closing that is rung 2 (content-grep).
+2. **Wrong-file bound = the question names EVERY significant filename
+   component** (`_explain_glob_candidates`: basename components, len≥3, split on
+   non-alphanumeric, must be ⊆ the question stems). The original substring-union
+   grounded confident answers on unrelated files (adversarial review BLOCKER:
+   "context management" → `project_context.py`, "error handling" →
+   `structural_errors.py`, ~20% of a real-repo battery); the subset rule closed
+   it (0/15 wrong-file on re-review). **Known limit (tracked in roadmap WS-3
+   rung 1):** this is precision-over-recall — partial naming ("the dispatcher" →
+   `agent_dispatcher.py`) now misses (~53% of multi-component files), falling
+   through to conceptual. Recovery = distinctive-component matching (the spike's
+   file-rarity signal).
+
+**Live validation (real OpenCode, branch HEAD):** "how do chunks work?" →
+glob→read `src/llm_orc/web/serving/chunks.py` → grounded, accurate (named the
+real `ContentDelta`/`ClientToolCall`/`OrchestratorChunk` classes). "how does
+context management work?" → 0 candidates → conceptual, no wrong-file grounding.
+**Known limitation:** opencode glob can't reach `.llm-orc/` (dot-dir), so the
+literal self-referential gate ("classify") is deferred to the apex; validated
+on normal-dir `src/llm_orc/` instead. Minor: "work" leaks as a stem (harmless,
+close in a stopword pass).
 
 ## Goal
 
