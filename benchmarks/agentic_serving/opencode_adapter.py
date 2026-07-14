@@ -56,7 +56,7 @@ def _tool_call(part: dict[str, Any]) -> ToolCall:
 def turn_from_events(events: list[dict[str, Any]], *, index: int, prompt: str) -> Turn:
     """Build one :class:`Turn` from a turn's ordered opencode events."""
     texts: list[str] = []
-    tool_events: dict[str, dict[str, Any]] = {}
+    tool_events: dict[object, dict[str, Any]] = {}
     input_sum = 0
     output_sum = 0
     timestamps: list[int] = []
@@ -73,7 +73,9 @@ def turn_from_events(events: list[dict[str, Any]], *, index: int, prompt: str) -
             # Dedup by callID keeping the terminal state, so a paid stream
             # that emits pending -> completed for one call counts as ONE
             # round (rounds_consumed). Insertion order = execution order.
-            call_id = str(part.get("callID") or f"_noid_{len(tool_events)}")
+            # A keyless event gets a unique sentinel so it can never collide
+            # with a real callID string.
+            call_id: object = part.get("callID") or object()
             tool_events[call_id] = part
         elif etype == "step_finish":
             tokens = part.get("tokens", {}) or {}
