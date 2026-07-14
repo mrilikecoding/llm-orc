@@ -118,7 +118,7 @@ Two generalizations the upper rungs force (named 2026-07-09):
   registers, the composer itself a verified ensemble rather than a lone
   model — are the generative rung.
 
-## Current state (2026-07-13, v0.18.13 released; WS-3 merged; #82 deep-recall MERGED)
+## Current state (2026-07-13, v0.18.14 released; WS-3 chain executor + #82 deep-recall MERGED)
 
 Thirteen releases in three days. v0.18.2–v0.18.7 (2026-07-09): Stage 2
 memory core, #100 TDD retry, #84 deterministic adequacy, #98
@@ -144,6 +144,13 @@ via rung 1.5, turn 3 grounded and honest; the one dishonest outcome is
 #82 deep recall, out of scope). The post-repairs seat A/B also ran
 (§#119): 14b test-writer is not a clean win, so "structure beats model
 size" holds.
+
+**v0.18.14 RELEASED (2026-07-13):** the WS-3 declarative chain executor
+(#120, byte-identical migration of the routing cascade, the substrate
+grep/edit/multi-file ride) and #82 deep recall (WS-2 item 2, honest
+ordinal recall — two-layer detection over a write-history selector with
+a `built_deep` fail-closed), plus the `click>=8.3.3` security pin
+(PYSEC-2026-2132). PyPI + Homebrew + CI green.
 
 Shipped capability: build (accept-gated, bounded TDD retry with held
 tests), write-tests (deliverable executed against the workspace),
@@ -368,10 +375,15 @@ differentiator; these outrank score.
    session record before answering; a question about a never-shipped
    artifact gets "that build was rejected; nothing shipped" instead of
    speculation; a question naming a real file may ride the read seam.
-2. **#82 deep recall:** deterministic retrieval for ordinal/temporal
-   prose queries ("the first thing I asked") over the lossless record.
-   Selection, never summarization; the record already has turn order,
-   so "first/last/before X" resolves structurally.
+2. **#82 deep recall** (LANDED 2026-07-13, `docs/plans/2026-07-13-deep-
+   recall-design.md`): deterministic ordinal retrieval over the
+   write-history ledger (shipped writes only, caller-side, spoof-safe) —
+   selection, never summarization. Two-layer detection (tight structural
+   floor + guarded model-decider extension) with a `built_deep`
+   fail-closed, so deep-history recall honesty is deterministic and the
+   decider judges only low-risk grounded/none cases. Live-validated
+   10/13 ZERO dishonest, turn 10 converted; author-independent review
+   APPROVED. Only "first" selects today; last/Nth are named-forward.
 3. **Turn-1 build reliability** (the ≈5-point variance source): the
    round-1 test-quality residual. Prompt rules are saturated (measured
    twice); the named structural lever is escalation-on-signal to
