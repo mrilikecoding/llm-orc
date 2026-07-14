@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.18.14] - 2026-07-13
+
+### Added
+- Deep recall (roadmap WS-2, #82,
+  `docs/plans/2026-07-13-deep-recall-design.md`): the serving layer answers
+  ordinal-recall questions ("what was the first thing I asked you to build?")
+  honestly instead of confidently naming a later or seeded file. Selection is
+  deterministic over a caller-side write-history ledger (shipped writes only,
+  built from the full message history, spoof-safe). Detection is two layers
+  over that one selector — a tight structural floor for the exact anchored
+  phrasing, plus a guarded model-decider extension for fuzzy phrasings — with
+  a fail-closed on deep-history queries whose first build is out of context,
+  so recall honesty never depends on the model where an ungrounded answer
+  could only guess.
+
+### Changed
+- Declarative chain executor (roadmap WS-3, #120,
+  `docs/plans/2026-07-12-chain-executor-design.md`): the four ad-hoc serving
+  chains (read→build, glob→read→build, write→run→verdict, convergent re-fix)
+  are transposed onto one declarative chain-plan table with a first-match
+  `advance()`, a byte-identical migration of the former `classify._route`
+  cascade. The turn trace now records the routed chain and step. This is the
+  routing substrate the coming grep/edit/multi-file delegation rides on.
+
+### Fixed
+- Pin `click>=8.3.3` to resolve PYSEC-2026-2132, a `click.edit`
+  command-injection advisory.
+
 ## [0.18.13] - 2026-07-12
 
 ### Added
