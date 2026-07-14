@@ -69,6 +69,9 @@ llm-orc = "llm_orc.cli:cli"
 [tool.ruff]
 line-length = 88
 target-version = "py311"
+# docs/plans holds design docs + reference capture/spike scripts (documentation
+# artifacts, not shipped code) — not held to project lint, like .claude/.llm-orc.
+extend-exclude = ["docs/plans"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "N", "UP", "B", "A", "C4", "PT", "C90"]
