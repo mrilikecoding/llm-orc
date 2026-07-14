@@ -589,25 +589,40 @@ def _globbed_candidates(context: str, stem: str) -> list[str] | None:
 
 
 def _explain_glob_candidates(context: str, stems: list[str]) -> list[str] | None:
-    """Candidate paths from the turn's ``[globbed ...]`` block matching ANY
-    of the explain-discovery stems, or ``None`` when no listing exists yet —
-    the multi-stem sibling of ``_globbed_candidates`` (glob->read grounded-
-    explain, WS-3 slice 1). Shares the listing scan
+    """Candidate paths from the turn's ``[globbed ...]`` block whose basename
+    is NAMED-AFTER-the-symbol by the question, or ``None`` when no listing
+    exists yet — the multi-stem sibling of ``_globbed_candidates`` (glob->read
+    grounded-explain, WS-3 slice 1). Shares the listing scan
     (``_latest_glob_listing``) and candidate discipline (``.py``, not
-    ``test_*``) but matches on stem UNION, since the brace-alternation glob
-    searches several symbols in one round.
+    ``test_*``).
+
+    A file matches only when the question names EVERY significant word-
+    component of its basename-stem — the component set (words len >= 3, non-
+    digit, split on non-alphanumerics) is a subset of the question stems.
+    Substring-union was the blocker (adversarial review): a broad stopword-
+    surviving word like "context" is a substring of ``project_context.py``,
+    so "how does context management work?" grounded a confident answer on an
+    unrelated file. The subset rule is the design's promised "named-after-the-
+    symbol" bound: ``classify.py`` ({classify}) and ``accept_gate.py``
+    ({accept, gate}) still match when fully named; ``project_context.py``
+    ({project, context}) does not, because "project" is not named.
     """
     listing = _latest_glob_listing(context)
     if listing is None:
         return None
+    stem_set = set(stems)
     candidates: list[str] = []
     for path in listing:
         basename = path.rsplit("/", 1)[-1]
-        if (
-            any(stem in basename.lower() for stem in stems)
-            and basename.endswith(".py")
-            and not basename.startswith("test_")
-        ):
+        if not basename.endswith(".py") or basename.startswith("test_"):
+            continue
+        name = basename[: -len(".py")].lower()
+        components = {
+            component
+            for component in re.split(r"[^a-z0-9]+", name)
+            if len(component) >= 3 and not component.isdigit()
+        }
+        if components and components <= stem_set:
             candidates.append(path)
     return candidates
 

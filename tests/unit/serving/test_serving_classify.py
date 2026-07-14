@@ -1335,6 +1335,54 @@ def test_bare_symbol_explain_multiple_candidates_refuses_naming_them() -> None:
     assert "/work/decide.py" in decision["glob_failed"]
 
 
+def test_bare_symbol_explain_ignores_a_coincidental_substring_match() -> None:
+    # adversarial-review blocker: a broad stopword-surviving word ("context")
+    # is a SUBSTRING of an unrelated filename (project_context.py), so
+    # substring-union grounded a confident answer on the wrong file. The
+    # named-after-the-symbol bound requires the question to name EVERY
+    # significant component of the filename — "context management work" does
+    # not name "project", so project_context.py is not a match and the turn
+    # answers conceptually instead of grounding on the wrong file.
+    context = (
+        "assistant: [globbed context,management,work]\n"
+        "  /src/project_context.py\n"
+        "  /src/notes.md"
+    )
+    decision = _classify(
+        {"task": "how does context management work?", "context": context}
+    )
+    assert decision["target"] == "explainer"
+    assert decision["needs_files"] == []
+    assert decision["glob_failed"] == ""
+
+
+def test_bare_symbol_explain_ignores_a_coincidental_error_substring() -> None:
+    # second blocker instance: "error" is a substring of structural_errors.py
+    # ({structural, errors} is not named by "error handling work"), so the
+    # turn must not ground on it.
+    context = (
+        "assistant: [globbed error,handling,work]\n"
+        "  /src/structural_errors.py\n"
+        "  /src/README.md"
+    )
+    decision = _classify({"task": "how does error handling work?", "context": context})
+    assert decision["target"] == "explainer"
+    assert decision["needs_files"] == []
+    assert decision["glob_failed"] == ""
+
+
+def test_bare_symbol_explain_grounds_a_fully_named_multi_word_file() -> None:
+    # the multi-word file is grounded ONLY when the question names every
+    # significant component: "accept gate" names both parts of accept_gate.py
+    # ({accept, gate} <= {accept, gate, work}), so it grounds.
+    context = (
+        "assistant: [globbed accept,gate,work]\n  /src/accept_gate.py\n  /src/notes.md"
+    )
+    decision = _classify({"task": "how does the accept gate work?", "context": context})
+    assert decision["target"] == "need-files"
+    assert decision["needs_files"] == ["/src/accept_gate.py"]
+
+
 def test_named_file_explain_never_enters_multi_stem_discovery() -> None:
     # a task that already names a file (with extension) keeps the existing
     # grounded/not-grounded gate — explain-discovery only fires when NO file
