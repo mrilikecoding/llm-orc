@@ -75,6 +75,7 @@ so far:
 | 2026-07-12 (convergent-fix + grounded-explain, merged) | 13-turn recorded ladder, real OpenCode on merged main (baseline 8b) | **10/13** | Both WS-1 and WS-2 item 1 validated live. Turn 13 CONVERTED (convergent-fix exit gate met): rung 1.5 read `test_buggy.py` before fixing, so the fix saw the expected "no values" contract and wrote the correct guard on the first try (`10 passed`, seeded-red now green), deterministic where every prior run's turn 13 missed on a self-invented message. Turn 3 grounded and honest (grounded-explain): todo.py was built, so the gate explained the real content and correctly reflected only `add_todo_item`, not turn 2's rejected `complete_todo`. No regressions on the read/run/discovery/refusal rungs. The one dishonest outcome is turn 10 (named calc.py, the seeded file, as "the first thing built"), i.e. #82 deep recall (WS-2 item 2), NOT in this session's scope. Rung 2 (re-fix) did not need to fire live because rung 1.5 made the first fix correct; it stays hermetic + server-validated. Part of the lift over 6/13 is turn-1/6 landing (variance); the two feature validations are causal. |
 | 2026-07-13 (WS-3 chain-executor migration, branch `feat/120-chain-executor`) | 13-turn recorded ladder, real OpenCode on the branch (baseline 8b) | **11/13** | NO-OP VALIDATION of the byte-identical `_route` → declarative chain-plan-table migration (WS-3 item 1 / #120). Routing fired identically on all 13 turns: build (1/2/6), grounded-explain (3, reflected the real `complete_todo`), tests-seat (4), memory-explain (5), build/fix (7), read → build (8), honest phantom refusal (9), recall-explain (10), run-delegation (11, verdict matched ground truth), glob → read → build (12), full fix-chain (13). All shipped deliverables green (full suite 15 passed client-side; T13 seeded-red converged). The one dishonest outcome is turn 10 (#82 deep recall, named calc.py as "the first thing built"), UNCHANGED from the 10/13 baseline and out of scope. Turn 7 an honest over-conservative gate reject (the accept sandbox lacked storage.py to verify the cross-module import; the persist code landed real and green client-side). The lift over 10/13 is turn-2 landing (variance), not a behavior change: the migration is byte-identical (`classify._route`/`_fix_chain_route` deleted, `advance()` live; the unmodified subprocess-driven classify suite anchors it hermetically). Merged to main 2026-07-13 (fast-forward, commits b0745af..c50cfa6). |
 | 2026-07-13 (#82 deep recall, branch `feat/82-deep-recall`) | 13-turn recorded ladder, real OpenCode on the branch (baseline 8b) | **11/13, ZERO dishonest** | THE STANDING DISHONEST MISS CONVERTED. Turn 10 ("what did the first thing I asked you to build do?") grounded on `todo.py`'s real `add_todo` content and named the FIRST ask, never the later/salient calc.py/storage.py/phantom.py every prior run guessed — the deterministic ordinal-selection ledger (caller-side, full-history) picked the first build-ask (shipped + visible → grounded case, `named_file` injected into grounded-explain's existing dispatch). No regression on the unchanged routing: turn 3 grounded-explain honest (reflected only the real `add_todo`, turn 2's `complete_todo` was rejected), turn 5 memory accurate, turn 8 read→build, turn 9 honest phantom refusal, turn 11 run-verdict matched ground truth (1 failed 7 passed), turn 12 glob→read→build discovery, turn 13 seeded-red converged (10 passed via rung 1.5's test-read). The 2 misses are honest rejects (turn 2 round-1 test quality, turn 7 over-conservative persist gate), unchanged residuals unrelated to #82. **Caveat: this ran the PRE-review regex+`shipped`-field code.** The subsequent adversarial review found 3 blockers on that prose-inference approach (a `_BUILD_RE` false positive mislabeling a non-build; an unimplemented asked-vs-built branch reporting a shipped build as "nothing shipped"; `_RECALL_RE` hijacking unrelated "first … build()" questions), so selection was reworked to be write-history-anchored (shipped writes only) and detection moves to the model-decider (see Handoff pointer). Turn 10 converts on both; the reworked code needs a live re-validation before merge. |
+| 2026-07-13 (#82 deep recall, post-review + fail-closed, branch `feat/82-deep-recall`) | 13-turn recorded ladder, real OpenCode on the branch (baseline 8b) | **10/13, ZERO dishonest** | THE MISS STAYS CONVERTED through the full rework. Turn 10 named `todo.py` (the correct first SHIPPED build), grounded on real content, never the wrong-file guess. Turn 1 REJECTED (round-1 test quality) yet turn 10 still converted — the write-history ledger anchored on the first shipped write (todo.py at turn 2, not the rejected first ask), validating the shipped-writes-only design live. No regression: turn 3 grounded-explain honest, turn 5 memory accurate, turn 8 read→build, turn 9 honest phantom refusal, turn 11 run-verdict matched ground truth (1 failed 12 passed), turn 12 discovery chain, turn 13 seeded-red converged (18 passed). The 3 misses are honest (turns 1/6 round-1 test quality, turn 7 the honest persist-refusal cascade), unrelated to #82. This ran the POST-review code: the adversarial wrong-accept hunt found 1 blocker (a stale `recall_answer` leaking past a run/fix chain preemption and shadowing the real verdict at emit) + 2 findings, all fixed TDD; the model-decider DETECTION swap landed with a deterministic `_RECALL_RE` structural floor AND a `built_deep` fail-closed (a fuzzy first-recall whose first build is windowed out answers structurally, no decider), so recall honesty on BOTH hard cases (measured turn-10 tight phrasing, fuzzy deep-history) is deterministic; the model-decider judges only the low-risk grounded/none cases. Separate live probe: a fuzzy grounded recall ("what was the earliest thing you built?") routed through the real qwen3 decider, which voted `recall` and named `add.py` honestly. Author-independent review APPROVED unconditional. Merged to main 2026-07-13. |
 
 The Cycle-7 benchmark harness (`research/agentic-serving-corpus` branch,
 `benchmark-runs/`) is the automation to revive for a standing
@@ -117,7 +118,7 @@ Two generalizations the upper rungs force (named 2026-07-09):
   registers, the composer itself a verified ensemble rather than a lone
   model — are the generative rung.
 
-## Current state (2026-07-13, v0.18.13 released; WS-3 merged; #82 deep-recall arc live on branch `feat/82-deep-recall`, unmerged)
+## Current state (2026-07-13, v0.18.13 released; WS-3 merged; #82 deep-recall MERGED)
 
 Thirteen releases in three days. v0.18.2–v0.18.7 (2026-07-09): Stage 2
 memory core, #100 TDD retry, #84 deterministic adequacy, #98
@@ -158,64 +159,47 @@ deterministic accept gate (per-test-isolated executor + static adequacy
 artifact). All-local (qwen3:8b) by default; operator seat overrides via
 `*.local.yaml`.
 
-**Handoff pointer (fresh-session start here):** The ACTIVE ARC is **#82
-deep recall (WS-2 item 2)** — the standing dishonest miss (turn 10) — on
-branch `feat/82-deep-recall` (unmerged; WS-1 convergent-fix, WS-2 item 1
-grounded-explain, and WS-3 chain executor all landed+merged earlier,
-commits through c50cfa6).
+**Handoff pointer (fresh-session start here):** **#82 deep recall (WS-2
+item 2) is DONE and MERGED** (branch `feat/82-deep-recall` → main,
+2026-07-13). The standing dishonest miss (turn 10) is converted and the
+recall arc is closed. Next entry point: **WS-3 item 2, grep→read** (the
+meta-task rung, §After #82 below), with **WS-8 revived in parallel** —
+the #82 live re-validation produced the first real `opencode run`
+transcripts the raw→IR adapter needs (do NOT guess the schema).
 
-_Architecture decided with the practitioner this session (the
-load-bearing split):_ recall has TWO jobs — **DETECTION** ("is this an
-ordinal-recall query?") and **SELECTION** ("which build was first?").
-Recall's honesty lives entirely in SELECTION: a model choosing "which
-was first" IS the original turn-10 dishonest miss, so selection must be
-deterministic-structural over the **write-history ledger** (shipped
-writes only, `{ask, path}`, built caller-side from the full message
-history — spoof-safe, never prose-inferred). DETECTION is fuzzy NL where
-regexes are brittle, so it belongs in the guarded model-decider; because
-selection is structural, a detection error is irrelevant-but-true, never
-a lie. This is the doctrine correctly applied (model judgment for
-bounded routing, determinism for the answer); the first pass mis-applied
-it by making detection a deterministic regex.
+_Architecture that shipped (the load-bearing split):_ recall has TWO
+jobs — DETECTION ("is this an ordinal-recall query?") and SELECTION
+("which build was first?"). SELECTION is deterministic-structural over
+the **write-history ledger** (`_recall_ledger`, caller-side, shipped
+writes only, `{ask, path}`, spoof-safe, never prose-inferred). DETECTION
+is TWO LAYERS over that one selector: a tight `_RECALL_RE` **structural
+floor** (the measured turn-10 phrasing, no model) plus a loose
+`maybe_recall` **model extension** for fuzzy phrasings, where the guarded
+model-decider judges recall-vs-concept — BUT a `built_deep` fuzzy recall
+(first build windowed out, so an ungrounded explainer could only guess)
+**fails closed** to a structural answer with no decider. Net: recall
+honesty on BOTH hard cases (measured tight phrasing, fuzzy deep-history)
+is deterministic; the decider judges only the low-risk grounded/none
+cases where the explainer can itself be honest.
 
-_Done on the branch:_ the write-history ledger (`_recall_ledger`,
-caller), classify write-history selection (grounded / built_deep / none,
-NO `_BUILD_RE`, NO fabricated "rejected"), the `recall-answer` shape +
-emit + resolve/shape/form_gate field flow, an interim TIGHT `_RECALL_RE`
-detector, and the `is_explain` injection gate. Live-validated **11/13
-zero-dishonest** (turn 10 CONVERTED) — BUT that ladder ran the
-PRE-review regex+`shipped`-field code; the write-history rework is NOT
-yet re-validated live (turn 10 should still convert: todo ships →
-grounded path).
+_Why the split (a false-negative would reintroduce the miss):_ a
+detection error over-firing recall is irrelevant-but-true, but a
+detection error UNDER-firing (a genuine deep-recall the model votes
+non-recall) routes to the guessing explainer — the original miss. So
+detection cannot be a pure model vote; the structural floor + the
+`built_deep` fail-closed keep the honesty-critical cases off the model
+(the doctrine correctly applied: determinism for the answer, model
+judgment only for bounded low-risk routing).
 
-_Adversarial review (author-independent wrong-accept hunt — thrice-proven
-gate) found 3 blockers + 1 finding on the first (prose-inference)
-approach._ CLOSED: blocker 1 (`_BUILD_RE` mislabels a non-build like "fix
-my understanding" as the first build) and blocker 2 (false "nothing
-shipped" for a build that shipped) — both fixed by write-history
-selection; finding 4 (injection not `is_explain`-gated) — fixed.
-MITIGATED, not yet eliminated: blocker 3 (`_RECALL_RE` hijacks unrelated
-"first … build()" questions) — the tight interim regex cuts it and
-structural selection makes any residual false trigger irrelevant-but-true.
-
-**Enter here: the model-decider DETECTION swap** (completes the
-practitioner-chosen full architecture and eliminates blocker 3). Design:
-(1) add `recall` to the `decide` node's closed target set + prompt
-examples (`serving.yaml`); (2) classify replaces the interim `_RECALL_RE`
-gate with a LOOSE `maybe_recall` pre-filter (`is_explain` + an ordinal
-word) that sets `needs_decider`, and pre-computes BOTH the recall answer
-(grounded dispatch on a visible first-write, else the built_deep/none
-message) AND the plain-explainer fallback; (3) `resolve` applies the
-model's vote — `decide=="recall"` → the pre-computed recall routing
-(grounded → explainer on `recall_path`, else `recall-answer`), else the
-explainer fallback (add `recall` to `_DERIVED`/`_decider_target`).
-Hermetic tests stub the decide node (fixture swaps the decide model for
-an echo returning `{"target":"recall"}`). THEN: re-validate live on the
-13-turn ladder (serve on :8765 from the branch, `uv run llm-orc serve` —
-global 0.18.5 lacks the changes), re-run the adversarial review,
-reconcile the STALE design doc (`docs/plans/2026-07-13-deep-recall-
-design.md` still describes the `{ask,path,shipped}`/rejected/regex design
-— rewrite to write-history + model-detection), then merge with consent.
+_Validated:_ live 13-turn ladder **10/13, ZERO dishonest** (turn 10
+converted even though turn 1 REJECTED — the ledger anchored on the first
+SHIPPED write, not the rejected first ask); a separate fuzzy grounded
+probe drove the real qwen3 decider, which voted `recall` and answered
+honestly; author-independent wrong-accept review APPROVED unconditional
+(one blocker found + fixed TDD: a stale `recall_answer` leaking past a
+run/fix chain preemption and shadowing the real verdict at emit). Design
+doc: `docs/plans/2026-07-13-deep-recall-design.md` (reconciled to the
+shipped two-layer + fail-closed design).
 
 _After #82:_ **WS-3 item 2, grep→read** — the meta-task rung's entry and
 the "lands as data" proof (a new chain is a guard function + a `Step`
