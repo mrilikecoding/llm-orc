@@ -171,8 +171,11 @@ item 2) is DONE and MERGED** (branch `feat/82-deep-recall` → main,
 2026-07-13). The standing dishonest miss (turn 10) is converted and the
 recall arc is closed. Next entry point: **WS-3 item 2, grep→read** (the
 meta-task rung, §After #82 below), with **WS-8 revived in parallel** —
-the #82 live re-validation produced the first real `opencode run`
-transcripts the raw→IR adapter needs (do NOT guess the schema).
+the #82 re-validation confirmed `opencode run` works cleanly on the
+branch, so WS-8's needed `opencode run --format json` capture is
+straightforward to grab (the raw→IR adapter needs it; do NOT guess the
+schema — the #82 battery output was plain-text and ephemeral, so capture
+a fresh one).
 
 _Architecture that shipped (the load-bearing split):_ recall has TWO
 jobs — DETECTION ("is this an ordinal-recall query?") and SELECTION
