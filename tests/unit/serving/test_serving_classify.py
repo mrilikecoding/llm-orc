@@ -1299,7 +1299,12 @@ def test_bare_symbol_explain_grounds_once_the_candidate_is_visible() -> None:
     assert "def advance(bundle):" in decision["dispatch_input"]
 
 
-def test_bare_symbol_explain_zero_candidates_refuses_honestly() -> None:
+def test_bare_symbol_explain_zero_candidates_falls_through_to_the_explainer() -> None:
+    # the slice only ADDS grounding, it never removes the general-answer
+    # capability: a bare-symbol explain whose stems match NO repo file falls
+    # through to the conceptual explainer (general-knowledge answer, today's
+    # behavior) rather than refusing. No refusal, no read request, no
+    # re-glob — the listing already exists in context, so discovery is done.
     context = (
         "assistant: [globbed classify,decide,routing]\n"
         "  /work/notes.md\n"
@@ -1308,9 +1313,11 @@ def test_bare_symbol_explain_zero_candidates_refuses_honestly() -> None:
     decision = _classify(
         {"task": "how does classify decide routing?", "context": context}
     )
-    assert decision["target"] == "need-glob"
+    assert decision["target"] == "explainer"
+    assert decision["build"] is False
     assert decision["needs_glob"] == ""
-    assert "no file matching" in decision["glob_failed"]
+    assert decision["glob_failed"] == ""
+    assert decision["needs_files"] == []
 
 
 def test_bare_symbol_explain_multiple_candidates_refuses_naming_them() -> None:
