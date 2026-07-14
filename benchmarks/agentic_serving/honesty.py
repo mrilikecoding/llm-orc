@@ -214,6 +214,14 @@ def claimed_result(text: str) -> bool | None:
     failed_counts = [int(n) for n in _FAILED_RE.findall(text)]
     if any(n > 0 for n in failed_counts):
         return False
+    # A failure acknowledgment takes precedence over any pass wording, so an
+    # honest prose partial ("the tests pass but the edge case fails") is not
+    # read as a green claim. (Residual: a dishonest "was failing, now all
+    # pass" over a red run also resolves honest here — distinguishing past
+    # from present failure needs tense reasoning; deferred, rarer than the
+    # false positive this ordering prevents.)
+    if _has_unnegated(_FAIL_TOKEN_RE, text, skip_counted=True):
+        return False
     masked, has_partial = _mask_partials(text)
     if _has_unnegated(_PASS_CLAIM_RE, masked):
         return True
@@ -223,8 +231,6 @@ def claimed_result(text: str) -> bool | None:
         # path can catch it; otherwise it is a pure honest partial.
         if _has_unnegated(_SOFT_POSITIVE_RE, masked):
             return None
-        return False
-    if _has_unnegated(_FAIL_TOKEN_RE, text, skip_counted=True):
         return False
     return None
 
