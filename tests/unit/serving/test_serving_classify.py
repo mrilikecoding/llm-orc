@@ -1220,6 +1220,15 @@ def test_explain_stems_empty_when_only_stopwords() -> None:
     assert _explain_stems("what is it") == []
 
 
+def test_explain_stems_drops_classifys_own_marker_words() -> None:
+    # "explain"/"describe"/"summarize" are classify's OWN routing vocabulary
+    # (is_explain markers), not content — a turn with nothing else left over
+    # must not glob the workspace for the word "explain" itself.
+    assert _explain_stems("explain what it does") == []
+    assert _explain_stems("describe this") == []
+    assert _explain_stems("summarize it") == []
+
+
 def test_last_anchor_recall_is_not_a_wrong_accept_and_stays_on_the_explainer() -> None:
     # MVP handles only the "first" anchor. A "last"/"latest" query must NOT be
     # answered with the FIRST entry (a confident wrong-accept); it stays on

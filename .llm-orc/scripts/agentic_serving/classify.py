@@ -389,33 +389,122 @@ def _target_test_file(
 # ordinary English content words like "decorator") always survive.
 _EXPLAIN_STOPWORDS = frozenset(
     {
-        "how", "what", "where", "when", "why", "which", "who", "whose",
-        "is", "are", "was", "were", "be", "been", "being", "am",
-        "do", "does", "did", "done", "doing", "has", "have", "had",
-        "the", "a", "an", "this", "that", "these", "those",
-        "it", "its", "they", "them", "their", "we", "you", "i",
-        "my", "your", "our",
-        "of", "to", "in", "on", "for", "from", "with", "by", "at", "as",
-        "into", "about", "over", "under", "between", "through",
-        "and", "or", "but", "if", "then", "than", "so", "because",
-        "can", "could", "should", "would", "will", "shall", "may",
-        "might", "must",
-        "get", "gets", "got", "make", "makes", "made", "use", "uses",
-        "used", "using",
-        "there", "here", "not", "no", "yes", "any", "all", "some", "each",
+        "how",
+        "what",
+        "where",
+        "when",
+        "why",
+        "which",
+        "who",
+        "whose",
+        "is",
+        "are",
+        "was",
+        "were",
+        "be",
+        "been",
+        "being",
+        "am",
+        "do",
+        "does",
+        "did",
+        "done",
+        "doing",
+        "has",
+        "have",
+        "had",
+        "the",
+        "a",
+        "an",
+        "this",
+        "that",
+        "these",
+        "those",
+        "it",
+        "its",
+        "they",
+        "them",
+        "their",
+        "we",
+        "you",
+        "i",
+        "my",
+        "your",
+        "our",
+        "of",
+        "to",
+        "in",
+        "on",
+        "for",
+        "from",
+        "with",
+        "by",
+        "at",
+        "as",
+        "into",
+        "about",
+        "over",
+        "under",
+        "between",
+        "through",
+        "and",
+        "or",
+        "but",
+        "if",
+        "then",
+        "than",
+        "so",
+        "because",
+        "can",
+        "could",
+        "should",
+        "would",
+        "will",
+        "shall",
+        "may",
+        "might",
+        "must",
+        "get",
+        "gets",
+        "got",
+        "make",
+        "makes",
+        "made",
+        "use",
+        "uses",
+        "used",
+        "using",
+        "there",
+        "here",
+        "not",
+        "no",
+        "yes",
+        "any",
+        "all",
+        "some",
+        "each",
     }
 )
 _EXPLAIN_TOKEN_RE = re.compile(r"[a-z_][a-z0-9_]*")
 _EXPLAIN_STEM_MIN_LEN = 3
+# classify's OWN single-word explain markers (the rest of _EXPLAIN_MARKERS is
+# either a multi-word phrase whose head word the general stopword set above
+# already covers, or an auxiliary already in it) are routing vocabulary, not
+# content — excluding them from stem candidacy mirrors _STEM_STOPWORDS's
+# existing exclusion of build-verb markers from module-stem extraction. Kept
+# separate from _EXPLAIN_STOPWORDS so that set stays a verbatim copy of the
+# spike's STOP.
+_EXPLAIN_MARKER_WORDS = frozenset({"explain", "describe", "summarize"})
 
 
 def _explain_stems(task: str) -> list[str]:
     """Candidate glob stems for a bare-symbol explain turn (glob->read
     grounded-explain, WS-3 slice 1): every identifier-shaped token, len >=
-    3, minus the general-English stopword set above, first-mention order,
-    deduped. Tokens are charset-checked by construction (the token regex
-    itself), so the result is safe to comma-join into a glob pattern
-    template downstream (the run-command discipline)."""
+    3, minus the general-English stopword set above and classify's own
+    explain-marker words, first-mention order, deduped. Tokens are
+    charset-checked by construction (the token regex itself), so the result
+    is safe to comma-join into a glob pattern template downstream (the
+    run-command discipline)."""
     seen: set[str] = set()
     stems: list[str] = []
     for match in _EXPLAIN_TOKEN_RE.finditer(task.lower()):
@@ -423,6 +512,7 @@ def _explain_stems(task: str) -> list[str]:
         if (
             len(token) >= _EXPLAIN_STEM_MIN_LEN
             and token not in _EXPLAIN_STOPWORDS
+            and token not in _EXPLAIN_MARKER_WORDS
             and token not in seen
         ):
             seen.add(token)
