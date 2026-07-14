@@ -118,7 +118,7 @@ Two generalizations the upper rungs force (named 2026-07-09):
   registers, the composer itself a verified ensemble rather than a lone
   model — are the generative rung.
 
-## Current state (2026-07-13, v0.18.14 released; WS-3 chain executor + #82 deep-recall MERGED)
+## Current state (2026-07-14; meta-task rung slice 1 — glob→read grounded-explain — MERGED to main, UNRELEASED; last release v0.18.14)
 
 Thirteen releases in three days. v0.18.2–v0.18.7 (2026-07-09): Stage 2
 memory core, #100 TDD retry, #84 deterministic adequacy, #98
@@ -167,9 +167,10 @@ artifact). All-local (qwen3:8b) by default; operator seat overrides via
 `*.local.yaml`.
 
 **Handoff pointer (fresh-session start here):** the **meta-task rung's
-first slice — glob→read grounded-explain** — is DONE on branch
-`feat/glob-read-grounded-explain` (validated live + author-independent
-review APPROVE; narrow-but-honest; pending merge). **Reframe that
+first slice — glob→read grounded-explain** — is **MERGED to main**
+(2026-07-14, ff `a71bc8b..e53eca8`; validated live + author-independent
+review APPROVE; narrow-but-honest; UNRELEASED, bundling into the next
+release). **Enter the next session at rung 1 below (recall recovery).** **Reframe that
 supersedes "grep→read first":** a real-repo spike REFUTED naive
 deterministic content-grep (a question about a central concept names the
 repo's MOST-common strings — classify/decide/routing = 100/52/64 files —
@@ -670,10 +671,13 @@ lines, zero hits in `src/`), so there is nothing to revive — WS-8 is a
 NEW build. Scoping is DONE on branch `feat/131-parity-scoreboard`
 (unmerged): the arm-agnostic transcript IR + metrics scorer
 (`benchmarks/agentic_serving/{transcript,honesty,metrics}.py`, 29 tests)
-already exist. Remaining: a corpus entry for the continuous 13-turn
-conversation, an `opencode run` runner, and the raw→IR adapter (needs a
-real `opencode run --format json` capture — #82's live re-validation can
-produce it; do NOT guess the schema). Arms: **Arm 0** (serve/qwen3:8b) —
+already exist. **The `opencode run --format json` capture is now DONE**
+(2026-07-14, `docs/plans/2026-07-13-opencode-run-captures/`: the JSONL
+event schema — `tool_use`→`part.tool`/`part.state.input`/`part.state.output`,
+`text`→`part.text`, `step_finish`→`part.tokens`/`part.cost`), so the raw→IR
+adapter is UNBLOCKED against real data. Remaining: a corpus entry for the
+continuous 13-turn conversation, an `opencode run` runner, and the adapter
+itself. Arms: **Arm 0** (serve/qwen3:8b) —
 free; **Arm 2** (Claude Code native) — free via dispatched subagents
 here; **Arm 1** (Haiku 4.5 / Sonnet 5 behind OpenCode) — paid via
 OpenCode Go, practitioner-authorized within a ~$12/hr limit, est. ~$5–12
