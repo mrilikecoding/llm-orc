@@ -373,7 +373,40 @@ def test_explain_turn_returns_prose_not_a_tool_call(
 
     A conceptual explain (no named file) — the grounded-explain gate
     (docs/plans/2026-07-12-grounded-explain-design.md) only fires for a
-    real named-file target, covered separately below.
+    real named-file target, covered separately below. This turn has NO
+    extractable stem (glob->read grounded-explain, WS-3 slice 1: every
+    token is a stopword), so explain-discovery never engages either — a
+    turn WITH a bare-symbol stem now globs first, covered below.
+    """
+    resp = serving_client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "ensemble-agent",
+            "messages": [{"role": "user", "content": "what is this"}],
+            "tools": [_WRITE_TOOL],
+        },
+    )
+
+    assert resp.status_code == 200
+    choice = resp.json()["choices"][0]
+    assert choice["finish_reason"] == "stop"
+    assert not choice["message"].get("tool_calls")
+    content = choice["message"]["content"]
+    assert content
+    assert "add" in content
+
+
+def test_bare_symbol_explain_globs_before_any_prose_answer(
+    serving_client: TestClient,
+) -> None:
+    """glob->read grounded-explain (WS-3 slice 1, docs/plans/2026-07-14-
+    glob-read-grounded-explain-design.md): a bare-symbol explain turn now
+    attempts ONE glob round for its candidate stems before any conceptual
+    answer — never a file-write either way. This supersedes the older
+    assumption (test_explain_turn_returns_prose_not_a_tool_call, pre-slice-1)
+    that every no-named-file explain skips discovery; "recursion"/"works"
+    are extractable stems, so this turn is exactly what the mechanism is
+    designed to intercept.
     """
     resp = serving_client.post(
         "/v1/chat/completions",
@@ -386,11 +419,55 @@ def test_explain_turn_returns_prose_not_a_tool_call(
 
     assert resp.status_code == 200
     choice = resp.json()["choices"][0]
+    assert choice["finish_reason"] == "tool_calls"
+    call = choice["message"]["tool_calls"][0]
+    assert call["function"]["name"] == "glob"
+    assert json.loads(call["function"]["arguments"]) == {
+        "pattern": "**/*{recursion,works}*"
+    }
+
+
+def test_bare_symbol_explain_zero_glob_matches_refuses_never_writes(
+    serving_client: TestClient,
+) -> None:
+    """The zero-candidate case refuses honestly — the explain path never
+    falls back to a silent write, and never speculates once discovery has
+    already been attempted and come up empty."""
+    resp = serving_client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "ensemble-agent",
+            "messages": [
+                {"role": "user", "content": "explain how recursion works"},
+                {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "id": "call_g1",
+                            "type": "function",
+                            "function": {
+                                "name": "glob",
+                                "arguments": ('{"pattern": "**/*{recursion,works}*"}'),
+                            },
+                        }
+                    ],
+                },
+                {
+                    "role": "tool",
+                    "tool_call_id": "call_g1",
+                    "content": "/work/notes.md\n/work/README.md",
+                },
+            ],
+            "tools": [_WRITE_TOOL],
+        },
+    )
+
+    assert resp.status_code == 200
+    choice = resp.json()["choices"][0]
     assert choice["finish_reason"] == "stop"
     assert not choice["message"].get("tool_calls")
-    content = choice["message"]["content"]
-    assert content
-    assert "add" in content
+    assert "no file matching" in choice["message"]["content"]
 
 
 def test_explain_of_a_never_written_file_returns_the_honest_message(
