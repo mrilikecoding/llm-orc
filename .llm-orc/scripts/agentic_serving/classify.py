@@ -396,14 +396,14 @@ def _module_stem(task: str) -> str:
     return stems[0] if len(stems) == 1 else ""
 
 
-def _globbed_candidates(context: str, stem: str) -> list[str] | None:
-    """Candidate paths from the turn's ``[globbed ...]`` block, or ``None``
-    when no listing exists yet (pass 1 fires).
-
-    Matching is deterministic on the rendered block only (design bounds):
-    basename contains the stem, ``.py``, not ``test_*``-named. The header
-    scan is column-0 anchored, so an indented lookalike inside a read or
-    run body never counts as a listing (fenced block grammar).
+def _latest_glob_listing(context: str) -> list[str] | None:
+    """Raw path lines from the turn's LATEST ``[globbed ...]`` block, or
+    ``None`` when no listing exists yet (pass 1 fires). Column-0 anchored
+    header scan (fenced block grammar) — an indented lookalike inside a
+    read or run body never counts as a listing. Shared by
+    ``_globbed_candidates`` (the single-stem build seam) and
+    ``_explain_glob_candidates`` (the multi-stem explain-discovery seam,
+    glob->read grounded-explain design).
     """
     lines = context.splitlines()
     start = -1
@@ -412,17 +412,33 @@ def _globbed_candidates(context: str, stem: str) -> list[str] | None:
             start = index
     if start < 0:
         return None
-    candidates: list[str] = []
+    paths: list[str] = []
     for line in lines[start + 1 :]:
         if not line.startswith("  "):
             break
-        basename = line.strip().rsplit("/", 1)[-1]
+        paths.append(line.strip())
+    return paths
+
+
+def _globbed_candidates(context: str, stem: str) -> list[str] | None:
+    """Candidate paths from the turn's ``[globbed ...]`` block, or ``None``
+    when no listing exists yet (pass 1 fires).
+
+    Matching is deterministic on the rendered block only (design bounds):
+    basename contains the stem, ``.py``, not ``test_*``-named.
+    """
+    listing = _latest_glob_listing(context)
+    if listing is None:
+        return None
+    candidates: list[str] = []
+    for path in listing:
+        basename = path.rsplit("/", 1)[-1]
         if (
             stem in basename.lower()
             and basename.endswith(".py")
             and not basename.startswith("test_")
         ):
-            candidates.append(line.strip())
+            candidates.append(path)
     return candidates
 
 
