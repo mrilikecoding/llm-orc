@@ -380,6 +380,56 @@ def _target_test_file(
     return test_name
 
 
+# glob->read grounded-explain (WS-3 slice 1, docs/plans/2026-07-14-glob-
+# read-grounded-explain-design.md): general English function words only —
+# NOT code terms (docs/plans/2026-07-14-grep-read-spikes/spike1-bare-
+# mentions.py, the ``STOP`` set, reused verbatim). Deliberately excludes
+# code-flavored words so the extractor cannot be hand-tuned to a passing
+# gate; a bare-symbol turn's real code tokens (module/function names, and
+# ordinary English content words like "decorator") always survive.
+_EXPLAIN_STOPWORDS = frozenset(
+    {
+        "how", "what", "where", "when", "why", "which", "who", "whose",
+        "is", "are", "was", "were", "be", "been", "being", "am",
+        "do", "does", "did", "done", "doing", "has", "have", "had",
+        "the", "a", "an", "this", "that", "these", "those",
+        "it", "its", "they", "them", "their", "we", "you", "i",
+        "my", "your", "our",
+        "of", "to", "in", "on", "for", "from", "with", "by", "at", "as",
+        "into", "about", "over", "under", "between", "through",
+        "and", "or", "but", "if", "then", "than", "so", "because",
+        "can", "could", "should", "would", "will", "shall", "may",
+        "might", "must",
+        "get", "gets", "got", "make", "makes", "made", "use", "uses",
+        "used", "using",
+        "there", "here", "not", "no", "yes", "any", "all", "some", "each",
+    }
+)
+_EXPLAIN_TOKEN_RE = re.compile(r"[a-z_][a-z0-9_]*")
+_EXPLAIN_STEM_MIN_LEN = 3
+
+
+def _explain_stems(task: str) -> list[str]:
+    """Candidate glob stems for a bare-symbol explain turn (glob->read
+    grounded-explain, WS-3 slice 1): every identifier-shaped token, len >=
+    3, minus the general-English stopword set above, first-mention order,
+    deduped. Tokens are charset-checked by construction (the token regex
+    itself), so the result is safe to comma-join into a glob pattern
+    template downstream (the run-command discipline)."""
+    seen: set[str] = set()
+    stems: list[str] = []
+    for match in _EXPLAIN_TOKEN_RE.finditer(task.lower()):
+        token = match.group(0)
+        if (
+            len(token) >= _EXPLAIN_STEM_MIN_LEN
+            and token not in _EXPLAIN_STOPWORDS
+            and token not in seen
+        ):
+            seen.add(token)
+            stems.append(token)
+    return stems
+
+
 def _module_stem(task: str) -> str:
     """The turn's single module stem, or "" (no stem, or multi-stem).
 
