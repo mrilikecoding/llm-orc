@@ -12,6 +12,7 @@ import json
 from llm_orc.core.session.messages import ChatMessage
 from llm_orc.web.serving.chunks import ClientToolCall
 from llm_orc.web.serving.serving_ensemble_caller import (
+    _glob_pattern,
     _outcome_chunks,
     _render_context,
     _tool_result_ack,
@@ -977,6 +978,32 @@ def test_glob_blocks_from_before_the_latest_user_message_do_not_render() -> None
     assert "/w/storage.py" not in rendered
 
 
+def test_brace_pattern_echo_renders_the_joined_stem_header() -> None:
+    # glob->read grounded-explain (WS-3 slice 1): a multi-stem explain-
+    # discovery glob uses literal brace-alternation; the echo must round-trip
+    # through the glob-block render exactly like a single-stem pattern does,
+    # or classify would never see the listing at all.
+    messages = [
+        ChatMessage(role="user", content="how does classify decide routing?"),
+        ChatMessage(
+            role="assistant",
+            content=None,
+            tool_calls=(_glob_call("c1", "**/*{classify,decide,routing}*"),),
+        ),
+        ChatMessage(
+            role="tool",
+            tool_call_id="c1",
+            content="/work/classify.py\n/work/test_serving_classify.py",
+        ),
+    ]
+
+    rendered = _render_context(messages)
+
+    assert "assistant: [globbed classify,decide,routing]" in rendered
+    assert "\n  /work/classify.py" in rendered
+    assert "\n  /work/test_serving_classify.py" in rendered
+
+
 def test_glob_call_never_renders_as_a_write_read_or_run_block() -> None:
     messages = [
         ChatMessage(role="user", content="write tests for the storage module"),
@@ -1029,6 +1056,42 @@ def test_unsafe_glob_stem_never_enters_the_pattern_template() -> None:
 
     assert not any(isinstance(chunk, ClientToolCall) for chunk in chunks)
     assert any("Refused" in getattr(chunk, "content", "") for chunk in chunks)
+
+
+# --- glob->read grounded-explain (WS-3 slice 1, docs/plans/2026-07-14-glob-
+# read-grounded-explain-design.md): a comma-joined multi-stem glob emits
+# literal brace-alternation; a single stem stays unchanged ---
+
+
+def test_multi_stem_glob_outcome_emits_a_brace_pattern() -> None:
+    tools = [{"type": "function", "function": {"name": "glob"}}]
+    chunks = _outcome_chunks(
+        {"finish": False, "glob": "classify,decide,routing"}, tools
+    )
+
+    call = chunks[0]
+    assert isinstance(call, ClientToolCall)
+    arguments = json.loads(call.tool_calls[0].arguments)
+    assert arguments == {"pattern": "**/*{classify,decide,routing}*"}
+
+
+def test_unsafe_multi_stem_glob_never_enters_the_pattern_template() -> None:
+    chunks = _outcome_chunks({"finish": False, "glob": "classify,sto*rage"}, [])
+
+    assert not any(isinstance(chunk, ClientToolCall) for chunk in chunks)
+    assert any("Refused" in getattr(chunk, "content", "") for chunk in chunks)
+
+
+def test_glob_pattern_builder_single_stem_matches_the_old_template() -> None:
+    assert _glob_pattern("storage") == "**/*storage*"
+
+
+def test_glob_pattern_builder_multi_stem_emits_literal_braces() -> None:
+    assert _glob_pattern("classify,decide,routing") == "**/*{classify,decide,routing}*"
+
+
+def test_glob_pattern_builder_rejects_an_unsafe_part() -> None:
+    assert _glob_pattern("classify,sto*rage") is None
 
 
 def test_glob_continuation_is_not_acked() -> None:
