@@ -1,0 +1,37 @@
+opencode 1.17.15 — grep tool wire result format (captured 2026-07-13, Arm 0)
+
+When the serve emits a `grep` tool_call, opencode executes it and returns the
+result as a standard OpenAI role:"tool" message (matching tool_call_id) whose
+`content` string is:
+
+    Found <N> matches
+    <absolute-path-1>:
+      Line <n>: <matching line text>
+      Line <m>: <matching line text>
+    <absolute-path-2>:
+      Line <k>: <matching line text>
+
+Example (pattern "def mean", 1 match):
+
+    Found 1 matches
+    /abs/.../capture-repo/metrics.py:
+      Line 1: def mean(values):
+
+Normalizer notes (grep->read):
+- Absolute paths, one per matching file, each terminated by ":".
+- Matches under each file are indented two spaces: "  Line <lineno>: <text>".
+- Header line "Found <N> matches" (N may be 0).
+- grep INPUT schema (advertised): {pattern (required, regex), path?, include?}.
+- Contrast glob: glob output is bare newline-joined absolute paths, no header,
+  no line numbers. grep adds the header + per-file grouping + line hits.
+- Captured via fake-SSE probe grep_probe.py (emits one grep tool_call, dumps
+  opencode's follow-up). Full envelope: grep-followup-request-full.json (also
+  shows opencode's system prompt + all 16 advertised tool schemas + tool
+  results riding the wire as role:"tool" content strings).
+
+---
+glob brace-alternation (captured 2026-07-14 via tool_probe.py): opencode 1.17.15
+glob SUPPORTS brace expansion. Pattern `**/*{metrics,calc}*` returned calc.py,
+metrics.py, test_metrics.py (all files whose basename contains any listed stem).
+So a multi-stem explain question can search all candidate stems in ONE glob
+round: `**/*{stem1,stem2,...}*`, then filter .py / not test_ / one-or-refuse.
