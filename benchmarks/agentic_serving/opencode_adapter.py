@@ -1,0 +1,113 @@
+"""opencode ``--format json`` -> Transcript IR adapter (#131).
+
+The one arm-specific seam in WS-8 scoring: turns OpenCode's raw JSONL event
+stream (one stream per ``opencode run`` invocation = one battery turn) into
+the arm-agnostic IR (:mod:`benchmarks.agentic_serving.transcript`) that the
+scorer reads. The scorer never branches on arm; this adapter is where the
+OpenCode-specific shape is absorbed.
+
+Schema pinned by real captures (``docs/plans/2026-07-13-opencode-run-
+captures/``): JSONL, one event per line keyed by ``type`` — ``step_start``
+(envelope, ``timestamp``), ``text`` (``part.text``), ``tool_use``
+(``part.tool`` / ``part.state.input`` / ``part.state.output``), ``step_finish``
+(``part.tokens`` / ``part.cost``). See
+``docs/plans/2026-07-14-opencode-ir-adapter-design.md``. Deterministic, pure.
+"""
+
+from __future__ import annotations
+
+import json
+from typing import Any
+
+from benchmarks.agentic_serving.transcript import ToolCall, Transcript, Turn
+
+# Tool names whose observed command drives the honesty verification metric.
+_RUN_TOOLS = ("bash", "run")
+
+
+def parse_events(jsonl_text: str) -> list[dict[str, Any]]:
+    """Split an ``opencode --format json`` stream into event dicts, one per
+    non-blank line."""
+    events: list[dict[str, Any]] = []
+    for raw in jsonl_text.splitlines():
+        line = raw.strip()
+        if line:
+            events.append(json.loads(line))
+    return events
+
+
+def _tool_call(part: dict[str, Any]) -> ToolCall:
+    name = str(part.get("tool", ""))
+    state = part.get("state", {}) or {}
+    args = state.get("input", {}) or {}
+    output = state.get("output", "")
+    command = args.get("command") if name in _RUN_TOOLS else None
+    path = args.get("filePath") or args.get("pattern") or args.get("path")
+    return ToolCall(
+        name=name,
+        command=command,
+        path=path,
+        result_text="" if output is None else str(output),
+    )
+
+
+def turn_from_events(events: list[dict[str, Any]], *, index: int, prompt: str) -> Turn:
+    """Build one :class:`Turn` from a turn's ordered opencode events."""
+    texts: list[str] = []
+    tool_calls: list[ToolCall] = []
+    input_sum = 0
+    output_sum = 0
+    timestamps: list[int] = []
+
+    for event in events:
+        timestamp = event.get("timestamp")
+        if isinstance(timestamp, (int, float)):
+            timestamps.append(int(timestamp))
+        part = event.get("part", {}) or {}
+        etype = event.get("type")
+        if etype == "text":
+            texts.append(str(part.get("text", "")))
+        elif etype == "tool_use":
+            tool_calls.append(_tool_call(part))
+        elif etype == "step_finish":
+            tokens = part.get("tokens", {}) or {}
+            input_sum += int(tokens.get("input", 0) or 0)
+            output_sum += int(tokens.get("output", 0) or 0)
+
+    # Zero tokens is the local unbilled (Arm-0) signal: map to None so
+    # metrics.turn_cost returns None and the arm is $0 by construction.
+    if input_sum == 0 and output_sum == 0:
+        input_tokens: int | None = None
+        output_tokens: int | None = None
+    else:
+        input_tokens = input_sum
+        output_tokens = output_sum
+
+    wall_seconds: float | None = None
+    if len(timestamps) >= 2:
+        wall_seconds = (max(timestamps) - min(timestamps)) / 1000.0
+
+    return Turn(
+        index=index,
+        prompt=prompt,
+        assistant_text="\n".join(texts),
+        tool_calls=tuple(tool_calls),
+        wall_seconds=wall_seconds,
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+    )
+
+
+def turn_from_jsonl(jsonl_text: str, *, index: int, prompt: str) -> Turn:
+    """Parse an opencode JSONL stream and build one :class:`Turn`."""
+    return turn_from_events(parse_events(jsonl_text), index=index, prompt=prompt)
+
+
+def transcript_from_runs(arm: str, runs: list[tuple[str, str]]) -> Transcript:
+    """Assemble a :class:`Transcript` from ordered ``(prompt, jsonl_text)``
+    runs, one per battery turn, numbered from 1."""
+    turns = tuple(
+        turn_from_jsonl(jsonl_text, index=i, prompt=prompt)
+        for i, (prompt, jsonl_text) in enumerate(runs, start=1)
+    )
+    return Transcript(arm=arm, turns=turns)
