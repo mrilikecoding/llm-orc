@@ -124,6 +124,84 @@ def test_defer_recall_falls_through_to_the_decider() -> None:
     assert _decide(is_explain=True, defer_recall=True) == ("", "", False, True)
 
 
+# --- glob->read grounded-explain (WS-3 slice 1, docs/plans/2026-07-14-glob-
+# read-grounded-explain-design.md): two new CHAIN_EXPLAIN rows, placed after
+# recall-answer/not-grounded/defer and before the explainer row ---
+
+
+def test_explain_needs_glob_routes_to_need_glob() -> None:
+    assert _decide(is_explain=True, needs_glob="classify,decide,routing") == (
+        "need-glob",
+        "need_glob",
+        False,
+        False,
+    )
+
+
+def test_explain_glob_failed_alone_also_routes_to_need_glob() -> None:
+    assert _decide(
+        is_explain=True,
+        glob_failed="no file matching 'classify' in the workspace listing",
+    ) == ("need-glob", "need_glob", False, False)
+
+
+def test_explain_needs_files_routes_to_need_files() -> None:
+    assert _decide(is_explain=True, needs_files=["classify.py"]) == (
+        "need-files",
+        "need_files",
+        False,
+        False,
+    )
+
+
+def test_explain_read_failed_alone_also_routes_to_need_files() -> None:
+    assert _decide(
+        is_explain=True,
+        read_failed="could not read classify.py: client read failed",
+    ) == ("need-files", "need_files", False, False)
+
+
+def test_explain_needs_glob_never_fires_for_a_build_turn() -> None:
+    # isolation: is_explain=False (a build turn) with needs_glob set must take
+    # CHAIN_BUILD's own row, never the new explain-discovery row — the target
+    # tuple is identical either way, so this is pinned via chain/step_index.
+    decision = _advance(_SignalBundle(**{**_DEFAULTS, "needs_glob": "storage"}))
+    assert decision.chain == "build"
+    assert decision.step_index == 0
+
+
+def test_explain_needs_files_never_fires_for_a_build_turn() -> None:
+    decision = _advance(_SignalBundle(**{**_DEFAULTS, "needs_files": ["storage.py"]}))
+    assert decision.chain == "build"
+    assert decision.step_index == 1
+
+
+def test_explain_needs_glob_outranks_the_explainer_row() -> None:
+    decision = _decide(is_explain=True, needs_glob="classify")
+    assert decision == ("need-glob", "need_glob", False, False)
+
+
+def test_explain_needs_files_outranks_the_explainer_row() -> None:
+    decision = _decide(is_explain=True, needs_files=["classify.py"])
+    assert decision == ("need-files", "need_files", False, False)
+
+
+def test_chain_explain_row_order_is_recall_notgrounded_defer_glob_files_explainer() -> (
+    None
+):
+    from chain_plan import CHAIN_EXPLAIN  # noqa: PLC0415
+
+    targets = [step.target for step in CHAIN_EXPLAIN.steps]
+    assert targets == [
+        "recall-answer",
+        "not-grounded",
+        "",  # defer to the guarded decider
+        "need-glob",
+        "need-files",
+        "explainer",
+    ]
+
+
 def test_row8_build_needs_glob() -> None:
     assert _decide(needs_glob="storage") == (
         "need-glob",
@@ -275,11 +353,13 @@ def test_run_signal_outranks_explain_and_build_when_not_fix_chain() -> None:
 
 
 def test_explain_outranks_build_when_not_fix_chain_or_run() -> None:
+    # needs_glob/needs_files are no longer build-exclusive signals (glob->read
+    # grounded-explain added is_explain-gated rows that consume them too), so
+    # this probe uses only the build-only signals (tests_primary,
+    # has_build_signal) to isolate "explain chain outranks build chain".
     decision = _decide(
         is_explain=True,
         explain_ungrounded=False,
-        needs_glob="storage",
-        needs_files=["a.py"],
         tests_primary=True,
         has_build_signal=True,
     )

@@ -174,6 +174,21 @@ def _explain_defer_recall(bundle: SignalBundle) -> bool:
     return bundle.defer_recall
 
 
+def _explain_need_glob(bundle: SignalBundle) -> bool:
+    """glob->read grounded-explain (WS-3 slice 1): one glob round (or its
+    honest refusal) for a bare-symbol explain turn — guarded on is_explain
+    so a build turn's needs_glob always takes CHAIN_BUILD's own row instead
+    (isolation: build discovery must stay byte-behavior-unchanged)."""
+    return bundle.is_explain and bool(bundle.needs_glob or bundle.glob_failed)
+
+
+def _explain_need_files(bundle: SignalBundle) -> bool:
+    """glob->read grounded-explain: request (or refuse) the glob-matched
+    candidate's read — guarded on is_explain for the same isolation reason
+    as ``_explain_need_glob``."""
+    return bundle.is_explain and bool(bundle.needs_files or bundle.read_failed)
+
+
 def _explain_explainer(bundle: SignalBundle) -> bool:
     """a grounded (or conceptual, file-less) explain turn dispatches to the
     explainer seat."""
@@ -282,6 +297,24 @@ CHAIN_EXPLAIN = Chain(
             kind="",
             build=False,
             guard=_explain_defer_recall,
+        ),
+        # glob->read grounded-explain (WS-3 slice 1): a bare-symbol explain
+        # turn's discovery round, placed after recall-answer/not-grounded/
+        # defer and before the explainer row — the first-match scan means
+        # the explainer would short-circuit discovery otherwise.
+        Step(
+            chain_label="explain",
+            target="need-glob",
+            kind="need_glob",
+            build=False,
+            guard=_explain_need_glob,
+        ),
+        Step(
+            chain_label="explain",
+            target="need-files",
+            kind="need_files",
+            build=False,
+            guard=_explain_need_files,
         ),
         Step(
             chain_label="explain",
