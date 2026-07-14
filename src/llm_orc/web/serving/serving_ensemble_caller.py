@@ -109,6 +109,11 @@ _GLOB_STEM_RE = re.compile(r"^[A-Za-z_]\w*$")
 # against the template before its stem may enter the rendered header — a
 # non-matching echo renders as a failed block under a fixed safe token.
 _GLOB_PATTERN_RE = re.compile(r"^\*\*/\*([A-Za-z_]\w*)\*$")
+# glob->read grounded-explain (WS-3 slice 1): the sibling brace-alternation
+# template for a comma-joined multi-stem glob (explain-discovery's
+# _explain_stems, several candidate stems in one round). Same charset per
+# part as the single-stem template; the echo validation mirrors it exactly.
+_GLOB_BRACE_PATTERN_RE = re.compile(r"^\*\*/\*\{([A-Za-z_]\w*(?:,[A-Za-z_]\w*)+)\}\*$")
 _UNTRUSTED_STEM = "untrusted-stem"
 # Listing cap (discovery design bounds): the rendered block keeps at most
 # 50 paths, header-marked when cut; classify matches on the rendered block
@@ -582,11 +587,15 @@ def _render_glob_block(pattern: str, raw: str) -> str:
 
     On resume the pattern comes from the wire (the client echoes the
     tool_call back), so its stem enters the header only when the echo
-    matches the closed template the serve issues — the _RUN_COMMAND_RE
-    discipline. Glob blocks are never materialized: gather's header regex
-    does not know this block type.
+    matches a closed template the serve issues (single-stem or the
+    brace-alternation multi-stem form) — the _RUN_COMMAND_RE discipline.
+    Glob blocks are never materialized: gather's header regex does not know
+    this block type.
     """
-    match = _GLOB_PATTERN_RE.match(" ".join((pattern or "").split()))
+    flat_pattern = " ".join((pattern or "").split())
+    match = _GLOB_PATTERN_RE.match(flat_pattern) or _GLOB_BRACE_PATTERN_RE.match(
+        flat_pattern
+    )
     if not match:
         return (
             f"assistant: [globbed {_UNTRUSTED_STEM} (failed)] "
@@ -802,6 +811,23 @@ def _serve_outcome(result: dict[str, Any]) -> dict[str, Any]:
     return {"finish": True, "content": str(outcome)}
 
 
+def _glob_pattern(glob_stem: str) -> str | None:
+    """The closed glob pattern template for classify's ``glob`` outcome: a
+    single stem stays ``**/*a*`` (unchanged); several comma-joined stems
+    (glob->read grounded-explain's ``_explain_stems``, WS-3 slice 1) emit
+    literal brace-alternation ``**/*{a,b,c}*`` (opencode glob brace
+    expansion, captured 2026-07-14). Each part is charset-checked before it
+    may enter the template — the same run-command discipline as the
+    single-stem path; an unsafe part returns ``None`` so the caller refuses.
+    """
+    parts = glob_stem.split(",")
+    if not all(_GLOB_STEM_RE.match(part) for part in parts):
+        return None
+    if len(parts) == 1:
+        return f"**/*{parts[0]}*"
+    return f"**/*{{{','.join(parts)}}}*"
+
+
 def _outcome_chunks(
     outcome: dict[str, Any], tools: Sequence[Any]
 ) -> list[OrchestratorChunk]:
@@ -832,7 +858,8 @@ def _outcome_chunks(
         return [ClientToolCall(tool_calls=(invocation,))]
     glob_stem = str(outcome.get("glob") or "")
     if glob_stem:
-        if not _GLOB_STEM_RE.match(glob_stem):
+        pattern = _glob_pattern(glob_stem)
+        if pattern is None:
             # defense in depth on classify's charset discipline: an unsafe
             # stem never enters the pattern template
             return [
@@ -842,7 +869,7 @@ def _outcome_chunks(
         invocation = ToolCallInvocation(
             id=f"call_{uuid.uuid4().hex[:8]}",
             name=_client_tool(tools, _GLOB_TOOL_CANDIDATES, _GLOB_TOOL),
-            arguments=json.dumps({"pattern": f"**/*{glob_stem}*"}),
+            arguments=json.dumps({"pattern": pattern}),
         )
         return [ClientToolCall(tool_calls=(invocation,))]
     arguments = json.dumps(
