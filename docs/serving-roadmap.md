@@ -166,11 +166,25 @@ deterministic accept gate (per-test-isolated executor + static adequacy
 artifact). All-local (qwen3:8b) by default; operator seat overrides via
 `*.local.yaml`.
 
-**Handoff pointer (fresh-session start here):** the **meta-task rung's
+**Handoff pointer (fresh-session start here):** **ACTIVE TRACK: WS-8 parity
+measurement** (practitioner chose "measure first" 2026-07-14, over the
+recall-recovery rung — the honesty arc is done, but the parity CLAIM was
+never measured against the real comparator). The offline instrument is
+COMPLETE on main: Arc A scorer (7-round honesty hardening), Arc B
+`opencode_adapter.py`, Arc C `score_run.py` mechanical scorer — all
+author-independent reviewed. **Enter the next session at Arc D (rig-
+dependent):** on the 32GB rig, build+validate the arm-parameterized
+run-driver live, author the STRICT per-turn table against the first REAL
+Arm-0 transcripts (never speculated), run Arm 0 (serve, free) + Arm 2
+(Claude Code native, free via subagents), land the FIRST parity table,
+then measure one Arm-1 turn's tokens for the paid-arm go/no-go (~$5–12,
+practitioner pre-authorized "go for it when the time comes"). The
+meta-task rung (recall recovery, content-grep, `.llm-orc/` dot-dir) is
+PAUSED behind WS-8, resume after the first parity table.
+_Earlier meta-task context:_ the **meta-task rung's
 first slice — glob→read grounded-explain** — is **MERGED to main**
 (2026-07-14, ff `a71bc8b..e53eca8`; validated live + author-independent
-review APPROVE; narrow-but-honest; UNRELEASED, bundling into the next
-release). **Enter the next session at rung 1 below (recall recovery).** **Reframe that
+review APPROVE; narrow-but-honest; UNRELEASED). **Reframe that
 supersedes "grep→read first":** a real-repo spike REFUTED naive
 deterministic content-grep (a question about a central concept names the
 repo's MOST-common strings — classify/decide/routing = 100/52/64 files —
@@ -680,9 +694,18 @@ class in both directions; 161 tests, residuals documented in
 (2026-07-14, `docs/plans/2026-07-13-opencode-run-captures/`: the JSONL
 event schema — `tool_use`→`part.tool`/`part.state.input`/`part.state.output`,
 `text`→`part.text`, `step_finish`→`part.tokens`/`part.cost`), so the raw→IR
-adapter is UNBLOCKED against real data. Remaining: a corpus entry for the
-continuous 13-turn conversation, an `opencode run` runner, and the adapter
-itself. Arms: **Arm 0** (serve/qwen3:8b) —
+adapter is UNBLOCKED against real data. The **raw→IR adapter**
+(`opencode_adapter.py`, maps the captured schema; reasoning folds into
+output, cache excluded+documented as a fresh-token lower bound pending a
+paid capture) and the **mechanical run scorer** (`score_run.py`:
+dishonest-count / verification-rate / rounds / wall / cost + a
+missing-turns signal so a client-side death can't read as honesty) both
+**MERGED to main** (2026-07-14, Arc B+C, author-independent reviewed).
+**Remaining for the first parity table (Arc D, rig-dependent):** the
+arm-parameterized run-driver and the STRICT per-turn score table — both
+deliberately authored against REAL captured transcripts, not speculated
+(the honesty-classifier lesson) — then the Arm-0/Arm-2 runs. Arms:
+**Arm 0** (serve/qwen3:8b) —
 free; **Arm 2** (Claude Code native) — free via dispatched subagents
 here; **Arm 1** (Haiku 4.5 / Sonnet 5 behind OpenCode) — paid via
 OpenCode Go, practitioner-authorized within a ~$12/hr limit, est. ~$5–12
