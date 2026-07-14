@@ -57,6 +57,12 @@ _INTERROGATIVE_RE = re.compile(
     r"^(?:what|why|how|when|where|which|who)\b|^(?:did|have) you\b",
     re.IGNORECASE,
 )
+# glob->read grounded-explain (WS-3 slice 1): the memory-shaped clause of
+# _INTERROGATIVE_RE above, isolated. "did you.../have you..." are questions
+# about the assistant's own past actions, not a bare-symbol code question —
+# explain-discovery must never glob the workspace for one (a category
+# mismatch, not an honesty gap the mechanism is meant to close).
+_MEMORY_INTERROGATIVE_RE = re.compile(r"^(?:did|have) you\b", re.IGNORECASE)
 # #82 deep recall: a FIRST-anchored query about the "first thing" I/you
 # built ("what did the first thing I asked you to build do?"). This is an
 # INTERIM structural detector, deliberately tight to avoid the review's
@@ -582,6 +588,78 @@ def _globbed_candidates(context: str, stem: str) -> list[str] | None:
     return candidates
 
 
+def _explain_glob_candidates(context: str, stems: list[str]) -> list[str] | None:
+    """Candidate paths from the turn's ``[globbed ...]`` block matching ANY
+    of the explain-discovery stems, or ``None`` when no listing exists yet —
+    the multi-stem sibling of ``_globbed_candidates`` (glob->read grounded-
+    explain, WS-3 slice 1). Shares the listing scan
+    (``_latest_glob_listing``) and candidate discipline (``.py``, not
+    ``test_*``) but matches on stem UNION, since the brace-alternation glob
+    searches several symbols in one round.
+    """
+    listing = _latest_glob_listing(context)
+    if listing is None:
+        return None
+    candidates: list[str] = []
+    for path in listing:
+        basename = path.rsplit("/", 1)[-1]
+        if (
+            any(stem in basename.lower() for stem in stems)
+            and basename.endswith(".py")
+            and not basename.startswith("test_")
+        ):
+            candidates.append(path)
+    return candidates
+
+
+def _explain_read_request(path: str, context: str) -> tuple[list[str], str]:
+    """(paths to request, refusal reason) for the explain-discovery matched
+    candidate (glob->read grounded-explain, WS-3 slice 1) — the same
+    visibility/attempted discipline as ``_files_to_request``, without its
+    build-only ``wants_existing`` gate: a discovery match is always wanted.
+    Visible -> nothing to request; a prior failed attempt refuses instead of
+    re-requesting; otherwise ONE read request.
+    """
+    basename = path.rsplit("/", 1)[-1]
+    visible, attempted = _visibility(context)
+    if basename in visible:
+        return [], ""
+    if basename in attempted:
+        return [], f"could not read {path}: {attempted[basename]}"
+    return [path], ""
+
+
+def _explain_discover(
+    context: str, stems: list[str]
+) -> tuple[str, str, str, str, list[str], str]:
+    """(named_file, named_basename, needs_glob, glob_failed, needs_files,
+    read_failed) for a bare-symbol explain turn (glob->read grounded-
+    explain, WS-3 slice 1): one glob round (comma-joined stems, brace-
+    alternation pattern), then the shared candidate discipline (``.py``, not
+    ``test_*``, one-or-refuse) once the listing returns. Mirrors the build
+    discover -> read seam's two-pass shape without touching it — never
+    several files read, never a guess.
+    """
+    candidates = _explain_glob_candidates(context, stems)
+    if candidates is None:
+        return "", "", ",".join(stems), "", [], ""
+    stem_list = ",".join(stems)
+    if len(candidates) == 1:
+        candidate = candidates[0]
+        needs_files, read_failed = _explain_read_request(candidate, context)
+        basename = candidate.rsplit("/", 1)[-1]
+        return candidate, basename, "", "", needs_files, read_failed
+    if not candidates:
+        refusal = f"no file matching '{stem_list}' in the workspace listing"
+        return "", "", "", refusal, [], ""
+    listed = ", ".join(candidates)
+    refusal = (
+        f"multiple files match '{stem_list}' in the workspace listing: {listed}"
+        " — please name one"
+    )
+    return "", "", "", refusal, [], ""
+
+
 def _discovery(
     task: str, context: str, tests_primary: bool, has_build_signal: bool
 ) -> tuple[str, str, str]:
@@ -854,11 +932,19 @@ def _discover_and_read(
     has_build_signal: bool,
     named_file: str,
     named_basename: str,
+    explain_stems: list[str] | None = None,
 ) -> tuple[str, str, str, str, list[str], str]:
     """The discover -> read seam (issue #83) plus rung 1.5's target-test read
     batched into the same round: (named_file, named_basename, needs_glob,
     glob_failed, needs_files, read_failed). A glob MATCH renames the turn's
-    file; the target-test read never causes a refusal on its own."""
+    file; the target-test read never causes a refusal on its own.
+
+    ``explain_stems``, when non-empty, takes the explain-discovery branch
+    (glob->read grounded-explain, WS-3 slice 1) instead — the caller only
+    passes stems for an is_explain turn with no named file, so this and the
+    build discover -> read seam below never cross (isolation)."""
+    if explain_stems:
+        return _explain_discover(context, explain_stems)
     needs_glob, glob_file, glob_failed = _discovery(
         task, context, tests_primary, has_build_signal
     )
@@ -961,10 +1047,34 @@ def main() -> None:
         else ""
     )
 
+    # glob->read grounded-explain (WS-3 slice 1): a bare-symbol explain turn
+    # (is_explain, no named file) resolves candidate stems for one glob->read
+    # discovery round — the mechanism this intercepts is exactly today's
+    # conceptual-explain speculation, so it is gated OFF the higher-priority
+    # signals that already resolve the turn honestly or structurally
+    # (run_signal, fix_chain, is_recall_answer, defer_recall — each already
+    # produces its own correct outcome; letting explain-discovery ALSO set
+    # needs_glob there would leak a stray glob request ahead of that outcome
+    # at emit's seam-priority check) and off memory-shaped "did/have you"
+    # questions, a distinct category classify already recognizes.
+    explain_stems = (
+        _explain_stems(task)
+        if (
+            is_explain
+            and not named_file
+            and not run_signal
+            and not fix_chain
+            and not is_recall_answer
+            and not defer_recall
+            and not _MEMORY_INTERROGATIVE_RE.match(task)
+        )
+        else []
+    )
+
     needs_glob = glob_failed = ""
     needs_files: list[str] = []
     read_failed = ""
-    if not is_explain and not run_signal and not fix_chain:
+    if (not is_explain and not run_signal and not fix_chain) or explain_stems:
         (
             named_file,
             named_basename,
@@ -979,6 +1089,7 @@ def main() -> None:
             has_build_signal,
             named_file,
             named_basename,
+            explain_stems=explain_stems,
         )
     bundle = _SignalBundle(
         is_explain=is_explain,

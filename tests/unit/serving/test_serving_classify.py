@@ -124,7 +124,14 @@ def test_context_composes_into_dispatch_input_after_the_marker() -> None:
 
 def test_routing_reads_the_task_never_the_context() -> None:
     """A past build request in the context must not re-trigger a build; the
-    latest turn alone decides the route."""
+    latest turn alone decides the route.
+
+    glob->read grounded-explain (WS-3 slice 1) changed the specific target:
+    "helper" is now an extractable bare-symbol stem, so this turn attempts
+    ONE glob round instead of landing straight on the explainer — but the
+    core property this test pins (a past build in context never flips
+    build=True for the current explain turn) still holds regardless.
+    """
     decision = _classify(
         {
             "task": "What does the helper do?",
@@ -132,7 +139,8 @@ def test_routing_reads_the_task_never_the_context() -> None:
         }
     )
     assert decision["build"] is False
-    assert decision["target"] == "explainer"
+    assert decision["target"] == "need-glob"
+    assert decision["needs_glob"] == "helper"
 
 
 def test_no_context_leaves_dispatch_input_as_the_bare_task() -> None:
@@ -616,10 +624,16 @@ def test_indented_globbed_lookalike_is_not_a_listing() -> None:
     assert decision["needs_glob"] == "storage"
 
 
-def test_explain_turn_never_globs() -> None:
+def test_explain_turn_never_uses_the_build_module_stem_glob() -> None:
+    # an explain turn never triggers BUILD's module-stem discovery
+    # (_module_stem/_discovery, issue #83) — but glob->read grounded-explain
+    # (WS-3 slice 1) gives it its OWN multi-stem discovery instead, so this
+    # turn is no longer glob-free: "storage"/"module"/"design" are
+    # extractable stems ("explain" itself is excluded as classify's own
+    # marker word).
     decision = _classify({"task": "explain the storage module design"})
-    assert decision["target"] == "explainer"
-    assert decision["needs_glob"] == ""
+    assert decision["target"] == "need-glob"
+    assert decision["needs_glob"] == "storage,module,design"
 
 
 def test_normal_decisions_carry_empty_glob_fields() -> None:
@@ -995,10 +1009,16 @@ def test_explain_of_a_visible_read_block_also_grounds() -> None:
 
 
 def test_conceptual_explain_never_gates_despite_the_solution_py_default() -> None:
-    # no filename in the task -> named_file is falsy -> the gate keys off
-    # named_file, never the "file" output's solution.py default
+    # no filename in the task -> named_file is falsy -> the not-grounded gate
+    # keys off named_file, never the "file" output's solution.py default.
+    # glob->read grounded-explain (WS-3 slice 1) changed this turn's target
+    # ("decorator" is a bare-symbol stem, so it attempts ONE glob round
+    # instead of landing straight on the explainer) — but the not-grounded
+    # gate still never fires for it (target isn't "not-grounded"), and
+    # "file" still carries the untouched solution.py default, so the
+    # original property this test pins is intact.
     decision = _classify({"task": "what is a decorator"})
-    assert decision["target"] == "explainer"
+    assert decision["target"] == "need-glob"
     assert decision["file"] == "solution.py"
     assert decision["not_grounded"] == ""
 
@@ -1227,6 +1247,174 @@ def test_explain_stems_drops_classifys_own_marker_words() -> None:
     assert _explain_stems("explain what it does") == []
     assert _explain_stems("describe this") == []
     assert _explain_stems("summarize it") == []
+
+
+# --- glob->read grounded-explain: the wired discovery mechanism (WS-3
+# slice 1, docs/plans/2026-07-14-glob-read-grounded-explain-design.md) ---
+
+
+def test_bare_symbol_explain_with_no_named_file_requests_a_multi_stem_glob() -> None:
+    # the design doc's exit gate: "how does classify decide routing?" has no
+    # named_file, so it must glob for its candidate stems instead of
+    # speculating via the conceptual explainer.
+    decision = _classify({"task": "how does classify decide routing?"})
+    assert decision["target"] == "need-glob"
+    assert decision["needs_glob"] == "classify,decide,routing"
+    assert decision["build"] is False
+
+
+def test_bare_symbol_explain_single_candidate_requests_its_read() -> None:
+    context = (
+        "assistant: [globbed classify,decide,routing]\n"
+        "  /work/classify.py\n"
+        "  /work/test_serving_classify.py\n"
+        "  /work/routing-demo.yaml"
+    )
+    decision = _classify(
+        {"task": "how does classify decide routing?", "context": context}
+    )
+    assert decision["target"] == "need-files"
+    assert decision["needs_files"] == ["/work/classify.py"]
+    assert decision["needs_glob"] == ""
+
+
+def test_bare_symbol_explain_grounds_once_the_candidate_is_visible() -> None:
+    context = (
+        "assistant: [globbed classify,decide,routing]\n"
+        "  /work/classify.py\n"
+        "assistant: [read /work/classify.py]\n"
+        "  def advance(bundle):\n"
+        "      return bundle.target"
+    )
+    decision = _classify(
+        {"task": "how does classify decide routing?", "context": context}
+    )
+    assert decision["target"] == "explainer"
+    assert decision["build"] is False
+    assert decision["needs_files"] == []
+    # the grounded injection composes dispatch_input from the real read
+    # content — the emitted routing names the candidate file, and the model
+    # is pointed at ACTUAL content, never left to guess
+    assert "classify.py" in decision["dispatch_input"]
+    assert "def advance(bundle):" in decision["dispatch_input"]
+
+
+def test_bare_symbol_explain_zero_candidates_refuses_honestly() -> None:
+    context = (
+        "assistant: [globbed classify,decide,routing]\n"
+        "  /work/notes.md\n"
+        "  /work/README.md"
+    )
+    decision = _classify(
+        {"task": "how does classify decide routing?", "context": context}
+    )
+    assert decision["target"] == "need-glob"
+    assert decision["needs_glob"] == ""
+    assert "no file matching" in decision["glob_failed"]
+
+
+def test_bare_symbol_explain_multiple_candidates_refuses_naming_them() -> None:
+    context = (
+        "assistant: [globbed classify,decide,routing]\n"
+        "  /work/classify.py\n"
+        "  /work/decide.py"
+    )
+    decision = _classify(
+        {"task": "how does classify decide routing?", "context": context}
+    )
+    assert decision["target"] == "need-glob"
+    assert decision["needs_glob"] == ""
+    assert "/work/classify.py" in decision["glob_failed"]
+    assert "/work/decide.py" in decision["glob_failed"]
+
+
+def test_named_file_explain_never_enters_multi_stem_discovery() -> None:
+    # a task that already names a file (with extension) keeps the existing
+    # grounded/not-grounded gate — explain-discovery only fires when NO file
+    # is named.
+    decision = _classify({"task": "explain how classify.py decides routing"})
+    assert decision["target"] == "not-grounded"
+    assert decision["needs_glob"] == ""
+
+
+def test_build_discovery_regression_after_explain_discovery_wiring() -> None:
+    # isolation: a plain build-discovery turn (module-stem glob) must be
+    # byte-unchanged by the new explain-discovery wiring.
+    decision = _classify({"task": "write tests for the storage module"})
+    assert decision["target"] == "need-glob"
+    assert decision["needs_glob"] == "storage"
+    assert decision["glob_failed"] == ""
+    assert decision["needs_files"] == []
+
+
+def test_memory_shaped_did_you_question_never_triggers_discovery() -> None:
+    # "did you..."/"have you..." are memory-shaped questions (classify's own
+    # _INTERROGATIVE_RE comment), not bare-symbol code questions — they must
+    # not glob the workspace.
+    decision = _classify({"task": "did you see my previous query?"})
+    assert decision["target"] == "explainer"
+    assert decision["needs_glob"] == ""
+
+
+def test_memory_shaped_have_you_question_never_triggers_discovery() -> None:
+    decision = _classify({"task": "have you written any tests yet?"})
+    assert decision["target"] == "explainer"
+    assert decision["needs_glob"] == ""
+
+
+def test_memory_shaped_did_you_run_never_triggers_discovery() -> None:
+    decision = _classify({"task": "did you run the tests?"})
+    assert decision["target"] == "explainer"
+    assert decision["needs_glob"] == ""
+    assert decision["needs_run"] == ""
+
+
+def test_run_signal_plus_explain_marker_does_not_leak_needs_glob() -> None:
+    # bug-fix regression: is_explain and run_signal can co-occur ("tell me"
+    # is an explain marker on a trailing clause); needs_glob must never be
+    # set here, or emit's seam-priority check (which checks glob_failed
+    # before recall_answer) could shadow the real run-verdict outcome.
+    context = "assistant: [ran pytest -q]\n  1 passed in 0.01s"
+    decision = _classify(
+        {
+            "task": "run the tests and tell me the first thing you made",
+            "recall_ledger": [{"ask": "build a calculator", "path": "calc.py"}],
+            "context": context,
+        }
+    )
+    assert decision["target"] == "run-verdict"
+    assert decision["needs_glob"] == ""
+
+
+def test_recall_deferral_does_not_leak_needs_glob() -> None:
+    # bug-fix regression: a deferred-to-decider recall turn must never also
+    # carry a needs_glob signal (it would win emit's seam-priority check
+    # over the eventual recall/explain resolution).
+    context = "assistant: [wrote todo.py]\n  def add_todo():\n      return 1"
+    decision = _classify(
+        {
+            "task": "what was the earliest thing you built in this session?",
+            "recall_ledger": [
+                {"ask": "build a todo app", "path": "todo.py"},
+                {"ask": "build a calculator", "path": "calc.py"},
+            ],
+            "context": context,
+        }
+    )
+    assert decision["needs_decider"] is True
+    assert decision["needs_glob"] == ""
+
+
+def test_recall_shipped_windowed_out_does_not_leak_needs_glob() -> None:
+    decision = _classify(
+        {
+            "task": "what did the first thing I asked you to build do?",
+            "recall_ledger": [{"ask": "build storage", "path": "storage.py"}],
+            "context": "",
+        }
+    )
+    assert decision["target"] == "recall-answer"
+    assert decision["needs_glob"] == ""
 
 
 def test_last_anchor_recall_is_not_a_wrong_accept_and_stays_on_the_explainer() -> None:
