@@ -149,7 +149,24 @@ def grew(after):
         return False
     if len(seq) != len(SEED) + 1:
         return False
-    text = repr(seq)
+    # Recoverability must reach attribute VALUES, one level deep: a PLAIN class
+    # has a default repr (`<todo.Todo object at 0x...>`) that hides the item
+    # text, and the dataclass case passes only because dataclasses generate a
+    # field-bearing repr. Known bound: a wrapper nested two levels deep
+    # (Todo(Item(text))) stays opaque and false-rejects.
+    parts = [repr(seq)]
+    for el in seq:
+        try:
+            parts.append(repr(vars(el)))
+        except TypeError:
+            pass
+        slots = getattr(type(el), "__slots__", ())
+        for slot in (slots,) if isinstance(slots, str) else slots:
+            try:
+                parts.append(repr(getattr(el, slot)))
+            except BaseException:
+                pass
+    text = " ".join(parts)
     return ITEM in text and all(s in text for s in SEED)
 
 def required(fn):
@@ -157,10 +174,12 @@ def required(fn):
         params = inspect.signature(fn).parameters.values()
     except (TypeError, ValueError):
         return []
-    return [
-        p for p in params
-        if p.kind in (p.POSITIONAL_OR_KEYWORD, p.KEYWORD_ONLY) and p.default is p.empty
-    ]
+    kinds = (
+        inspect.Parameter.POSITIONAL_ONLY,
+        inspect.Parameter.POSITIONAL_OR_KEYWORD,
+        inspect.Parameter.KEYWORD_ONLY,
+    )
+    return [p for p in params if p.kind in kinds and p.default is p.empty]
 
 fns = [
     fn for name, fn in inspect.getmembers(todo, inspect.isfunction)
@@ -284,10 +303,12 @@ def required(fn):
         params = inspect.signature(fn).parameters.values()
     except (TypeError, ValueError):
         return []
-    return [
-        p for p in params
-        if p.kind in (p.POSITIONAL_OR_KEYWORD, p.KEYWORD_ONLY) and p.default is p.empty
-    ]
+    kinds = (
+        inspect.Parameter.POSITIONAL_ONLY,
+        inspect.Parameter.POSITIONAL_OR_KEYWORD,
+        inspect.Parameter.KEYWORD_ONLY,
+    )
+    return [p for p in params if p.kind in kinds and p.default is p.empty]
 
 n_save = len(required(save))
 
