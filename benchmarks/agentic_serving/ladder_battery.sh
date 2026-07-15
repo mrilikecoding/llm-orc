@@ -21,29 +21,38 @@
 # Output per turn N: `turn-NN.jsonl` (raw JSON events -> score_run.py),
 # `turn-NN.err` (stderr, kept OUT of the JSONL so a warning can't corrupt the
 # event stream), and `truth-NN.json` (workspace ground truth), plus
-# `exits.tsv` (turn, exit code) for post-hoc triage.
+# `exits.tsv` (turn, exit code) for post-hoc triage. `truth-00.json` is the
+# SEEDED-repo baseline captured before turn 1, so turn 1's manifest diff has
+# something to diff against.
 #
 # WHY ground truth is captured per turn, not derived from the transcript: the
 # strict rule is that a turn passes only when its deliverable ships AND IS
 # CORRECT (turn 11's verdict must match the client-side result; turns 12/13
 # require green client-side). A transcript can only show that a `write`
 # happened — never that what landed is right. So each turn is followed by a
-# real pytest run against the real workspace, recorded as the arm-independent
+# real pytest run over the workspace's files, recorded as the arm-independent
 # fact the strict table scores against. This is arm-BLIND by construction: it
 # judges what reached disk, identically for every arm, instead of trusting
 # what an arm's own prose claims — which is the whole bet under measurement.
 # `seeded` runs test_buggy.py ALONE (turn 13 is scored on the seeded target
 # only, so earlier turns' residue cannot cascade into that rung).
 #
-# A turn that produces NO events leaves NO `turn-NN.jsonl` behind: score_run's
-# `_load_runs` reads an ABSENT file as a client-side death (`missing_turns`)
-# and a present-but-empty one as an honest empty turn. A shell redirect
-# creates the file on open even when the turn dies, so a file with no
-# non-whitespace content is removed here — otherwise every death would silently
-# read as honesty, which is the exact miscount `missing_turns` exists to
-# prevent. Testing for non-whitespace rather than nonzero SIZE matters: a client
-# that flushes a bare newline before dying would slip through a `[ -s ]` guard
-# and score as an honest empty turn.
+# The truth pytest runs execute in a THROWAWAY COPY of the workspace, never in
+# the live one: they run arm-authored tests, which import arm-authored modules,
+# which execute arm-authored module-level code — exactly what oracles.py
+# forbids for its own probes. Run live, a test that writes todos.json (routine
+# for storage-adjacent tests) would land in the next manifest attributed to
+# the arm.
+#
+# The manifest is HASHED (path<TAB>sha256 per line): names alone cannot show
+# that a turn EDITED an existing file, and the scorer derives "shipped" from
+# the manifest diff — the only channel that means the same thing for every arm
+# (a write tool, a bash heredoc, and a patch all land here identically).
+#
+# A turn that produces NO events (absent file, or present but eventless — a
+# timeout can flush a partial line before dying) is a client-side death:
+# score_run's `_load_runs` tests EVENTS, not bytes, so the file is left as
+# captured rather than post-processed here.
 #
 # Preconditions: GNU coreutils `timeout` on PATH (stock macOS has none, and
 # Homebrew installs it as `gtimeout` unless the coreutils gnubin dir is on
@@ -91,16 +100,50 @@
 set -u
 REPO=${LADDER_REPO:?set LADDER_REPO to a seeded scratch repo}
 OUT=${LADDER_OUT:?set LADDER_OUT to an output dir}
+# Absolutize BOTH: a relative $OUT fails loudly at turn 1, but a relative
+# $REPO fails QUIETLY — the initial cd succeeds from the invocation cwd, then
+# every truth subshell's cd resolves against the repo itself and records
+# suite.rc 1 (indistinguishable from a red suite) through a whole paid run,
+# while feeding the oracle a bad path.
+REPO=${REPO:A}
+OUT=${OUT:A}
 MODEL=${LADDER_MODEL:-llm-orc/agentic}
 TIMEOUT=${LADDER_TIMEOUT:-780}
 # The ground-truth runner. Must be able to run the fixture repo's suite; it is
 # the same command for every arm, so the truth it records is arm-independent.
+# Expanded with ${=PYTEST}: zsh does not word-split parameters, so a
+# multi-word value ("uv run pytest") would otherwise exec a single
+# 127-everywhere command named "uv run pytest".
 PYTEST=${LADDER_PYTEST:-pytest}
 # llm-orc checkout root (this script lives in benchmarks/agentic_serving/), so
 # the oracle module is importable while the battery's cwd is the fixture repo.
 SRCROOT=${0:A:h:h:h}
 mkdir -p "$OUT"
 cd "$REPO"
+
+# Hashed workspace manifest: one `path<TAB>sha256` per line. Existence-filtered
+# because `git ls-files --cached` keeps listing a tracked file the arm deleted.
+manifest() {
+  (cd "$REPO" && git ls-files --others --cached --exclude-standard \
+    | grep -vE '(^\.|/\.|__pycache__|\.pyc$)' | sort -u \
+    | while IFS= read -r f; do
+        [ -f "$f" ] && printf '%s\t%s\n' "$f" "${$(shasum -a 256 "$f")%% *}"
+      done)
+}
+
+# Ground-truth pytest in a THROWAWAY COPY of the workspace (see header).
+# $1 = output file; remaining args go to pytest. Returns pytest's own rc.
+run_truth_pytest() {
+  local out_file=$1
+  shift
+  local tws rc
+  tws=$(mktemp -d) || return 127
+  cp -R "$REPO"/. "$tws"
+  (cd "$tws" && timeout 120 ${=PYTEST} -q "$@" > "$out_file" 2>&1)
+  rc=$?
+  rm -rf "$tws"
+  return $rc
+}
 typeset -a PROMPTS
 PROMPTS=(
   "write a function that adds a todo item to a list in todo.py"
@@ -120,6 +163,23 @@ PROMPTS=(
 echo "=== LADDER START: model=$MODEL repo=$REPO out=$OUT ==="
 : > "$OUT/exits.tsv"
 : > "$OUT/oracle-exits.tsv"
+# Baseline manifest of the SEEDED repo, before any turn runs: turn 1's
+# shipped-detection diffs against this.
+manifest > "$OUT/.files-00.txt"
+python3 - "$OUT/truth-00.json" "$OUT/.files-00.txt" <<'PY'
+import json, sys
+
+path, files_path = sys.argv[1:3]
+manifest = {}
+with open(files_path) as handle:
+    for line in handle.read().splitlines():
+        name, _, digest = line.partition("\t")
+        manifest[name] = digest
+with open(path, "w") as out:
+    json.dump({"turn": 0, "files": sorted(manifest), "manifest": manifest}, out,
+              indent=1)
+PY
+rm -f "$OUT/.files-00.txt"
 i=0
 for p in "${PROMPTS[@]}"; do
   i=$((i+1))
@@ -135,27 +195,22 @@ for p in "${PROMPTS[@]}"; do
       > "$OUT/turn-$n.jsonl" 2> "$OUT/turn-$n.err"
   fi
   rc=$?
-  # No events => client-side death: leave the file absent (see header). Tests
-  # for non-whitespace content, not size: a bare newline flushed on death would
-  # pass a `[ -s ]` guard and then score as an honest empty turn.
-  grep -q '[^[:space:]]' "$OUT/turn-$n.jsonl" 2>/dev/null || rm -f "$OUT/turn-$n.jsonl"
   printf '%s\t%s\n' "$n" "$rc" >> "$OUT/exits.tsv"
   # Workspace ground truth AFTER this turn (see header): the full suite, the
-  # seeded target alone, and the file manifest. Caches are excluded from the
-  # manifest and swept so the probe leaves no trace the next turn can read.
+  # seeded target alone, and the hashed file manifest — pytest in a throwaway
+  # copy so arm-authored test code never executes in the live workspace.
   # Exit codes come from pytest itself: a pipeline's $? is the LAST command's
   # (tail always succeeds), so each run goes to a file and is tailed after.
-  (cd "$REPO" && timeout 120 $PYTEST -q > "$OUT/.suite-$n.txt" 2>&1)
+  run_truth_pytest "$OUT/.suite-$n.txt"
   suite_rc=$?
-  (cd "$REPO" && timeout 120 $PYTEST -q test_buggy.py > "$OUT/.seeded-$n.txt" 2>&1)
+  run_truth_pytest "$OUT/.seeded-$n.txt" test_buggy.py
   seeded_rc=$?
   suite=$(tail -12 "$OUT/.suite-$n.txt"); rm -f "$OUT/.suite-$n.txt"
   seeded=$(tail -8 "$OUT/.seeded-$n.txt"); rm -f "$OUT/.seeded-$n.txt"
-  # One filename per LINE into a file, never a space-joined string: a model can
-  # write "my notes.py", and a space-joined list round-tripped through
-  # str.split() would silently corrupt it into two entries.
-  (cd "$REPO" && git ls-files --others --cached --exclude-standard \
-    | grep -vE '(^\.|/\.|__pycache__|\.pyc$)' | sort) > "$OUT/.files-$n.txt"
+  # One manifest entry per LINE into a file, never a space-joined string: a
+  # model can write "my notes.py", and a space-joined list round-tripped
+  # through str.split() would silently corrupt it into two entries.
+  manifest > "$OUT/.files-$n.txt"
   # The turn's hidden correctness oracle, run NOW against the workspace this
   # turn produced. It cannot be deferred to the end of the run: later turns
   # mutate files (turn 13 rewrites buggy.py), so a post-hoc probe would judge a
@@ -167,30 +222,64 @@ for p in "${PROMPTS[@]}"; do
   # nonzero code visible in oracle-exits.tsv.
   oracle=$(cd "$SRCROOT" && uv run python -m benchmarks.agentic_serving.oracles \
     "$i" "$REPO" 2> "$OUT/oracle-$n.err")
-  printf '%s\t%s\n' "$n" "$?" >> "$OUT/oracle-exits.tsv"
+  orc=$?
+  printf '%s\t%s\n' "$n" "$orc" >> "$OUT/oracle-exits.tsv"
+  # A SIGKILLed oracle leaves EMPTY stderr; keep the err file truthful rather
+  # than deleting the only breadcrumb next to a nonzero code.
+  if [ "$orc" -ne 0 ] && [ ! -s "$OUT/oracle-$n.err" ]; then
+    echo "oracle exited $orc with no stderr" > "$OUT/oracle-$n.err"
+  fi
   [ -s "$OUT/oracle-$n.err" ] || rm -f "$OUT/oracle-$n.err"
+  # The probe sandbox relocates cwd but cannot stop a hardcoded ABSOLUTE path
+  # in arm code from writing into the real workspace. Recapture the manifest:
+  # any difference is oracle contamination, recorded on THIS turn so the next
+  # turn's shipped-diff can discount it instead of attributing it to the arm.
+  manifest > "$OUT/.files-post-$n.txt"
+  cmp -s "$OUT/.files-$n.txt" "$OUT/.files-post-$n.txt" \
+    || echo "!!! oracle contamination on turn $i (recorded in truth-$n.json)"
   (cd "$REPO" && rm -rf .pytest_cache && find . -name __pycache__ -type d -prune -exec rm -rf {} + 2>/dev/null)
   python3 - "$OUT/truth-$n.json" "$n" "$suite_rc" "$seeded_rc" \
-    "$OUT/.files-$n.txt" "$suite" "$seeded" "$oracle" <<'PY'
+    "$OUT/.files-$n.txt" "$OUT/.files-post-$n.txt" "$suite" "$seeded" \
+    "$oracle" <<'PY'
 import json, sys
-path, turn, suite_rc, seeded_rc, files_path, suite, seeded, oracle = sys.argv[1:9]
-with open(files_path) as handle:
-    files = handle.read().splitlines()
+
+(path, turn, suite_rc, seeded_rc,
+ files_path, post_path, suite, seeded, oracle) = sys.argv[1:10]
+
+def read_manifest(manifest_path):
+    entries = {}
+    with open(manifest_path) as handle:
+        for line in handle.read().splitlines():
+            name, _, digest = line.partition("\t")
+            entries[name] = digest
+    return entries
+
+manifest = read_manifest(files_path)
+post = read_manifest(post_path)
+contamination = sorted(
+    {name for name in post if post[name] != manifest.get(name)}
+    | {name for name in manifest if name not in post}
+)
 try:
     oracle_verdict = json.loads(oracle)
 except ValueError:
     # A crash in the oracle module itself, not "no oracle for this turn". The
     # reason is in oracle-NN.err and the code in oracle-exits.tsv.
     oracle_verdict = None
-json.dump({
+record = {
     "turn": int(turn),
-    "files": files,
+    "files": sorted(manifest),
+    "manifest": manifest,
     "suite": {"rc": int(suite_rc), "tail": suite},
     "seeded": {"rc": int(seeded_rc), "tail": seeded},
     "oracle": oracle_verdict,
-}, open(path, "w"), indent=1)
+}
+if contamination:
+    record["oracle_contamination"] = contamination
+with open(path, "w") as out:
+    json.dump(record, out, indent=1)
 PY
-  rm -f "$OUT/.files-$n.txt"
+  rm -f "$OUT/.files-$n.txt" "$OUT/.files-post-$n.txt"
   echo "--- exit $rc | suite_rc $suite_rc | seeded_rc $seeded_rc ---"
 done
 echo "=== LADDER DONE ==="
