@@ -171,6 +171,19 @@ def test_turn1_missing_module_fails_closed(tmp_path: Path) -> None:
     assert not oracles.turn1_adds_todo(tmp_path).passed
 
 
+def test_probe_instrument_failure_raises_instead_of_fabricating_a_verdict(
+    tmp_path: Path,
+) -> None:
+    # An OSError starting the probe (missing workspace, disk full, bad path) is
+    # a failure of the INSTRUMENT, not of the arm's code. Returning
+    # passed=False would score a real shipped turn as shipped-broken -- the
+    # thesis-fabricating direction -- with exit 0 and empty stderr, making the
+    # battery's crash channel (oracle: null + nonzero in oracle-exits.tsv)
+    # unreachable. The error must escape instead.
+    with pytest.raises(OSError):
+        oracles.turn1_adds_todo(tmp_path / "does-not-exist")
+
+
 def test_turn1_syntax_error_fails_closed(tmp_path: Path) -> None:
     assert not oracles.turn1_adds_todo(_ws(tmp_path, todo="def add(:\n")).passed
 
