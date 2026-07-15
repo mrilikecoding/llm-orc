@@ -27,12 +27,24 @@ _RUN_TOOLS = ("bash", "run")
 
 def parse_events(jsonl_text: str) -> list[dict[str, Any]]:
     """Split an ``opencode --format json`` stream into event dicts, one per
-    non-blank line."""
+    non-blank line.
+
+    Unparseable lines are DROPPED rather than raised. A turn killed mid-write
+    (the shape a ``timeout`` SIGTERM produces) leaves a half-written final line,
+    and propagating ``JSONDecodeError`` from here would take down scoring for the
+    whole battery instead of the one dead turn. The turn's death stays visible
+    where it belongs: a nonzero code in ``exits.tsv``, its ``turn-NN.err``, and
+    the scorer's own ``missing_turns`` when nothing parseable survived.
+    """
     events: list[dict[str, Any]] = []
     for raw in jsonl_text.splitlines():
         line = raw.strip()
-        if line:
+        if not line:
+            continue
+        try:
             events.append(json.loads(line))
+        except json.JSONDecodeError:
+            continue
     return events
 
 

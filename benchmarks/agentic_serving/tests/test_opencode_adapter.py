@@ -278,3 +278,27 @@ class TestTranscript:
             "read",
             "write",
         ]
+
+
+def test_parse_events_survives_a_truncated_final_line() -> None:
+    # The realistic death shape: a timeout SIGTERMs opencode mid-write, so the
+    # last line is half-written JSON. Propagating JSONDecodeError here would take
+    # down scoring for the WHOLE battery, not just the dead turn, so the adapter
+    # keeps the events observed before the crash and drops the partial one.
+    text = (
+        '{"type":"step_start","timestamp":1}\n'
+        '{"type":"text","part":{"text":"hello"}}\n'
+        '{"type":"text","part":{"text":"partial'
+    )
+    events = oa.parse_events(text)
+    assert [e["type"] for e in events] == ["step_start", "text"]
+
+
+def test_turn_from_jsonl_survives_a_truncated_final_line() -> None:
+    text = '{"type":"text","part":{"text":"hi"}}\n{"type":"tool_use","part":{"tool'
+    turn = oa.turn_from_jsonl(text, index=1, prompt="p")
+    assert turn.assistant_text == "hi"
+
+
+def test_parse_events_ignores_whitespace_only_output() -> None:
+    assert oa.parse_events("\n  \n\t\n") == []
