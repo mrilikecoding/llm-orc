@@ -275,7 +275,13 @@ if not callable(save) or not callable(load):
     raise SystemExit(1)
 
 def json_files():
-    return {f for f in os.listdir(".") if f.endswith(".json")}
+    # WALK, not listdir: a module-constant path of data/todos.json is a
+    # legitimate reading of a prompt that never mentions a path, and a
+    # top-level-only scan would false-reject it.
+    found = set()
+    for root, _dirs, names in os.walk("."):
+        found |= {os.path.join(root, f) for f in names if f.endswith(".json")}
+    return found
 
 def wrote_real_json(candidates):
     # The data must be readable back as JSON FROM DISK: that is what separates
@@ -313,6 +319,7 @@ def required(fn):
 n_save = len(required(save))
 
 def attempt(label, do_save, do_load, path):
+    global storage, save, load
     try:
         do_save()
     except BaseException:
@@ -326,6 +333,21 @@ def attempt(label, do_save, do_load, path):
     if path is not None:
         candidates.append(str(path))
     if not wrote_real_json(candidates):
+        return False
+    # The LOAD leg must be proven against DISK. save and load run in one
+    # process, so a load that returns a module-level cache populated by save
+    # round-trips perfectly while its load leg is broken in any fresh process.
+    # Reimporting gives load a fresh module: state survives only through the
+    # file. (A module whose import-time init clobbers its own file fails here
+    # too — faithfully, since a fresh process would see the same clobber.)
+    sys.modules.pop("storage", None)
+    try:
+        import storage
+    except BaseException:
+        return False
+    save = getattr(storage, "save_todos", None)
+    load = getattr(storage, "load_todos", None)
+    if not callable(load):
         return False
     try:
         got = list(do_load())

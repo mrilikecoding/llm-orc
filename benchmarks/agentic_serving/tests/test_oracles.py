@@ -308,12 +308,39 @@ T6_PICKLE = (
     "    with open(path, 'rb') as f:\n        return pickle.load(f)\n"
 )
 T6_EXIT_ZERO = "import sys\n\ndef save_todos(todos, path):\n    pass\n\nsys.exit(0)\n"
+# The subtler cache: save DOES write real JSON to disk, but load returns the
+# in-process cache and never reads it back. In a fresh process load_todos
+# returns None -- persistence's load leg is broken, and a same-process
+# round-trip cannot see it.
+T6_SAVE_DISK_LOAD_CACHE = (
+    "import json\n"
+    "_CACHE = None\n"
+    "def save_todos(todos, path):\n"
+    "    global _CACHE\n    _CACHE = list(todos)\n"
+    "    with open(path, 'w') as f:\n        json.dump(todos, f)\n"
+    "def load_todos(path):\n"
+    "    return _CACHE\n"
+)
 
 
 @pytest.mark.parametrize(
     "src",
-    [T6_LOSES_DATA, T6_LOAD_ONLY, T6_MEMORY_CACHE, T6_PICKLE, T6_EXIT_ZERO],
-    ids=["loses_data", "missing_save", "memory_cache", "pickle_not_json", "exit_zero"],
+    [
+        T6_LOSES_DATA,
+        T6_LOAD_ONLY,
+        T6_MEMORY_CACHE,
+        T6_PICKLE,
+        T6_EXIT_ZERO,
+        T6_SAVE_DISK_LOAD_CACHE,
+    ],
+    ids=[
+        "loses_data",
+        "missing_save",
+        "memory_cache",
+        "pickle_not_json",
+        "exit_zero",
+        "save_disk_load_cache",
+    ],
 )
 def test_turn6_rejects_broken_variants(tmp_path: Path, src: str) -> None:
     assert not oracles.turn6_storage_roundtrip(_ws(tmp_path, storage=src)).passed
@@ -475,16 +502,35 @@ T6_POSITIONAL_ONLY = (
     "def load_todos(path, /):\n"
     "    with open(path) as f:\n        return json.load(f)\n"
 )
+# A module-constant path in a SUBDIRECTORY is a legitimate reading of the
+# prompt (it never mentions a path at all); a top-level-only candidate scan
+# false-rejects it.
+T6_SUBDIR_PATH = (
+    "import json, os\n"
+    "TODO_FILE = os.path.join('data', 'todos.json')\n"
+    "def save_todos(todos):\n"
+    "    os.makedirs('data', exist_ok=True)\n"
+    "    with open(TODO_FILE, 'w') as f:\n        json.dump(todos, f)\n"
+    "def load_todos():\n"
+    "    with open(TODO_FILE) as f:\n        return json.load(f)\n"
+)
 
 
 @pytest.mark.parametrize(
     "src",
-    [T6_ENVELOPE, T6_INIT_ON_IMPORT, T6_KEYWORD_ONLY, T6_POSITIONAL_ONLY],
+    [
+        T6_ENVELOPE,
+        T6_INIT_ON_IMPORT,
+        T6_KEYWORD_ONLY,
+        T6_POSITIONAL_ONLY,
+        T6_SUBDIR_PATH,
+    ],
     ids=[
         "versioned_envelope",
         "creates_file_on_import",
         "keyword_only",
         "positional_only",
+        "subdir_constant_path",
     ],
 )
 def test_turn6_accepts_sophisticated_designs(tmp_path: Path, src: str) -> None:
