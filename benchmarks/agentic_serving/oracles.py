@@ -29,9 +29,21 @@ POSITIVE PROOF, NOT ABSENCE OF FAILURE. Exit 0 is what an interpreter that did
 nothing returns, and `sys.exit(0)` at import (an ordinary `main()` without an
 `if __name__` guard) would otherwise force a pass on every oracle. Each probe
 receives a per-run nonce and must print `PROBE-OK-<nonce>` on its success path;
-`_run_probe` requires that token. Model code cannot forge an unseen nonce, and
-`os._exit` cannot print one. Import guards catch BaseException, since SystemExit
-is not an Exception.
+`_run_probe` requires that token. Import guards catch BaseException, since
+SystemExit is not an Exception.
+
+WHAT THE NONCE DOES AND DOES NOT GUARANTEE. It defends against ACCIDENTAL
+exit-0, which is the real threat model here: a model shipping plausible-but-
+wrong code. It is NOT unforgeable, and an earlier version of this docstring
+wrongly claimed it was. The module under test is imported into the probe's own
+process, so it can read the nonce from `sys.argv`, from `ps -o command=`, or by
+walking `sys._getframe().f_back` to the probe's own globals — all three were
+demonstrated. This is unfixable in-process (any nonce the probe holds is
+reachable from the module's frames), so the honest statement is the narrow one:
+the token proves the probe's success path ran, not that the code under test
+declined to lie. Deliberate gaming is out of scope; a model that emits the
+probe's private token is not a model shipping wrong code, it is an adversary,
+and this instrument does not claim to stop one.
 
 WHY A COPY. Probes CALL the arm's code, which has side effects: turn 6's
 `save_todos` may write wherever it likes, and turn 1 invokes every public
@@ -175,17 +187,34 @@ for fn in fns:
                 ok("returned a new list via keyword " + fn.__name__)
     elif len(params) == 1:
         # Module-level-collection style: seed each module list, then call.
-        for name, value in list(vars(todo).items()):
-            if not isinstance(value, list):
-                continue
+        # Seeding MUTATES the module's own globals, so every list is snapshotted
+        # and restored around each attempt. Without that, probing one list
+        # clobbers unrelated module constants (a validated config, say), the
+        # corruption persists into later candidates, and the verdict comes to
+        # depend on getmembers() ordering — i.e. on declaration order in the
+        # arm's source. Non-deterministic scoring is exactly the property that
+        # disqualified name-keyed oracles in the first place.
+        module_lists = [
+            (name, value)
+            for name, value in vars(todo).items()
+            if isinstance(value, list)
+        ]
+        snapshot = {name: list(value) for name, value in module_lists}
+        for name, value in module_lists:
+            for other, original in snapshot.items():
+                vars(todo)[other][:] = list(original)
             value[:] = list(SEED)
             try:
                 out = fn(ITEM)
             except BaseException:
-                continue
-            if grew(value):
+                out = None
+            grew_here = grew(value)
+            returned = isinstance(out, (list, tuple)) and grew(out)
+            for other, original in snapshot.items():
+                vars(todo)[other][:] = list(original)
+            if grew_here:
                 ok("appended to module list " + name + " via " + fn.__name__)
-            if isinstance(out, (list, tuple)) and grew(out):
+            if returned:
                 ok("returned a new list via " + fn.__name__)
 
 print("no public callable added the item to a list of existing todos")
@@ -224,15 +253,24 @@ def json_files():
     return {f for f in os.listdir(".") if f.endswith(".json")}
 
 def wrote_real_json(candidates):
-    # The data must be readable back as JSON FROM DISK. This is what separates
+    # The data must be readable back as JSON FROM DISK: that is what separates
     # persistence from an in-memory cache, and json from pickle/repr.
+    #
+    # Recoverability, NOT equality. Requiring `json.load(...) == DATA` would pin
+    # the ON-DISK shape to a bare array and false-reject a versioned envelope
+    # ({"version": 1, "todos": [...]}), which is the same equality mistake turn 1
+    # made against list[str] — and it fails in the direction that penalises the
+    # more sophisticated design. The nonce is what makes this safe: it cannot
+    # appear in a file the arm did not write from DATA.
     for name in candidates:
         try:
             with open(name) as handle:
-                if list(json.load(handle)) == DATA:
-                    return True
+                raw = handle.read()
+            json.loads(raw)
         except BaseException:
             continue
+        if all(item in raw for item in DATA):
+            return True
     return False
 
 def required(fn):
@@ -248,12 +286,16 @@ def required(fn):
 n_save = len(required(save))
 
 def attempt(label, do_save, do_load, path):
-    before = json_files()
     try:
         do_save()
     except BaseException:
         return False
-    candidates = list(json_files() - before)
+    # EVERY json file is a candidate, not just newly-created ones. A set
+    # difference sampled after import misses a module that creates its file at
+    # import time, and misses any write to a path that already existed — and by
+    # turn 6 the workspace is not empty. The nonce in the payload is what makes
+    # the wider net safe: no pre-existing file can satisfy it.
+    candidates = list(json_files())
     if path is not None:
         candidates.append(str(path))
     if not wrote_real_json(candidates):
@@ -266,6 +308,18 @@ def attempt(label, do_save, do_load, path):
         ok(label)
     return False
 
+def kwargs_for(fn, path):
+    # Mirror turn 1: bind keyword-only signatures by parameter ORDER, since the
+    # names are free. Without this, `def save_todos(*, todos, path)` counts as
+    # two required params and is then only ever called positionally.
+    params = required(fn)
+    if len(params) != 2:
+        return None
+    return [
+        {params[0].name: DATA, params[1].name: path},
+        {params[0].name: path, params[1].name: DATA},
+    ]
+
 for raw in ("todos_probe.json",):
     for path in (raw, Path(raw)):
         if n_save >= 2:
@@ -273,9 +327,21 @@ for raw in ("todos_probe.json",):
                     lambda: load(path), path)
             attempt("saved (path, todos)", lambda: save(path, DATA),
                     lambda: load(path), path)
+            for kw in (kwargs_for(save, path) or []):
+                load_kw = kwargs_for(load, path)
+                def do_load(kw=kw):
+                    try:
+                        return load(path)
+                    except TypeError:
+                        params = required(load)
+                        return load(**{params[0].name: path}) if params else load()
+                attempt("saved by keyword", lambda kw=kw: save(**kw), do_load, path)
         if n_save == 1:
             attempt("saved (todos), module-constant path",
                     lambda: save(DATA), lambda: load(), None)
+        if n_save == 0:
+            attempt("saved (), module-constant path",
+                    lambda: save(), lambda: load(), None)
 
 print("no call shape round-tripped the data through real JSON on disk")
 raise SystemExit(1)
@@ -284,8 +350,18 @@ raise SystemExit(1)
 
 # Turn 7 must COMPOSE with storage.py. A namespace check alone credits a stray
 # unused import (one of the most common things a model ships), so the probe also
-# requires some function body to reference the bound name. co_names is read from
-# compiled code, so a comment can never satisfy it.
+# requires real compiled code to reference the bound name. co_names is read from
+# bytecode, so a comment can never satisfy it.
+#
+# The reference walk must reach EVERY code object, not just module-level
+# functions: the prompt says "update todo.py to persist todos using storage.py"
+# and never says "function", so a class whose method calls storage is a correct
+# and more sophisticated answer. Methods live in the class dict and nested
+# functions live in co_consts, so a vars(module) scan for __code__ sees neither.
+# Missing them false-rejects exactly the designs a stronger arm is likelier to
+# ship. A function-local `import storage` (deferred to avoid a circular import)
+# likewise never binds at module level, so imports are collected from code
+# objects too.
 _TURN7_PROBE = """
 import sys, types
 NONCE = sys.argv[1]
@@ -297,6 +373,29 @@ except BaseException as exc:
     print("import failed:", exc)
     raise SystemExit(1)
 
+def code_objects(root):
+    seen, stack, out = set(), [root], []
+    while stack:
+        obj = stack.pop()
+        if id(obj) in seen:
+            continue
+        seen.add(id(obj))
+        code = getattr(obj, "__code__", None)
+        if code is not None:
+            out.append(code)
+            stack.extend(c for c in code.co_consts if hasattr(c, "co_names"))
+        elif hasattr(obj, "co_names"):
+            out.append(obj)
+            stack.extend(c for c in obj.co_consts if hasattr(c, "co_names"))
+        elif isinstance(obj, type):
+            stack.extend(vars(obj).values())
+        elif isinstance(obj, (staticmethod, classmethod, property)):
+            for attr in ("__func__", "fget", "fset"):
+                inner = getattr(obj, attr, None)
+                if inner is not None:
+                    stack.append(inner)
+    return out
+
 bound = set()
 for name, obj in vars(todo).items():
     if name.startswith("__"):
@@ -306,19 +405,27 @@ for name, obj in vars(todo).items():
     elif getattr(obj, "__module__", None) == "storage":
         bound.add(name)
 
+codes = []
+for obj in vars(todo).values():
+    codes.extend(code_objects(obj))
+
+referenced = set()
+for code in codes:
+    referenced |= set(code.co_names)
+
+# A deferred `import storage` inside a body binds nothing at module level, so
+# credit it from the bytecode's own import names.
+local_imports = {n for code in codes for n in code.co_names} & {"storage"}
+if local_imports and "storage" in referenced:
+    bound |= local_imports
+
 if not bound:
     print("todo.py does not import storage")
     raise SystemExit(1)
 
-referenced = set()
-for obj in vars(todo).values():
-    code = getattr(obj, "__code__", None)
-    if code is not None:
-        referenced |= set(code.co_names)
-
 used = bound & referenced
 if not used:
-    print("todo.py imports storage but no function body references it:", sorted(bound))
+    print("todo.py imports storage but no code references it:", sorted(bound))
     raise SystemExit(1)
 
 print(TOKEN, "composes with storage via", sorted(used))
