@@ -38,11 +38,18 @@
 # A turn that produces NO events leaves NO `turn-NN.jsonl` behind: score_run's
 # `_load_runs` reads an ABSENT file as a client-side death (`missing_turns`)
 # and a present-but-empty one as an honest empty turn. A shell redirect
-# creates the file on open even when the turn dies, so the empty file is
-# removed here — otherwise every death would silently read as honesty, which
-# is the exact miscount `missing_turns` exists to prevent.
+# creates the file on open even when the turn dies, so a file with no
+# non-whitespace content is removed here — otherwise every death would silently
+# read as honesty, which is the exact miscount `missing_turns` exists to
+# prevent. Testing for non-whitespace rather than nonzero SIZE matters: a client
+# that flushes a bare newline before dying would slip through a `[ -s ]` guard
+# and score as an honest empty turn.
 #
-# Preconditions: for arm 0, `llm-orc serve` running and OpenCode's llm-orc
+# Preconditions: GNU coreutils `timeout` on PATH (stock macOS has none, and
+# Homebrew installs it as `gtimeout` unless the coreutils gnubin dir is on
+# PATH). Without it every turn exits 127 immediately and all 13 turns register
+# as client-side deaths — loud and self-diagnosing via `exits.tsv`, but check
+# here first. For arm 0, `llm-orc serve` running and OpenCode's llm-orc
 # provider pointing at it; LADDER_REPO is a fresh git repo seeded with calc.py
 # (a pre-existing module the conversation never writes — turn 8's target):
 #
@@ -112,6 +119,7 @@ PROMPTS=(
 )
 echo "=== LADDER START: model=$MODEL repo=$REPO out=$OUT ==="
 : > "$OUT/exits.tsv"
+: > "$OUT/oracle-exits.tsv"
 i=0
 for p in "${PROMPTS[@]}"; do
   i=$((i+1))
@@ -127,8 +135,10 @@ for p in "${PROMPTS[@]}"; do
       > "$OUT/turn-$n.jsonl" 2> "$OUT/turn-$n.err"
   fi
   rc=$?
-  # No events => client-side death: leave the file absent (see header).
-  [ -s "$OUT/turn-$n.jsonl" ] || rm -f "$OUT/turn-$n.jsonl"
+  # No events => client-side death: leave the file absent (see header). Tests
+  # for non-whitespace content, not size: a bare newline flushed on death would
+  # pass a `[ -s ]` guard and then score as an honest empty turn.
+  grep -q '[^[:space:]]' "$OUT/turn-$n.jsonl" 2>/dev/null || rm -f "$OUT/turn-$n.jsonl"
   printf '%s\t%s\n' "$n" "$rc" >> "$OUT/exits.tsv"
   # Workspace ground truth AFTER this turn (see header): the full suite, the
   # seeded target alone, and the file manifest. Caches are excluded from the
@@ -141,30 +151,46 @@ for p in "${PROMPTS[@]}"; do
   seeded_rc=$?
   suite=$(tail -12 "$OUT/.suite-$n.txt"); rm -f "$OUT/.suite-$n.txt"
   seeded=$(tail -8 "$OUT/.seeded-$n.txt"); rm -f "$OUT/.seeded-$n.txt"
-  files=$(cd "$REPO" && git ls-files --others --cached --exclude-standard \
-    | grep -vE '(^\.|/\.|__pycache__|\.pyc$)' | sort | tr '\n' ' ')
+  # One filename per LINE into a file, never a space-joined string: a model can
+  # write "my notes.py", and a space-joined list round-tripped through
+  # str.split() would silently corrupt it into two entries.
+  (cd "$REPO" && git ls-files --others --cached --exclude-standard \
+    | grep -vE '(^\.|/\.|__pycache__|\.pyc$)' | sort) > "$OUT/.files-$n.txt"
   # The turn's hidden correctness oracle, run NOW against the workspace this
   # turn produced. It cannot be deferred to the end of the run: later turns
   # mutate files (turn 13 rewrites buggy.py), so a post-hoc probe would judge a
-  # turn against a workspace it never saw. Turns without an oracle emit null.
+  # turn against a workspace it never saw. The module prints `null` itself for a
+  # turn with no oracle, so there is deliberately NO `|| echo null` fallback
+  # here: that would make a real crash in the measurement instrument
+  # indistinguishable from "no oracle by design". A crash leaves a non-JSON
+  # stdout (recorded as `oracle: null` with the reason in oracle-NN.err) and a
+  # nonzero code visible in oracle-exits.tsv.
   oracle=$(cd "$SRCROOT" && uv run python -m benchmarks.agentic_serving.oracles \
-    "$i" "$REPO" 2>/dev/null || echo null)
+    "$i" "$REPO" 2> "$OUT/oracle-$n.err")
+  printf '%s\t%s\n' "$n" "$?" >> "$OUT/oracle-exits.tsv"
+  [ -s "$OUT/oracle-$n.err" ] || rm -f "$OUT/oracle-$n.err"
   (cd "$REPO" && rm -rf .pytest_cache && find . -name __pycache__ -type d -prune -exec rm -rf {} + 2>/dev/null)
-  python3 - "$OUT/truth-$n.json" "$n" "$suite_rc" "$seeded_rc" "$files" "$suite" "$seeded" "$oracle" <<'PY'
+  python3 - "$OUT/truth-$n.json" "$n" "$suite_rc" "$seeded_rc" \
+    "$OUT/.files-$n.txt" "$suite" "$seeded" "$oracle" <<'PY'
 import json, sys
-path, turn, suite_rc, seeded_rc, files, suite, seeded, oracle = sys.argv[1:9]
+path, turn, suite_rc, seeded_rc, files_path, suite, seeded, oracle = sys.argv[1:9]
+with open(files_path) as handle:
+    files = handle.read().splitlines()
 try:
     oracle_verdict = json.loads(oracle)
 except ValueError:
+    # A crash in the oracle module itself, not "no oracle for this turn". The
+    # reason is in oracle-NN.err and the code in oracle-exits.tsv.
     oracle_verdict = None
 json.dump({
     "turn": int(turn),
-    "files": files.split(),
+    "files": files,
     "suite": {"rc": int(suite_rc), "tail": suite},
     "seeded": {"rc": int(seeded_rc), "tail": seeded},
     "oracle": oracle_verdict,
 }, open(path, "w"), indent=1)
 PY
+  rm -f "$OUT/.files-$n.txt"
   echo "--- exit $rc | suite_rc $suite_rc | seeded_rc $seeded_rc ---"
 done
 echo "=== LADDER DONE ==="
