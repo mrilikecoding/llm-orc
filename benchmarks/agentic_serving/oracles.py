@@ -400,7 +400,9 @@ raise SystemExit(1)
 # Turn 7 must COMPOSE with storage.py. A namespace check alone credits a stray
 # unused import (one of the most common things a model ships), so the probe also
 # requires real compiled code to reference the bound name. co_names is read from
-# bytecode, so a comment can never satisfy it.
+# bytecode, so a comment can never satisfy it. Known FAR bound: reachability is
+# not analyzed, so a storage call on a dead line (after a bare return) still
+# counts as a reference.
 #
 # The reference walk must reach EVERY code object, not just module-level
 # functions: the prompt says "update todo.py to persist todos using storage.py"
