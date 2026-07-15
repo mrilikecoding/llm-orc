@@ -222,10 +222,13 @@ def _truth_with_manifest(
     manifest: dict[str, str],
     oracle: object = None,
     contamination: list[str] | None = None,
+    post_manifest: dict[str, str] | None = None,
 ) -> None:
     record: dict[str, object] = {"manifest": manifest, "oracle": oracle}
     if contamination is not None:
         record["oracle_contamination"] = contamination
+    if post_manifest is not None:
+        record["post_manifest"] = post_manifest
     (tmp_path / f"truth-{turn:02d}.json").write_text(json.dumps(record))
 
 
@@ -283,6 +286,33 @@ def test_prior_turn_oracle_contamination_is_not_attributed_to_the_arm(
     tally = score_run.tally_oracles(tmp_path, ("a", "b", "c", "d", "e", "f"))
     assert tally.not_shipped == 1
     assert tally.shipped == 0
+
+
+def test_post_manifest_diff_still_credits_an_arm_edit_to_a_contaminated_path(
+    tmp_path: Path,
+) -> None:
+    # The path-level discount over-suppresses: if the oracle contaminated
+    # todos.json on turn 5 and the arm GENUINELY edits todos.json on turn 6,
+    # the discount reads the arm's edit as contamination. When the prior truth
+    # records the POST-oracle manifest, the scorer can diff against it exactly
+    # and needs no discount at all.
+    _truth_with_manifest(
+        tmp_path,
+        5,
+        {"calc.py": "aa", "todos.json": "old"},
+        contamination=["todos.json"],
+        post_manifest={"calc.py": "aa", "todos.json": "oracle-written"},
+    )
+    _jsonl(tmp_path, 6, wrote=False)
+    _truth_with_manifest(
+        tmp_path,
+        6,
+        {"calc.py": "aa", "todos.json": "arm-edit"},
+        oracle={"passed": True},
+    )
+    tally = score_run.tally_oracles(tmp_path, ("a", "b", "c", "d", "e", "f"))
+    assert tally.shipped_correct == 1
+    assert tally.not_shipped == 0
 
 
 def test_a_run_without_manifests_falls_back_to_write_tools_and_is_flagged() -> None:
