@@ -107,6 +107,12 @@ OUT=${LADDER_OUT:?set LADDER_OUT to an output dir}
 # while feeding the oracle a bad path.
 REPO=${REPO:A}
 OUT=${OUT:A}
+# The manifest is git-derived; without a repo, `git ls-files` dies but the
+# pipeline still emits an empty-yet-valid manifest, so every truth file
+# records "manifest": {} and every oracled turn scores not_shipped through a
+# whole paid run — the same quiet-corruption family as a relative $REPO.
+git -C "$REPO" rev-parse --is-inside-work-tree > /dev/null 2>&1 \
+  || { echo "LADDER_REPO must be a seeded GIT repo: $REPO"; exit 1; }
 MODEL=${LADDER_MODEL:-llm-orc/agentic}
 TIMEOUT=${LADDER_TIMEOUT:-780}
 # The ground-truth runner. Must be able to run the fixture repo's suite; it is
@@ -123,12 +129,20 @@ cd "$REPO"
 
 # Hashed workspace manifest: one `path<TAB>sha256` per line. Existence-filtered
 # because `git ls-files --cached` keeps listing a tracked file the arm deleted.
+# quotepath=off + -z so a filename with spaces, tabs, or non-ASCII survives
+# (git's default C-quoting made `[ -f ]` fail and silently DROP the file — a
+# tab-named deliverable scored not_shipped); `./$f` keeps a leading-dash name
+# out of shasum's option parser. Known bound: a newline in a filename cannot
+# ride a line-based manifest and is skipped. Readers parse with rpartition on
+# the LAST tab, so an embedded tab in the name survives.
 manifest() {
-  (cd "$REPO" && git ls-files --others --cached --exclude-standard \
-    | grep -vE '(^\.|/\.|__pycache__|\.pyc$)' | sort -u \
-    | while IFS= read -r f; do
-        [ -f "$f" ] && printf '%s\t%s\n' "$f" "${$(shasum -a 256 "$f")%% *}"
-      done)
+  (cd "$REPO" && git -c core.quotepath=off ls-files -z --others --cached --exclude-standard \
+    | while IFS= read -r -d '' f; do
+        case $f in
+          (.*|*/.*|*__pycache__*|*.pyc|*$'\n'*) continue ;;
+        esac
+        [ -f "$f" ] && printf '%s\t%s\n' "$f" "${$(shasum -a 256 "./$f")%% *}"
+      done | sort -u)
 }
 
 # Ground-truth pytest in a THROWAWAY COPY of the workspace (see header).
@@ -173,7 +187,7 @@ path, files_path = sys.argv[1:3]
 manifest = {}
 with open(files_path) as handle:
     for line in handle.read().splitlines():
-        name, _, digest = line.partition("\t")
+        name, _, digest = line.rpartition("\t")
         manifest[name] = digest
 with open(path, "w") as out:
     json.dump({"turn": 0, "files": sorted(manifest), "manifest": manifest}, out,
@@ -250,7 +264,7 @@ def read_manifest(manifest_path):
     entries = {}
     with open(manifest_path) as handle:
         for line in handle.read().splitlines():
-            name, _, digest = line.partition("\t")
+            name, _, digest = line.rpartition("\t")
             entries[name] = digest
     return entries
 
@@ -270,6 +284,10 @@ record = {
     "turn": int(turn),
     "files": sorted(manifest),
     "manifest": manifest,
+    # The POST-oracle state is what the NEXT turn's arm actually starts from;
+    # the scorer diffs turn N+1 against this, so an oracle write-through is
+    # never attributed to the arm and a genuine arm edit still counts.
+    "post_manifest": post,
     "suite": {"rc": int(suite_rc), "tail": suite},
     "seeded": {"rc": int(seeded_rc), "tail": seeded},
     "oracle": oracle_verdict,

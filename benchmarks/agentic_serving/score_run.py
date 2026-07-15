@@ -73,9 +73,11 @@ class OracleTally:
     headline's n with no signal in the scorecard.
 
     ``legacy_turns`` lists turns whose shipped-detection fell back to
-    write-shaped TOOL CALLS because the run predates hashed manifests. The
-    fallback is transcript-shaped and channel-keyed, so it is not comparable
-    across arms; a published table must not mix the two silently.
+    write-shaped TOOL CALLS because a needed manifest is absent — the run
+    predates hashed manifests, or a neighboring truth record lost its manifest
+    to a mid-run instrument crash. The fallback is transcript-shaped and
+    channel-keyed, so it is not comparable across arms; a published table must
+    not mix the two silently, and must say WHICH story explains the flag.
     """
 
     shipped_correct: int
@@ -140,21 +142,29 @@ def _manifest(run_dir: Path, turn: int) -> dict[str, str] | None:
 def _shipped_from_disk(run_dir: Path, turn: int) -> bool | None:
     """Did turn ``turn`` put new or changed bytes in the workspace?
 
-    Diffs the turn's hashed manifest against the previous turn's (turn 1
-    diffs against the seeded ``truth-00.json`` baseline). Paths the previous
-    turn recorded as oracle contamination are discounted: they changed AFTER
-    that manifest was captured, during its oracle probe, and attributing them
-    here would credit the arm with the instrument's own writes. None when
+    Diffs the turn's hashed manifest against the previous turn's POST-oracle
+    manifest when recorded (turn 1 diffs against the seeded ``truth-00.json``
+    baseline) — the exact state the arm started from, so an oracle's own
+    write-through is never attributed to the arm AND a genuine arm edit to a
+    contaminated path still counts. Older records without ``post_manifest``
+    fall back to the pre-oracle manifest with the contaminated paths
+    discounted, which over-suppresses that edge. A deletion-only turn is NOT
+    shipped: removing bytes delivers nothing an oracle can judge. None when
     either manifest is absent (a pre-manifest recording) — the caller falls
     back to tool-call detection and flags the turn.
     """
     current = _manifest(run_dir, turn)
-    previous = _manifest(run_dir, turn - 1)
+    prior_record = _truth_record(run_dir, turn - 1) or {}
+    post = prior_record.get("post_manifest")
+    if isinstance(post, dict):
+        previous = {k: v for k, v in post.items() if isinstance(v, str)}
+        contaminated: set[str] = set()
+    else:
+        previous = _manifest(run_dir, turn - 1)
+        contamination = prior_record.get("oracle_contamination")
+        contaminated = set(contamination) if isinstance(contamination, list) else set()
     if current is None or previous is None:
         return None
-    prior_record = _truth_record(run_dir, turn - 1) or {}
-    contamination = prior_record.get("oracle_contamination")
-    contaminated = set(contamination) if isinstance(contamination, list) else set()
     changed = {p for p, digest in current.items() if previous.get(p) != digest}
     return bool(changed - contaminated)
 
