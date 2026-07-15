@@ -91,6 +91,14 @@ def _run_probe(workspace: Path, program: str) -> OracleResult:
     exits 0 AND printed ``PROBE-OK-<nonce>``: requiring positive proof is what
     makes the oracle fail closed, since exit 0 is also what a module that killed
     the interpreter at import produces.
+
+    An OSError/shutil.Error starting the probe ESCAPES rather than becoming a
+    verdict: it is a failure of the instrument (missing workspace, disk full),
+    not of the arm's code, and converting it into ``passed=False`` would score
+    a real shipped turn as shipped-broken — the thesis-fabricating direction —
+    while exiting 0, which makes the battery's crash channel (``oracle: null``
+    plus a nonzero code in ``oracle-exits.tsv``) unreachable. A TIMEOUT stays a
+    verdict, since a hanging probe is plausibly the subject's own infinite loop.
     """
     nonce = uuid.uuid4().hex
     token = f"PROBE-OK-{nonce}"
@@ -107,8 +115,6 @@ def _run_probe(workspace: Path, program: str) -> OracleResult:
             )
     except subprocess.TimeoutExpired:
         return OracleResult(False, "probe timed out")
-    except (OSError, shutil.Error) as exc:
-        return OracleResult(False, f"probe could not start: {exc}")
     detail = (proc.stdout + proc.stderr).strip()[-300:]
     passed = proc.returncode == 0 and token in proc.stdout
     return OracleResult(passed, detail.replace(token, "ok:"))
