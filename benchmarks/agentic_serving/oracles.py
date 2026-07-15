@@ -467,10 +467,14 @@ raise SystemExit(1)
 #   IMPORT_NAME/IMPORT_FROM likewise must not credit themselves.
 #
 # Known FAR bounds, documented not hidden: reachability is not analyzed (a
-# storage call on a dead line after a bare return counts), and a bare LOAD
-# with no call (`def f(): storage`) counts as a reference. Known FRR bound: a
-# local import used only through a closure cell of a NESTED function (the
-# binding and the LOAD live in different code objects).
+# storage call on a dead line after a bare return counts); a bare LOAD with no
+# call (`def f(): storage`) counts as a reference; and an F811 shadow (`from
+# storage import save_todos` then a same-named local reimplementation the code
+# calls) credits the original binding. Known FRR bounds: a local import used
+# only through a closure cell of a NESTED function (the binding and the LOAD
+# live in different code objects); `from storage import *` (IMPORT_STAR binds
+# no analyzable name); `importlib.import_module("storage")` (a static
+# analysis cannot see a dynamic import).
 _TURN7_PROBE = """
 import dis, sys
 NONCE = sys.argv[1]
