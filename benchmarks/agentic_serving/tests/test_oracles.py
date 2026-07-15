@@ -1,11 +1,24 @@
 """Fixtures for the hidden build-turn correctness oracles (#131, WS-8 Arc D).
 
 Methodology mirrors #84's adequacy-checker harness: every oracle is pinned
-against BOTH accepting variants (styles a correct arm may legitimately ship)
-and rejecting ones (plausible-but-wrong code), so FRR and FAR are measured, not
-assumed. An oracle that accepts everything is worse than no oracle: it would
-hand the comparator a free pass, which is the §2 bias the oracles exist to
-remove.
+against BOTH accepting variants (FRR) and rejecting ones (FAR), so both error
+rates are measured rather than assumed.
+
+BOTH directions are dangerous here, and neither is the "safe" default:
+
+- A FALSE ACCEPT hands a free pass to an arm that ships plausible-but-wrong
+  code, restoring the §2 bias toward the comparator that the oracles exist to
+  remove.
+- A FALSE REJECT is WORSE, and this is the counter-intuitive part. Richer todo
+  representations (dict, dataclass) correlate with design sophistication, so a
+  representation-blind oracle rejects the frontier arm harder — and a frontier
+  arm shipping GOOD code then scores "shipped, oracle-failed", which reads as
+  exactly the plausible-but-wrong-code narrative the oracle was built to
+  detect. An FRR that fabricates evidence for the hypothesis under test is
+  worse than the bias it replaced.
+
+Every case below was proven against the real CLI during the 2026-07-14
+adversarial review before being encoded here.
 """
 
 from __future__ import annotations
@@ -23,9 +36,10 @@ def _ws(tmp_path: Path, **modules: str) -> Path:
     return tmp_path
 
 
-# --- turn 1: name-free. "write a function that adds a todo item to a list" ---
-# Measured: the same seat shipped `add_todo` and `add_todo_item` for this exact
-# prompt across two runs, so the oracle must not key on the name.
+# --------------------------------------------------------------------------
+# Turn 1 — "write a function that adds a todo item to a list in todo.py"
+# The prompt names NEITHER the function NOR the todo representation.
+# --------------------------------------------------------------------------
 
 T1_MUTATES = "def add_todo_item(todo_list, item):\n    todo_list.append(item)\n"
 T1_OTHER_NAME = "def add_todo(items, item):\n    items.append(item)\n"
@@ -37,15 +51,50 @@ T1_GUARDS = (
     "        raise TypeError('todo_list must be a list')\n"
     "    todo_list.append(item)\n"
 )
+# The representation cases. The dict shape is the one turn 2 REQUIRES ("marks a
+# todo done"), so rejecting it here would contradict the reason turn 2 is left
+# un-oracled at all.
+T1_DICT_WRAP = (
+    "def add_todo(todos, item):\n    todos.append({'task': item, 'done': False})\n"
+)
+T1_DATACLASS_WRAP = (
+    "from dataclasses import dataclass\n\n"
+    "@dataclass\n"
+    "class Todo:\n"
+    "    text: str\n"
+    "    done: bool = False\n\n"
+    "def add_todo(todos, item):\n    todos.append(Todo(item))\n"
+)
+T1_KEYWORD_ONLY = "def add_todo(*, todos, item):\n    todos.append(item)\n"
+T1_MODULE_LEVEL = "TODOS = []\n\ndef add_todo(item):\n    TODOS.append(item)\n"
 
 
 @pytest.mark.parametrize(
     "src",
-    [T1_MUTATES, T1_OTHER_NAME, T1_RETURNS_NEW, T1_SWAPPED_ARGS, T1_GUARDS],
-    ids=["mutates", "other_name", "returns_new", "swapped_args", "guards"],
+    [
+        T1_MUTATES,
+        T1_OTHER_NAME,
+        T1_RETURNS_NEW,
+        T1_SWAPPED_ARGS,
+        T1_GUARDS,
+        T1_DICT_WRAP,
+        T1_DATACLASS_WRAP,
+        T1_KEYWORD_ONLY,
+        T1_MODULE_LEVEL,
+    ],
+    ids=[
+        "mutates",
+        "other_name",
+        "returns_new",
+        "swapped_args",
+        "guards",
+        "dict_wrap",
+        "dataclass_wrap",
+        "keyword_only",
+        "module_level_list",
+    ],
 )
 def test_turn1_accepts_correct_variants(tmp_path: Path, src: str) -> None:
-    # FRR: every legitimate style a correct arm may ship must pass.
     assert oracles.turn1_adds_todo(_ws(tmp_path, todo=src)).passed
 
 
@@ -53,15 +102,67 @@ T1_DROPS_ITEM = "def add_todo_item(todo_list, item):\n    pass\n"
 T1_WRONG_ITEM = "def add_todo_item(todo_list, item):\n    todo_list.append('nope')\n"
 T1_ALWAYS_RAISES = "def add_todo_item(todo_list, item):\n    raise ValueError('x')\n"
 T1_NO_FUNCTION = "TODOS = []\n"
+# An interpreter that does nothing exits 0. Exit code alone therefore cannot
+# mean "the contract held" — a main() without an if-__name__ guard is ordinary
+# model output, not an exotic attack.
+T1_SYS_EXIT_AT_IMPORT = (
+    "import sys\n\n"
+    "def add_todo_item(todo_list, item):\n    pass\n\n"
+    "def main():\n    sys.exit(0)\n\n"
+    "main()\n"
+)
+T1_OS_EXIT_AT_IMPORT = (
+    "import os\n\ndef add_todo_item(todo_list, item):\n    pass\n\nos._exit(0)\n"
+)
+# An empty seed cannot tell "adds" from "replaces", so these must be probed
+# against a NON-empty list.
+T1_DESTROYS_EXISTING = (
+    "def add_todo(todos, item):\n    todos.clear()\n    todos.append(item)\n"
+)
+T1_REPLACES_LIST = "def add_todo(todos, item):\n    return [item]\n"
+T1_ONLY_WORKS_ONCE = (
+    "def add_todo(todos, item):\n"
+    "    if todos:\n        return\n"
+    "    todos.append(item)\n"
+)
+# `SENTINEL in items` calls __eq__ on the ELEMENT, so a permissive __eq__ passes
+# while holding nothing.
+T1_EQ_TRICK = (
+    "class _Any:\n"
+    "    def __eq__(self, other):\n        return True\n"
+    "    def __hash__(self):\n        return 0\n\n"
+    "def add_todo(todos, item):\n    todos.append(_Any())\n"
+)
 
 
 @pytest.mark.parametrize(
     "src",
-    [T1_DROPS_ITEM, T1_WRONG_ITEM, T1_ALWAYS_RAISES, T1_NO_FUNCTION],
-    ids=["drops_item", "wrong_item", "always_raises", "no_function"],
+    [
+        T1_DROPS_ITEM,
+        T1_WRONG_ITEM,
+        T1_ALWAYS_RAISES,
+        T1_NO_FUNCTION,
+        T1_SYS_EXIT_AT_IMPORT,
+        T1_OS_EXIT_AT_IMPORT,
+        T1_DESTROYS_EXISTING,
+        T1_REPLACES_LIST,
+        T1_ONLY_WORKS_ONCE,
+        T1_EQ_TRICK,
+    ],
+    ids=[
+        "drops_item",
+        "wrong_item",
+        "always_raises",
+        "no_function",
+        "sys_exit_at_import",
+        "os_exit_at_import",
+        "destroys_existing",
+        "replaces_whole_list",
+        "only_works_once",
+        "permissive_eq",
+    ],
 )
 def test_turn1_rejects_broken_variants(tmp_path: Path, src: str) -> None:
-    # FAR: tolerance must not decay into accepting anything that runs.
     assert not oracles.turn1_adds_todo(_ws(tmp_path, todo=src)).passed
 
 
@@ -73,7 +174,10 @@ def test_turn1_syntax_error_fails_closed(tmp_path: Path) -> None:
     assert not oracles.turn1_adds_todo(_ws(tmp_path, todo="def add(:\n")).passed
 
 
-# --- turn 6: names save_todos/load_todos; SIGNATURE order is free ---
+# --------------------------------------------------------------------------
+# Turn 6 — "create storage.py with save_todos and load_todos using json"
+# NAMES the functions. Leaves signature order, arity and path type free.
+# --------------------------------------------------------------------------
 
 T6_TODOS_FIRST = (
     "import json\n"
@@ -89,12 +193,38 @@ T6_PATH_FIRST = (
     "def load_todos(path):\n"
     "    with open(path) as f:\n        return json.load(f)\n"
 )
+# The prompt never mentions a path parameter, so a module-constant filename is a
+# legitimate reading of it.
+T6_NO_PATH = (
+    "import json\n"
+    "TODO_FILE = 'todos.json'\n"
+    "def save_todos(todos):\n"
+    "    with open(TODO_FILE, 'w') as f:\n        json.dump(todos, f)\n"
+    "def load_todos():\n"
+    "    with open(TODO_FILE) as f:\n        return json.load(f)\n"
+)
+T6_PATHLIB = (
+    "import json\n"
+    "from pathlib import Path\n"
+    "def save_todos(todos, path):\n    Path(path).write_text(json.dumps(todos))\n"
+    "def load_todos(path):\n    return json.loads(Path(path).read_text())\n"
+)
+T6_GENERATOR_LOAD = (
+    "import json\n"
+    "def save_todos(todos, path):\n"
+    "    with open(path, 'w') as f:\n        json.dump(todos, f)\n"
+    "def load_todos(path):\n"
+    "    with open(path) as f:\n"
+    "        for todo in json.load(f):\n            yield todo\n"
+)
 
 
 @pytest.mark.parametrize(
-    "src", [T6_TODOS_FIRST, T6_PATH_FIRST], ids=["todos_first", "path_first"]
+    "src",
+    [T6_TODOS_FIRST, T6_PATH_FIRST, T6_NO_PATH, T6_PATHLIB, T6_GENERATOR_LOAD],
+    ids=["todos_first", "path_first", "no_path_arg", "pathlib", "generator_load"],
 )
-def test_turn6_accepts_either_signature_order(tmp_path: Path, src: str) -> None:
+def test_turn6_accepts_correct_variants(tmp_path: Path, src: str) -> None:
     assert oracles.turn6_storage_roundtrip(_ws(tmp_path, storage=src)).passed
 
 
@@ -106,16 +236,56 @@ T6_LOSES_DATA = (
     "    with open(path) as f:\n        return json.load(f)\n"
 )
 T6_LOAD_ONLY = "def load_todos(path):\n    return []\n"
+# save/load run in ONE process, so a module-level cache round-trips perfectly
+# while persisting nothing at all.
+T6_MEMORY_CACHE = (
+    "_CACHE = None\n"
+    "def save_todos(todos, path):\n"
+    "    global _CACHE\n    _CACHE = list(todos)\n"
+    "def load_todos(path):\n"
+    "    return _CACHE if _CACHE is not None else []\n"
+)
+# The prompt says "using json", so a pickle round-trip is a spec violation even
+# though it round-trips.
+T6_PICKLE = (
+    "import pickle\n"
+    "def save_todos(todos, path):\n"
+    "    with open(path, 'wb') as f:\n        pickle.dump(todos, f)\n"
+    "def load_todos(path):\n"
+    "    with open(path, 'rb') as f:\n        return pickle.load(f)\n"
+)
+T6_EXIT_ZERO = "import sys\n\ndef save_todos(todos, path):\n    pass\n\nsys.exit(0)\n"
 
 
 @pytest.mark.parametrize(
-    "src", [T6_LOSES_DATA, T6_LOAD_ONLY], ids=["loses_data", "missing_save"]
+    "src",
+    [T6_LOSES_DATA, T6_LOAD_ONLY, T6_MEMORY_CACHE, T6_PICKLE, T6_EXIT_ZERO],
+    ids=["loses_data", "missing_save", "memory_cache", "pickle_not_json", "exit_zero"],
 )
-def test_turn6_rejects_broken_roundtrip(tmp_path: Path, src: str) -> None:
+def test_turn6_rejects_broken_variants(tmp_path: Path, src: str) -> None:
     assert not oracles.turn6_storage_roundtrip(_ws(tmp_path, storage=src)).passed
 
 
-# --- turn 7: todo.py must actually persist VIA storage.py ---
+def test_turn6_probe_does_not_mutate_the_scored_workspace(tmp_path: Path) -> None:
+    # The probe CALLS the arm's save_todos. An implementation that hardcodes its
+    # filename would otherwise overwrite the arm's real data file mid-run, and
+    # later turns would be scored against a workspace the oracle corrupted.
+    src = (
+        "import json\n"
+        "def save_todos(todos, path):\n"
+        "    with open('todos.json', 'w') as f:\n        json.dump(todos, f)\n"
+        "def load_todos(path):\n"
+        "    with open('todos.json') as f:\n        return json.load(f)\n"
+    )
+    ws = _ws(tmp_path, storage=src)
+    before = sorted(p.name for p in ws.iterdir())
+    oracles.turn6_storage_roundtrip(ws)
+    assert sorted(p.name for p in ws.iterdir()) == before
+
+
+# --------------------------------------------------------------------------
+# Turn 7 — "update todo.py to persist todos using storage.py"
+# --------------------------------------------------------------------------
 
 T7_IMPORTS_STORAGE = (
     "import storage\n\ndef save(todos, path):\n    storage.save_todos(todos, path)\n"
@@ -135,8 +305,6 @@ def test_turn7_accepts_real_storage_use(tmp_path: Path, src: str) -> None:
 
 
 def test_turn7_rejects_todo_that_ignores_storage(tmp_path: Path) -> None:
-    # The failure this rung exists to catch: a build that reimplements json
-    # instead of composing with the module the turn named.
     src = (
         "import json\n\n"
         "def save(todos, path):\n    open(path,'w').write(json.dumps(todos))\n"
@@ -146,7 +314,26 @@ def test_turn7_rejects_todo_that_ignores_storage(tmp_path: Path) -> None:
 
 
 def test_turn7_rejects_import_in_a_comment(tmp_path: Path) -> None:
-    # A substring check on the source would pass this; only a real import does.
     src = "# uses storage.save_todos eventually\ndef save(todos, path):\n    pass\n"
+    ws = _ws(tmp_path, storage=T6_TODOS_FIRST, todo=src)
+    assert not oracles.turn7_todo_persists(ws).passed
+
+
+def test_turn7_rejects_unused_import(tmp_path: Path) -> None:
+    # A stray unused import is among the most common things a model ships, and a
+    # namespace-only check credits it as composition. This is the exact case the
+    # rung exists to catch.
+    src = (
+        "import json\n"
+        "import storage  # noqa: F401\n\n"
+        "def save(todos, path):\n"
+        "    with open(path, 'w') as f:\n        json.dump(todos, f)\n"
+    )
+    ws = _ws(tmp_path, storage=T6_TODOS_FIRST, todo=src)
+    assert not oracles.turn7_todo_persists(ws).passed
+
+
+def test_turn7_rejects_exit_zero_at_import(tmp_path: Path) -> None:
+    src = "import sys\nsys.exit(0)\n"
     ws = _ws(tmp_path, storage=T6_TODOS_FIRST, todo=src)
     assert not oracles.turn7_todo_persists(ws).passed
