@@ -68,6 +68,29 @@ T1_DATACLASS_WRAP = (
 )
 T1_KEYWORD_ONLY = "def add_todo(*, todos, item):\n    todos.append(item)\n"
 T1_MODULE_LEVEL = "TODOS = []\n\ndef add_todo(item):\n    TODOS.append(item)\n"
+# A PLAIN class (no custom __repr__) is at least as common in model output as a
+# dataclass, and its default repr (`<todo.Todo object at 0x...>`) hides the
+# item text. Recoverability must reach attribute VALUES, not just repr(seq) --
+# the 2026-07-14 round-3 hunt showed the dataclass fixture passed only because
+# dataclasses auto-generate a field-bearing repr.
+T1_PLAIN_CLASS_WRAP = (
+    "class Todo:\n"
+    "    def __init__(self, text):\n"
+    "        self.text = text\n"
+    "        self.done = False\n\n"
+    "def add_todo(todos, item):\n    todos.append(Todo(item))\n"
+)
+T1_SLOTS_CLASS_WRAP = (
+    "class Todo:\n"
+    "    __slots__ = ('text', 'done')\n"
+    "    def __init__(self, text):\n"
+    "        self.text = text\n"
+    "        self.done = False\n\n"
+    "def add_todo(todos, item):\n    todos.append(Todo(item))\n"
+)
+# Positional-only is keyword-only's mirror; the round that fixed keyword-only
+# left it open.
+T1_POSITIONAL_ONLY = "def add_todo(todos, item, /):\n    todos.append(item)\n"
 
 
 @pytest.mark.parametrize(
@@ -82,6 +105,9 @@ T1_MODULE_LEVEL = "TODOS = []\n\ndef add_todo(item):\n    TODOS.append(item)\n"
         T1_DATACLASS_WRAP,
         T1_KEYWORD_ONLY,
         T1_MODULE_LEVEL,
+        T1_PLAIN_CLASS_WRAP,
+        T1_SLOTS_CLASS_WRAP,
+        T1_POSITIONAL_ONLY,
     ],
     ids=[
         "mutates",
@@ -93,6 +119,9 @@ T1_MODULE_LEVEL = "TODOS = []\n\ndef add_todo(item):\n    TODOS.append(item)\n"
         "dataclass_wrap",
         "keyword_only",
         "module_level_list",
+        "plain_class_wrap",
+        "slots_class_wrap",
+        "positional_only",
     ],
 )
 def test_turn1_accepts_correct_variants(tmp_path: Path, src: str) -> None:
@@ -134,6 +163,14 @@ T1_EQ_TRICK = (
     "    def __hash__(self):\n        return 0\n\n"
     "def add_todo(todos, item):\n    todos.append(_Any())\n"
 )
+# The attribute-value recoverability that accepts a plain class must not become
+# a blanket accept: a wrapper that DROPS the item's text still fails.
+T1_CLASS_DROPS_TEXT = (
+    "class Todo:\n"
+    "    def __init__(self, text):\n"
+    "        self.text = 'nope'\n\n"
+    "def add_todo(todos, item):\n    todos.append(Todo(item))\n"
+)
 
 
 @pytest.mark.parametrize(
@@ -149,6 +186,7 @@ T1_EQ_TRICK = (
         T1_REPLACES_LIST,
         T1_ONLY_WORKS_ONCE,
         T1_EQ_TRICK,
+        T1_CLASS_DROPS_TEXT,
     ],
     ids=[
         "drops_item",
@@ -161,6 +199,7 @@ T1_EQ_TRICK = (
         "replaces_whole_list",
         "only_works_once",
         "permissive_eq",
+        "class_drops_text",
     ],
 )
 def test_turn1_rejects_broken_variants(tmp_path: Path, src: str) -> None:
@@ -429,12 +468,24 @@ T6_KEYWORD_ONLY = (
     "def load_todos(*, path):\n"
     "    with open(path) as f:\n        return json.load(f)\n"
 )
+T6_POSITIONAL_ONLY = (
+    "import json\n"
+    "def save_todos(todos, path, /):\n"
+    "    with open(path, 'w') as f:\n        json.dump(todos, f)\n"
+    "def load_todos(path, /):\n"
+    "    with open(path) as f:\n        return json.load(f)\n"
+)
 
 
 @pytest.mark.parametrize(
     "src",
-    [T6_ENVELOPE, T6_INIT_ON_IMPORT, T6_KEYWORD_ONLY],
-    ids=["versioned_envelope", "creates_file_on_import", "keyword_only"],
+    [T6_ENVELOPE, T6_INIT_ON_IMPORT, T6_KEYWORD_ONLY, T6_POSITIONAL_ONLY],
+    ids=[
+        "versioned_envelope",
+        "creates_file_on_import",
+        "keyword_only",
+        "positional_only",
+    ],
 )
 def test_turn6_accepts_sophisticated_designs(tmp_path: Path, src: str) -> None:
     assert oracles.turn6_storage_roundtrip(_ws(tmp_path, storage=src)).passed
