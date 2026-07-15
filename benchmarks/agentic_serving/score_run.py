@@ -43,6 +43,10 @@ LADDER_PROMPTS: tuple[str, ...] = (
 )
 
 
+# FALLBACK shipped-detection only, for runs recorded before hashed manifests:
+# tool-name matching is transcript-shaped, so it misses a bash heredoc, a patch
+# tool, or any unmapped tool name — and each arm chooses its channel freely.
+# The disk manifest is the primary detector (see tally_oracles).
 _WRITE_TOOLS = ("write", "edit")
 
 
@@ -67,6 +71,11 @@ class OracleTally:
     ``unscored_turns`` are oracled turns with no usable verdict (a crashed
     oracle or a missing/older truth file). Silently skipping either shrinks the
     headline's n with no signal in the scorecard.
+
+    ``legacy_turns`` lists turns whose shipped-detection fell back to
+    write-shaped TOOL CALLS because the run predates hashed manifests. The
+    fallback is transcript-shaped and channel-keyed, so it is not comparable
+    across arms; a published table must not mix the two silently.
     """
 
     shipped_correct: int
@@ -74,6 +83,7 @@ class OracleTally:
     not_shipped: int
     death_turns: tuple[int, ...] = ()
     unscored_turns: tuple[int, ...] = ()
+    legacy_turns: tuple[int, ...] = ()
 
     @property
     def shipped(self) -> int:
@@ -95,13 +105,20 @@ class OracleTally:
         return self.shipped_correct / self.turns if self.turns else None
 
 
-def _oracle_verdict(run_dir: Path, turn: int) -> bool | None:
+def _truth_record(run_dir: Path, turn: int) -> dict[str, object] | None:
     path = run_dir / f"truth-{turn:02d}.json"
     if not path.exists():
         return None
     try:
         record = json.loads(path.read_text())
     except ValueError:
+        return None
+    return record if isinstance(record, dict) else None
+
+
+def _oracle_verdict(run_dir: Path, turn: int) -> bool | None:
+    record = _truth_record(run_dir, turn)
+    if record is None:
         return None
     oracle = record.get("oracle")
     if not isinstance(oracle, dict):
@@ -110,14 +127,48 @@ def _oracle_verdict(run_dir: Path, turn: int) -> bool | None:
     return passed if isinstance(passed, bool) else None
 
 
+def _manifest(run_dir: Path, turn: int) -> dict[str, str] | None:
+    record = _truth_record(run_dir, turn)
+    if record is None:
+        return None
+    manifest = record.get("manifest")
+    if not isinstance(manifest, dict):
+        return None
+    return {k: v for k, v in manifest.items() if isinstance(v, str)}
+
+
+def _shipped_from_disk(run_dir: Path, turn: int) -> bool | None:
+    """Did turn ``turn`` put new or changed bytes in the workspace?
+
+    Diffs the turn's hashed manifest against the previous turn's (turn 1
+    diffs against the seeded ``truth-00.json`` baseline). Paths the previous
+    turn recorded as oracle contamination are discounted: they changed AFTER
+    that manifest was captured, during its oracle probe, and attributing them
+    here would credit the arm with the instrument's own writes. None when
+    either manifest is absent (a pre-manifest recording) — the caller falls
+    back to tool-call detection and flags the turn.
+    """
+    current = _manifest(run_dir, turn)
+    previous = _manifest(run_dir, turn - 1)
+    if current is None or previous is None:
+        return None
+    prior_record = _truth_record(run_dir, turn - 1) or {}
+    contamination = prior_record.get("oracle_contamination")
+    contaminated = set(contamination) if isinstance(contamination, list) else set()
+    changed = {p for p, digest in current.items() if previous.get(p) != digest}
+    return bool(changed - contaminated)
+
+
 def tally_oracles(run_dir: str | Path, prompts: tuple[str, ...] = ()) -> OracleTally:
     """Join each oracled turn's verdict to whether that turn shipped anything.
 
-    "Shipped" is read from the transcript's write-shaped tool calls, so it means
-    the same thing for every arm: bytes reached the workspace. The oracle
-    verdict then says whether those bytes were right. A turn that shipped
-    nothing is NOT counted as broken — refusing is a delivery failure, tracked
-    in its own cell, not a correctness failure.
+    "Shipped" is derived from the DISK: the turn's hashed manifest diffed
+    against the previous turn's. That is the only channel that means the same
+    thing for every arm — a write tool, a bash heredoc, and a patch all land
+    in the workspace identically, while tool-call matching sees only the tools
+    it knows. The oracle verdict then says whether those bytes were right. A
+    turn that shipped nothing is NOT counted as broken — refusing is a
+    delivery failure, tracked in its own cell, not a correctness failure.
     """
     directory = Path(run_dir)
     prompts = prompts or LADDER_PROMPTS
@@ -126,6 +177,7 @@ def tally_oracles(run_dir: str | Path, prompts: tuple[str, ...] = ()) -> OracleT
     shipped_correct = shipped_broken = not_shipped = 0
     deaths: list[int] = []
     unscored: list[int] = []
+    legacy: list[int] = []
     for turn in transcript.turns:
         expected = turn.index in oracles.ORACLES
         verdict = _oracle_verdict(directory, turn.index)
@@ -140,7 +192,10 @@ def tally_oracles(run_dir: str | Path, prompts: tuple[str, ...] = ()) -> OracleT
             # A crashed oracle (`oracle: null`) or a missing/older truth file.
             unscored.append(turn.index)
             continue
-        shipped = any(call.name in _WRITE_TOOLS for call in turn.tool_calls)
+        shipped = _shipped_from_disk(directory, turn.index)
+        if shipped is None:
+            legacy.append(turn.index)
+            shipped = any(call.name in _WRITE_TOOLS for call in turn.tool_calls)
         if not shipped:
             not_shipped += 1
         elif verdict:
@@ -153,6 +208,7 @@ def tally_oracles(run_dir: str | Path, prompts: tuple[str, ...] = ()) -> OracleT
         not_shipped,
         death_turns=tuple(deaths),
         unscored_turns=tuple(unscored),
+        legacy_turns=tuple(legacy),
     )
 
 

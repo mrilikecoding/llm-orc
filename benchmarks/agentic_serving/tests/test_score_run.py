@@ -216,6 +216,87 @@ def test_a_crashed_or_absent_oracle_is_reported_not_silently_dropped(
     assert tally.turns == 0
 
 
+def _truth_with_manifest(
+    tmp_path: Path,
+    turn: int,
+    manifest: dict[str, str],
+    oracle: object = None,
+    contamination: list[str] | None = None,
+) -> None:
+    record: dict[str, object] = {"manifest": manifest, "oracle": oracle}
+    if contamination is not None:
+        record["oracle_contamination"] = contamination
+    (tmp_path / f"truth-{turn:02d}.json").write_text(json.dumps(record))
+
+
+def test_shipped_is_derived_from_the_disk_manifest_not_the_write_tools(
+    tmp_path: Path,
+) -> None:
+    # The headline's seam: an arm shipping via a bash heredoc (or any tool the
+    # adapter doesn't map) emits no write-shaped tool call. Only the disk
+    # means the same thing for every arm.
+    _truth_with_manifest(tmp_path, 0, {"calc.py": "aa"})
+    _jsonl(tmp_path, 1, wrote=False)  # no write tool call in the transcript
+    _truth_with_manifest(
+        tmp_path, 1, {"calc.py": "aa", "todo.py": "bb"}, oracle={"passed": False}
+    )
+    tally = score_run.tally_oracles(tmp_path, ("a",))
+    assert (tally.shipped_correct, tally.shipped_broken, tally.not_shipped) == (0, 1, 0)
+    assert tally.legacy_turns == ()
+
+
+def test_an_edit_to_an_existing_file_counts_as_shipped(tmp_path: Path) -> None:
+    _truth_with_manifest(tmp_path, 0, {"todo.py": "aa"})
+    _jsonl(tmp_path, 1, wrote=False)
+    _truth_with_manifest(tmp_path, 1, {"todo.py": "CHANGED"}, oracle={"passed": True})
+    tally = score_run.tally_oracles(tmp_path, ("a",))
+    assert tally.shipped_correct == 1
+
+
+def test_an_unchanged_manifest_is_not_shipped_even_with_a_write_tool_call(
+    tmp_path: Path,
+) -> None:
+    # Disk is authoritative when both manifests exist: a write of identical
+    # bytes delivered nothing new.
+    _truth_with_manifest(tmp_path, 0, {"todo.py": "aa"})
+    _jsonl(tmp_path, 1, wrote=True)
+    _truth_with_manifest(tmp_path, 1, {"todo.py": "aa"}, oracle={"passed": False})
+    tally = score_run.tally_oracles(tmp_path, ("a",))
+    assert tally.not_shipped == 1
+    assert tally.shipped == 0
+
+
+def test_prior_turn_oracle_contamination_is_not_attributed_to_the_arm(
+    tmp_path: Path,
+) -> None:
+    # Turn 5's oracle wrote todos.json through the probe sandbox (recorded by
+    # the battery); turn 6's diff against turn 5's PRE-oracle manifest would
+    # otherwise read that write as turn 6 shipping.
+    _truth_with_manifest(tmp_path, 5, {"calc.py": "aa"}, contamination=["todos.json"])
+    _jsonl(tmp_path, 6, wrote=False)
+    _truth_with_manifest(
+        tmp_path,
+        6,
+        {"calc.py": "aa", "todos.json": "zz"},
+        oracle={"passed": False},
+    )
+    tally = score_run.tally_oracles(tmp_path, ("a", "b", "c", "d", "e", "f"))
+    assert tally.not_shipped == 1
+    assert tally.shipped == 0
+
+
+def test_a_run_without_manifests_falls_back_to_write_tools_and_is_flagged() -> None:
+    # arm0-run2 predates hashed manifests. Its published 2x2 must reproduce,
+    # but the tally has to SAY it used transcript-shaped shipped-detection --
+    # the two detection methods are not comparable across arms.
+    run2 = Path(__file__).resolve().parents[3] / (
+        "docs/plans/2026-07-14-arm0-runs/arm0-run2"
+    )
+    tally = score_run.tally_oracles(run2)
+    assert (tally.shipped_correct, tally.shipped_broken, tally.not_shipped) == (1, 1, 1)
+    assert tally.legacy_turns == (1, 6, 7)
+
+
 def test_arm0_run1_reports_its_never_run_oracles_as_unscored() -> None:
     # Regression against the committed artifacts: run 1 predates oracles.py, so
     # its truth files carry no oracle key. The tally must say so instead of
