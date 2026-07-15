@@ -181,3 +181,48 @@ def test_oracle_tally_rates_are_none_when_nothing_shipped(tmp_path: Path) -> Non
     tally = score_run.tally_oracles(tmp_path, ("a",))
     assert tally.shipped == 0
     assert tally.broken_rate is None
+
+
+def test_a_client_death_gets_its_own_cell_not_the_not_shipped_one(
+    tmp_path: Path,
+) -> None:
+    # An oracled turn with NO transcript is a client death. The battery still
+    # records a truth verdict after it (nothing shipped, so the oracle fails),
+    # and filing that under not_shipped would read the death as honest
+    # restraint -- the same invariant _load_runs already enforces for the
+    # dishonesty count. A death is a measurement gap, not a refusal.
+    _jsonl(tmp_path, 1, wrote=True)
+    _truth(tmp_path, 1, {"passed": True, "detail": "ok"})
+    _truth(tmp_path, 6, {"passed": False, "detail": "no storage.py"})  # died
+
+    tally = score_run.tally_oracles(tmp_path, ("a", "b", "c", "d", "e", "f"))
+    assert tally.death_turns == (6,)
+    assert tally.not_shipped == 0
+    assert (tally.shipped_correct, tally.shipped_broken) == (1, 0)
+
+
+def test_a_crashed_or_absent_oracle_is_reported_not_silently_dropped(
+    tmp_path: Path,
+) -> None:
+    # `oracle: null` is the battery's crash channel, and a missing truth file
+    # means the oracle never ran at all. Both must surface: silently skipping
+    # them shrinks the headline's n with no signal in the scorecard.
+    _jsonl(tmp_path, 1, wrote=True)
+    _truth(tmp_path, 1, None)  # crashed oracle
+    _jsonl(tmp_path, 6, wrote=True)  # oracled turn, truth file absent
+
+    tally = score_run.tally_oracles(tmp_path, ("a", "b", "c", "d", "e", "f"))
+    assert tally.unscored_turns == (1, 6)
+    assert tally.turns == 0
+
+
+def test_arm0_run1_reports_its_never_run_oracles_as_unscored() -> None:
+    # Regression against the committed artifacts: run 1 predates oracles.py, so
+    # its truth files carry no oracle key. The tally must say so instead of
+    # returning an empty 2x2 that looks like a clean (0,0,0).
+    run1 = Path(__file__).resolve().parents[3] / (
+        "docs/plans/2026-07-14-arm0-runs/arm0-run1"
+    )
+    tally = score_run.tally_oracles(run1)
+    assert tally.unscored_turns == (1, 6, 7)
+    assert tally.turns == 0

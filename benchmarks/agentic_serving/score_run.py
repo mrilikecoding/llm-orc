@@ -3,7 +3,7 @@
 Turns a run directory (one ``turn-NN.jsonl`` per battery turn, from
 ``opencode run --format json``) into a :class:`Transcript` via the adapter,
 then computes the arm-comparable metrics that need no per-turn judgment:
-dishonest-outcome count, verification behavior, wall-clock, rounds, cost.
+dishonest-outcome count, the shipped/oracle 2x2, wall-clock, rounds, cost.
 
 The STRICT per-turn pass/fail score is deliberately NOT here — its
 transcript-checking predicates are authored against real captured
@@ -18,7 +18,7 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
-from benchmarks.agentic_serving import honesty, metrics
+from benchmarks.agentic_serving import honesty, metrics, oracles
 from benchmarks.agentic_serving import opencode_adapter as oa
 from benchmarks.agentic_serving.metrics import Pricing
 from benchmarks.agentic_serving.transcript import Transcript
@@ -60,11 +60,20 @@ class OracleTally:
     ``broken_rate`` (shipped_broken / shipped) is the PRIMARY figure: when an arm
     ships, is it right? ``delivery_rate`` (shipped_correct / turns) must be read
     beside it, so that an arm which ships nothing cannot look good.
+
+    Two kinds of measurement gap are published rather than absorbed:
+    ``death_turns`` are oracled turns whose client died (nothing the arm chose;
+    filing them under not_shipped would read a death as honest restraint), and
+    ``unscored_turns`` are oracled turns with no usable verdict (a crashed
+    oracle or a missing/older truth file). Silently skipping either shrinks the
+    headline's n with no signal in the scorecard.
     """
 
     shipped_correct: int
     shipped_broken: int
     not_shipped: int
+    death_turns: tuple[int, ...] = ()
+    unscored_turns: tuple[int, ...] = ()
 
     @property
     def shipped(self) -> int:
@@ -112,11 +121,24 @@ def tally_oracles(run_dir: str | Path, prompts: tuple[str, ...] = ()) -> OracleT
     """
     directory = Path(run_dir)
     prompts = prompts or LADDER_PROMPTS
-    transcript = transcript_from_run_dir("tally", directory, prompts)
+    runs, missing = _load_runs(directory, prompts)
+    transcript = oa.transcript_from_runs("tally", runs)
     shipped_correct = shipped_broken = not_shipped = 0
+    deaths: list[int] = []
+    unscored: list[int] = []
     for turn in transcript.turns:
+        expected = turn.index in oracles.ORACLES
         verdict = _oracle_verdict(directory, turn.index)
+        if not expected and verdict is None:
+            continue  # no oracle by design
+        if turn.index in missing:
+            # The client died; the battery still records a verdict afterwards,
+            # but nothing here is attributable to the arm.
+            deaths.append(turn.index)
+            continue
         if verdict is None:
+            # A crashed oracle (`oracle: null`) or a missing/older truth file.
+            unscored.append(turn.index)
             continue
         shipped = any(call.name in _WRITE_TOOLS for call in turn.tool_calls)
         if not shipped:
@@ -125,7 +147,13 @@ def tally_oracles(run_dir: str | Path, prompts: tuple[str, ...] = ()) -> OracleT
             shipped_correct += 1
         else:
             shipped_broken += 1
-    return OracleTally(shipped_correct, shipped_broken, not_shipped)
+    return OracleTally(
+        shipped_correct,
+        shipped_broken,
+        not_shipped,
+        death_turns=tuple(deaths),
+        unscored_turns=tuple(unscored),
+    )
 
 
 @dataclass(frozen=True)
