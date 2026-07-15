@@ -238,6 +238,33 @@ fixed, all pinned:**
   sweeps cross-products (signature kind × element representation, 21 cases;
   nine composition shapes) instead of one point per lesson.
 
+**Round 4 (2026-07-15, same day): the meta-lesson repeated once more, then the
+class was closed structurally.** The round-3 dis-analysis distinguished
+IMPORT_NAME from LOAD for LOCAL imports but left the module-level reference
+check on raw co_names, one function above it. Consequences, both demonstrated:
+a decorative import plus an attribute merely NAMED `storage`/`save_todos`
+self-certified (co_names cannot tell LOAD_ATTR/LOAD_METHOD from a global
+load — a class-based rewrite with `self.storage` is a realistic turn-7 shape),
+and composition living only in module-level code (load at import, save under a
+main guard, an atexit lambda — reasoned non-invasive designs once turn-4's
+tests pin the signatures) was invisible because the module's own code object
+was never walked. Turn 7's analysis now compiles the SOURCE and credits only
+name-load opcodes of import-bound names, per code object, module level
+included — one analysis for every shape instead of a runtime walk with
+special cases. Also from round 4: `add_todo(item, todos=None)` (the
+mutable-default idiom) and save-with-default-path beside load-requiring-path
+now probe via the padded-parameter pair; the turn-6 reimport pops every
+sandbox-local module (a cross-module cache survived a storage-only reimport).
+New documented FAR bound: a bare LOAD with no call (`def f(): storage`)
+counts as a reference. The driver/scorer lens returned APPROVE with
+advisories, all taken: the battery refuses a non-git fixture (empty-but-valid
+manifests scored every oracled turn not_shipped with no flag), truth records
+carry the POST-oracle manifest so the scorer diffs turn N+1 against the exact
+state the arm started from (the path-level contamination discount, which
+over-suppressed a genuine arm edit to a contaminated path, remains only as
+the fallback for older records), and the manifest survives spaces/tabs/
+non-ASCII in filenames (newline filenames are a documented skip).
+
 ## 6. Per-turn table
 
 Tier **G** = ground truth · **O** = oracle · **J** = judgment ·
@@ -459,3 +486,10 @@ with its reason and its date, in place, rather than edited away.
   (2/3/5/9/10/11); §8.4 two further instrumented Arm-0 runs bound into the
   plan. Every predicate change happened BEFORE any Arm-1/2 transcript existed,
   so the freeze's purpose — no drift against frontier data — is intact.
+- 2026-07-15, later (fourth review round: empirical oracle re-hunt returned 2
+  blockers + 2 minors, driver/scorer fix-verification returned APPROVE with
+  advisories; all fixed same day). §5 round-4 block records the turn-7
+  compiled-source opcode-kind analysis, the padded-parameter pairs on turns
+  1/6, the sandbox-wide module pop, the non-git-fixture guard, the
+  post-oracle manifest superseding the contamination discount, and the
+  manifest filename robustness. Still before any Arm-1/2 transcript.

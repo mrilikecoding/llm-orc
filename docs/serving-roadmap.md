@@ -120,7 +120,7 @@ Two generalizations the upper rungs force (named 2026-07-09):
   registers, the composer itself a verified ensemble rather than a lone
   model — are the generative rung.
 
-## Current state (2026-07-15; ACTIVE = WS-8 Arc D on branch `feat/131-arc-d-strict-table`, unmerged; round 3 reviewed AND fixed, awaiting round 4; meta-task rung slice 1 merged to main, unreleased; last release v0.18.14)
+## Current state (2026-07-15; ACTIVE = WS-8 Arc D on branch `feat/131-arc-d-strict-table`, unmerged; rounds 3 AND 4 reviewed and fixed, awaiting round 5 oracle confirmation; meta-task rung slice 1 merged to main, unreleased; last release v0.18.14)
 
 Thirteen releases in three days. v0.18.2–v0.18.7 (2026-07-09): Stage 2
 memory core, #100 TDD retry, #84 deterministic adequacy, #98
@@ -184,17 +184,30 @@ pinned by property sweeps (21-case signature×representation, 9 composition
 shapes). Round 2's three knowingly-unfixed minors: two confirmed genuinely
 minor, the third (relative-path guard) escalated and fixed.
 
+**Round 4 ran 2026-07-15 (same day as round 3's fixes):** driver/scorer
+fix-verification APPROVE (every round-3 fix independently re-verified; its
+advisories all taken — non-git-fixture guard, post-oracle manifest superseding
+the contamination discount, filename robustness); the empirical oracle re-hunt
+found 2 MORE turn-7 blockers (raw co_names conflated attribute names with
+global loads, so `self.storage` credited a decorative import; module-level
+composition was invisible) plus 2 realistic minors (mutable-default idiom on
+turn 1, asymmetric defaults on turn 6) — all fixed same day: turn 7 now
+compiles the source and analyzes opcode KINDS per code object, turns 1/6
+probe padded-parameter pairs. The round-3 meta-lesson repeated (the co_names
+neighbor, one level up) before the class was closed structurally.
+
 **Enter here, in order:**
 
-1. **FOURTH review round** (the merge gate; rounds 1–3 EACH found blockers the
-   author's checks missed — round 3's hit rate says the gate has not
-   converged). Oracle FAR/FRR re-hunt at minimum, empirical (run adversarial
-   workspaces, don't just read); plus a check that the round-3 fixes hold.
-   Known-open bounds, documented not hidden: two-level-deep wrapper opacity
-   (turn 1), nested-closure deferred import (turn 7), dead-code-after-return
-   (turn 7), workspace `json.py` shadowing the probe's stdlib, no true FS
-   isolation for absolute-path writes (contamination is recorded, not
-   prevented).
+1. **FIFTH review round, oracle lens only** (the merge gate; rounds 1–4 EACH
+   found oracle blockers — the driver/scorer side has an APPROVE, the oracle
+   side does not yet). Empirical FAR/FRR re-hunt (run adversarial workspaces,
+   don't just read) confirming the round-4 fixes hold. Known-open bounds,
+   documented not hidden: two-level-deep wrapper opacity (turn 1),
+   nested-closure deferred import (turn 7), dead-code-after-return and
+   bare-LOAD-no-call (turn 7), workspace `json.py` shadowing the probe's
+   stdlib, no true FS isolation for absolute-path writes (contamination is
+   recorded and post-manifest-diffed, not prevented), newline-in-filename
+   manifests skip.
 2. **Two more oracle-instrumented Arm-0 runs** (free, local, ~30 min each).
    §8.4's ≥3-per-arm minimum binds: run 1 is a dry-run by §9's own ruling, so
    Arm 0 has exactly one valid run. Rerun `score_run.tally_oracles` after —
