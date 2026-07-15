@@ -412,7 +412,7 @@ raise SystemExit(1)
 # likewise never binds at module level, so imports are collected from code
 # objects too.
 _TURN7_PROBE = """
-import sys, types
+import dis, sys, types
 NONCE = sys.argv[1]
 TOKEN = "PROBE-OK-" + NONCE
 
@@ -433,6 +433,17 @@ def code_objects(root):
         if code is not None:
             out.append(code)
             stack.extend(c for c in code.co_consts if hasattr(c, "co_names"))
+            # functools.wraps leaves the module binding on the WRAPPER; the
+            # real body is reachable only via __wrapped__ or the closure cells,
+            # and stopping at the wrapper false-rejects a decorated function.
+            wrapped = getattr(obj, "__wrapped__", None)
+            if wrapped is not None:
+                stack.append(wrapped)
+            for cell in getattr(obj, "__closure__", None) or ():
+                try:
+                    stack.append(cell.cell_contents)
+                except ValueError:
+                    pass
         elif hasattr(obj, "co_names"):
             out.append(obj)
             stack.extend(c for c in obj.co_consts if hasattr(c, "co_names"))
@@ -462,11 +473,31 @@ referenced = set()
 for code in codes:
     referenced |= set(code.co_names)
 
-# A deferred `import storage` inside a body binds nothing at module level, so
-# credit it from the bytecode's own import names.
-local_imports = {n for code in codes for n in code.co_names} & {"storage"}
-if local_imports and "storage" in referenced:
-    bound |= local_imports
+# A deferred `import storage` inside a body binds nothing at module level.
+# co_names cannot distinguish the IMPORT_NAME itself from a LOAD of the bound
+# name, so a decorative unused local import would self-certify; credit it only
+# when a LOAD of a name the import bound actually appears. The check is
+# per-code-object; a deferred import used only through a closure cell of a
+# NESTED function is a known false-reject bound.
+def uses_local_storage_import(code):
+    stores = ("STORE_FAST", "STORE_NAME", "STORE_GLOBAL", "STORE_DEREF")
+    loads = ("LOAD_FAST", "LOAD_NAME", "LOAD_GLOBAL", "LOAD_DEREF")
+    bound_here, pending = set(), False
+    for ins in dis.get_instructions(code):
+        if ins.opname == "IMPORT_NAME":
+            pending = ins.argval == "storage"
+        elif pending and ins.opname == "IMPORT_FROM":
+            bound_here.add(ins.argval)
+        elif pending and ins.opname in stores:
+            bound_here.add(ins.argval)
+        elif ins.opname in loads and ins.argval in bound_here:
+            return True
+        else:
+            pending = False
+    return False
+
+if any(uses_local_storage_import(code) for code in codes):
+    bound.add("storage")
 
 if not bound:
     print("todo.py does not import storage")

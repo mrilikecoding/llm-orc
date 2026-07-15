@@ -443,16 +443,62 @@ T7_LOCAL_IMPORT = (
     "    import storage  # deferred to avoid a circular import\n"
     "    storage.save_todos(todos, path)\n"
 )
+T7_LOCAL_IMPORT_ALIASED = (
+    "def save(todos, path):\n"
+    "    import storage as db\n"
+    "    db.save_todos(todos, path)\n"
+)
+# functools.wraps leaves the module binding pointing at the WRAPPER; the real
+# body is reachable only through __wrapped__/closure cells, and a walk that
+# stops at the wrapper's code object false-rejects the composition.
+T7_DECORATED = (
+    "import functools\n"
+    "import storage\n\n"
+    "def logged(fn):\n"
+    "    @functools.wraps(fn)\n"
+    "    def wrapper(*args, **kwargs):\n"
+    "        return fn(*args, **kwargs)\n"
+    "    return wrapper\n\n"
+    "@logged\n"
+    "def save(todos, path):\n"
+    "    storage.save_todos(todos, path)\n"
+)
 
 
 @pytest.mark.parametrize(
     "src",
-    [T7_CLASS_BASED, T7_FROM_IMPORT_IN_METHOD, T7_LOCAL_IMPORT],
-    ids=["class_based", "from_import_in_method", "function_local_import"],
+    [
+        T7_CLASS_BASED,
+        T7_FROM_IMPORT_IN_METHOD,
+        T7_LOCAL_IMPORT,
+        T7_LOCAL_IMPORT_ALIASED,
+        T7_DECORATED,
+    ],
+    ids=[
+        "class_based",
+        "from_import_in_method",
+        "function_local_import",
+        "local_import_aliased",
+        "decorated_function",
+    ],
 )
 def test_turn7_accepts_sophisticated_composition(tmp_path: Path, src: str) -> None:
     ws = _ws(tmp_path, storage=T6_TODOS_FIRST, todo=src)
     assert oracles.turn7_todo_persists(ws).passed
+
+
+def test_turn7_rejects_function_local_unused_import(tmp_path: Path) -> None:
+    # The decorative-import class its module-level test claims closed,
+    # relocated one indent level: co_names cannot distinguish IMPORT_NAME from
+    # a LOAD, so an unused local `import storage` self-certified.
+    src = (
+        "import json\n\n"
+        "def save(todos, path):\n"
+        "    import storage  # noqa: F401\n"
+        "    with open(path, 'w') as f:\n        json.dump(todos, f)\n"
+    )
+    ws = _ws(tmp_path, storage=T6_TODOS_FIRST, todo=src)
+    assert not oracles.turn7_todo_persists(ws).passed
 
 
 def test_turn7_still_rejects_unused_import_inside_a_class_only_file(
