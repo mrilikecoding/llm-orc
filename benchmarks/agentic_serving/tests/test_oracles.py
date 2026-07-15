@@ -591,6 +591,128 @@ def test_turn6_accepts_when_a_json_file_already_exists(tmp_path: Path) -> None:
     assert oracles.turn6_storage_roundtrip(ws).passed
 
 
+# --- Property sweeps (2026-07-15, round 3) ----------------------------------
+# The round-3 hunt's meta-finding: each prior fix was pinned exactly at the
+# fixture written for it, and the NEIGHBORING shape was left open (dataclass
+# fixed, plain class open; keyword-only fixed, positional-only open;
+# module-level unused import fixed, local unused import open). These sweeps pin
+# the cross-product instead of one point per lesson.
+
+_T1_PRELUDE = (
+    "from collections import namedtuple\n"
+    "from dataclasses import dataclass\n\n"
+    "TodoNT = namedtuple('TodoNT', ['text'])\n\n"
+    "@dataclass\n"
+    "class TodoDC:\n    text: str\n\n"
+    "class TodoPC:\n"
+    "    def __init__(self, text):\n        self.text = text\n\n"
+    "class TodoSC:\n"
+    "    __slots__ = ('text',)\n"
+    "    def __init__(self, text):\n        self.text = text\n\n"
+)
+_T1_SIGNATURES = {
+    "pos_or_kw": "def add_todo(todos, item):\n",
+    "kw_only": "def add_todo(*, todos, item):\n",
+    "pos_only": "def add_todo(todos, item, /):\n",
+}
+_T1_WRAPPERS = {
+    "bare": "item",
+    "dict": "{'task': item, 'done': False}",
+    "tuple": "(item, False)",
+    "namedtuple": "TodoNT(item)",
+    "dataclass": "TodoDC(item)",
+    "plain_class": "TodoPC(item)",
+    "slots_class": "TodoSC(item)",
+}
+
+
+@pytest.mark.parametrize("sig", sorted(_T1_SIGNATURES))
+@pytest.mark.parametrize("wrap", sorted(_T1_WRAPPERS))
+def test_turn1_signature_x_representation_sweep(
+    tmp_path: Path, sig: str, wrap: str
+) -> None:
+    body = f"    todos.append({_T1_WRAPPERS[wrap]})\n"
+    src = _T1_PRELUDE + _T1_SIGNATURES[sig] + body
+    assert oracles.turn1_adds_todo(_ws(tmp_path, todo=src)).passed
+
+
+_T7_COMPOSITION_SHAPES = {
+    "module_import": (
+        "import storage\n\ndef save(todos, path):\n    storage.save_todos(todos, path)\n"
+    ),
+    "module_import_aliased": (
+        "import storage as db\n\ndef save(todos, path):\n    db.save_todos(todos, path)\n"
+    ),
+    "from_import_aliased": (
+        "from storage import save_todos as st_save\n\n"
+        "def save(todos, path):\n    st_save(todos, path)\n"
+    ),
+    "local_from_import": (
+        "def save(todos, path):\n"
+        "    from storage import save_todos\n"
+        "    save_todos(todos, path)\n"
+    ),
+    "staticmethod": (
+        "import storage\n\n"
+        "class TodoList:\n"
+        "    @staticmethod\n"
+        "    def save(items, path):\n        storage.save_todos(items, path)\n"
+    ),
+    "classmethod": (
+        "import storage\n\n"
+        "class TodoList:\n"
+        "    @classmethod\n"
+        "    def save(cls, items, path):\n        storage.save_todos(items, path)\n"
+    ),
+    "property": (
+        "import storage\n\n"
+        "class TodoList:\n"
+        "    def __init__(self, items, path):\n"
+        "        self.items = items\n        self.path = path\n"
+        "    @property\n"
+        "    def saved(self):\n"
+        "        storage.save_todos(self.items, self.path)\n"
+        "        return True\n"
+    ),
+    "nested_function": (
+        "import storage\n\n"
+        "def save(todos, path):\n"
+        "    def do():\n        storage.save_todos(todos, path)\n"
+        "    do()\n"
+    ),
+    "decorated_no_wraps": (
+        "import storage\n\n"
+        "def logged(fn):\n"
+        "    def wrapper(*args, **kwargs):\n"
+        "        return fn(*args, **kwargs)\n"
+        "    return wrapper\n\n"
+        "@logged\n"
+        "def save(todos, path):\n    storage.save_todos(todos, path)\n"
+    ),
+}
+
+
+@pytest.mark.parametrize(
+    "shape", sorted(_T7_COMPOSITION_SHAPES), ids=sorted(_T7_COMPOSITION_SHAPES)
+)
+def test_turn7_composition_shape_sweep(tmp_path: Path, shape: str) -> None:
+    src = _T7_COMPOSITION_SHAPES[shape]
+    ws = _ws(tmp_path, storage=T6_TODOS_FIRST, todo=src)
+    assert oracles.turn7_todo_persists(ws).passed
+
+
+def test_turn7_rejects_aliased_unused_local_import(tmp_path: Path) -> None:
+    # The aliased twin of the decorative local import: binding without a LOAD.
+    src = (
+        "import json\n\n"
+        "def save(todos, path):\n"
+        "    import storage as db  # noqa: F401\n"
+        "    with open(path, 'w') as f:\n        json.dump(todos, f)\n"
+    )
+    ws = _ws(tmp_path, storage=T6_TODOS_FIRST, todo=src)
+    assert not oracles.turn7_todo_persists(ws).passed
+
+
 def test_turn1_verdict_does_not_depend_on_declaration_order(tmp_path: Path) -> None:
     # The module-level branch seeds every module list. If it clobbers an
     # unrelated constant and never restores, the verdict depends on which name
