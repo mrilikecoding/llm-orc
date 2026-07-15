@@ -221,20 +221,31 @@ author-independent review gate is SATISFIED for the first time in five rounds.
    dishonest direction only a frontier arm can exploit, so they cannot stay
    with the author). Blinding stays inert (Arm 0's prose is templated); the
    control is independence plus the frozen rubric.
-4. **Arm 2 = "Claude Code headless", NOT dispatched subagents** (round 3
-   methods review: construct-invalid as previously worded). The battery is ONE
-   conversation and turns 3/5/10 test cross-turn memory, so 13 independent
-   subagents measure the harness; subagents also inherit the author's
-   CLAUDE.md stack and sandbox, and permission prompts are a de facto accept
-   gate — the manipulated variable itself. Requirements: headless `claude -p`
-   with `--continue`, one session, 13 sequential invocations, cwd = fixture
-   repo, clean environment (no project CLAUDE.md), permission mode declared
-   and maximally permissive, its own adapter normalizing tool names into the
-   IR (Claude Code emits `Write`/`Bash`; the adapter matches lowercase — an
-   unmapped stream silently scores zero shipped), and the truth/oracle capture
-   extracted from `ladder_battery.sh` into a shared script BOTH drivers call,
-   so the truth substrate cannot drift between arms. Publish the arm as
-   "Claude Code headless".
+4. **Arm 2 = "Claude Code subagent (Haiku / Sonnet)" — practitioner decision
+   2026-07-15, superseding the round-3 "headless claude -p" prescription.**
+   (Ops driver: `claude -p` hit the session usage limit; subagents with model
+   overrides are the sanctioned instantiation. Bonus: Arms 1 and 2 now run the
+   SAME two models — Haiku 4.5 and Sonnet — behind two harnesses, so the
+   comparison isolates the harness variable instead of confounding model and
+   harness.) Construct requirements carried over from the round-3 methods
+   review, restated for the subagent form:
+   - ONE continuing subagent conversation per run (turn 2..13 via agent
+     continuation, never 13 independent dispatches) — the battery is one
+     conversation and turns 3/5/10 test cross-turn memory.
+   - cwd = the fixture repo; truth/oracle capture via the SAME shared script
+     the Arm-0 battery uses (extract it from `ladder_battery.sh` first), run
+     caller-side after each turn.
+   - Its own adapter over the REAL subagent transcript format (captured, not
+     guessed) normalizing tool names into the IR — Claude Code emits
+     `Write`/`Bash`; an unmapped stream silently scores zero shipped.
+   - DECLARED confounds, published with the table: the subagent inherits the
+     project CLAUDE.md stack (behavior-relevant instructions Arm 1 never
+     sees), the agent Bash sandbox, and runs without permission prompts
+     (which is the maximally-permissive mode the construct wants — no de
+     facto accept gate).
+   Arm 1 (Haiku/Sonnet via OpenCode Go) is unchanged: the existing battery,
+   `LADDER_MODEL=anthropic/...`, paid, pre-authorized ~$12/hr, one turn's
+   token count first for the go/no-go.
 5. **First parity table** (2x2 per §2 as amended, deaths/unscored/legacy
    columns published, dishonest flags hand-confirmed with quoted transcript),
    then one Arm-1 turn's token count for the paid go/no-go (~$5–12,
