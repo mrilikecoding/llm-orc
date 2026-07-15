@@ -31,6 +31,7 @@ from benchmarks.agentic_serving import oracles
 
 
 def _ws(tmp_path: Path, **modules: str) -> Path:
+    tmp_path.mkdir(parents=True, exist_ok=True)
     for name, src in modules.items():
         (tmp_path / f"{name}.py").write_text(src)
     return tmp_path
@@ -337,3 +338,117 @@ def test_turn7_rejects_exit_zero_at_import(tmp_path: Path) -> None:
     src = "import sys\nsys.exit(0)\n"
     ws = _ws(tmp_path, storage=T6_TODOS_FIRST, todo=src)
     assert not oracles.turn7_todo_persists(ws).passed
+
+
+# --- FRR found by the 2026-07-14 re-review ---------------------------------
+# Every case below is CORRECT code that the oracle rejected. All three are
+# design-SOPHISTICATION markers (a class, a deferred import, a versioned
+# envelope), so they correlate with the frontier arm and would have scored
+# "shipped, oracle-failed" -- fabricating exactly the plausible-but-wrong
+# narrative these oracles exist to detect.
+
+T7_CLASS_BASED = (
+    "import storage\n\n"
+    "class TodoList:\n"
+    "    def __init__(self, items, path):\n"
+    "        self.items = items\n        self.path = path\n"
+    "    def save(self):\n        storage.save_todos(self.items, self.path)\n"
+)
+T7_FROM_IMPORT_IN_METHOD = (
+    "from storage import save_todos\n\n"
+    "class TodoList:\n"
+    "    def save(self, items, path):\n        save_todos(items, path)\n"
+)
+T7_LOCAL_IMPORT = (
+    "def save(todos, path):\n"
+    "    import storage  # deferred to avoid a circular import\n"
+    "    storage.save_todos(todos, path)\n"
+)
+
+
+@pytest.mark.parametrize(
+    "src",
+    [T7_CLASS_BASED, T7_FROM_IMPORT_IN_METHOD, T7_LOCAL_IMPORT],
+    ids=["class_based", "from_import_in_method", "function_local_import"],
+)
+def test_turn7_accepts_sophisticated_composition(tmp_path: Path, src: str) -> None:
+    ws = _ws(tmp_path, storage=T6_TODOS_FIRST, todo=src)
+    assert oracles.turn7_todo_persists(ws).passed
+
+
+def test_turn7_still_rejects_unused_import_inside_a_class_only_file(
+    tmp_path: Path,
+) -> None:
+    # The class fix must not become a blanket accept.
+    src = (
+        "import json\n"
+        "import storage  # noqa: F401\n\n"
+        "class TodoList:\n"
+        "    def save(self, items, path):\n"
+        "        with open(path, 'w') as f:\n            json.dump(items, f)\n"
+    )
+    ws = _ws(tmp_path, storage=T6_TODOS_FIRST, todo=src)
+    assert not oracles.turn7_todo_persists(ws).passed
+
+
+T6_ENVELOPE = (
+    "import json\n"
+    "def save_todos(todos, path):\n"
+    "    with open(path, 'w') as f:\n"
+    "        json.dump({'version': 1, 'todos': list(todos)}, f)\n"
+    "def load_todos(path):\n"
+    "    with open(path) as f:\n        return json.load(f)['todos']\n"
+)
+T6_INIT_ON_IMPORT = (
+    "import json, os\n"
+    "TODO_FILE = 'todos.json'\n"
+    "if not os.path.exists(TODO_FILE):\n"
+    "    with open(TODO_FILE, 'w') as f:\n        json.dump([], f)\n"
+    "def save_todos(todos):\n"
+    "    with open(TODO_FILE, 'w') as f:\n        json.dump(todos, f)\n"
+    "def load_todos():\n"
+    "    with open(TODO_FILE) as f:\n        return json.load(f)\n"
+)
+T6_KEYWORD_ONLY = (
+    "import json\n"
+    "def save_todos(*, todos, path):\n"
+    "    with open(path, 'w') as f:\n        json.dump(todos, f)\n"
+    "def load_todos(*, path):\n"
+    "    with open(path) as f:\n        return json.load(f)\n"
+)
+
+
+@pytest.mark.parametrize(
+    "src",
+    [T6_ENVELOPE, T6_INIT_ON_IMPORT, T6_KEYWORD_ONLY],
+    ids=["versioned_envelope", "creates_file_on_import", "keyword_only"],
+)
+def test_turn6_accepts_sophisticated_designs(tmp_path: Path, src: str) -> None:
+    assert oracles.turn6_storage_roundtrip(_ws(tmp_path, storage=src)).passed
+
+
+def test_turn6_accepts_when_a_json_file_already_exists(tmp_path: Path) -> None:
+    # By turn 6 the workspace already holds files; a probe that only looks at
+    # NEWLY created json misses a write to a pre-existing path.
+    ws = _ws(tmp_path, storage=T6_TODOS_FIRST)
+    (ws / "todos_probe.json").write_text("[]")
+    assert oracles.turn6_storage_roundtrip(ws).passed
+
+
+def test_turn1_verdict_does_not_depend_on_declaration_order(tmp_path: Path) -> None:
+    # The module-level branch seeds every module list. If it clobbers an
+    # unrelated constant and never restores, the verdict depends on which name
+    # getmembers reaches first -- non-deterministic scoring, the exact property
+    # that disqualified name-keyed oracles in the first place.
+    body = (
+        "def add_todo(item):\n"
+        "    if VALID_STATUSES != ['open', 'done']:\n"
+        "        raise ValueError('bad status config: %r' % (VALID_STATUSES,))\n"
+        "    TODOS.append(item)\n"
+    )
+    const_first = "VALID_STATUSES = ['open', 'done']\nTODOS = []\n\n" + body
+    todos_first = "TODOS = []\nVALID_STATUSES = ['open', 'done']\n\n" + body
+    a = oracles.turn1_adds_todo(_ws(tmp_path / "a", todo=const_first)).passed
+    b = oracles.turn1_adds_todo(_ws(tmp_path / "b", todo=todos_first)).passed
+    assert a == b, "verdict flipped on declaration order alone"
+    assert a is True
