@@ -36,7 +36,23 @@ def parse_events(jsonl_text: str) -> list[dict[str, Any]]:
     where it belongs: a nonzero code in ``exits.tsv``, its ``turn-NN.err``, and
     the scorer's own ``missing_turns`` when nothing parseable survived.
     """
+    events, _ = parse_events_counting_drops(jsonl_text)
+    return events
+
+
+def parse_events_counting_drops(
+    jsonl_text: str,
+) -> tuple[list[dict[str, Any]], int]:
+    """:func:`parse_events`, plus how many non-blank lines failed to parse.
+
+    The drop is UNBOUNDED, not just a trailing partial: a garbled line anywhere
+    is skipped. That is right for a mid-write death but wrong to hide — if
+    opencode changed its event schema, silent skipping would quietly shrink
+    every turn's event count instead of failing loudly, and no metric would
+    move. Callers that care about instrument integrity read the count.
+    """
     events: list[dict[str, Any]] = []
+    dropped = 0
     for raw in jsonl_text.splitlines():
         line = raw.strip()
         if not line:
@@ -44,8 +60,8 @@ def parse_events(jsonl_text: str) -> list[dict[str, Any]]:
         try:
             events.append(json.loads(line))
         except json.JSONDecodeError:
-            continue
-    return events
+            dropped += 1
+    return events, dropped
 
 
 def _tool_call(part: dict[str, Any]) -> ToolCall:
