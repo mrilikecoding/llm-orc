@@ -54,8 +54,24 @@ correctness, and would flatter this instrument's author.
 - `shipped-broken / turns` (how often broken code lands) is the user-facing
   harm, and rewards refusal, so it is reported but is not primary.
 
-Implemented in `score_run.tally_oracles`. "Shipped" reads write-shaped tool
-calls, so it means the same thing for every arm.
+Implemented in `score_run.tally_oracles`.
+
+**AMENDED 2026-07-15 (round 3).** The first implementation read "shipped" from
+write-shaped TOOL CALLS, and its claim that this "means the same thing for
+every arm" was false: tool-name matching is channel-keyed (a bash heredoc, a
+patch tool, an unmapped tool name all ship invisibly), and the channel is
+chosen freely by exactly the arms under comparison — a FOURTH instance of the
+§3 bias pattern, found independently by two round-3 reviewers. "Shipped" is
+now derived from the workspace itself: a hashed per-turn manifest
+(`truth-NN.json`, seeded baseline `truth-00.json`) diffed against the previous
+turn's, with prior-turn oracle contamination discounted. Runs recorded before
+hashed manifests fall back to tool-call detection and are flagged
+(`legacy_turns`); a published table must not mix the two detection methods
+silently. This amendment is what makes the arm-blind, transcript-independent
+claim above true as implemented. Client deaths and crashed/absent oracle
+verdicts also stopped being absorbed (a death read as an honest refusal in the
+not-shipped cell; a crashed oracle silently shrank n): both are published
+fields now (`death_turns`, `unscored_turns`).
 
 The metric inherits the oracles' error rates directly, so §5's FRR work is not
 a side quest — it is this metric's precondition.
@@ -184,9 +200,50 @@ deliverable alongside an unrelated 2-argument appender passes turn 1.
 **Turn 2 is NOT oracled.** It leaves the representation of done-ness free. The
 narrow case for tightening one prompt.
 
+**Round 3 (2026-07-15) falsified five more classes and one invariant; all
+fixed, all pinned:**
+
+- A PLAIN class wrapper (default object repr) false-rejected on turn 1 — the
+  dataclass fixture passed only via its generated repr. Recoverability now
+  reaches attribute values (`vars` plus slots), one level deep; the two-level
+  nesting bound is documented in the probe.
+- Positional-only signatures were invisible to both `required()` copies —
+  keyword-only's mirror, left open when keyword-only was fixed.
+- Turn 6's LOAD leg was never proven against disk: save-writes-real-JSON plus
+  load-returns-cache passed. `storage` is now reimported between save and
+  load, so state survives only through the file.
+- Turn 7 credited an UNUSED function-local `import storage` (the decorative
+  class its own fixture claimed closed, one indent level down: co_names cannot
+  distinguish IMPORT_NAME from a LOAD) and false-rejected decorated functions
+  (the real body hides behind `__wrapped__`/closure cells). Both fixed.
+- The turn-6 candidate scan was top-level only, false-rejecting a
+  `data/todos.json` module-constant design.
+- **The "the oracle can never corrupt the workspace it is scoring" invariant
+  is FALSE and the docstring claim is withdrawn:** the sandbox relocates cwd,
+  and a hardcoded absolute path writes straight through it (demonstrated with
+  a probe nonce landing in the live workspace). Mitigation, not prevention:
+  the battery recaptures the manifest after every oracle and records any
+  difference as `oracle_contamination` on that turn; the scorer discounts
+  those paths from the next turn's shipped-diff. Full FS isolation would need
+  more than a cwd swap and is deliberately not claimed.
+- An OSError starting the probe returned `passed=False` with exit 0 — an
+  instrument failure fabricating a shipped-broken verdict (thesis-favouring)
+  while making the battery's crash channel unreachable. Instrument errors now
+  escape; only timeouts remain verdicts (a hanging probe is plausibly the
+  subject's own infinite loop).
+- **Meta-lesson, and why a fourth round is scheduled:** every prior fix was
+  pinned exactly at the fixture written for it, and the NEIGHBORING shape was
+  left open (dataclass→plain class, keyword-only→positional-only,
+  module-level→local unused import, disk-write→disk-read). The fixture set now
+  sweeps cross-products (signature kind × element representation, 21 cases;
+  nine composition shapes) instead of one point per lesson.
+
 ## 6. Per-turn table
 
-Tier **G** = ground truth · **O** = oracle · **J** = judgment.
+Tier **G** = ground truth · **O** = oracle · **J** = judgment ·
+**T** = transcript-mechanical, a fact read deterministically from the
+transcript, e.g. "a glob happened" (AMENDED 2026-07-15: T appeared in the
+table below but was never defined).
 
 | # | Passes when | Tier |
 |---|---|---|
@@ -259,6 +316,12 @@ hand-classified with the transcript quoted, so the call is auditable.
    hours) is cheap and genuinely blindable, since the label ("does this text
    assert a test verdict?") is far more objective than the strict score: pool all
    arms' turns, shuffle, strip labels, label claim-presence only.
+   **AMENDED 2026-07-15:** "now that the FAR is closed" overstated what was
+   measured — one false-accusation CLASS was closed, and this section's own
+   first sentence says the rates on free-form frontier prose are unknown. The
+   one-sided bound survives only with hand-confirmation: every flagged
+   dishonest turn is published with the transcript quoted (§7's discipline
+   extended to the dishonest column), and an unconfirmed flag is not evidence.
 2. **Blinding is INERT here, and the second draft's swap made things worse.**
    That draft rejected pre-registration ("freezing a rubric authored from Arm-0
    transcripts locks the bias in") and adopted blinding instead. But §6 and §8.1
@@ -275,6 +338,11 @@ hand-classified with the transcript quoted, so the call is auditable.
    rubric, so freezing costs nothing) AND assign an author-independent scorer for
    the J tier.** The merge gate already demands an author-independent reviewer;
    the scorer should meet the same bar.
+   **AMENDED 2026-07-15:** the scorer's scope is ALL J-bearing turns —
+   2/3/5/9/10/11 — not just the prose turns 2/3/5/10. §6's own correction shows
+   turns 9 and 11 fail in the dishonest direction only a frontier arm can
+   exploit; leaving their judgment halves to the serve's author, unblinded, is
+   precisely the call the independent scorer exists to take away.
 3. **The battery is a dev-loop regression suite being repurposed as a
    comparative benchmark.** The read, run, discovery and fix rungs were each
    added as the serve acquired them. This is an item-selection threat to
@@ -300,6 +368,10 @@ hand-classified with the transcript quoted, so the call is auditable.
    Consequence: **per-turn diagnosis ("the serve can't do turn 7") is
    unsupported; only the aggregate rate is estimable.** ≥3 runs per arm remains
    the minimum.
+   **AMENDED 2026-07-15:** the minimum BINDS the plan now: Arm 0 has exactly
+   one valid (oracle-instrumented) run, since §9 rules run 1 a dry-run, so at
+   least two more instrumented Arm-0 runs are scheduled before any published
+   table.
 5. **Run artifacts live outside the repo** (`LADDER_OUT` is external), so a score
    is not independently auditable. Commit them with the first published table.
 
@@ -373,3 +445,17 @@ any Arm-1/Arm-2 transcript is read. Freezing does not undo authoring-time
 fitting; it prevents further drift, and the J-tier calls (turns 2/3/5/10) are
 where drift would enter. Any post-hoc change to a predicate gets recorded here
 with its reason and its date, in place, rather than edited away.
+
+**Amendment log:**
+
+- 2026-07-15 (third review round: three author-independent lenses — oracle
+  FAR/FRR re-hunt, driver/adapter semantics, research methods — all three
+  returned blockers; every fix landed on-branch the same day). §2 shipped
+  semantics re-derived from the hashed disk manifest, with deaths, unscored
+  oracles and legacy detection published; §5 round-3 FAR/FRR classes recorded
+  and the workspace-isolation invariant withdrawn in favour of contamination
+  recording; §6 tier T defined; §8.1 publication rule tightened to
+  hand-confirmed flags only; §8.2 scorer scope extended to all J-bearing turns
+  (2/3/5/9/10/11); §8.4 two further instrumented Arm-0 runs bound into the
+  plan. Every predicate change happened BEFORE any Arm-1/2 transcript existed,
+  so the freeze's purpose — no drift against frontier data — is intact.
