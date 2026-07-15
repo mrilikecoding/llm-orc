@@ -169,17 +169,37 @@ def grew(after):
     text = " ".join(parts)
     return ITEM in text and all(s in text for s in SEED)
 
+_KINDS = (
+    inspect.Parameter.POSITIONAL_ONLY,
+    inspect.Parameter.POSITIONAL_OR_KEYWORD,
+    inspect.Parameter.KEYWORD_ONLY,
+)
+
 def required(fn):
     try:
         params = inspect.signature(fn).parameters.values()
     except (TypeError, ValueError):
         return []
-    kinds = (
-        inspect.Parameter.POSITIONAL_ONLY,
-        inspect.Parameter.POSITIONAL_OR_KEYWORD,
-        inspect.Parameter.KEYWORD_ONLY,
-    )
-    return [p for p in params if p.kind in kinds and p.default is p.empty]
+    return [p for p in params if p.kind in _KINDS and p.default is p.empty]
+
+def padded(fn):
+    try:
+        params = inspect.signature(fn).parameters.values()
+    except (TypeError, ValueError):
+        return []
+    return [p for p in params if p.kind in _KINDS]
+
+def pair_of(fn):
+    # The two params to probe two-ways. Usually the two REQUIRED ones, but the
+    # mutable-default-avoidance idiom (add_todo(item, todos=None)) has one
+    # required plus a defaulted list and must still be probed both ways.
+    req = required(fn)
+    if len(req) == 2:
+        return req
+    pad = padded(fn)
+    if len(req) < 2 and len(pad) >= 2:
+        return pad[:2]
+    return None
 
 fns = [
     fn for name, fn in inspect.getmembers(todo, inspect.isfunction)
@@ -188,7 +208,8 @@ fns = [
 
 for fn in fns:
     params = required(fn)
-    if len(params) == 2:
+    pair = pair_of(fn)
+    if pair is not None:
         for swapped in (False, True):
             items = list(SEED)
             try:
@@ -201,7 +222,7 @@ for fn in fns:
                 ok("returned a new list via " + fn.__name__)
         for order in ((0, 1), (1, 0)):
             items = list(SEED)
-            kwargs = {params[order[0]].name: items, params[order[1]].name: ITEM}
+            kwargs = {pair[order[0]].name: items, pair[order[1]].name: ITEM}
             try:
                 out = fn(**kwargs)
             except BaseException:
@@ -210,7 +231,7 @@ for fn in fns:
                 ok("mutated in place via keyword " + fn.__name__)
             if isinstance(out, (list, tuple)) and grew(out):
                 ok("returned a new list via keyword " + fn.__name__)
-    elif len(params) == 1:
+    if len(params) == 1:
         # Module-level-collection style: seed each module list, then call.
         # Seeding MUTATES the module's own globals, so every list is snapshotted
         # and restored around each attempt. Without that, probing one list
@@ -304,17 +325,37 @@ def wrote_real_json(candidates):
             return True
     return False
 
+_KINDS = (
+    inspect.Parameter.POSITIONAL_ONLY,
+    inspect.Parameter.POSITIONAL_OR_KEYWORD,
+    inspect.Parameter.KEYWORD_ONLY,
+)
+
 def required(fn):
     try:
         params = inspect.signature(fn).parameters.values()
     except (TypeError, ValueError):
         return []
-    kinds = (
-        inspect.Parameter.POSITIONAL_ONLY,
-        inspect.Parameter.POSITIONAL_OR_KEYWORD,
-        inspect.Parameter.KEYWORD_ONLY,
-    )
-    return [p for p in params if p.kind in kinds and p.default is p.empty]
+    return [p for p in params if p.kind in _KINDS and p.default is p.empty]
+
+def padded(fn):
+    try:
+        params = inspect.signature(fn).parameters.values()
+    except (TypeError, ValueError):
+        return []
+    return [p for p in params if p.kind in _KINDS]
+
+def pair_of(fn):
+    # Asymmetric defaults (save_todos(todos, path='todos.json') beside a
+    # load_todos(path) that REQUIRES one) must still probe the explicit-path
+    # shapes; selecting on the required count alone never tried them.
+    req = required(fn)
+    if len(req) == 2:
+        return req
+    pad = padded(fn)
+    if len(req) < 2 and len(pad) >= 2:
+        return pad[:2]
+    return None
 
 n_save = len(required(save))
 
@@ -340,6 +381,15 @@ def attempt(label, do_save, do_load, path):
     # Reimporting gives load a fresh module: state survives only through the
     # file. (A module whose import-time init clobbers its own file fails here
     # too — faithfully, since a fresh process would see the same clobber.)
+    # EVERY sandbox-local module is popped, not just storage: a cross-module
+    # cache (storage stashing state in another workspace module) would survive
+    # a storage-only reimport.
+    cwd = os.getcwd()
+    for name in [
+        n for n, m in list(sys.modules.items())
+        if (getattr(m, "__file__", None) or "").startswith(cwd)
+    ]:
+        sys.modules.pop(name, None)
     sys.modules.pop("storage", None)
     try:
         import storage
@@ -361,8 +411,8 @@ def kwargs_for(fn, path):
     # Mirror turn 1: bind keyword-only signatures by parameter ORDER, since the
     # names are free. Without this, `def save_todos(*, todos, path)` counts as
     # two required params and is then only ever called positionally.
-    params = required(fn)
-    if len(params) != 2:
+    params = pair_of(fn)
+    if params is None:
         return None
     return [
         {params[0].name: DATA, params[1].name: path},
@@ -371,7 +421,7 @@ def kwargs_for(fn, path):
 
 for raw in ("todos_probe.json",):
     for path in (raw, Path(raw)):
-        if n_save >= 2:
+        if pair_of(save) is not None:
             attempt("saved (todos, path)", lambda: save(DATA, path),
                     lambda: load(path), path)
             attempt("saved (path, todos)", lambda: save(path, DATA),
@@ -398,23 +448,31 @@ raise SystemExit(1)
 
 
 # Turn 7 must COMPOSE with storage.py. A namespace check alone credits a stray
-# unused import (one of the most common things a model ships), so the probe also
-# requires real compiled code to reference the bound name. co_names is read from
-# bytecode, so a comment can never satisfy it. Known FAR bound: reachability is
-# not analyzed, so a storage call on a dead line (after a bare return) still
-# counts as a reference.
+# unused import (one of the most common things a model ships), so the probe
+# requires compiled code to actually LOAD a name bound from a storage import.
+# The analysis is a bytecode walk over the COMPILED SOURCE, not runtime
+# objects, for three reasons found across rounds 3-4:
 #
-# The reference walk must reach EVERY code object, not just module-level
-# functions: the prompt says "update todo.py to persist todos using storage.py"
-# and never says "function", so a class whose method calls storage is a correct
-# and more sophisticated answer. Methods live in the class dict and nested
-# functions live in co_consts, so a vars(module) scan for __code__ sees neither.
-# Missing them false-rejects exactly the designs a stronger arm is likelier to
-# ship. A function-local `import storage` (deferred to avoid a circular import)
-# likewise never binds at module level, so imports are collected from code
-# objects too.
+# - The module's own top-level code object must be scanned: composition living
+#   only in module-level code (load at import, save under a main guard, an
+#   atexit lambda) is a reasoned non-invasive design once turn-4's tests pin
+#   the function signatures, and a vars(module) walk never sees it.
+# - The compiled tree reaches EVERY code object in the file (methods, nested
+#   functions, lambdas, decorated bodies) without chasing wrappers through
+#   __wrapped__/__closure__ at runtime.
+# - Opcode KINDS matter, not co_names membership: `self.storage` compiles to
+#   LOAD_ATTR and a method named save_todos to LOAD_METHOD, which raw co_names
+#   cannot tell apart from a global load of the import — so a decorative
+#   import plus a same-named attribute self-certified (round 4's catch).
+#   IMPORT_NAME/IMPORT_FROM likewise must not credit themselves.
+#
+# Known FAR bounds, documented not hidden: reachability is not analyzed (a
+# storage call on a dead line after a bare return counts), and a bare LOAD
+# with no call (`def f(): storage`) counts as a reference. Known FRR bound: a
+# local import used only through a closure cell of a NESTED function (the
+# binding and the LOAD live in different code objects).
 _TURN7_PROBE = """
-import dis, sys, types
+import dis, sys
 NONCE = sys.argv[1]
 TOKEN = "PROBE-OK-" + NONCE
 
@@ -424,88 +482,59 @@ except BaseException as exc:
     print("import failed:", exc)
     raise SystemExit(1)
 
+try:
+    with open("todo.py") as handle:
+        root = compile(handle.read(), "todo.py", "exec")
+except BaseException as exc:
+    print("could not compile todo.py:", exc)
+    raise SystemExit(1)
+
 def code_objects(root):
-    seen, stack, out = set(), [root], []
+    out, stack = [], [root]
     while stack:
-        obj = stack.pop()
-        if id(obj) in seen:
-            continue
-        seen.add(id(obj))
-        code = getattr(obj, "__code__", None)
-        if code is not None:
-            out.append(code)
-            stack.extend(c for c in code.co_consts if hasattr(c, "co_names"))
-            # functools.wraps leaves the module binding on the WRAPPER; the
-            # real body is reachable only via __wrapped__ or the closure cells,
-            # and stopping at the wrapper false-rejects a decorated function.
-            wrapped = getattr(obj, "__wrapped__", None)
-            if wrapped is not None:
-                stack.append(wrapped)
-            for cell in getattr(obj, "__closure__", None) or ():
-                try:
-                    stack.append(cell.cell_contents)
-                except ValueError:
-                    pass
-        elif hasattr(obj, "co_names"):
-            out.append(obj)
-            stack.extend(c for c in obj.co_consts if hasattr(c, "co_names"))
-        elif isinstance(obj, type):
-            stack.extend(vars(obj).values())
-        elif isinstance(obj, (staticmethod, classmethod, property)):
-            for attr in ("__func__", "fget", "fset"):
-                inner = getattr(obj, attr, None)
-                if inner is not None:
-                    stack.append(inner)
+        code = stack.pop()
+        out.append(code)
+        stack.extend(c for c in code.co_consts if hasattr(c, "co_names"))
     return out
 
-bound = set()
-for name, obj in vars(todo).items():
-    if name.startswith("__"):
-        continue
-    if isinstance(obj, types.ModuleType) and obj.__name__ == "storage":
-        bound.add(name)
-    elif getattr(obj, "__module__", None) == "storage":
-        bound.add(name)
+STORES = ("STORE_FAST", "STORE_NAME", "STORE_GLOBAL", "STORE_DEREF")
+GLOBAL_LOADS = ("LOAD_NAME", "LOAD_GLOBAL")
+LOCAL_LOADS = ("LOAD_FAST", "LOAD_NAME", "LOAD_DEREF")
 
-codes = []
-for obj in vars(todo).values():
-    codes.extend(code_objects(obj))
+codes = code_objects(root)
 
-referenced = set()
-for code in codes:
-    referenced |= set(code.co_names)
-
-# A deferred `import storage` inside a body binds nothing at module level.
-# co_names cannot distinguish the IMPORT_NAME itself from a LOAD of the bound
-# name, so a decorative unused local import would self-certify; credit it only
-# when a LOAD of a name the import bound actually appears. The check is
-# per-code-object; a deferred import used only through a closure cell of a
-# NESTED function is a known false-reject bound.
-def uses_local_storage_import(code):
-    stores = ("STORE_FAST", "STORE_NAME", "STORE_GLOBAL", "STORE_DEREF")
-    loads = ("LOAD_FAST", "LOAD_NAME", "LOAD_GLOBAL", "LOAD_DEREF")
+def storage_bound_names(code):
     bound_here, pending = set(), False
     for ins in dis.get_instructions(code):
         if ins.opname == "IMPORT_NAME":
             pending = ins.argval == "storage"
         elif pending and ins.opname == "IMPORT_FROM":
             bound_here.add(ins.argval)
-        elif pending and ins.opname in stores:
+        elif pending and ins.opname in STORES:
             bound_here.add(ins.argval)
-        elif ins.opname in loads and ins.argval in bound_here:
-            return True
         else:
             pending = False
-    return False
+    return bound_here
 
-if any(uses_local_storage_import(code) for code in codes):
-    bound.add("storage")
+# Names bound at module level are visible everywhere via global loads; names
+# bound inside a code object are visible only there, via local loads.
+module_bound = storage_bound_names(root)
+local_bound = {id(code): storage_bound_names(code) for code in codes[1:]}
 
+used = set()
+for code in codes:
+    local = local_bound.get(id(code), set())
+    for ins in dis.get_instructions(code):
+        if ins.opname in GLOBAL_LOADS and ins.argval in module_bound:
+            used.add(ins.argval)
+        elif ins.opname in LOCAL_LOADS and ins.argval in local:
+            used.add(ins.argval)
+
+bound = module_bound | set().union(*local_bound.values(), set())
 if not bound:
     print("todo.py does not import storage")
     raise SystemExit(1)
 
-used = bound & referenced
 if not used:
     print("todo.py imports storage but no code references it:", sorted(bound))
     raise SystemExit(1)
