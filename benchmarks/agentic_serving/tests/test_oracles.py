@@ -91,6 +91,15 @@ T1_SLOTS_CLASS_WRAP = (
 # Positional-only is keyword-only's mirror; the round that fixed keyword-only
 # left it open.
 T1_POSITIONAL_ONLY = "def add_todo(todos, item, /):\n    todos.append(item)\n"
+# The mutable-default-avoidance idiom (round 4): one REQUIRED param plus a
+# defaulted list. Counting only no-default params routed this to the
+# module-list branch and never passed the seed through the optional param.
+T1_OPTIONAL_LIST = (
+    "def add_todo(item, todos=None):\n"
+    "    if todos is None:\n        todos = []\n"
+    "    todos.append(item)\n"
+    "    return todos\n"
+)
 
 
 @pytest.mark.parametrize(
@@ -108,6 +117,7 @@ T1_POSITIONAL_ONLY = "def add_todo(todos, item, /):\n    todos.append(item)\n"
         T1_PLAIN_CLASS_WRAP,
         T1_SLOTS_CLASS_WRAP,
         T1_POSITIONAL_ONLY,
+        T1_OPTIONAL_LIST,
     ],
     ids=[
         "mutates",
@@ -122,6 +132,7 @@ T1_POSITIONAL_ONLY = "def add_todo(todos, item, /):\n    todos.append(item)\n"
         "plain_class_wrap",
         "slots_class_wrap",
         "positional_only",
+        "optional_list_default",
     ],
 )
 def test_turn1_accepts_correct_variants(tmp_path: Path, src: str) -> None:
@@ -548,6 +559,16 @@ T6_POSITIONAL_ONLY = (
     "def load_todos(path, /):\n"
     "    with open(path) as f:\n        return json.load(f)\n"
 )
+# Asymmetric defaults (round 4): save takes a default path, load requires one.
+# Selecting the call branch on save's REQUIRED count alone ran only the
+# module-constant branch, whose bare load() call TypeErrors.
+T6_SAVE_DEFAULT_LOAD_REQUIRED = (
+    "import json\n"
+    "def save_todos(todos, path='todos.json'):\n"
+    "    with open(path, 'w') as f:\n        json.dump(todos, f)\n"
+    "def load_todos(path):\n"
+    "    with open(path) as f:\n        return json.load(f)\n"
+)
 # A module-constant path in a SUBDIRECTORY is a legitimate reading of the
 # prompt (it never mentions a path at all); a top-level-only candidate scan
 # false-rejects it.
@@ -570,6 +591,7 @@ T6_SUBDIR_PATH = (
         T6_KEYWORD_ONLY,
         T6_POSITIONAL_ONLY,
         T6_SUBDIR_PATH,
+        T6_SAVE_DEFAULT_LOAD_REQUIRED,
     ],
     ids=[
         "versioned_envelope",
@@ -577,6 +599,7 @@ T6_SUBDIR_PATH = (
         "keyword_only",
         "positional_only",
         "subdir_constant_path",
+        "save_default_load_required",
     ],
 )
 def test_turn6_accepts_sophisticated_designs(tmp_path: Path, src: str) -> None:
@@ -698,6 +721,96 @@ _T7_COMPOSITION_SHAPES = {
 def test_turn7_composition_shape_sweep(tmp_path: Path, shape: str) -> None:
     src = _T7_COMPOSITION_SHAPES[shape]
     ws = _ws(tmp_path, storage=T6_TODOS_FIRST, todo=src)
+    assert oracles.turn7_todo_persists(ws).passed
+
+
+# --- Round 4 (2026-07-15): the co_names neighbor, one level up -------------
+# Round 3's dis-analysis distinguished IMPORT_NAME from LOAD for LOCAL imports
+# but left the module-level reference check on raw co_names, which conflates
+# attribute names with global loads (FAR) and never scans the module's own
+# top-level code object (FRR).
+
+T7_ATTR_SHADOWS_UNUSED_IMPORT = (
+    "import json\n"
+    "import storage  # never used\n\n"
+    "class TodoApp:\n"
+    "    def __init__(self):\n"
+    "        self.storage = []\n"
+    "    def add_todo(self, item):\n"
+    "        self.storage.append(item)\n"
+    "        with open('todos.json', 'w') as f:\n"
+    "            json.dump(self.storage, f)\n"
+)
+T7_METHOD_SHADOWS_UNUSED_FROM_IMPORT = (
+    "import json\n"
+    "from storage import save_todos  # never used\n\n"
+    "class TodoApp:\n"
+    "    def __init__(self):\n"
+    "        self.items = []\n"
+    "    def save_todos(self):\n"
+    "        with open('todos.json', 'w') as f:\n"
+    "            json.dump(self.items, f)\n"
+    "    def add_todo(self, item):\n"
+    "        self.items.append(item)\n"
+    "        self.save_todos()\n"
+)
+
+
+@pytest.mark.parametrize(
+    "src",
+    [T7_ATTR_SHADOWS_UNUSED_IMPORT, T7_METHOD_SHADOWS_UNUSED_FROM_IMPORT],
+    ids=["attr_named_storage", "method_named_save_todos"],
+)
+def test_turn7_rejects_attribute_that_shares_the_imports_name(
+    tmp_path: Path, src: str
+) -> None:
+    # `self.storage` / `self.save_todos()` compile to LOAD_ATTR/LOAD_METHOD,
+    # which co_names cannot tell apart from a global load of the import.
+    ws = _ws(tmp_path, storage=T6_TODOS_FIRST, todo=src)
+    assert not oracles.turn7_todo_persists(ws).passed
+
+
+T7_MODULE_LEVEL_COMPOSITION = (
+    "import storage\n\n"
+    "todos = storage.load_todos()\n\n"
+    "def add_todo(todos, item):\n"
+    "    todos.append(item)\n"
+    "    return todos\n\n"
+    "if __name__ == '__main__':\n"
+    "    add_todo(todos, 'demo')\n"
+    "    storage.save_todos(todos)\n"
+)
+T7_ATEXIT_COMPOSITION = (
+    "import atexit\n"
+    "import storage\n\n"
+    "todos = []\n\n"
+    "def add_todo(todos, item):\n    todos.append(item)\n\n"
+    "atexit.register(lambda: storage.save_todos(todos, 'todos.json'))\n"
+)
+
+
+@pytest.mark.parametrize(
+    "src",
+    [T7_MODULE_LEVEL_COMPOSITION, T7_ATEXIT_COMPOSITION],
+    ids=["load_at_import_save_under_main_guard", "atexit_lambda"],
+)
+def test_turn7_accepts_composition_in_module_level_code(
+    tmp_path: Path, src: str
+) -> None:
+    # By turn 7 the workspace has turn-4 tests pinning add_todo's signature, so
+    # wiring persistence non-invasively at module level is a REASONED design; a
+    # walk that never scans the module's own code object false-rejects it.
+    # storage needs default-path functions so the import-time load succeeds.
+    storage_src = (
+        "import json, os\n"
+        "TODO_FILE = 'todos.json'\n"
+        "def save_todos(todos, path=TODO_FILE):\n"
+        "    with open(path, 'w') as f:\n        json.dump(todos, f)\n"
+        "def load_todos(path=TODO_FILE):\n"
+        "    if not os.path.exists(path):\n        return []\n"
+        "    with open(path) as f:\n        return json.load(f)\n"
+    )
+    ws = _ws(tmp_path, storage=storage_src, todo=src)
     assert oracles.turn7_todo_persists(ws).passed
 
 
