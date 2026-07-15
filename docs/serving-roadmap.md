@@ -120,7 +120,7 @@ Two generalizations the upper rungs force (named 2026-07-09):
   registers, the composer itself a verified ensemble rather than a lone
   model — are the generative rung.
 
-## Current state (2026-07-14; ACTIVE = WS-8 Arc D on branch `feat/131-arc-d-strict-table`, unmerged, awaiting a third review round; meta-task rung slice 1 merged to main, unreleased; last release v0.18.14)
+## Current state (2026-07-15; ACTIVE = WS-8 Arc D on branch `feat/131-arc-d-strict-table`, unmerged; round 3 reviewed AND fixed, awaiting round 4; meta-task rung slice 1 merged to main, unreleased; last release v0.18.14)
 
 Thirteen releases in three days. v0.18.2–v0.18.7 (2026-07-09): Stage 2
 memory core, #100 TDD retry, #84 deterministic adequacy, #98
@@ -169,25 +169,59 @@ artifact). All-local (qwen3:8b) by default; operator seat overrides via
 `*.local.yaml`.
 
 **Handoff pointer (fresh-session start here):** **ACTIVE TRACK: WS-8 parity
-measurement, Arc D — on branch `feat/131-arc-d-strict-table` (9 commits,
-UNMERGED, 249 tests green).** Arc D's instrument work is DONE and survived two
-adversarial review rounds that both found real blockers; the branch needs a
-THIRD review round confirming the latest fixes hold, then Arm 2.
+measurement, Arc D — on branch `feat/131-arc-d-strict-table` (UNMERGED, full
+suite green).** The THIRD review round ran 2026-07-15 (three author-independent
+lenses, fresh agents: oracle FAR/FRR re-hunt, driver/adapter semantics,
+research methods) and ALL THREE returned blockers — 6 blockers, 11 majors —
+every one fixed on-branch the same day (8 commits; the design doc's §5/§11
+amendment log carries the full catalog). Headline fixes: shipped-detection now
+derives from a hashed disk manifest instead of write-tool calls (the fourth
+bias-toward-comparator instance, found twice independently); oracle instrument
+failures escape instead of fabricating shipped-broken verdicts; client deaths
+and crashed oracles get published tally cells instead of being absorbed; truth
+pytest runs in a throwaway copy; turn-1/6/7 FRR/FAR neighbors closed and
+pinned by property sweeps (21-case signature×representation, 9 composition
+shapes). Round 2's three knowingly-unfixed minors: two confirmed genuinely
+minor, the third (relative-path guard) escalated and fixed.
 
 **Enter here, in order:**
 
-1. **Third review round on the branch** (the merge gate; do not skip — rounds 1
-   and 2 each found blockers the author's own checks missed). Three
-   author-independent lenses, fresh agents not forks: oracle FAR/FRR re-hunt,
-   driver/adapter semantics, research methods. Round 2's residual minors are
-   knowingly unfixed: grep-failure conflated with client death, a `cd $SRCROOT`
-   failure losing its `oracle-NN.err`, no absolute-`$OUT` guard.
-2. **Assign an author-independent J-tier scorer** (turns 2/3/5/10 need judgment;
-   the serve's author scoring them unblinded is the open bias). Blinding is
-   INERT here — Arm 0's prose is a finite template set from `emit.py`, so a
-   scorer always knows the arm.
-3. **Arm 2** (Claude Code native, free via dispatched subagents), then the first
-   parity table. Then one Arm-1 turn's token count for the paid go/no-go (~$5–12,
+1. **FOURTH review round** (the merge gate; rounds 1–3 EACH found blockers the
+   author's checks missed — round 3's hit rate says the gate has not
+   converged). Oracle FAR/FRR re-hunt at minimum, empirical (run adversarial
+   workspaces, don't just read); plus a check that the round-3 fixes hold.
+   Known-open bounds, documented not hidden: two-level-deep wrapper opacity
+   (turn 1), nested-closure deferred import (turn 7), dead-code-after-return
+   (turn 7), workspace `json.py` shadowing the probe's stdlib, no true FS
+   isolation for absolute-path writes (contamination is recorded, not
+   prevented).
+2. **Two more oracle-instrumented Arm-0 runs** (free, local, ~30 min each).
+   §8.4's ≥3-per-arm minimum binds: run 1 is a dry-run by §9's own ruling, so
+   Arm 0 has exactly one valid run. Rerun `score_run.tally_oracles` after —
+   new runs get hashed manifests, so shipped-detection is disk-derived
+   (`legacy_turns` must be empty).
+3. **Assign an author-independent J-tier scorer covering ALL J-bearing turns:
+   2/3/5/9/10/11** (§8.2 as amended — §6 proves turns 9/11 fail in the
+   dishonest direction only a frontier arm can exploit, so they cannot stay
+   with the author). Blinding stays inert (Arm 0's prose is templated); the
+   control is independence plus the frozen rubric.
+4. **Arm 2 = "Claude Code headless", NOT dispatched subagents** (round 3
+   methods review: construct-invalid as previously worded). The battery is ONE
+   conversation and turns 3/5/10 test cross-turn memory, so 13 independent
+   subagents measure the harness; subagents also inherit the author's
+   CLAUDE.md stack and sandbox, and permission prompts are a de facto accept
+   gate — the manipulated variable itself. Requirements: headless `claude -p`
+   with `--continue`, one session, 13 sequential invocations, cwd = fixture
+   repo, clean environment (no project CLAUDE.md), permission mode declared
+   and maximally permissive, its own adapter normalizing tool names into the
+   IR (Claude Code emits `Write`/`Bash`; the adapter matches lowercase — an
+   unmapped stream silently scores zero shipped), and the truth/oracle capture
+   extracted from `ladder_battery.sh` into a shared script BOTH drivers call,
+   so the truth substrate cannot drift between arms. Publish the arm as
+   "Claude Code headless".
+5. **First parity table** (2x2 per §2 as amended, deaths/unscored/legacy
+   columns published, dishonest flags hand-confirmed with quoted transcript),
+   then one Arm-1 turn's token count for the paid go/no-go (~$5–12,
    pre-authorized).
 
 **What Arc D actually built:** the arm-parameterized battery (`LADDER_MODEL`
