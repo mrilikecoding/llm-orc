@@ -1,0 +1,24 @@
+{
+ "turn": 6,
+ "files": [
+  "buggy.py",
+  "calc.py",
+  "metrics.py",
+  "storage.py",
+  "test_buggy.py",
+  "test_todo.py",
+  "todo.py"
+ ],
+ "suite": {
+  "rc": 1,
+  "tail": "=================================== FAILURES ===================================\n___________________________ test_scale_empty_raises ____________________________\n\n    def test_scale_empty_raises():\n>       with pytest.raises(ValueError, match=\"no values\"):\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nE       Failed: DID NOT RAISE <class 'ValueError'>\n\ntest_buggy.py:11: Failed\n=========================== short test summary info ============================\nFAILED test_buggy.py::test_scale_empty_raises - Failed: DID NOT RAISE <class ...\n1 failed, 4 passed in 0.02s"
+ },
+ "seeded": {
+  "rc": 1,
+  "tail": ">       with pytest.raises(ValueError, match=\"no values\"):\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nE       Failed: DID NOT RAISE <class 'ValueError'>\n\ntest_buggy.py:11: Failed\n=========================== short test summary info ============================\nFAILED test_buggy.py::test_scale_empty_raises - Failed: DID NOT RAISE <class ...\n1 failed, 1 passed in 0.01s"
+ },
+ "oracle": {
+  "passed": true,
+  "detail": "ok: saved (todos), module-constant path"
+ }
+}
