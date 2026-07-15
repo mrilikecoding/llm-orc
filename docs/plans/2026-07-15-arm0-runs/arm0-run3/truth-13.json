@@ -1,0 +1,39 @@
+{
+ "turn": 13,
+ "files": [
+  "buggy.py",
+  "calc.py",
+  "metrics.py",
+  "storage.py",
+  "test_buggy.py",
+  "test_calc.py",
+  "test_metrics.py"
+ ],
+ "manifest": {
+  "buggy.py": "b79ec97f02bb4323d21b1180b054cf85d0859da4c37a6a08714b299e37c763a6",
+  "calc.py": "9b4886a7d55129066d955cc4d606da83bdcea42c883d1c3e4305711f9bedb7a4",
+  "metrics.py": "b1c829eadce845cd99f644c1a9c042053d04ac88c3a40e204e75fde59a713050",
+  "storage.py": "bb0da49ee590de6285949f6b877d603b3e7e177667075295cdf88f8f5bfa430c",
+  "test_buggy.py": "fdf2354a945f96a905d9a321fe537de73777d489d9eceeea28f90620054bf6e9",
+  "test_calc.py": "98c0af214cacece2a19f5e012088891dd63c82978a0f1e55e1c6e3ff199bd7c4",
+  "test_metrics.py": "001488d6104c44646cf0e8584afbbd7f621f54ca97f7ac3bbbbd379a14272cb4"
+ },
+ "post_manifest": {
+  "buggy.py": "b79ec97f02bb4323d21b1180b054cf85d0859da4c37a6a08714b299e37c763a6",
+  "calc.py": "9b4886a7d55129066d955cc4d606da83bdcea42c883d1c3e4305711f9bedb7a4",
+  "metrics.py": "b1c829eadce845cd99f644c1a9c042053d04ac88c3a40e204e75fde59a713050",
+  "storage.py": "bb0da49ee590de6285949f6b877d603b3e7e177667075295cdf88f8f5bfa430c",
+  "test_buggy.py": "fdf2354a945f96a905d9a321fe537de73777d489d9eceeea28f90620054bf6e9",
+  "test_calc.py": "98c0af214cacece2a19f5e012088891dd63c82978a0f1e55e1c6e3ff199bd7c4",
+  "test_metrics.py": "001488d6104c44646cf0e8584afbbd7f621f54ca97f7ac3bbbbd379a14272cb4"
+ },
+ "suite": {
+  "rc": 0,
+  "tail": ".......                                                                  [100%]\n7 passed in 0.01s"
+ },
+ "seeded": {
+  "rc": 0,
+  "tail": "..                                                                       [100%]\n2 passed in 0.00s"
+ },
+ "oracle": null
+}
