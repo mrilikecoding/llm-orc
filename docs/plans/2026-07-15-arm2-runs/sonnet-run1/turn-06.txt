@@ -1,0 +1,8 @@
+Done. `storage.py` created with both functions, TDD cycle complete (red on `ModuleNotFoundError`, then green).
+
+**New files:**
+
+- `storage.py` — `save_todos(todos, path)` writes the list as JSON via `json.dump`; `load_todos(path)` reads it back via `json.load`. The todo dict format (`{"item": str, "done": bool}`) is JSON-native, so it round-trips exactly. Missing file on load raises `FileNotFoundError` naturally; I didn't add a return-empty-list default since nothing asked for it.
+- `test_storage.py` — 2 tests: a save/load round trip (composed with `add_todo` to prove the real format persists), and a check that the file on disk is plain parseable JSON.
+
+**Full session state**: todo.py (2 functions, 6 tests), storage.py (2 functions, 2 tests), all 8 project tests passing. Repo-wide: 9 passed, 1 failed — the same pre-existing test_buggy.py::test_scale_empty_raises, untouched. Nothing committed.

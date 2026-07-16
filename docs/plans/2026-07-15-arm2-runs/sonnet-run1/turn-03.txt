@@ -1,0 +1,16 @@
+How `todo.py` stores state, briefly:
+
+**There is no internal state.** The module is stateless — it holds no module-level variables, no classes, no persistence. The caller owns the todo list and passes it into every function. This is the same convention as the rest of the repo (`calc.py`, `metrics.py`): pure-ish functions operating on caller-supplied data.
+
+**The data shape** is a plain `list` of `dict` entries:
+
+[{"item": "buy milk", "done": False}, {"item": "walk dog", "done": True}]
+
+- `item` (str): the todo text, required non-empty (`add_todo` raises `ValueError` otherwise)
+- `done` (bool): always `False` on creation; flipped to `True` by `complete_todo`
+
+**Mutation semantics:** both functions mutate the caller's list in place (`append` in `add_todo`, in-place `todo["done"] = True` in `complete_todo`) *and* return the same list. The return is a convenience for chaining, not a copy — callers holding the original reference see the changes. Identity is by exact `item` string match; `complete_todo` marks the first match and raises `ValueError("no such todo")` if none exists.
+
+**Nothing survives the process.** No file, no database — if durable storage is wanted, that's a separate function (e.g. JSON round-trip) the caller would layer on top.
+
+That answers the coordinator's question; the prior work stands as reported: todo.py and test_todo.py, 4 todo tests green, one pre-existing unrelated failure in test_buggy.py, nothing committed.

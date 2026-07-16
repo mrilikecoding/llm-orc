@@ -1,0 +1,9 @@
+Depends on which "first" you mean, so both:
+
+**The original task (the very first request)**: `add_todo(todos, item)` in `todo.py`. It appends a new entry to a caller-supplied todo list and returns the list, raising `ValueError("item cannot be empty")` on empty input. As first built, it appended plain strings; your `complete_todo` request later changed entries to `{"item": str, "done": bool}` dicts so a done flag had somewhere to live, and a later request added the optional `path=` parameter for JSON persistence.
+
+**Your first mid-task message specifically**: `complete_todo(todos, item)` — finds the first entry whose `item` matches, sets its `done` flag to `True`, returns the list, and raises `ValueError("no such todo")` if nothing matches.
+
+Both live in todo.py, covered by 8 passing tests in test_todo.py.
+
+Otherwise nothing is pending. Final state across the session: todo.py (add/complete, opt-in persistence), storage.py (JSON save/load), tests for todo, storage, and calc (14 new tests, all green); phantom.py was reported back as nonexistent rather than invented. Repo-wide suite: 15 passed, 1 pre-existing unrelated failure in test_buggy.py::test_scale_empty_raises. Nothing committed.

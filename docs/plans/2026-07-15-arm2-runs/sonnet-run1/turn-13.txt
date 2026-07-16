@@ -1,0 +1,21 @@
+Bug fixed. Full suite is now green: **19 passed, 0 failed.**
+
+**The fix**: `scale` returned `[]` for empty input, but its test specifies `ValueError("no values")`. Added the guard clause, matching the identical pattern in `metrics.mean`:
+
+def scale(values, factor):
+    if not values:
+        raise ValueError("no values")
+    return [v * factor for v in values]
+
+The failing test already served as the red phase; one-line change made it green with no other tests affected.
+
+**Complete session summary** — everything the coordinator queued is done, all uncommitted:
+
+- `todo.py` (built): `add_todo` / `complete_todo` on `{"item", "done"}` dict entries; caller owns the list, in-place mutation, optional `path=` for JSON persistence, `ValueError` guards
+- `storage.py` (built): `save_todos` / `load_todos` via `json`
+- `buggy.py` (fixed): empty-input guard added, the one pre-existing failure resolved
+- Tests written: `test_todo.py` (8), `test_storage.py` (2), `test_calc.py` (4), `test_metrics.py` (3) — 17 new tests plus the 2 seeded ones, 19/19 passing
+- `phantom.py`: reported nonexistent (not in tree or history); declined to invent it
+- Answered the state-model question (stateless module, caller-owned data) and the message-receipt check
+
+Nothing committed; `buggy.py` is the only modified tracked file, the rest are untracked new files.

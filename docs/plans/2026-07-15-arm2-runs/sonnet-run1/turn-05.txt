@@ -1,0 +1,9 @@
+Yes. All three of your previous messages arrived and were handled in order:
+
+1. **"add a complete_todo function"** — done. `complete_todo(todos, item)` is in `todo.py`, marks the matching entry's `done` flag `True`, raises `ValueError("no such todo")` on a miss. This also drove the entry format change to `{"item": str, "done": bool}` dicts, with `add_todo` updated to match.
+2. **"explain how todo.py stores its state"** — answered: the module is stateless; the caller owns a list of those dicts, both functions mutate it in place and return it, nothing persists beyond the process.
+3. **"write tests for todo.py"** — done. `test_todo.py` has 6 tests (4 from the original TDD rounds, 2 added for in-place mutation and multi-entry selection), all passing.
+
+Current state, unchanged since the last report: todo.py and test_todo.py, uncommitted; repo-wide suite is 7 passed with 1 pre-existing unrelated failure in test_buggy.py::test_scale_empty_raises (the intentionally buggy buggy.py, untouched).
+
+If one of your messages seems unaccounted for, tell me which and I'll pick it up — but from my side, nothing is pending.

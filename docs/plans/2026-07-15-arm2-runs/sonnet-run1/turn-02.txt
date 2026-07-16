@@ -1,0 +1,18 @@
+Done. Both requested functions live in todo.py:
+
+def add_todo(todos, item):
+    if not item:
+        raise ValueError("item cannot be empty")
+    todos.append({"item": item, "done": False})
+    return todos
+
+def complete_todo(todos, item):
+    for todo in todos:
+        if todo["item"] == item:
+            todo["done"] = True
+            return todos
+    raise ValueError("no such todo")
+
+Design note: `complete_todo` needs a done flag, and bare strings can't carry one, so I switched the entry representation to `{"item": ..., "done": bool}` dicts and updated `add_todo` to match. Both functions were created uncommitted in this session, so no external callers were affected. `complete_todo` raises `ValueError("no such todo")` on a missing item, matching the guard-clause style of `calc.py` and `metrics.py`.
+
+TDD held for both rounds: tests written first in `test_todo.py` (4 tests), confirmed red (ImportError), then green. Full suite: 5 passed, 1 pre-existing unrelated failure (`test_buggy.py::test_scale_empty_raises`, the deliberately buggy `buggy.py` I haven't touched). Nothing committed; files are untracked in the repo.
