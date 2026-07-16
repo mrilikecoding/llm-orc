@@ -1,0 +1,7 @@
+Done. Wrote test_todo.py, matching the style of the existing test_buggy.py (pytest, plain functions, pytest.raises with match).
+
+Six tests, all passing:
+- `add_todo`: appends with `done: False`, preserves insertion order
+- `complete_todo`: marks the target done, leaves others untouched, raises `ValueError` on a missing item, and marks only the first match when texts are duplicated (documenting that behavior explicitly)
+
+Full status across the coordinator's requests: todo.py has add_todo and complete_todo (dict-based todos with text/done), the state-storage explanation was delivered last turn, and the module now has a passing test suite.

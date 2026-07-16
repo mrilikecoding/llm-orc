@@ -1,0 +1,9 @@
+`todo.py` doesn't hold any state itself. It's a pair of pure-ish functions that operate on a list the caller owns and passes in:
+
+- **The caller owns the list.** You create `todos = []` in your own code and pass it to every call. There's no module-level variable, no class, no file persistence.
+- **Each todo is a dict:** `{"text": str, "done": bool}`. `add_todo` appends one with `done: False`; `complete_todo` finds a todo by exact `text` match and flips `done` to `True` in place.
+- **Mutation, not return values.** Both functions return `None` and modify the list/dicts you passed in. So two references to the same list see the same updates, and nothing survives the process exiting.
+
+Practical consequences: no persistence (restart loses everything), duplicate texts are possible (`complete_todo` only marks the first match), and lookup is O(n) linear scan. Fine at this scale; if you later want IDs, persistence, or a `Todo` dataclass instead of raw dicts, that's the natural next step.
+
+All three coordinator requests are now done: `add_todo`, `complete_todo`, and this explanation.

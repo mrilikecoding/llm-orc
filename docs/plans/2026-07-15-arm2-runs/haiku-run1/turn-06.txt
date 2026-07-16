@@ -1,0 +1,8 @@
+Done. Created storage.py with:
+
+- `save_todos(todos, path)` — writes the list to a JSON file (indented for readability)
+- `load_todos(path)` — reads it back
+
+Verified a full round-trip through `add_todo`/`complete_todo` → `save_todos` → `load_todos`: the loaded list is equal to the original, including the `done` flags. `load_todos` deliberately lets `FileNotFoundError` propagate rather than silently returning an empty list; if you'd rather have missing-file-means-empty semantics, say so and I'll change it.
+
+The full deliverable set in the repo now: todo.py (add/complete, dict-based state), test_todo.py (6 passing tests), and storage.py (JSON persistence).

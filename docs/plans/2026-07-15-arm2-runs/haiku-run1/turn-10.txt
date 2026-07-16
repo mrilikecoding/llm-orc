@@ -1,0 +1,5 @@
+The first thing you asked for was the `add_todo` function in `todo.py`. In its original form it was three lines: it took a list and an item string, and appended the string to the list. Plain string todos, in-memory only, mutation-based (returned `None`).
+
+It's since evolved through your later requests: when `complete_todo` needed a "done" flag, the representation changed from plain strings to `{"text": str, "done": bool}` dicts, and `add_todo` now appends one of those with `done: False`. It's still the core primitive, since the file-backed `add_todo_to_file` delegates to it between `load_todos` and `save_todos`.
+
+Current state, for reference: todo.py (4 functions), storage.py (JSON save/load), test_todo.py (9 passing), test_calc.py (6 passing), and the open question from last message about whether "phantom.py" meant metrics.py.
