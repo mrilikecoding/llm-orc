@@ -1,0 +1,13 @@
+Confirmed pre-existing, untouched by these changes. Not committing (wasn't asked to).
+
+Done. Added `add_todo(todos, item)` in todo.py:
+
+def add_todo(todos, item):
+    if not item:
+        raise ValueError("item cannot be empty")
+    todos.append(item)
+    return todos
+
+Matches the existing repo's style (calc.py, metrics.py, buggy.py): plain functions, guard clause raising ValueError on invalid input, no type hints or docstrings.
+
+Followed TDD: wrote test_todo.py first (confirmed red — ModuleNotFoundError), then implemented todo.py (confirmed green — both new tests pass). Full suite shows one pre-existing unrelated failure in test_buggy.py::test_scale_empty_raises — that's buggy.py living up to its name; I didn't touch it.

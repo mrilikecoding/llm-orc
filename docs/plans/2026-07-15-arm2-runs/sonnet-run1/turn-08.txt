@@ -1,0 +1,11 @@
+Done. `test_calc.py` created with 4 characterization tests, all passing.
+
+**This round**: `divide` basic result, `divide` by zero raises `ValueError("cannot divide by zero")`, `percent` basic (25/200 = 12.5), and `percent(1, 0)` raising through the composed `divide` guard — that last one is the single wiring test per the N+M+1 composition rule, since `percent` has no guard of its own. No red phase; these characterize existing `calc.py` behavior, and `calc.py` itself is untouched.
+
+**Full session state**, all uncommitted:
+
+- `todo.py` — `add_todo` / `complete_todo` on `{"item", "done"}` dict entries, optional `path=` persisting via `storage.save_todos` (8 tests in `test_todo.py`)
+- `storage.py` — `save_todos` / `load_todos`, plain JSON round trip (2 tests in `test_storage.py`)
+- `test_calc.py` — 4 tests for pre-existing `calc.py`
+
+Suite: 15 passed, 1 failed. The lone failure remains the pre-existing `test_buggy.py::test_scale_empty_raises` (`buggy.py` doesn't validate empty input; deliberately buggy by the look of it, and outside everything I was asked to touch).

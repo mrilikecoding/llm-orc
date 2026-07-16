@@ -1,0 +1,9 @@
+Done. `todo.py` now persists through `storage.py` via an optional `path` parameter on both functions.
+
+**The change**: `add_todo(todos, item, path=None)` and `complete_todo(todos, item, path=None)` call `save_todos(todos, path)` after mutating when a path is given. No path, no I/O — existing behavior and all 6 prior tests are unchanged. `complete_todo` only saves on a successful match; a `ValueError` miss writes nothing. Loading stays with `storage.load_todos` at the call site, which is where the caller bootstraps its list.
+
+**Why opt-in rather than load-mutate-save inside todo.py**: rewriting the functions to take only a file path would make every operation do disk I/O and break the caller-owns-the-list contract the existing tests and the coordinator's earlier state question established. The optional parameter adds persistence without a breaking rewrite. Flag if the coordinator actually wants the file to be the sole source of truth; that's a different design and a follow-up.
+
+**TDD**: 2 new tests in `test_todo.py` (persist-on-add, persist-on-complete, both verified through a real `load_todos` round trip), red first (TypeError on the new kwarg), then green.
+
+**Suite**: 11 passed, 1 failed repo-wide — still only the pre-existing, untouched `test_buggy.py::test_scale_empty_raises`. Nothing committed.

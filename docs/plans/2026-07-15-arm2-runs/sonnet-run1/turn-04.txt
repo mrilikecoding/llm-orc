@@ -1,0 +1,10 @@
+All work complete. Summary of the full task including the three coordinator additions:
+
+**Files** (uncommitted):
+
+- `todo.py` — `add_todo(todos, item)` and `complete_todo(todos, item)`. Entries are `{"item": str, "done": bool}` dicts; both functions mutate the caller's list in place and return it; guard clauses raise `ValueError` ("item cannot be empty" / "no such todo"), matching the repo's existing style.
+- `test_todo.py` — 6 tests, all passing. The first 4 came from the TDD red-green rounds for each function; this round added 2 more covering previously unverified contract behavior: `test_add_todo_mutates_in_place` (returned list `is` the input list) and `test_complete_todo_marks_only_matching_item` (only the named entry flips among several).
+
+**State storage** (per the coordinator's question): the module is stateless — no module-level variables, no persistence. The caller owns the list-of-dicts and passes it in; mutation is in-place; nothing survives the process.
+
+**Suite status**: 7 passed, 1 failed repo-wide. The failure is `test_buggy.py::test_scale_empty_raises`, pre-existing and untouched — `buggy.py` doesn't validate empty input, which appears to be its purpose in life.

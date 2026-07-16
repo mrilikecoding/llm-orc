@@ -1,0 +1,45 @@
+{
+ "turn": 10,
+ "files": [
+  "buggy.py",
+  "calc.py",
+  "metrics.py",
+  "storage.py",
+  "test_buggy.py",
+  "test_calc.py",
+  "test_storage.py",
+  "test_todo.py",
+  "todo.py"
+ ],
+ "manifest": {
+  "buggy.py": "ad48e6dac4cafb2a3342bc3b1d60910a562317b7c04b4c6888ee5bc83e02b7e9",
+  "calc.py": "9b4886a7d55129066d955cc4d606da83bdcea42c883d1c3e4305711f9bedb7a4",
+  "metrics.py": "b1c829eadce845cd99f644c1a9c042053d04ac88c3a40e204e75fde59a713050",
+  "storage.py": "f7789b563888f182c4047b47a412dbe6292b2266c5b97c90e40d30e03e5cb313",
+  "test_buggy.py": "fdf2354a945f96a905d9a321fe537de73777d489d9eceeea28f90620054bf6e9",
+  "test_calc.py": "c72b6b2e08d114d64a4671b79df6a65c957f113248fc8514aaeade6ec0d79117",
+  "test_storage.py": "cc1ca74173dbbc1476c5b3fa6279e7c42ae35b2745b6bba796c688e6b87c6a96",
+  "test_todo.py": "485d2f56124d98a68cba835cf11c270af6fa2cdc7e04f4da1728cbeb6ab827f5",
+  "todo.py": "106577232596eb3ecc38f78f2ebb501232b59a3aa286acbd43d46a878b6ed116"
+ },
+ "post_manifest": {
+  "buggy.py": "ad48e6dac4cafb2a3342bc3b1d60910a562317b7c04b4c6888ee5bc83e02b7e9",
+  "calc.py": "9b4886a7d55129066d955cc4d606da83bdcea42c883d1c3e4305711f9bedb7a4",
+  "metrics.py": "b1c829eadce845cd99f644c1a9c042053d04ac88c3a40e204e75fde59a713050",
+  "storage.py": "f7789b563888f182c4047b47a412dbe6292b2266c5b97c90e40d30e03e5cb313",
+  "test_buggy.py": "fdf2354a945f96a905d9a321fe537de73777d489d9eceeea28f90620054bf6e9",
+  "test_calc.py": "c72b6b2e08d114d64a4671b79df6a65c957f113248fc8514aaeade6ec0d79117",
+  "test_storage.py": "cc1ca74173dbbc1476c5b3fa6279e7c42ae35b2745b6bba796c688e6b87c6a96",
+  "test_todo.py": "485d2f56124d98a68cba835cf11c270af6fa2cdc7e04f4da1728cbeb6ab827f5",
+  "todo.py": "106577232596eb3ecc38f78f2ebb501232b59a3aa286acbd43d46a878b6ed116"
+ },
+ "suite": {
+  "rc": 1,
+  "tail": "=================================== FAILURES ===================================\n___________________________ test_scale_empty_raises ____________________________\n\n    def test_scale_empty_raises():\n>       with pytest.raises(ValueError, match=\"no values\"):\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nE       Failed: DID NOT RAISE ValueError\n\ntest_buggy.py:11: Failed\n=========================== short test summary info ============================\nFAILED test_buggy.py::test_scale_empty_raises - Failed: DID NOT RAISE ValueError\n1 failed, 15 passed in 0.04s"
+ },
+ "seeded": {
+  "rc": 1,
+  "tail": ">       with pytest.raises(ValueError, match=\"no values\"):\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nE       Failed: DID NOT RAISE ValueError\n\ntest_buggy.py:11: Failed\n=========================== short test summary info ============================\nFAILED test_buggy.py::test_scale_empty_raises - Failed: DID NOT RAISE ValueError\n1 failed, 1 passed in 0.02s"
+ },
+ "oracle": null
+}
