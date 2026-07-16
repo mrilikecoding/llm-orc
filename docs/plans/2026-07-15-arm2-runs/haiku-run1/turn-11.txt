@@ -1,0 +1,10 @@
+Ran the full suite: **16 passed, 1 failed** out of 17.
+
+The one failure is the pre-existing `test_buggy.py::test_scale_empty_raises`. It expects `scale([], 2)` to raise `ValueError("no values")`, but `buggy.py`'s `scale` just returns `[]`. That's the deliberate bug in the repo, unrelated to anything I wrote, and I've left it as-is per earlier messages. If you want it fixed, the change is a two-line guard at the top of `scale` in buggy.py.
+
+Everything I built is green:
+- `test_todo.py`: 9/9 (in-memory add/complete plus JSON-persisted variants)
+- `test_calc.py`: 6/6 (divide and percent, including error paths)
+- `test_buggy.py::test_scale_basic` also passes
+
+Still open from earlier: "write tests for existing phantom.py" — no such file exists; `metrics.py` is the only untested source file if that was the intended target.

@@ -1,0 +1,6 @@
+Done. todo.py now has both functions:
+
+- `add_todo(todos, item)` — appends `{"text": item, "done": False}`
+- `complete_todo(todos, item)` — finds the todo by text, sets `done: True`, raises `ValueError` if no match (matching the error style in `calc.py`)
+
+Note: supporting "mark done" meant the plain-string representation from the first pass wasn't enough, so todos are now dicts with `text` and `done` fields, and `add_todo` was updated to match. Verified both functions and the missing-item error path with a quick runtime check.

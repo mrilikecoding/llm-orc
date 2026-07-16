@@ -1,0 +1,8 @@
+Done. Wrote test_calc.py in the same style as the existing test files. Six tests, all passing:
+
+- `divide`: basic float result, negative operands, `ValueError` on divide-by-zero
+- `percent`: whole-number case, repeating fraction via `pytest.approx`, and the zero-whole case propagating the `ValueError` from `divide`
+
+One finding from running the full suite: the pre-existing `test_buggy.py::test_scale_empty_raises` fails, because `buggy.py`'s `scale` never raises on an empty list (the test expects `ValueError("no values")`). That failure predates my work and looks intentional for this repo, so I left it alone. Say the word if you want `buggy.py` fixed to match its test.
+
+Full suite: 16 passed, 1 failed (the pre-existing buggy.py one). All todo and calc tests green.

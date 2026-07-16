@@ -1,0 +1,6 @@
+Done. todo.py now persists through storage.py, layered rather than rewritten:
+
+- `add_todo` / `complete_todo` stay as the pure in-memory operations (existing tests untouched).
+- New `add_todo_to_file(path, item)` and `complete_todo_in_file(path, item)` do load → mutate → save via `storage.load_todos`/`save_todos`. A missing file is treated as an empty list on load, so the first `add_todo_to_file` call creates it.
+
+Added three tests for the file-backed layer (creation, add/complete round-trip, missing-todo error) using pytest's tmp_path. Suite is now 9 tests, all passing.

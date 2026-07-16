@@ -1,0 +1,5 @@
+Fixed. The bug: `test_buggy.py` expects `scale([], 2)` to raise `ValueError("no values")`, but `scale` silently returned `[]`. Added the guard clause at the top of `scale` in buggy.py, matching the error message the test asserts on (and the same pattern `metrics.mean` already uses).
+
+Full suite is now completely green: **22 passed, 0 failed** across test_buggy.py, test_calc.py, test_metrics.py, and test_todo.py.
+
+Cumulative state of the repo: todo.py (add/complete plus JSON-persisted variants via storage.py), tests for every module, and the buggy.py fix. The only unresolved coordinator request remains "phantom.py", which doesn't exist; the metrics.py tests likely covered the intent.

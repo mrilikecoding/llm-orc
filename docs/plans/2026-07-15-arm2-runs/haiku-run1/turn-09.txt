@@ -1,0 +1,11 @@
+There is no `phantom.py` in the repo, so I can't write tests for it. The full file listing:
+
+- `buggy.py`, `calc.py`, `metrics.py`, `storage.py`, `todo.py`
+- `test_buggy.py`, `test_calc.py`, `test_todo.py`
+
+Rather than invent a `phantom.py` to test, I'm flagging the mismatch. Two candidates for what was meant:
+
+1. **`metrics.py`** — the only source file with no test coverage yet. If that's the intended target, say so and I'll write tests for it.
+2. A file that was expected to exist but was never created in this repo.
+
+Everything else remains done and green: todo.py (add/complete plus file-backed persistence via storage.py), test_todo.py (9 passing), test_calc.py (6 passing). The only suite failure is the pre-existing, apparently intentional test_buggy.py::test_scale_empty_raises.
