@@ -1,0 +1,30 @@
+{
+ "turn": 1,
+ "files": [
+  "calc.py",
+  "todo.py"
+ ],
+ "manifest": {
+  "calc.py": "b1863948054d91906a7d9c5da718230124492d973abdc8a4fca0bcbea5949cc7",
+  "todo.py": "038dc8bebeeb2d50f8fae32486d4c20df8f0b117ec77e1a874fdc5b45bb00099"
+ },
+ "post_manifest": {
+  "calc.py": "b1863948054d91906a7d9c5da718230124492d973abdc8a4fca0bcbea5949cc7",
+  "todo.py": "016c2abc6b4d3405e6bb60f4b584a19d4b29d58eaaef082786ceb957c52f116e"
+ },
+ "suite": {
+  "rc": 5,
+  "tail": "\nno tests ran in 0.00s"
+ },
+ "seeded": {
+  "rc": 4,
+  "tail": "\nno tests ran in 0.00s\nERROR: file or directory not found: test_buggy.py"
+ },
+ "oracle": {
+  "passed": true,
+  "detail": "ok: mutated in place via add_todo"
+ },
+ "oracle_contamination": [
+  "todo.py"
+ ]
+}
