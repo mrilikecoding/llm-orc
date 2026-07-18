@@ -128,10 +128,11 @@ WS-8 instrument (Arcs A–D).
 1. **Close the two dishonest classes** — #133 (recall disclosure) and #134
    (recap grounding). Environment-agnostic TDD; live re-validation and
    independent re-scoring follow on the rig.
-2. **Arm-2 runs (≥3)** via Claude Code subagents — feasible from a remote
-   Claude Code session (subagent model overrides + continuation exist
-   there); capture the real transcript format first, then build the
-   adapter, then run.
+2. **Arm-2 runs (≥3)** via Claude Code subagents — feasibility PROVEN and
+   the transcript format CAPTURED from real data (2026-07-17 probe,
+   `docs/plans/2026-07-17-arm2-subagent-captures/`): continuation,
+   truth capture, and the turn-1 oracle all ran in a remote session.
+   Remaining: the driver script + `subagent_adapter.py`, then the runs.
 3. **Arm-1 go/no-go** (one turn's token count), then ≥3 paid runs on the
    rig, then the **first parity table** published in this section.
 
@@ -241,9 +242,12 @@ count, per doctrine 1); then variance over three same-seed runs.
 
 ### WS-8: Parity table (#131 — the comparison IS the product claim)
 
-- **Arm-2 transcript capture + adapter** [REMOTE impl] — capture the REAL
-  Claude Code subagent transcript format (never guess it), then a raw→IR
-  adapter beside `opencode_adapter.py`. → adapter maps a captured real run;
+- **Arm-2 transcript capture + adapter** [REMOTE impl] — capture DONE
+  (2026-07-17, `docs/plans/2026-07-17-arm2-subagent-captures/`: schema,
+  tool names Write/Bash/Read, usage dedup by `message.id`, the
+  serialize-captures-between-turns rule the instrument itself enforced).
+  Remaining: the driver script + `subagent_adapter.py` beside
+  `opencode_adapter.py`. → adapter maps the captured real run;
   unmapped-tool streams fail loudly, not as zero-shipped.
 - **Arm-2 battery, ≥3 runs** [REMOTE] — construct requirements in §State.
   → 3 runs with truth/oracle capture, J-turns scored independently, cells
