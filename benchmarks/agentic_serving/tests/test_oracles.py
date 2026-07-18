@@ -230,7 +230,7 @@ def test_probe_instrument_failure_raises_instead_of_fabricating_a_verdict(
     # thesis-fabricating direction -- with exit 0 and empty stderr, making the
     # battery's crash channel (oracle: null + nonzero in oracle-exits.tsv)
     # unreachable. The error must escape instead.
-    with pytest.raises(OSError):
+    with pytest.raises(OSError, match="does-not-exist"):
         oracles.turn1_adds_todo(tmp_path / "does-not-exist")
 
 
@@ -455,9 +455,7 @@ T7_LOCAL_IMPORT = (
     "    storage.save_todos(todos, path)\n"
 )
 T7_LOCAL_IMPORT_ALIASED = (
-    "def save(todos, path):\n"
-    "    import storage as db\n"
-    "    db.save_todos(todos, path)\n"
+    "def save(todos, path):\n    import storage as db\n    db.save_todos(todos, path)\n"
 )
 # functools.wraps leaves the module binding pointing at the WRAPPER; the real
 # body is reachable only through __wrapped__/closure cells, and a walk that
@@ -661,10 +659,12 @@ def test_turn1_signature_x_representation_sweep(
 
 _T7_COMPOSITION_SHAPES = {
     "module_import": (
-        "import storage\n\ndef save(todos, path):\n    storage.save_todos(todos, path)\n"
+        "import storage\n\ndef save(todos, path):\n"
+        "    storage.save_todos(todos, path)\n"
     ),
     "module_import_aliased": (
-        "import storage as db\n\ndef save(todos, path):\n    db.save_todos(todos, path)\n"
+        "import storage as db\n\ndef save(todos, path):\n"
+        "    db.save_todos(todos, path)\n"
     ),
     "from_import_aliased": (
         "from storage import save_todos as st_save\n\n"
