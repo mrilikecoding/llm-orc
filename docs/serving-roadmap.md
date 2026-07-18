@@ -39,6 +39,26 @@ capability in a measured seat when it is the cheapest path to the bar,
 every hosted seat carried as a named buy-back target (§Seat-capability
 ladder). 32GB rig is the permanent target.
 
+**Development north star (named 2026-07-17).** The serving north star is
+an *outcome* — what the endpoint does for a user. Alongside it sits a
+*trajectory* target for how the codebase itself evolves: the three-layer
+platform (plexus substrate · llm-orc engine · client execution surface,
+see `docs/plans/2026-07-17-plexus-integration-platform-assessment.md`)
+with layers coupled only through named contracts — MCP tools, the OpenAI
+wire + tool_calls, the `{requirement, code, tests}` seat contract, the
+client's advertised tool list — never through schemas, file layouts, or
+spawn assumptions. Its steering rule: **behavior migrates downward as it
+stabilizes** — from prompt rules, to bounded model judgment, to
+deterministic code, to the declarative layer (YAML shapes, chain tables,
+closed templates), and ultimately, for components that survive
+adversarial review and stop changing across arcs, into hardened kernel
+code (plausibly Rust crates on the plexus side). Every arc should leave
+more behavior in a lower layer than it found it. This is the standing
+answer to the rewrite question: no greenfield port; the declarative
+layer is the insulation that keeps an eventual hardening cheap, and
+"frozen component" status is the trigger, tracked informally the way the
+buy-back ledger tracks hosted seats.
+
 ## State as of 2026-07-17
 
 **Measured position (the headline).** The WS-8 instrument is built, merged
