@@ -71,7 +71,9 @@ line-length = 88
 target-version = "py311"
 # docs/plans holds design docs + reference capture/spike scripts (documentation
 # artifacts, not shipped code) — not held to project lint, like .claude/.llm-orc.
-extend-exclude = ["docs/plans"]
+# fixture_seed holds the ladder fixture's seed files, hash-pinned byte-for-byte
+# to the recorded Arm-0 runs (seed_fixture.sh verifies) — lint may not edit them.
+extend-exclude = ["docs/plans", "benchmarks/agentic_serving/fixture_seed"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "N", "UP", "B", "A", "C4", "PT", "C90"]
