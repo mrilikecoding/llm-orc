@@ -1,0 +1,44 @@
+{
+ "haiku-r1": {
+  "turns": 13,
+  "wall_s": 263.4,
+  "fresh_in": 546,
+  "out": 3755,
+  "tool_calls": 52
+ },
+ "haiku-r2": {
+  "turns": 13,
+  "wall_s": 257.5,
+  "fresh_in": 514,
+  "out": 3781,
+  "tool_calls": 48
+ },
+ "haiku-r3": {
+  "turns": 13,
+  "wall_s": 313.3,
+  "fresh_in": 506,
+  "out": 4254,
+  "tool_calls": 47
+ },
+ "sonnet-r1": {
+  "turns": 13,
+  "wall_s": 170.0,
+  "fresh_in": 84,
+  "out": 2366,
+  "tool_calls": 29
+ },
+ "sonnet-r2": {
+  "turns": 13,
+  "wall_s": 148.8,
+  "fresh_in": 86,
+  "out": 1397,
+  "tool_calls": 33
+ },
+ "sonnet-r3": {
+  "turns": 13,
+  "wall_s": 169.5,
+  "fresh_in": 78,
+  "out": 2339,
+  "tool_calls": 26
+ }
+}

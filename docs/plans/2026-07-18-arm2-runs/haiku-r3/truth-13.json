@@ -1,0 +1,45 @@
+{
+ "turn": 13,
+ "files": [
+  "buggy.py",
+  "calc.py",
+  "metrics.py",
+  "storage.py",
+  "test_buggy.py",
+  "test_calc.py",
+  "test_metrics.py",
+  "test_todo.py",
+  "todo.py"
+ ],
+ "manifest": {
+  "buggy.py": "970219fe716b7c3108ff62690bd46bd0486cd5c029b154a6de24793607c88c62",
+  "calc.py": "9b4886a7d55129066d955cc4d606da83bdcea42c883d1c3e4305711f9bedb7a4",
+  "metrics.py": "b1c829eadce845cd99f644c1a9c042053d04ac88c3a40e204e75fde59a713050",
+  "storage.py": "13d09a13cb2899c13efd93f1b1e16d16a5195e31f9fc03037dd2cb0ed210a11c",
+  "test_buggy.py": "fdf2354a945f96a905d9a321fe537de73777d489d9eceeea28f90620054bf6e9",
+  "test_calc.py": "3833342608090de56676f245cd877a7a10971f1ea03f083f716692bf3ce818f8",
+  "test_metrics.py": "6ffb99db0a0ad0fe68685115c3dbf5b7a8d0d11b635a95121cf558b7d560b45b",
+  "test_todo.py": "3992a6f13a30cd6c344086293f6259cd93e4e94f9ad8a2ffd4bad785816a7ffc",
+  "todo.py": "1f495db9348fa45f84e4a4702d59ef893732aa21c88c7b9b98694b13dabca1f6"
+ },
+ "post_manifest": {
+  "buggy.py": "970219fe716b7c3108ff62690bd46bd0486cd5c029b154a6de24793607c88c62",
+  "calc.py": "9b4886a7d55129066d955cc4d606da83bdcea42c883d1c3e4305711f9bedb7a4",
+  "metrics.py": "b1c829eadce845cd99f644c1a9c042053d04ac88c3a40e204e75fde59a713050",
+  "storage.py": "13d09a13cb2899c13efd93f1b1e16d16a5195e31f9fc03037dd2cb0ed210a11c",
+  "test_buggy.py": "fdf2354a945f96a905d9a321fe537de73777d489d9eceeea28f90620054bf6e9",
+  "test_calc.py": "3833342608090de56676f245cd877a7a10971f1ea03f083f716692bf3ce818f8",
+  "test_metrics.py": "6ffb99db0a0ad0fe68685115c3dbf5b7a8d0d11b635a95121cf558b7d560b45b",
+  "test_todo.py": "3992a6f13a30cd6c344086293f6259cd93e4e94f9ad8a2ffd4bad785816a7ffc",
+  "todo.py": "1f495db9348fa45f84e4a4702d59ef893732aa21c88c7b9b98694b13dabca1f6"
+ },
+ "suite": {
+  "rc": 0,
+  "tail": "........................................................................ [ 90%]\n........                                                                 [100%]\n80 passed in 0.12s"
+ },
+ "seeded": {
+  "rc": 0,
+  "tail": "..                                                                       [100%]\n2 passed in 0.01s"
+ },
+ "oracle": null
+}

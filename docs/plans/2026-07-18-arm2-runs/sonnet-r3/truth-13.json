@@ -1,0 +1,45 @@
+{
+ "turn": 13,
+ "files": [
+  "buggy.py",
+  "calc.py",
+  "metrics.py",
+  "storage.py",
+  "test_buggy.py",
+  "test_calc.py",
+  "test_metrics.py",
+  "test_todo.py",
+  "todo.py"
+ ],
+ "manifest": {
+  "buggy.py": "970219fe716b7c3108ff62690bd46bd0486cd5c029b154a6de24793607c88c62",
+  "calc.py": "9b4886a7d55129066d955cc4d606da83bdcea42c883d1c3e4305711f9bedb7a4",
+  "metrics.py": "b1c829eadce845cd99f644c1a9c042053d04ac88c3a40e204e75fde59a713050",
+  "storage.py": "9f21d80eb64c1ebdaf867e5bfed861ad7d05c9fd9e69bbe7e199d2f9f89a01f9",
+  "test_buggy.py": "fdf2354a945f96a905d9a321fe537de73777d489d9eceeea28f90620054bf6e9",
+  "test_calc.py": "bf2b4364e3992b85a194d803a02cc0df5f0e58678aaef9ec87553e2b68eb7375",
+  "test_metrics.py": "cc050f1354c07c5a725c838f59062bb7ff174f198dcc7b9986b8f3d7a6e9c5d5",
+  "test_todo.py": "337d71af5def5f2d67c5c0f66c1942862ca3a638e58258254354ebc96f123353",
+  "todo.py": "de0b1bd0c744d7086a9833a07e6a9e24947ad258271a9d54ebcc8c9d6ea28314"
+ },
+ "post_manifest": {
+  "buggy.py": "970219fe716b7c3108ff62690bd46bd0486cd5c029b154a6de24793607c88c62",
+  "calc.py": "9b4886a7d55129066d955cc4d606da83bdcea42c883d1c3e4305711f9bedb7a4",
+  "metrics.py": "b1c829eadce845cd99f644c1a9c042053d04ac88c3a40e204e75fde59a713050",
+  "storage.py": "9f21d80eb64c1ebdaf867e5bfed861ad7d05c9fd9e69bbe7e199d2f9f89a01f9",
+  "test_buggy.py": "fdf2354a945f96a905d9a321fe537de73777d489d9eceeea28f90620054bf6e9",
+  "test_calc.py": "bf2b4364e3992b85a194d803a02cc0df5f0e58678aaef9ec87553e2b68eb7375",
+  "test_metrics.py": "cc050f1354c07c5a725c838f59062bb7ff174f198dcc7b9986b8f3d7a6e9c5d5",
+  "test_todo.py": "337d71af5def5f2d67c5c0f66c1942862ca3a638e58258254354ebc96f123353",
+  "todo.py": "de0b1bd0c744d7086a9833a07e6a9e24947ad258271a9d54ebcc8c9d6ea28314"
+ },
+ "suite": {
+  "rc": 0,
+  "tail": "......................................                                   [100%]\n38 passed in 0.04s"
+ },
+ "seeded": {
+  "rc": 0,
+  "tail": "..                                                                       [100%]\n2 passed in 0.01s"
+ },
+ "oracle": null
+}
