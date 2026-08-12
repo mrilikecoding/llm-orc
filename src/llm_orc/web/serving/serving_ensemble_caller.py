@@ -22,7 +22,7 @@ import re
 import uuid
 from collections.abc import AsyncIterator, Callable, Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 from llm_orc.core.config.ensemble_config import EnsembleLoader
 from llm_orc.core.execution.executor_factory import ExecutorFactory
@@ -82,6 +82,10 @@ _CTX_SELECTED_CAP = 4000
 # quotes ("the first thing you asked was <excerpt>"), never a prompt body,
 # so a tight cap keeps the structured field small on long sessions.
 _RECALL_ASK_CAP = 200
+# review round 1 minor 2: a truncated ask must never present as verbatim —
+# the marker sits WITHIN the cap budget so len(result) <= _RECALL_ASK_CAP
+# still holds (the #82 pin test asserts this).
+_ASK_TRUNCATION_MARKER = "..."
 
 _CTX_FILE_RE = re.compile(r"\b[\w./-]+\.(?:py|js|ts|json|md|txt|ya?ml|sh|go|rs)\b")
 _CTX_TOKEN_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]{2,}")
@@ -326,65 +330,155 @@ def _message_write_path(message: Any) -> str:
     return ""
 
 
-def _is_reject_message(message: Any, reject_prefixes: tuple[str, ...]) -> bool:
-    """True when ``message`` is an ASSISTANT-role wire message matching one
-    of emit's own reject-message prefixes (recap grounding, #133/#134:
-    docs/plans/2026-07-17-recap-grounding-design.md). Never inferred from
-    free text and never from a user or tool message — the same spoof-guard
-    discipline as ``_message_write_path`` — so a forged prefix in user prose
-    can never mint a rejected ledger entry."""
+def _write_call_id(message: Any) -> str:
+    """The id of the message's first write-shaped tool_call, or ""."""
+    for call in getattr(message, "tool_calls", ()) or ():
+        arguments = _parsed_arguments(call)
+        if arguments is not None and _is_write_shaped(arguments):
+            return str(call["id"]) if isinstance(call, dict) and call.get("id") else ""
+    return ""
+
+
+def _write_confirmed(items: Sequence[Any], call_id: str) -> bool:
+    """True unless a tool-role result answering ``call_id`` is explicitly
+    failure-shaped (review round 1 minor 1) — reuses ``_write_result_failed``,
+    the SAME failure-shape check the fix-chain path already trusts, so a
+    client write the tool result itself reports as failed never mints
+    "shipped". No matching result (a hand-built fixture that never includes
+    one, or a resume not yet completed) defaults to confirmed — the #82
+    ledger's original behavior, unaffected when no tool-result message is
+    present at all."""
+    if not call_id:
+        return True
+    for message in items:
+        if (
+            getattr(message, "role", "") == "tool"
+            and getattr(message, "tool_call_id", None) == call_id
+        ):
+            return not _write_result_failed(getattr(message, "content", None))
+    return True
+
+
+# Ask-outcome kinds (review round 1 blocker 2): WHICH of emit's prefixes
+# matched, retained on the ledger entry so the recall templates can state an
+# honest, kind-specific outcome instead of a generic "rejected" — never
+# attribute a seat-contract miss or a read/glob/build-invalid refusal to "the
+# accept gate".
+_SHIPPED = "shipped"
+_REJECTED_CONTRACT = "rejected_contract"
+_REJECTED_GATE = "rejected_gate"
+_REFUSED = "refused"
+
+
+class _RejectPrefixes(NamedTuple):
+    """emit's reject/refuse prefix set the ask-outcome ledger recognizes,
+    sourced from a project's own emit.py — never duplicated literals here.
+    Defaults to all-empty so a bare call (the existing #82 test suite)
+    recognizes shipped builds only, byte for byte."""
+
+    contract: str = ""
+    gate: str = ""
+    refused: str = ""
+
+
+# A single shared empty instance for default-argument use (ruff B008: a
+# function call in an argument default is flagged even though NamedTuple
+# instances are immutable).
+_NO_REJECT_PREFIXES = _RejectPrefixes()
+
+
+def _reject_kind(message: Any, reject_prefixes: _RejectPrefixes) -> tuple[str, str]:
+    """(kind, reason) for an ASSISTANT-role wire message matching one of
+    emit's reject/refuse prefixes (review round 1 blocker 2), or ("", "")
+    when it matches none. ``reason`` is the wire text after the prefix,
+    retained only for "refused" — the template states it verbatim rather
+    than claiming a specific gate the record doesn't support. Never inferred
+    from free text and never from a user or tool message — the same
+    spoof-guard discipline as ``_message_write_path``."""
     if getattr(message, "role", "") != "assistant":
-        return False
+        return "", ""
     content = getattr(message, "content", None)
     if not isinstance(content, str):
-        return False
+        return "", ""
     stripped = content.strip()
-    return any(prefix and stripped.startswith(prefix) for prefix in reject_prefixes)
+    if reject_prefixes.contract and stripped.startswith(reject_prefixes.contract):
+        return _REJECTED_CONTRACT, ""
+    if reject_prefixes.gate and stripped.startswith(reject_prefixes.gate):
+        return _REJECTED_GATE, ""
+    if reject_prefixes.refused and stripped.startswith(reject_prefixes.refused):
+        return _REFUSED, stripped[len(reject_prefixes.refused) :]
+    return "", ""
 
 
 def _ask_outcome(
-    items: list[Any], index: int, reject_prefixes: tuple[str, ...] = ()
-) -> tuple[str, str]:
-    """(outcome, path) for the ask at ``index``: "shipped" with the written
-    path, "rejected" with an empty path, or ("", "") when the turn carries
-    neither — a question, a read, anything with no build outcome.
+    items: list[Any], index: int, reject_prefixes: _RejectPrefixes = _NO_REJECT_PREFIXES
+) -> tuple[str, str, str]:
+    """(outcome, path, reason) for the ask at ``index``: "shipped" with the
+    written path (only when its tool result is not failure-shaped — minor
+    1), one of "rejected_contract"/"rejected_gate"/"refused" (``reason`` set
+    only for "refused"), or ("", "", "") when the turn carries no build
+    outcome at all — a question, a read.
 
     Scans the WHOLE turn (every message up to the next user message) rather
-    than stopping at the first signal, so an eventual write always wins over
-    an earlier reject in the same turn (a retry that ships), and several
-    reject messages in one turn (retry rounds) still collapse to a single
-    "rejected" outcome (recap-grounding design, wrong-accept-hunt target 4).
+    than stopping at the first signal: an eventual CONFIRMED write always
+    wins over an earlier reject/refuse in the same turn (a retry that
+    ships); a write whose result is failure-shaped does not count as
+    shipped and scanning continues; several reject/refuse messages in one
+    turn (retry rounds) still collapse to a single outcome (wrong-accept-
+    hunt target 4).
     """
-    rejected = False
+    rejected_kind = ""
+    rejected_reason = ""
     for message in items[index + 1 :]:
         if getattr(message, "role", "") == "user":
             break
         path = _message_write_path(message)
         if path:
-            return "shipped", path
-        if _is_reject_message(message, reject_prefixes):
-            rejected = True
-    return ("rejected", "") if rejected else ("", "")
+            if _write_confirmed(items, _write_call_id(message)):
+                return _SHIPPED, path, ""
+            continue  # a failed write is not a shipped outcome — keep scanning
+        kind, reason = _reject_kind(message, reject_prefixes)
+        if kind:
+            rejected_kind, rejected_reason = kind, reason
+    if rejected_kind:
+        return rejected_kind, "", rejected_reason
+    return "", "", ""
+
+
+def _capped_ask(text: str) -> str:
+    """``text`` stripped and capped to ``_RECALL_ASK_CAP``, with a
+    truncation marker (within the cap budget) when it was actually cut —
+    review round 1 minor 2: a truncated ask must never present as if it
+    were verbatim."""
+    stripped = text.strip()
+    if len(stripped) <= _RECALL_ASK_CAP:
+        return stripped
+    budget = _RECALL_ASK_CAP - len(_ASK_TRUNCATION_MARKER)
+    return stripped[:budget] + _ASK_TRUNCATION_MARKER
 
 
 def _recall_ledger(
-    messages: Sequence[Any], reject_prefixes: tuple[str, ...] = ()
+    messages: Sequence[Any], reject_prefixes: _RejectPrefixes = _NO_REJECT_PREFIXES
 ) -> list[dict[str, Any]]:
     """The chronological ASK-OUTCOME history a recall query selects over
     (#82 deep recall, extended into an outcome-anchored ledger by recap
-    grounding #133/#134: docs/plans/2026-07-17-recap-grounding-design.md).
+    grounding #133/#134: docs/plans/2026-07-17-recap-grounding-design.md;
+    review round 1 blocker 2 adds the "refused" minting class and the
+    outcome-kind vocabulary).
 
     One entry per user ask that has a build outcome, in wire order:
     ``{ask, path, outcome: "shipped", index}`` for a shipped write, or
-    ``{ask, outcome: "rejected", index}`` (no ``path``) for a build one of
-    the serve's own reject templates (``reject_prefixes``, sourced from
-    emit.py — never a duplicated regex here) reports as unshipped. An ask
-    with no build outcome (a question, a read) is never an entry. Existing
-    consumers filtering on ``outcome == "shipped"`` see exactly today's #82
-    ledger, unchanged — ``reject_prefixes`` defaults to empty, so a bare
-    call (as the existing #82 test suite makes) recognizes shipped builds
-    only, byte for byte. Selects over the PRIOR history (before the latest
-    user message), so the current recall query is never an entry.
+    ``{ask, outcome: "rejected_contract"|"rejected_gate"|"refused", index}``
+    (no ``path``; ``reason`` present only for "refused") for a build one of
+    the serve's own reject/refuse templates (``reject_prefixes``, sourced
+    from emit.py — never a duplicated regex here) reports as unshipped. An
+    ask with no build outcome (a question, a read) is never an entry.
+    Existing consumers filtering on ``outcome == "shipped"`` see exactly
+    today's #82 ledger, unchanged — ``reject_prefixes`` defaults to empty,
+    so a bare call (as the existing #82 test suite makes) recognizes
+    shipped builds only, byte for byte. Selects over the PRIOR history
+    (before the latest user message), so the current recall query is never
+    an entry.
     """
     items = list(messages)
     boundary = _latest_user_index(items)
@@ -393,38 +487,41 @@ def _recall_ledger(
     for index, message in enumerate(prior):
         if getattr(message, "role", "") != "user":
             continue
-        outcome, path = _ask_outcome(prior, index, reject_prefixes)
+        outcome, path, reason = _ask_outcome(prior, index, reject_prefixes)
         if not outcome:
             continue
-        ask = str(getattr(message, "content", "") or "").strip()[:_RECALL_ASK_CAP]
+        ask = _capped_ask(str(getattr(message, "content", "") or ""))
         entry: dict[str, Any] = {"ask": ask, "outcome": outcome, "index": index}
         if path:
             entry["path"] = path
+        if reason:
+            entry["reason"] = reason
         ledger.append(entry)
     return ledger
 
 
 def _previous_ask(
-    messages: Sequence[Any], reject_prefixes: tuple[str, ...] = ()
+    messages: Sequence[Any], reject_prefixes: _RejectPrefixes = _NO_REJECT_PREFIXES
 ) -> dict[str, str]:
     """The immediately preceding user turn's verbatim ask plus its build
-    outcome (#134 memory-interrogative substrate): ``{ask, outcome, path}``.
+    outcome (#134 memory-interrogative substrate): ``{ask, outcome, path,
+    reason}``.
 
     NOT the ledger's last entry — that could be an older turn when the
     immediately preceding one had no build outcome at all (a question, a
     read), and a memory interrogative ("did you see my previous query?")
     answers about that one specific turn, never an older build. Empty
-    ask/outcome/path when there is no preceding turn.
+    ask/outcome/path/reason when there is no preceding turn.
     """
     items = list(messages)
     boundary = _latest_user_index(items)
     prior = items[:boundary] if boundary >= 0 else []
     prev_index = _latest_user_index(prior)
     if prev_index < 0:
-        return {"ask": "", "outcome": "", "path": ""}
-    outcome, path = _ask_outcome(prior, prev_index, reject_prefixes)
-    ask = str(getattr(prior[prev_index], "content", "") or "").strip()
-    return {"ask": ask[:_RECALL_ASK_CAP], "outcome": outcome, "path": path}
+        return {"ask": "", "outcome": "", "path": "", "reason": ""}
+    outcome, path, reason = _ask_outcome(prior, prev_index, reject_prefixes)
+    ask = _capped_ask(str(getattr(prior[prev_index], "content", "") or ""))
+    return {"ask": ask, "outcome": outcome, "path": path, "reason": reason}
 
 
 def _indent_body(text: str) -> str:
@@ -860,35 +957,36 @@ def _find_ensemble(project_dir: Path, name: str) -> Path:
     )
 
 
-def _load_emit_reject_prefixes(path: Path) -> tuple[str, ...]:
-    """The reject-message prefix constants read straight out of a project's
-    OWN ``emit.py`` (recap grounding, #133/#134) — the single source of
-    truth the design doc requires, never a literal duplicated here. A
-    project's scripts are configuration, not installed package content
-    (they live under the caller's ``project_dir``, resolved per instance,
-    same as ``_find_ensemble``), so this is a dynamic file-location import
-    rather than a static one. ``emit.py`` is self-contained (stdlib-only),
-    so it needs no sys.path change; loading it under a non-``__main__``
-    name means its ``if __name__ == "__main__"`` block never runs. Any
-    failure (missing file, syntax error, missing constants) yields no
-    prefixes — the ledger then recognizes shipped builds only, same as
-    before #133/#134, never a hard failure of the whole turn.
+def _load_emit_reject_prefixes(path: Path) -> _RejectPrefixes:
+    """The reject/refuse prefix constants read straight out of a project's
+    OWN ``emit.py`` (recap grounding, #133/#134; review round 1 blocker 2
+    adds ``REFUSED_PREFIX``) — the single source of truth the design doc
+    requires, never a literal duplicated here. A project's scripts are
+    configuration, not installed package content (they live under the
+    caller's ``project_dir``, resolved per instance, same as
+    ``_find_ensemble``), so this is a dynamic file-location import rather
+    than a static one. ``emit.py`` is self-contained (stdlib-only), so it
+    needs no sys.path change; loading it under a non-``__main__`` name
+    means its ``if __name__ == "__main__"`` block never runs. Any failure
+    (missing file, syntax error, missing constants) yields no prefixes —
+    the ledger then recognizes shipped builds only, same as before
+    #133/#134, never a hard failure of the whole turn.
     """
     try:
         spec = importlib.util.spec_from_file_location(
             "_serving_emit_reject_prefixes", path
         )
         if spec is None or spec.loader is None:
-            return ()
+            return _RejectPrefixes()
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
     except Exception:
-        return ()
-    prefixes = (
-        getattr(module, "SEAT_CONTRACT_REJECT_PREFIX", ""),
-        getattr(module, "ACCEPT_GATE_REJECT_PREFIX", ""),
+        return _RejectPrefixes()
+    return _RejectPrefixes(
+        contract=str(getattr(module, "SEAT_CONTRACT_REJECT_PREFIX", "")),
+        gate=str(getattr(module, "ACCEPT_GATE_REJECT_PREFIX", "")),
+        refused=str(getattr(module, "REFUSED_PREFIX", "")),
     )
-    return tuple(prefix for prefix in prefixes if prefix)
 
 
 def _serve_outcome(result: dict[str, Any]) -> dict[str, Any]:
@@ -1000,7 +1098,7 @@ class ServingEnsembleCaller:
         # (path, mtime) -> reject-prefix tuple: mirrors _config_cache above,
         # recap grounding (#133/#134) — reloads emit.py's constants only
         # when the file actually changes.
-        self._emit_reject_cache: tuple[Path, float, tuple[str, ...]] | None = None
+        self._emit_reject_cache: tuple[Path, float, _RejectPrefixes] | None = None
 
     def _load_config(self) -> Any:
         path = _find_ensemble(self._project_dir, self._ensemble)
@@ -1013,7 +1111,7 @@ class ServingEnsembleCaller:
         self._config_cache = (path, mtime, config)
         return config
 
-    def _emit_reject_prefixes(self) -> tuple[str, ...]:
+    def _emit_reject_prefixes(self) -> _RejectPrefixes:
         """This project's real reject-message prefixes (recap grounding,
         #133/#134), cached by (path, mtime) like ``_load_config``. Empty
         when the project has no ``scripts/agentic_serving/emit.py`` — the
@@ -1022,7 +1120,7 @@ class ServingEnsembleCaller:
         try:
             mtime = path.stat().st_mtime
         except OSError:
-            return ()
+            return _RejectPrefixes()
         if self._emit_reject_cache is not None:
             cached_path, cached_mtime, cached = self._emit_reject_cache
             if cached_path == path and cached_mtime == mtime:
@@ -1077,7 +1175,7 @@ class ServingEnsembleCaller:
                     "write_count": write_count,
                     "recall_ledger": recall_ledger or [],
                     "previous_ask": previous_ask
-                    or {"ask": "", "outcome": "", "path": ""},
+                    or {"ask": "", "outcome": "", "path": "", "reason": ""},
                 }
             ),
         )
