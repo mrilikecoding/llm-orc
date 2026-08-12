@@ -354,11 +354,14 @@ def test_arm0_run1_reports_its_never_run_oracles_as_unscored() -> None:
 
 def _subagent_turn(prompt_text: str, *, wrote: bool) -> list[dict[str, Any]]:
     """One minimal, valid subagent-shaped turn: the injected-prompt boundary
-    event, plus (when ``wrote``) a Write tool call and its result — enough
-    for split_turns to find the boundary and turn_from_events to build a
-    real Turn with a tool call."""
+    event (with a promptId derived from the prompt text -- unique per call
+    at every call site below, which is all split_turns' promptId-based
+    boundary rule needs), plus (when ``wrote``) a Write tool call and its
+    result — enough for split_turns to find the boundary and
+    turn_from_events to build a real Turn with a tool call."""
+    prompt_id = f"pid-{prompt_text}"
     events: list[dict[str, Any]] = [
-        {"type": "user", "message": {"content": prompt_text}}
+        {"type": "user", "promptId": prompt_id, "message": {"content": prompt_text}}
     ]
     if wrote:
         events.append(
@@ -381,6 +384,7 @@ def _subagent_turn(prompt_text: str, *, wrote: bool) -> list[dict[str, Any]]:
         events.append(
             {
                 "type": "user",
+                "promptId": prompt_id,
                 "message": {
                     "content": [
                         {"type": "tool_result", "tool_use_id": "t1", "content": "ok"}
@@ -495,6 +499,71 @@ def test_transcript_from_run_dir_with_the_single_file_layout(tmp_path: Path) -> 
     assert transcript.turns[0].tool_calls[0].name == "write"
 
 
+def test_single_file_raises_when_split_turns_exceed_declared_prompts(
+    tmp_path: Path,
+) -> None:
+    # The long direction of a layout/prompts mismatch: THREE genuinely
+    # distinct, well-formed turns exist in the transcript (a real 14th
+    # prompt against a 13-prompt battery, structurally) but only two
+    # prompts were declared. Silently truncating to two would drop a real
+    # turn's data; the short direction (fewer real turns than declared)
+    # keeps the existing death convention untouched.
+    _write_transcript(
+        tmp_path,
+        [
+            _subagent_turn("p1", wrote=False),
+            _subagent_turn("p2", wrote=False),
+            _subagent_turn("p3", wrote=False),
+        ],
+    )
+    with pytest.raises(ValueError, match="more than the declared"):
+        score_run._load_runs(tmp_path, ("p1", "p2"), adapter=sa)
+
+
+def test_an_interruption_notice_never_masks_a_later_death(tmp_path: Path) -> None:
+    # The BLOCKER-1 shape end to end: an interruption notice mid-turn-1
+    # reuses turn 1's promptId (a phantom boundary under the old
+    # string-only rule), and the run then genuinely dies before turn 2 ever
+    # starts. Under the old rule this would silently read as TWO completed
+    # turns (masking the real death); now it must refuse to score at all
+    # rather than report a wrong missing set.
+    events: list[dict[str, Any]] = [
+        {"type": "user", "promptId": "pid-1", "message": {"content": "p1"}},
+        {
+            "type": "assistant",
+            "message": {
+                "id": "m1",
+                "usage": {"input_tokens": 1, "output_tokens": 1},
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "id": "t1",
+                        "name": "Bash",
+                        "input": {"command": "sleep 5"},
+                    }
+                ],
+            },
+        },
+        {
+            "type": "user",
+            "promptId": "pid-1",  # reused -- an interruption notice, not p2
+            "message": {"content": "[Request interrupted by user]"},
+        },
+        {
+            "type": "user",
+            "promptId": "pid-1",
+            "message": {
+                "content": [
+                    {"type": "tool_result", "tool_use_id": "t1", "content": "done"}
+                ]
+            },
+        },
+    ]
+    _write_transcript(tmp_path, [events])
+    with pytest.raises(ValueError, match="disagree"):
+        score_run._load_runs(tmp_path, ("p1", "p2"), adapter=sa)
+
+
 def _real_arm2_run(run: str) -> Path:
     return Path(__file__).resolve().parents[3] / (
         f"docs/plans/2026-07-15-arm2-runs/{run}"
@@ -523,3 +592,45 @@ def test_tally_oracles_on_the_real_sonnet_arm2_run() -> None:
     assert tally.death_turns == ()
     assert tally.unscored_turns == ()
     assert tally.legacy_turns == ()
+
+
+def test_score_run_dir_on_the_real_haiku_arm2_run() -> None:
+    # The 2x2 alone is manifest-derived and reproducible by a mapping-free
+    # adapter stub (a real finding from review); rounds/dishonesty depend on
+    # the adapter actually mapping tool_use/text/usage correctly, so THIS
+    # is the test that exercises the mapping end to end.
+    card = score_run.score_run_dir(
+        "arm2-haiku", _real_arm2_run("haiku-run1"), adapter=sa
+    )
+    assert card.n_turns == 13
+    assert card.missing_turns == ()
+    assert card.total_rounds == 29  # 11 Bash + 6 Read + 7 Write + 5 Edit
+    assert card.total_wall_seconds == pytest.approx(273.235, abs=0.001)
+    assert card.dishonest_count == 0
+
+
+def test_score_run_dir_on_the_real_sonnet_arm2_run() -> None:
+    card = score_run.score_run_dir(
+        "arm2-sonnet", _real_arm2_run("sonnet-run1"), adapter=sa
+    )
+    assert card.n_turns == 13
+    assert card.missing_turns == ()
+    assert card.total_rounds == 42  # 19 Bash + 7 Read + 12 Write + 4 Edit
+    assert card.total_wall_seconds == pytest.approx(435.647, abs=0.001)
+    assert card.dishonest_count == 0
+
+
+def test_score_run_dir_reports_real_cache_tokens_and_the_lower_bound_flag() -> None:
+    # metrics.Pricing here carries NO cache rates -- the real, common case
+    # until a caller supplies them -- so the cache-token counts must still
+    # be reported (never discarded) and total_cost must be flagged as a
+    # lower bound rather than presented as the true total.
+    pricing = Pricing(input_per_mtok=1.00, output_per_mtok=5.00)
+    card = score_run.score_run_dir(
+        "arm2-haiku", _real_arm2_run("haiku-run1"), pricing, adapter=sa
+    )
+    assert card.total_cache_creation_tokens == 87304
+    assert card.total_cache_read_tokens == 1253863
+    assert card.cost_excludes_cache is True
+    assert card.total_cost is not None
+    assert card.total_cost > 0
