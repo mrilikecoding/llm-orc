@@ -8,15 +8,29 @@ ADR-034 re-homes the Client-Tool-Action Terminal). A build deliverable the
 form-gate refused degrades to a prose finish carrying the refusal reason: the
 serve never writes a deliverable that failed destination-validity.
 
-    read failed:     {"finish": true, "content": "Refused: <read_failed reason>"}
-    glob failed:     {"finish": true, "content": "Refused: <glob_failed reason>"}
-    needs files:     {"finish": false, "reads": ["<path>", ...]}
-    needs glob:      {"finish": false, "glob": "<stem>"}
-    needs run:       {"finish": false, "run": "<command>"}
-    not grounded:    {"finish": true, "content": "No `<target>` in this session..."}
-    build + valid:   {"finish": false, "file": "<path>", "content": "<source>"}
-    build + refused: {"finish": true, "content": "Refused: <reason>"}
-    non-build:       {"finish": true, "content": "<prose>"}
+Recap grounding (#133/#134): every reject/refuse terminal below carries one of
+the module-level prefixes in ``TERMINALS`` (never a literal duplicated at the
+call site), so the caller-side ask-outcome ledger can recognize it on the wire.
+A read/glob refusal picks its prefix from whether THIS turn carried a build ask
+(``is_build_ask``, threaded from classify) — the same failure renders
+identically (``build=False``) whether it answers a build ask's discovery round
+or a bare-symbol explain's, so the prefix itself is what tells the ledger
+whether a build outcome may be attributed at all.
+
+    read failed (build ask):     {"finish": true, "content": "Build refused: <read_failed reason>"}
+    read failed (non-build ask): {"finish": true, "content": "Refused: <read_failed reason>"}
+    glob failed (build ask):     {"finish": true, "content": "Build refused: <glob_failed reason>"}
+    glob failed (non-build ask): {"finish": true, "content": "Refused: <glob_failed reason>"}
+    needs files:      {"finish": false, "reads": ["<path>", ...]}
+    needs glob:       {"finish": false, "glob": "<stem>"}
+    needs run:        {"finish": false, "run": "<command>"}
+    not grounded:     {"finish": true, "content": "No `<target>` in this session..."}
+    recall answer:    {"finish": true, "content": "<deterministic ledger answer>"}
+    seat contract:    {"finish": true, "content": "Seat contract not met: <reason>"}
+    accept gate:      {"finish": true, "content": "Another round needed: <reason>"}
+    build + valid:    {"finish": false, "file": "<path>", "content": "<source>"}
+    build + invalid:  {"finish": true, "content": "Build refused: <reason>"}
+    non-build:        {"finish": true, "content": "<prose>"}
 
 The read/glob/run branches are mutually exclusive by construction — classify
 routes each turn to exactly one seam — so their order below only mirrors the
