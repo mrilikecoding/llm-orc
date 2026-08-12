@@ -1907,6 +1907,109 @@ def test_recap_widening_no_longer_precomputes_a_recap_for_action_turns(
     assert decision["recall_answer"] == ""
 
 
+# --- round 4 MAJOR: _MAYBE_RECAP_RE's both-ends anchor tested the VERB's
+# POSITION, but an English relative clause ends on its verb too ("the helper
+# you made"). A specific-artifact question ("can you explain the helper you
+# made?") reads identically in shape to a genuine recap question up to that
+# point — an author-independent review demonstrated it steals a grounding
+# round (need-glob on origin/main) for a decider deferral with no glob round
+# at all. The discriminator: a recap's OBJECT is universal (everything/
+# anything/all, or the what/which...so far frame), never a determiner +
+# specific noun immediately before the final make-verb. ---
+
+
+@pytest.mark.parametrize(
+    "task",
+    [
+        "can you explain the helper you made?",
+        "what is wrong with the module you made?",
+        "where is the test file you created?",
+        "what language was the parser you wrote?",
+        "how slow is the function you wrote?",
+        "what did you name the function you created?",
+        "how many bugs has the code you wrote created?",
+    ],
+)
+def test_specific_artifact_relative_clause_never_defers_to_the_decider(
+    task: str,
+) -> None:
+    # Each of these is a bare-symbol explain question naming a SPECIFIC
+    # artifact via a relative clause ("the helper you made") — must resolve
+    # via the ordinary glob->read grounded-explain discovery round, never a
+    # recap decider deferral with no glob round.
+    decision = _classify({"task": task})
+    assert decision["target"] == "need-glob"
+    assert decision["needs_decider"] is False
+    assert decision["needs_glob"] != ""
+    assert decision["recall_answer"] == ""
+
+
+def test_maybe_recap_still_catches_the_what_so_far_frame_with_an_adverb() -> None:
+    # The positive this branch exists for: "what exactly have you built so
+    # far?" misses the tight floor only by the inserted adverb.
+    decision = _classify(
+        {
+            "task": "what exactly have you built so far?",
+            "recall_ledger": [
+                {"ask": "build a todo app", "path": "todo.py", "outcome": "shipped"}
+            ],
+        }
+    )
+    assert decision["needs_decider"] is True
+    assert decision["recall_answer"] != ""
+    assert "todo.py" in decision["recall_answer"]
+
+
+def test_maybe_recap_still_catches_a_universal_object_token() -> None:
+    decision = _classify(
+        {
+            "task": "can you list everything you've made?",
+            "recall_ledger": [
+                {"ask": "build a todo app", "path": "todo.py", "outcome": "shipped"}
+            ],
+        }
+    )
+    assert decision["needs_decider"] is True
+    assert decision["recall_answer"] != ""
+    assert "todo.py" in decision["recall_answer"]
+
+
+def test_bare_tests_ask_naming_a_specific_artifact_keeps_its_glob_discovery() -> None:
+    # Reviewer's verified-benign family: "you built" ends the sentence just
+    # like a recap question would, but "the parser" is a specific artifact,
+    # not a universal recap object — the turn's OWN module-stem discovery
+    # must win, never a decider deferral.
+    decision = _classify({"task": "can you add tests for the parser you built?"})
+    assert decision["target"] == "need-glob"
+    assert decision["needs_decider"] is False
+    assert decision["needs_glob"] == "parser"
+    assert decision["recall_answer"] == ""
+
+
+@pytest.mark.parametrize(
+    "task",
+    [
+        "could you delete the file you created?",
+        "so where did you put the file you made?",
+    ],
+)
+def test_ambiguous_action_turn_carries_no_precomputed_recap(task: str) -> None:
+    # These are genuinely ambiguous on origin/main too (no build verb, no
+    # explain marker) — must stay a plain decider fallthrough with NO
+    # precomputed recap answer sitting unused in the bundle.
+    decision = _classify(
+        {
+            "task": task,
+            "recall_ledger": [
+                {"ask": "build a todo app", "path": "todo.py", "outcome": "shipped"}
+            ],
+        }
+    )
+    assert decision["target"] == ""
+    assert decision["needs_decider"] is True
+    assert decision["recall_answer"] == ""
+
+
 def test_run_recall_compound_does_not_leak_the_recall_message() -> None:
     # Adversarial review finding 1: a run-led turn that ALSO mentions "the first
     # thing you made" must NOT carry a recall_answer. The run chain outranks the
