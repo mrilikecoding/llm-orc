@@ -14,7 +14,23 @@ from __future__ import annotations
 
 import ast
 import json
+import re
 import sys
+
+# Phantom-symbol backstop (#133/#134 §4, defense in depth: docs/plans/
+# 2026-07-17-recap-grounding-design.md): a backtick-quoted, identifier- or
+# path-shaped span in a memory-shaped seat answer — never a multi-word
+# phrase (a space breaks the match), which is not a symbol CLAIM to verify.
+_BACKTICK_CLAIM_RE = re.compile(r"`([A-Za-z_][\w./-]*)`")
+
+
+def _phantom_claims(content: str, grounded_text: str) -> list[str]:
+    """Backtick-quoted claims in ``content`` absent from ``grounded_text``
+    (every shipped artifact's basename and body) — the deterministic
+    post-check scoped to memory-shaped turns only."""
+    return [
+        claim for claim in _BACKTICK_CLAIM_RE.findall(content) if claim not in grounded_text
+    ]
 
 
 def _deps(raw: str) -> dict:
@@ -62,6 +78,16 @@ def main() -> None:
         valid, reason = True, "ok"
     else:
         valid, reason = _validity(file, content)
+
+    # Phantom-symbol backstop (#133/#134 §4): scoped to memory-shaped turns
+    # only (never a build, never a concept or named-file explain — those
+    # never set memory_shaped) — a backtick-quoted claim absent from every
+    # shipped artifact and wire-visible file body fails the answer CLOSED to
+    # the deterministic ledger recap, instead of shipping the seat's guess.
+    if not build and bool(shaped.get("memory_shaped", False)):
+        grounded_text = str(shaped.get("grounded_text", ""))
+        if _phantom_claims(content, grounded_text):
+            content = str(shaped.get("ledger_recap", content))
 
     print(
         json.dumps(

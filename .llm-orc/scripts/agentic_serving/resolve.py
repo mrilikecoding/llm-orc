@@ -97,6 +97,12 @@ def main() -> None:
     glob_failed = str(classify.get("glob_failed", ""))
     not_grounded = str(classify.get("not_grounded", ""))
     recall_answer = str(classify.get("recall_answer", ""))
+    # #133/#134 phantom-symbol backstop substrate: pass through unchanged —
+    # classify computes these only for the defer_recall (loose maybe_recall)
+    # path, form_gate applies the actual check. Never derived here.
+    memory_shaped = bool(classify.get("memory_shaped", False))
+    grounded_text = str(classify.get("grounded_text", ""))
+    ledger_recap = str(classify.get("ledger_recap", ""))
 
     if classify.get("needs_decider"):
         target = _decider_target(_response(deps.get("decide", {})))
@@ -143,6 +149,9 @@ def main() -> None:
                 "glob_failed": glob_failed,
                 "not_grounded": not_grounded,
                 "recall_answer": recall_answer,
+                "memory_shaped": memory_shaped,
+                "grounded_text": grounded_text,
+                "ledger_recap": ledger_recap,
             }
         )
     )
