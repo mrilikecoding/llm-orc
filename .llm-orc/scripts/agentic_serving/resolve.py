@@ -97,9 +97,14 @@ def main() -> None:
     glob_failed = str(classify.get("glob_failed", ""))
     not_grounded = str(classify.get("not_grounded", ""))
     recall_answer = str(classify.get("recall_answer", ""))
-    # #133/#134 phantom-symbol backstop substrate: pass through unchanged —
-    # classify computes these only for the defer_recall (loose maybe_recall)
-    # path, form_gate applies the actual check. Never derived here.
+    # #133/#134 phantom-symbol backstop substrate: grounded_text/ledger_recap
+    # pass through unchanged — classify computes them only for the
+    # defer_recall (loose maybe_recall) path, form_gate applies the actual
+    # check. memory_shaped is RESCOPED below (review round 1 blocker 3):
+    # classify's loose maybe_recall pre-filter alone is not sufficient — it
+    # also fires on incidental ordinal words inside unrelated concept
+    # questions ("explain how first-class functions work"), which must pass
+    # through the seat untouched.
     memory_shaped = bool(classify.get("memory_shaped", False))
     grounded_text = str(classify.get("grounded_text", ""))
     ledger_recap = str(classify.get("ledger_recap", ""))
@@ -109,9 +114,18 @@ def main() -> None:
         if target == _RECALL_TARGET and recall_answer:
             # #82 detection layer 2: the model confirmed recall and classify
             # pre-computed the honest answer. Route to the recall-answer shape
-            # and keep the message — selection was already structural.
+            # and keep the message — selection was already structural. No
+            # seat runs on this branch, so the backstop is moot; clearing it
+            # also guards against it ever checking our OWN template's
+            # backticks (wrong-accept-hunt target 6) if this branch's shape
+            # ever changes.
             target, kind, build = "recall-answer", "recall", False
+            memory_shaped = False
         else:
+            # Review round 1 blocker 3: the backstop applies ONLY when the
+            # DECIDER's OWN vote confirms recall intent — captured here,
+            # before target gets reassigned below.
+            decider_agreed_recall = target == _RECALL_TARGET
             if target == _RECALL_TARGET:
                 # finding 5: a recall vote with no pre-computed message (the
                 # decider mis-fired on a non-deferred turn) is not actionable —
@@ -123,10 +137,14 @@ def main() -> None:
             # recall message so emit (which fires on its presence) does not
             # shadow the seat's real output.
             recall_answer = ""
+            memory_shaped = memory_shaped and decider_agreed_recall
     else:
         target = classify.get("target", "")
         kind = classify.get("kind", "")
         build = bool(classify.get("build", False))
+        # Structurally unreachable (defer_recall implies needs_decider), but
+        # explicit for the same reason as the recall-answer branch above.
+        memory_shaped = False
 
     # Map the semantic intent to the serving shape the seat dispatches, from the
     # operator-curated Shape Catalog (WP-C8). An intent with no registered shape

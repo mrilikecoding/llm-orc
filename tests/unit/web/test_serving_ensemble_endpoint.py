@@ -688,31 +688,41 @@ def defer_recall_phantom_client(
     return TestClient(create_app())
 
 
-def test_phantom_symbol_backstop_fails_closed_end_to_end(
-    defer_recall_phantom_client: TestClient,
+@pytest.mark.parametrize(
+    "task",
+    [
+        "what did you build originally?",
+        # review round 1 blocker 3's own measured false positive: "first"
+        # inside "first-class" trips the loose maybe_recall pre-filter, but
+        # this is a concept question, not a recall question.
+        "explain how first-class functions work in python",
+        "what is the initial value of a python dict?",
+    ],
+)
+def test_phantom_symbol_backstop_never_fires_when_the_decider_disagrees(
+    defer_recall_phantom_client: TestClient, task: str
 ) -> None:
-    """#133/#134 §4 wrong-accept-hunt target 6, end to end: a defer_recall
-    (fuzzy maybe_recall) turn's decider vote falls through to an explainer
-    seat that fabricates `complete_todo` — a symbol never shipped or read
-    in this session. The backstop must fail the answer closed to the
-    deterministic ledger recap rather than ship the fabrication.
+    """#133/#134 §4, review round 1 blocker 3, end to end: classify's loose
+    maybe_recall pre-filter fires on all three tasks (an incidental ordinal
+    word for the latter two), but the decider votes "explainer" (not
+    "recall") — the backstop must NOT apply, so the explainer seat's real
+    answer ships untouched, even one that happens to contain backtick-quoted
+    text. The backstop now applies only when the decider's OWN vote
+    confirms recall intent (see test_serving_resolve.py for that branch),
+    never on classify's loose pre-filter alone.
     """
     resp = defer_recall_phantom_client.post(
         "/v1/chat/completions",
         json={
             "model": "ensemble-agent",
-            "messages": [
-                {"role": "user", "content": "what did you build originally?"},
-            ],
+            "messages": [{"role": "user", "content": task}],
             "tools": [_WRITE_TOOL],
         },
     )
 
     assert resp.status_code == 200
     content = resp.json()["choices"][0]["message"]["content"]
-    assert "complete_todo" not in content
-    assert "built" in content.lower()
-    assert "yet" in content.lower()
+    assert content == "You built `todo.py` and a `complete_todo` helper."
 
 
 def test_wire_log_records_message_shape_when_enabled(
@@ -2088,3 +2098,40 @@ def test_recall_discloses_run3_turn10_shape(
     assert "write a function that adds a todo item to a list in todo.py" in content
     assert "rejected" in content.lower()
     assert "storage.py" in content
+
+
+def test_recap_floor_answers_deterministically_end_to_end(
+    serving_project: Path, serving_client: TestClient
+) -> None:
+    """Review round 1 blocker 3a, end to end: "what have we built so far?"
+    has no ordinal word (never reaches the maybe_recall/decider path at
+    all) and must be answered from the deterministic ledger recap, no seat
+    call — the design's own motivating phrasing for the recap floor.
+    """
+    resp = serving_client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "ensemble-agent",
+            "messages": [
+                {"role": "user", "content": "build a todo app in todo.py"},
+                {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [
+                        _write_tool_call("w1", "todo.py", "def add_item(): ...")
+                    ],
+                },
+                {
+                    "role": "tool",
+                    "tool_call_id": "w1",
+                    "content": "Wrote file successfully.",
+                },
+                {"role": "user", "content": "what have we built so far?"},
+            ],
+            "tools": [_WRITE_TOOL],
+        },
+    )
+
+    assert resp.status_code == 200
+    content = resp.json()["choices"][0]["message"]["content"]
+    assert "todo.py" in content
