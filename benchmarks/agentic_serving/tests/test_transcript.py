@@ -6,7 +6,14 @@ Run with the llm_orc coverage gate disabled (the benchmark is not llm_orc):
 
 from __future__ import annotations
 
-from benchmarks.agentic_serving.transcript import ToolCall, Transcript, Turn
+import pytest
+
+from benchmarks.agentic_serving.transcript import (
+    DeadStreamError,
+    ToolCall,
+    Transcript,
+    Turn,
+)
 
 
 class TestToolCall:
@@ -70,3 +77,24 @@ class TestTranscript:
         transcript = Transcript(arm="haiku-4.5", turns=(turn,))
         assert transcript.arm == "haiku-4.5"
         assert transcript.turns == (turn,)
+
+    def test_defaults_to_no_boundary_rule(self) -> None:
+        # None for adapters with no turn-splitting-ambiguity concept at all
+        # (opencode_adapter: one file per turn, the caller already split it).
+        transcript = Transcript(arm="serve")
+        assert transcript.boundary_rule is None
+
+    def test_carries_a_declared_boundary_rule(self) -> None:
+        transcript = Transcript(arm="arm2-haiku", boundary_rule="promptid")
+        assert transcript.boundary_rule == "promptid"
+
+
+class TestDeadStreamError:
+    def test_is_a_value_error(self) -> None:
+        # A caller that doesn't know about the distinction still sees a
+        # normal parse failure.
+        assert issubclass(DeadStreamError, ValueError)
+
+    def test_raises_and_carries_a_message(self) -> None:
+        with pytest.raises(DeadStreamError, match="boom"):
+            raise DeadStreamError("boom")
