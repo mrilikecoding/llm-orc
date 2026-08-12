@@ -946,6 +946,52 @@ def _recall_route(
     return named_file, named_basename, False, "", False
 
 
+def _memory_interrogative_message(previous_ask: dict) -> str:
+    """The deterministic memory-interrogative answer (#134, docs/plans/
+    2026-07-17-recap-grounding-design.md): quote the previous query
+    verbatim from the wire (structurally present — the caller supplies it),
+    state its outcome from the ask-outcome ledger — shipped (with path),
+    rejected, or no outcome claim at all when the ask itself carried no
+    build outcome (a question, a read). Never enumerates beyond what
+    ``previous_ask`` holds."""
+    ask = str(previous_ask.get("ask", ""))
+    if not ask:
+        return "I don't have a previous message in this session to confirm."
+    outcome = str(previous_ask.get("outcome", ""))
+    path = str(previous_ask.get("path", ""))
+    quoted = f'Yes — your previous message was: "{ask}".'
+    if outcome == "shipped":
+        return f"{quoted} It shipped as `{path}`."
+    if outcome == "rejected":
+        return (
+            f"{quoted} That build was rejected by the accept gate — nothing "
+            "shipped for it."
+        )
+    return quoted
+
+
+def _memory_interrogative_route(
+    task: str, turn: dict, is_explain: bool, named_file: str
+) -> tuple[bool, str]:
+    """(is_recall_answer, recall_answer) for a bare memory-interrogative turn
+    ("did you.../have you...", #134) — answered on the recall-answer emit
+    path, the free explain seat bypassed entirely.
+
+    Never fires on a named-file turn ("did you see storage.py?") — that
+    stays on grounded/not-grounded explain, unchanged (what deliberately
+    does not change). The caller checks this only after the #82 ordinal-
+    recall detectors have had their turn, so a phrasing that matches both
+    ("did you build the first thing I asked?") resolves via the more
+    specific, already-structural #82 mechanism.
+    """
+    if not is_explain or named_file or not _MEMORY_INTERROGATIVE_RE.match(task):
+        return False, ""
+    previous_ask = turn.get("previous_ask")
+    if not isinstance(previous_ask, dict):
+        previous_ask = {}
+    return True, _memory_interrogative_message(previous_ask)
+
+
 def _valid_recall_answer(recall_answer: str, target: str, needs_decider: bool) -> str:
     """recall_answer survives ONLY when the turn's outcome is a recall answer:
     the structural recall-answer step, or a deferred turn heading to the decider
@@ -1076,6 +1122,17 @@ def main() -> None:
             task, turn, conversation_raw, is_explain, named_file, named_basename
         )
     )
+
+    # #134 memory interrogative: a bare "did you.../have you..." turn the
+    # ordinal-recall detectors above did not already resolve is answered
+    # deterministically from the immediately preceding ask's outcome, on the
+    # SAME recall-answer emit path — never the free explain seat.
+    if not is_recall_answer and not defer_recall:
+        is_memory_answer, memory_answer = _memory_interrogative_route(
+            task, turn, is_explain, named_file
+        )
+        if is_memory_answer:
+            is_recall_answer, recall_answer = True, memory_answer
 
     # Grounded explain (docs/plans/2026-07-12-grounded-explain-design.md): a
     # real named-file target gates on _visibility of the SAME wire the
