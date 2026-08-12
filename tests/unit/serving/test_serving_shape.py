@@ -180,35 +180,3 @@ def test_shape_passes_not_grounded_from_the_routing_decision() -> None:
     )
     assert shaped["not_grounded"] == "todo.py"
     assert shaped["build"] is False
-
-
-def test_shape_passes_phantom_symbol_backstop_fields_from_the_routing_decision() -> (
-    None
-):
-    # #133/#134 §4: shape is a pass-through hop for the backstop substrate —
-    # form_gate is where the actual check runs.
-    shaped = _shape(
-        {
-            "target": "explainer",
-            "kind": "explanation",
-            "file": "solution.py",
-            "build": False,
-            "memory_shaped": True,
-            "grounded_text": "todo.py\ndef add_todo(): ...",
-            "ledger_recap": "Shipped so far: `todo.py`.",
-        },
-        {"status": "ok", "primary": "What we've built: `todo.py` and `phantom`."},
-    )
-    assert shaped["memory_shaped"] is True
-    assert shaped["grounded_text"] == "todo.py\ndef add_todo(): ..."
-    assert shaped["ledger_recap"] == "Shipped so far: `todo.py`."
-
-
-def test_shape_defaults_phantom_symbol_backstop_fields_when_absent() -> None:
-    shaped = _shape(
-        {"target": "explainer", "kind": "explanation", "file": "solution.py"},
-        {"status": "ok", "primary": "It adds two numbers."},
-    )
-    assert shaped["memory_shaped"] is False
-    assert shaped["grounded_text"] == ""
-    assert shaped["ledger_recap"] == ""

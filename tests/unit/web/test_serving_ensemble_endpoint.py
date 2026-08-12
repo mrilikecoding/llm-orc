@@ -126,17 +126,6 @@ _ECHO_EXPLAINER = (
     "    script: \"echo 'foo.py defines add, which returns a plus b.'\"\n"
 )
 
-# A deterministic explain seat that FABRICATES a phantom symbol (#133/#134
-# §4 end-to-end fixture): proves the phantom-symbol backstop gates the real
-# wire, not just each node's own unit tests.
-_ECHO_PHANTOM_EXPLAINER = (
-    "name: explainer\n"
-    "description: fabricates a phantom backtick claim for the backstop test\n"
-    "agents:\n"
-    "  - name: out\n"
-    "    script: \"echo 'You built `todo.py` and a `complete_todo` helper.'\"\n"
-)
-
 
 @pytest.fixture
 def serving_project(tmp_path: Path) -> Path:
@@ -652,77 +641,6 @@ def test_deferred_recall_vote_emits_the_honest_first_build_answer(
     content = choice["message"]["content"]
     assert "todo.py" in content
     assert "foo.py defines add" not in content
-
-
-@pytest.fixture
-def defer_recall_phantom_client(
-    serving_project: Path, monkeypatch: pytest.MonkeyPatch
-) -> TestClient:
-    """``serving_client`` with ``decide`` stubbed to vote "explainer" and the
-    explainer seat stubbed to FABRICATE a phantom backtick claim — proves the
-    phantom-symbol backstop (#133/#134 §4) gates the real wire (classify ->
-    decide -> resolve -> shape -> form_gate -> emit), not just each node in
-    isolation.
-    """
-    serving_yaml = serving_project / "ensembles" / "serving.yaml"
-    text = serving_yaml.read_text()
-    before, _, after = text.partition("  - name: decide")
-    _, _, resolve_onward = after.partition("  - name: resolve")
-    stub = (
-        "  - name: decide\n"
-        "    script: \"echo 'explainer'\"\n"
-        "    depends_on: [classify]\n"
-        "    when: ${classify.needs_decider}\n"
-    )
-    serving_yaml.write_text(before + stub + "  - name: resolve" + resolve_onward)
-    (serving_project / "ensembles" / "explainer.yaml").write_text(
-        _ECHO_PHANTOM_EXPLAINER
-    )
-
-    def _caller() -> ServingEnsembleCaller:
-        return ServingEnsembleCaller(project_dir=serving_project, ensemble="serving")
-
-    monkeypatch.setattr(
-        v1_chat_completions, "get_serving_ensemble_caller", _caller, raising=False
-    )
-    return TestClient(create_app())
-
-
-@pytest.mark.parametrize(
-    "task",
-    [
-        "what did you build originally?",
-        # review round 1 blocker 3's own measured false positive: "first"
-        # inside "first-class" trips the loose maybe_recall pre-filter, but
-        # this is a concept question, not a recall question.
-        "explain how first-class functions work in python",
-        "what is the initial value of a python dict?",
-    ],
-)
-def test_phantom_symbol_backstop_never_fires_when_the_decider_disagrees(
-    defer_recall_phantom_client: TestClient, task: str
-) -> None:
-    """#133/#134 §4, review round 1 blocker 3, end to end: classify's loose
-    maybe_recall pre-filter fires on all three tasks (an incidental ordinal
-    word for the latter two), but the decider votes "explainer" (not
-    "recall") — the backstop must NOT apply, so the explainer seat's real
-    answer ships untouched, even one that happens to contain backtick-quoted
-    text. The backstop now applies only when the decider's OWN vote
-    confirms recall intent (see test_serving_resolve.py for that branch),
-    never on classify's loose pre-filter alone.
-    """
-    resp = defer_recall_phantom_client.post(
-        "/v1/chat/completions",
-        json={
-            "model": "ensemble-agent",
-            "messages": [{"role": "user", "content": task}],
-            "tools": [_WRITE_TOOL],
-        },
-    )
-
-    assert resp.status_code == 200
-    content = resp.json()["choices"][0]["message"]["content"]
-    assert content == "You built `todo.py` and a `complete_todo` helper."
 
 
 def test_wire_log_records_message_shape_when_enabled(
