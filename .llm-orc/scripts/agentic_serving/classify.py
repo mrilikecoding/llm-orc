@@ -125,13 +125,59 @@ _RECAP_RE = re.compile(
 # catch a recap QUESTION the floor misses by inflection or an inserted
 # adverb ("what exactly have you built so far?", "can you list everything
 # you've made?"), never a recap-flavored clause attached to something else.
-_MAYBE_RECAP_RE = re.compile(
-    r"^(?:what|how|can|could|would|so|where)\b"
-    r"[^.!?]*\b(?:we|you)\b[^.!?]*"
+#
+# Review round 4 MAJOR: the both-ends anchor above tests the VERB's
+# POSITION only — but an English relative clause ends on its verb too ("the
+# helper you made", "the module you created"). A specific-artifact question
+# ("can you explain the helper you made?", "where is the test file you
+# created?") satisfies the same shape up through the final verb, so it
+# matched too — stealing a glob->read grounding round (need-glob on
+# origin/main) for a decider deferral with no glob round at all. The
+# reviewer's discriminator, now binding: a recap's OBJECT is universal
+# (everything/anything/all, or the what/which...so far frame) — never a
+# determiner + specific noun immediately before the final make-verb. Two
+# independent, both-required guards:
+#
+# (a) _UNIVERSAL_RECAP_RE — a universal-object token (everything/anything/
+#     all) in the object position, OR the narrower what/which...so far
+#     frame (the two round-2/round-3 positives: "what exactly have you
+#     built so far?" has no universal token but IS the so-far frame; "can
+#     you list everything you've made?" has the token but not "so far").
+# (b) _SPECIFIC_ARTIFACT_RE — a VETO: a determiner (the/that/this/my/your/
+#     our) + noun phrase immediately preceding "you/we + verb" marks a
+#     specific-artifact relative clause, never a recap object, even when a
+#     universal token happens to appear elsewhere in the same sentence.
+#
+# Tightened in the conservative direction: an under-matched recap question
+# falls through to routing byte-identical to origin/main (a decider-judgment
+# residual already accepted by round 2); an over-match steals a grounding
+# round, the failure round 4 exists to close.
+_UNIVERSAL_RECAP_RE = re.compile(
+    r"^(?:what|how|can|could|would|so|where)\b[^.!?]*"
+    r"\b(?:everything|anything|all)\b[^.!?]*"
+    r"\b(?:we|you)\b[^.!?]*"
     r"\b(?:built|made|created|wrote|written|done)\b"
-    r"(?: so far)?\??$",
+    r"(?: so far)?\??$"
+    r"|^(?:what|which)\b[^.!?]*"
+    r"\b(?:we|you)\b[^.!?]*"
+    r"\b(?:built|made|created|wrote|written|done)\b"
+    r"\s+so far\??$",
     re.IGNORECASE,
 )
+_SPECIFIC_ARTIFACT_RE = re.compile(
+    r"\b(?:the|that|this|my|your|our)\b[^.!?]*?"
+    r"\b(?:you|we)\s+(?:built|made|created|wrote|written|done)\b",
+    re.IGNORECASE,
+)
+
+
+def _is_maybe_recap(task: str) -> bool:
+    """The recap decider extension's loose match (review round 4): a
+    universal-object recap signal present, AND no specific-artifact
+    relative clause vetoing it. See the guard regexes' own comments."""
+    return bool(_UNIVERSAL_RECAP_RE.search(task)) and not bool(
+        _SPECIFIC_ARTIFACT_RE.search(task)
+    )
 # #82 deep recall: a FIRST-anchored query about the "first thing" I/you
 # built ("what did the first thing I asked you to build do?"). This is an
 # INTERIM structural detector, deliberately tight to avoid the review's
@@ -1170,7 +1216,7 @@ def _recap_route(task: str, turn: dict, named_file: str) -> tuple[bool, str, boo
       resolves here with NO decider — the deterministic ledger recap on the
       SAME recall-answer emit path as ordinal recall and memory
       interrogatives, never a model seat.
-    - DECIDER extension (``_MAYBE_RECAP_RE``): a loose recap-flavored turn
+    - DECIDER extension (``_is_maybe_recap``): a loose recap-flavored turn
       the tight floor did not resolve defers to the guarded decider (a
       "recap" vote alongside #82's "recall"). CRITICAL WIRING (round 2 new
       blocker 3): the ledger recap is PRECOMPUTED here into
@@ -1184,16 +1230,20 @@ def _recap_route(task: str, turn: dict, named_file: str) -> tuple[bool, str, boo
     ``is_explain`` flag, which forced classify to WIDEN is_explain so a
     bare "list everything you made" (no explain marker, no interrogative
     lead) could even reach this branch — and that widening was itself the
-    blocker, since the (then-unanchored) ``_MAYBE_RECAP_RE`` piece of it
-    matched build/action turns anywhere in the sentence and dragged them
-    onto the explain path too (36 routing changes over a 65-input diff
-    against origin/main, only 7 intended). ``_RECAP_RE``/``_MAYBE_RECAP_RE``
-    are now anchored at both ends and are themselves sufficient recap-
-    question signals — the same self-sufficiency ``_MEMORY_INTERROGATIVE_RE``
-    already had (its pattern is a strict subset of the interrogative check
-    that feeds ``is_explain``, so it never needed is_explain widened for its
-    own sake either). ``is_explain`` reverts to origin/main's exact two-
-    clause form; this route no longer takes or needs it.
+    blocker, since the (then-unanchored) loose match matched build/action
+    turns anywhere in the sentence and dragged them onto the explain path
+    too (36 routing changes over a 65-input diff against origin/main, only
+    7 intended). ``_RECAP_RE``/``_is_maybe_recap`` are now anchored and
+    themselves sufficient recap-question signals — the same self-
+    sufficiency ``_MEMORY_INTERROGATIVE_RE`` already had (its pattern is a
+    strict subset of the interrogative check that feeds ``is_explain``, so
+    it never needed is_explain widened for its own sake either).
+    ``is_explain`` reverts to origin/main's exact two-clause form; this
+    route no longer takes or needs it.
+
+    Review round 4 MAJOR: ``_is_maybe_recap`` additionally guards against a
+    specific-artifact relative clause ("the helper you made") that ends on
+    its verb exactly like a recap question does — see its own docstring.
 
     Never fires on a named-file turn.
     """
@@ -1201,7 +1251,7 @@ def _recap_route(task: str, turn: dict, named_file: str) -> tuple[bool, str, boo
         return False, "", False
     if _RECAP_RE.search(task):
         return True, _ledger_recap(turn), False
-    if _MAYBE_RECAP_RE.search(task):
+    if _is_maybe_recap(task):
         return False, _ledger_recap(turn), True
     return False, "", False
 
