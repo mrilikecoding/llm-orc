@@ -113,6 +113,17 @@ OUT=${OUT:A}
 # whole paid run — the same quiet-corruption family as a relative $REPO.
 git -C "$REPO" rev-parse --is-inside-work-tree > /dev/null 2>&1 \
   || { echo "LADDER_REPO must be a seeded GIT repo: $REPO"; exit 1; }
+# The 2026-08-12 dry-run lesson: an UNSEEDED fixture passes the git guard and
+# quietly invalidates turns 8/12/13 (calc/metrics/buggy asks against nothing).
+# The seeds are preconditions; refuse to run without them.
+for _seed in calc.py metrics.py buggy.py test_buggy.py; do
+  [[ -f "$REPO/$_seed" ]] \
+    || { echo "LADDER_REPO is missing seed file $_seed (see the header's seeding spec): $REPO"; exit 1; }
+done
+# Same lesson, retention side: a prior run's artifacts are evidence. Refuse a
+# dirty OUT dir; moving them aside must be a deliberate act, never an overwrite.
+[[ -z "$(ls -A "$OUT" 2>/dev/null)" ]] \
+  || { echo "LADDER_OUT is not empty; move the prior run's artifacts aside first: $OUT"; exit 1; }
 MODEL=${LADDER_MODEL:-llm-orc/agentic}
 TIMEOUT=${LADDER_TIMEOUT:-780}
 # The ground-truth runner. Must be able to run the fixture repo's suite; it is
