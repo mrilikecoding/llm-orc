@@ -126,6 +126,17 @@ _ECHO_EXPLAINER = (
     "    script: \"echo 'foo.py defines add, which returns a plus b.'\"\n"
 )
 
+# A deterministic explain seat that FABRICATES a phantom symbol (#133/#134
+# §4 end-to-end fixture): proves the phantom-symbol backstop gates the real
+# wire, not just each node's own unit tests.
+_ECHO_PHANTOM_EXPLAINER = (
+    "name: explainer\n"
+    "description: fabricates a phantom backtick claim for the backstop test\n"
+    "agents:\n"
+    "  - name: out\n"
+    "    script: \"echo 'You built `todo.py` and a `complete_todo` helper.'\"\n"
+)
+
 
 @pytest.fixture
 def serving_project(tmp_path: Path) -> Path:
@@ -641,6 +652,67 @@ def test_deferred_recall_vote_emits_the_honest_first_build_answer(
     content = choice["message"]["content"]
     assert "todo.py" in content
     assert "foo.py defines add" not in content
+
+
+@pytest.fixture
+def defer_recall_phantom_client(
+    serving_project: Path, monkeypatch: pytest.MonkeyPatch
+) -> TestClient:
+    """``serving_client`` with ``decide`` stubbed to vote "explainer" and the
+    explainer seat stubbed to FABRICATE a phantom backtick claim — proves the
+    phantom-symbol backstop (#133/#134 §4) gates the real wire (classify ->
+    decide -> resolve -> shape -> form_gate -> emit), not just each node in
+    isolation.
+    """
+    serving_yaml = serving_project / "ensembles" / "serving.yaml"
+    text = serving_yaml.read_text()
+    before, _, after = text.partition("  - name: decide")
+    _, _, resolve_onward = after.partition("  - name: resolve")
+    stub = (
+        "  - name: decide\n"
+        "    script: \"echo 'explainer'\"\n"
+        "    depends_on: [classify]\n"
+        "    when: ${classify.needs_decider}\n"
+    )
+    serving_yaml.write_text(before + stub + "  - name: resolve" + resolve_onward)
+    (serving_project / "ensembles" / "explainer.yaml").write_text(
+        _ECHO_PHANTOM_EXPLAINER
+    )
+
+    def _caller() -> ServingEnsembleCaller:
+        return ServingEnsembleCaller(project_dir=serving_project, ensemble="serving")
+
+    monkeypatch.setattr(
+        v1_chat_completions, "get_serving_ensemble_caller", _caller, raising=False
+    )
+    return TestClient(create_app())
+
+
+def test_phantom_symbol_backstop_fails_closed_end_to_end(
+    defer_recall_phantom_client: TestClient,
+) -> None:
+    """#133/#134 §4 wrong-accept-hunt target 6, end to end: a defer_recall
+    (fuzzy maybe_recall) turn's decider vote falls through to an explainer
+    seat that fabricates `complete_todo` — a symbol never shipped or read
+    in this session. The backstop must fail the answer closed to the
+    deterministic ledger recap rather than ship the fabrication.
+    """
+    resp = defer_recall_phantom_client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "ensemble-agent",
+            "messages": [
+                {"role": "user", "content": "what did you build originally?"},
+            ],
+            "tools": [_WRITE_TOOL],
+        },
+    )
+
+    assert resp.status_code == 200
+    content = resp.json()["choices"][0]["message"]["content"]
+    assert "complete_todo" not in content
+    assert "built" in content.lower()
+    assert "yet" in content.lower()
 
 
 def test_wire_log_records_message_shape_when_enabled(

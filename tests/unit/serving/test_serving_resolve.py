@@ -311,3 +311,36 @@ def test_decider_non_recall_vote_drops_the_precomputed_recall_answer() -> None:
     routing = _resolve(classify_decision, decide_response='{"target": "explainer"}')
     assert routing["target"] == "explainer"
     assert routing["recall_answer"] == ""
+
+
+def test_memory_shaped_backstop_fields_pass_through_to_the_explainer_fallback() -> None:
+    # #133/#134 §4: the phantom-symbol backstop's substrate must survive
+    # resolve's merge exactly on the path it's scoped to — a defer_recall
+    # turn whose decider vote falls through to the free explainer.
+    classify_decision = {
+        "target": "",
+        "kind": "",
+        "file": "solution.py",
+        "dispatch_input": "what have you built so far?",
+        "build": False,
+        "needs_decider": True,
+        "recall_answer": "",
+        "memory_shaped": True,
+        "grounded_text": "todo.py\ndef add_todo(): ...",
+        "ledger_recap": "Shipped so far: `todo.py`.",
+    }
+    routing = _resolve(classify_decision, decide_response='{"target": "explainer"}')
+    assert routing["target"] == "explainer"
+    assert routing["memory_shaped"] is True
+    assert routing["grounded_text"] == "todo.py\ndef add_todo(): ..."
+    assert routing["ledger_recap"] == "Shipped so far: `todo.py`."
+
+
+def test_missing_memory_shaped_fields_default_safely() -> None:
+    # A classify decision predating #133/#134 (or a hand-built test fixture)
+    # carries none of these keys — resolve must not crash, and must default
+    # to "not memory-shaped".
+    resolved = _resolve(_structural())
+    assert resolved["memory_shaped"] is False
+    assert resolved["grounded_text"] == ""
+    assert resolved["ledger_recap"] == ""

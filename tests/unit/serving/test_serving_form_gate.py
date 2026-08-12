@@ -143,3 +143,83 @@ def test_form_gate_passes_not_grounded_through() -> None:
     )
     assert gated["not_grounded"] == "todo.py"
     assert gated["valid"] is True
+
+
+# --- phantom-symbol backstop (#133/#134 §4, defense in depth):
+# docs/plans/2026-07-17-recap-grounding-design.md ---
+
+
+def test_memory_shaped_content_with_a_grounded_claim_passes_unchanged() -> None:
+    gated = _gate(
+        {
+            "build": False,
+            "file": "solution.py",
+            "content": "So far you've shipped `todo.py`.",
+            "memory_shaped": True,
+            "grounded_text": "todo.py\ndef add_todo(): ...",
+            "ledger_recap": "Shipped so far: `todo.py`.",
+        }
+    )
+    assert gated["content"] == "So far you've shipped `todo.py`."
+
+
+def test_memory_shaped_content_with_a_phantom_claim_fails_closed_to_the_recap() -> None:
+    gated = _gate(
+        {
+            "build": False,
+            "file": "solution.py",
+            "content": "You've built `todo.py` and a `complete_todo` function.",
+            "memory_shaped": True,
+            "grounded_text": "todo.py\ndef add_todo(): ...",
+            "ledger_recap": "Shipped so far: `todo.py`.",
+        }
+    )
+    assert gated["content"] == "Shipped so far: `todo.py`."
+
+
+def test_non_memory_shaped_content_is_never_backstopped() -> None:
+    # Never concept or named-file explains — the backstop is scoped narrowly
+    # to defer_recall (memory_shaped) turns only.
+    gated = _gate(
+        {
+            "build": False,
+            "file": "solution.py",
+            "content": "It uses a `PhantomHelper` class internally.",
+            "memory_shaped": False,
+            "grounded_text": "",
+            "ledger_recap": "",
+        }
+    )
+    assert gated["content"] == "It uses a `PhantomHelper` class internally."
+
+
+def test_build_turn_is_never_backstopped() -> None:
+    gated = _gate(
+        {
+            "build": True,
+            "file": "add.py",
+            "content": "def add(a, b):\n    return a + b",
+            "memory_shaped": True,
+            "grounded_text": "",
+            "ledger_recap": "Nothing has been built in this session yet.",
+        }
+    )
+    assert gated["content"] == "def add(a, b):\n    return a + b"
+
+
+def test_backstop_never_treats_the_recaps_own_backticks_as_a_phantom_claim() -> None:
+    # Wrong-accept-hunt target 6: if content already reads exactly like our
+    # OWN recap template (all its backtick-quoted claims are legitimately
+    # grounded — they came from the ledger), the backstop must not mangle
+    # it further or treat it as a phantom claim needing replacement.
+    gated = _gate(
+        {
+            "build": False,
+            "file": "solution.py",
+            "content": "Shipped so far: `todo.py`, `storage.py`.",
+            "memory_shaped": True,
+            "grounded_text": "todo.py\nstorage.py",
+            "ledger_recap": "Shipped so far: `todo.py`, `storage.py`.",
+        }
+    )
+    assert gated["content"] == "Shipped so far: `todo.py`, `storage.py`."
