@@ -193,6 +193,30 @@ def test_non_memory_shaped_content_is_never_backstopped() -> None:
     assert gated["content"] == "It uses a `PhantomHelper` class internally."
 
 
+def test_backstop_fails_closed_to_a_fixed_fallback_when_ledger_recap_is_missing() -> (
+    None
+):
+    # Review round 1 minor 4: shaped.get("ledger_recap", content) was a
+    # fail-OPEN default — a MISSING ledger_recap key fell back to the
+    # ORIGINAL (unverified) content, exactly the phantom claim the backstop
+    # exists to catch. The fallback is now a fixed, deterministic constant —
+    # the "ledger_recap" key is entirely absent here (shape.py always sets
+    # it in production; this proves the defensive path).
+    gated = _gate(
+        {
+            "build": False,
+            "file": "solution.py",
+            "content": "You've built `todo.py` and a `complete_todo` function.",
+            "memory_shaped": True,
+            "grounded_text": "todo.py\ndef add_todo(): ...",
+        }
+    )
+    assert "complete_todo" not in gated["content"]
+    assert gated["content"] != (
+        "You've built `todo.py` and a `complete_todo` function."
+    )
+
+
 def test_build_turn_is_never_backstopped() -> None:
     gated = _gate(
         {

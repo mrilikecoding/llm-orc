@@ -22,15 +22,20 @@ import sys
 # path-shaped span in a memory-shaped seat answer — never a multi-word
 # phrase (a space breaks the match), which is not a symbol CLAIM to verify.
 _BACKTICK_CLAIM_RE = re.compile(r"`([A-Za-z_][\w./-]*)`")
+# Review round 1 minor 4: the backstop's fail-closed fallback when
+# ``ledger_recap`` is missing — a fixed, deterministic constant, NEVER the
+# turn's own (unverified) content, which was the fail-OPEN bug (a missing
+# recap fell back to shipping the very phantom claim the backstop exists to
+# catch).
+_BACKSTOP_FALLBACK = "I can't confirm what's been built from the record."
 
 
 def _phantom_claims(content: str, grounded_text: str) -> list[str]:
     """Backtick-quoted claims in ``content`` absent from ``grounded_text``
     (every shipped artifact's basename and body) — the deterministic
     post-check scoped to memory-shaped turns only."""
-    return [
-        claim for claim in _BACKTICK_CLAIM_RE.findall(content) if claim not in grounded_text
-    ]
+    claims = _BACKTICK_CLAIM_RE.findall(content)
+    return [claim for claim in claims if claim not in grounded_text]
 
 
 def _deps(raw: str) -> dict:
@@ -87,7 +92,7 @@ def main() -> None:
     if not build and bool(shaped.get("memory_shaped", False)):
         grounded_text = str(shaped.get("grounded_text", ""))
         if _phantom_claims(content, grounded_text):
-            content = str(shaped.get("ledger_recap", content))
+            content = str(shaped.get("ledger_recap") or _BACKSTOP_FALLBACK)
 
     print(
         json.dumps(
