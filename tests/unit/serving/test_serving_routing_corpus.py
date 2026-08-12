@@ -1,27 +1,35 @@
-"""Routing-regression corpus for the serving ``classify`` node (round 3
+"""Routing-regression corpus for the serving ``classify`` node (rounds 3-4
 adversarial review, docs/plans/2026-07-17-recap-grounding-design.md).
 
 Round 3's blocker: a previous round widened classify's global ``is_explain``
 so recap phrasings could reach the deterministic recap-answer route — but
-the widening's loose piece (``_MAYBE_RECAP_RE``, then unanchored) matched
-"we/you + past-make-verb" ANYWHERE in a sentence, not just in a genuine recap
-QUESTION. An author-independent review diffed routing on origin/main vs this
-branch over 65 inputs: 36 changed, only 7 intended.
+the widening's loose piece (then unanchored) matched "we/you + past-make-
+verb" ANYWHERE in a sentence, not just in a genuine recap QUESTION. An
+author-independent review diffed routing on origin/main vs this branch over
+65 inputs: 36 changed, only 7 intended.
+
+Round 4's residual: anchoring the loose piece at both ends tested the
+VERB's POSITION only — but an English relative clause ends on its verb too
+("the helper you made"), so a specific-artifact question ("can you explain
+the helper you made?") satisfied the same shape and lost its glob->read
+grounding round to a decider deferral. Fixed by requiring a universal
+recap object (everything/anything/all, or the what/which...so far frame)
+and vetoing any determiner + specific noun immediately before the verb.
 
 This is the permanent instrument against a repeat: it runs classify over a
 corpus of the 13 ladder-battery prompts (benchmarks/agentic_serving/
-ladder_battery.sh), the reviewer's demonstrated collateral-damage classes,
-the full recap-floor/decider-extension phrasing set, memory interrogatives,
-and ordinal-recall phrasings — pinning each input's full routing decision
-(target, needs_decider, build, and the discovery stems carried in
-needs_glob) against a table.
+ladder_battery.sh), the reviewers' demonstrated collateral-damage classes
+(rounds 3 and 4), the full recap-floor/decider-extension phrasing set,
+memory interrogatives, and ordinal-recall phrasings — pinning each input's
+full routing decision (target, needs_decider, build, and the discovery
+stems carried in needs_glob) against a table.
 
 Every row's expected values were VERIFIED, not assumed: computed by running
 this branch's post-fix classify.py and origin/main's classify.py (``git show
 origin/main:.llm-orc/scripts/agentic_serving/classify.py``) over the same
 inputs and diffing the results. Rows marked NEW_BEHAVIOR are the turns this
-branch's #133/#134/round-3 work intentionally changed (memory interrogatives,
-the recap floor, the recap decider extension) — every other row is pinned to
+branch's #133/#134 work intentionally changed (memory interrogatives, the
+recap floor, the recap decider extension) — every other row is pinned to
 origin/main's own routing, so a future change that drags one of THOSE turns
 onto the recap/explain path fails here immediately.
 """
@@ -254,6 +262,79 @@ CORPUS: list[tuple[str, str, bool, bool, str, str]] = [
         _ORIGIN_MAIN,
     ),
     ("the earliest thing you built", "", True, False, "", _ORIGIN_MAIN),
+    # --- round 4 MAJOR: relative-clause boundary. A specific-artifact
+    # question ends on its verb exactly like a recap question does ("the
+    # helper you made" vs. "everything you've made") — these seven pin the
+    # attack the reviewer demonstrated (needs_glob discovery, never a
+    # decider deferral); the next three pin the reviewer's verified-benign
+    # family in the other direction (a universal-object token or the
+    # what/which...so far frame that must still defer/answer) ---
+    (
+        "can you explain the helper you made?",
+        "need-glob",
+        False,
+        False,
+        "helper",
+        _ORIGIN_MAIN,
+    ),
+    (
+        "what is wrong with the module you made?",
+        "need-glob",
+        False,
+        False,
+        "wrong,module",
+        _ORIGIN_MAIN,
+    ),
+    (
+        "where is the test file you created?",
+        "need-glob",
+        False,
+        False,
+        "test,file,created",
+        _ORIGIN_MAIN,
+    ),
+    (
+        "what language was the parser you wrote?",
+        "need-glob",
+        False,
+        False,
+        "language,parser,wrote",
+        _ORIGIN_MAIN,
+    ),
+    (
+        "how slow is the function you wrote?",
+        "need-glob",
+        False,
+        False,
+        "slow,function,wrote",
+        _ORIGIN_MAIN,
+    ),
+    (
+        "what did you name the function you created?",
+        "need-glob",
+        False,
+        False,
+        "name,function,created",
+        _ORIGIN_MAIN,
+    ),
+    (
+        "how many bugs has the code you wrote created?",
+        "need-glob",
+        False,
+        False,
+        "many,bugs,code,wrote,created",
+        _ORIGIN_MAIN,
+    ),
+    (
+        "can you add tests for the parser you built?",
+        "need-glob",
+        False,
+        False,
+        "parser",
+        _ORIGIN_MAIN,
+    ),
+    ("could you delete the file you created?", "", True, False, "", _ORIGIN_MAIN),
+    ("so where did you put the file you made?", "", True, False, "", _ORIGIN_MAIN),
 ]
 
 
