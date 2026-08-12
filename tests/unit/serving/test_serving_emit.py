@@ -22,6 +22,7 @@ EMIT = SCRIPTS / "emit.py"
 sys.path.insert(0, str(SCRIPTS))
 from emit import (  # type: ignore  # noqa: E402
     ACCEPT_GATE_REJECT_PREFIX,
+    REFUSED_PREFIX,
     SEAT_CONTRACT_REJECT_PREFIX,
 )
 
@@ -305,6 +306,23 @@ def test_accept_gate_rejection_uses_the_exported_prefix() -> None:
     )
     assert outcome["finish"] is True
     assert outcome["content"] == f"{ACCEPT_GATE_REJECT_PREFIX}tests did not pass"
+
+
+def test_build_invalid_refusal_uses_the_exported_refused_prefix() -> None:
+    # Review round 1 blocker 2: REFUSED_PREFIX is shared by read-failed,
+    # glob-failed, and build-invalid — all three ARE "Refused: <reason>" on
+    # the wire; the caller states the reason verbatim rather than guessing
+    # which gate produced it.
+    outcome = _emit(
+        {
+            "build": True,
+            "valid": False,
+            "file": "add.py",
+            "content": "bad",
+            "reason": "not valid Python",
+        }
+    )
+    assert outcome["content"] == f"{REFUSED_PREFIX}not valid Python"
 
 
 def test_recall_answer_field_emits_the_honest_message() -> None:

@@ -57,6 +57,12 @@ _NOT_GROUNDED_MESSAGE = (
 # these constants without also considering that old-session cost.
 SEAT_CONTRACT_REJECT_PREFIX = "Seat contract not met: "
 ACCEPT_GATE_REJECT_PREFIX = "Another round needed: "
+# The read-failed/glob-failed/build-invalid family (review round 1 blocker 2):
+# a THIRD minting class the caller-side ledger recognizes, deliberately never
+# split further — a "Refused:" message never claims which gate produced it
+# (a read failure and an invalid deliverable are unrelated causes), so the
+# caller's template states the wire reason verbatim instead of guessing.
+REFUSED_PREFIX = "Refused: "
 
 
 def _deps(raw: str) -> dict:
@@ -77,11 +83,11 @@ def _seam_outcome(gated: dict) -> dict | None:
     request fires — one round per seam per turn, never a re-request."""
     read_failed = str(gated.get("read_failed", ""))
     if read_failed:
-        return {"finish": True, "content": f"Refused: {read_failed}"}
+        return {"finish": True, "content": f"{REFUSED_PREFIX}{read_failed}"}
     glob_failed = str(gated.get("glob_failed", ""))
     if glob_failed:
         # issue #83 discovery: zero or ambiguous candidates refuse honestly.
-        return {"finish": True, "content": f"Refused: {glob_failed}"}
+        return {"finish": True, "content": f"{REFUSED_PREFIX}{glob_failed}"}
     needs_files = gated.get("needs_files") or []
     if needs_files:
         # delegate the file reads to the client permission seam.
@@ -155,7 +161,7 @@ def main() -> None:
     elif build:
         outcome = {
             "finish": True,
-            "content": f"Refused: {gated.get('reason', 'invalid deliverable')}",
+            "content": f"{REFUSED_PREFIX}{gated.get('reason', 'invalid deliverable')}",
         }
     else:
         outcome = {"finish": True, "content": content}
