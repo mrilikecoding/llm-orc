@@ -1,9 +1,18 @@
 """Score a recorded parity run into WS-8 mechanical metrics (#131).
 
-Turns a run directory (one ``turn-NN.jsonl`` per battery turn, from
-``opencode run --format json``) into a :class:`Transcript` via the adapter,
-then computes the arm-comparable metrics that need no per-turn judgment:
+Turns a run directory into a :class:`Transcript` via an adapter, then
+computes the arm-comparable metrics that need no per-turn judgment:
 dishonest-outcome count, the shipped/oracle 2x2, wall-clock, rounds, cost.
+Two run-directory LAYOUTS are supported, detected explicitly from what's on
+disk (never sniffed from content — see :func:`_detect_run_layout`): one
+``turn-NN.jsonl`` per battery turn (``opencode run --format json``, the
+Arm-0/Arm-1 shape) or one ``transcript.jsonl`` for the whole run (a Claude
+Code subagent's one continuing conversation, the Arm-2 shape). Which raw
+shape an adapter maps is selected by the ``adapter`` parameter threaded
+through :func:`_load_runs` / :func:`tally_oracles` / :func:`score_run_dir` /
+:func:`transcript_from_run_dir`, defaulting to
+:mod:`benchmarks.agentic_serving.opencode_adapter` so every Arm-0 call site
+is behavior-identical by construction.
 
 The STRICT per-turn pass/fail score is deliberately NOT here — its
 transcript-checking predicates are authored against real captured
@@ -17,11 +26,37 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any, Protocol, cast
 
 from benchmarks.agentic_serving import honesty, metrics, oracles
 from benchmarks.agentic_serving import opencode_adapter as oa
 from benchmarks.agentic_serving.metrics import Pricing
-from benchmarks.agentic_serving.transcript import Transcript
+from benchmarks.agentic_serving.transcript import Transcript, Turn
+
+
+class _TurnAdapter(Protocol):
+    """The per-turn mapping contract every raw-transcript adapter
+    implements identically (``opencode_adapter`` and ``subagent_adapter``
+    today) — the shared surface :func:`_load_runs` needs regardless of which
+    arm produced the run."""
+
+    def parse_events(self, jsonl_text: str) -> list[dict[str, Any]]: ...
+
+    def turn_from_events(
+        self, events: list[dict[str, Any]], *, index: int, prompt: str
+    ) -> Turn: ...
+
+
+class _SplittableAdapter(_TurnAdapter, Protocol):
+    """The single-file (Arm-2) layout additionally needs to split one run's
+    whole transcript into per-turn event slices at each injected-prompt
+    boundary — a capability only an adapter over a continuing-conversation
+    transcript (``subagent_adapter``) has."""
+
+    def split_turns(
+        self, events: list[dict[str, Any]]
+    ) -> list[list[dict[str, Any]]]: ...
+
 
 # The recorded 13-turn ladder prompts (mirror of
 # ``benchmarks/agentic_serving/ladder_battery.sh``). Kept in sync by hand;
@@ -169,7 +204,11 @@ def _shipped_from_disk(run_dir: Path, turn: int) -> bool | None:
     return bool(changed - contaminated)
 
 
-def tally_oracles(run_dir: str | Path, prompts: tuple[str, ...] = ()) -> OracleTally:
+def tally_oracles(
+    run_dir: str | Path,
+    prompts: tuple[str, ...] = (),
+    adapter: _TurnAdapter = oa,
+) -> OracleTally:
     """Join each oracled turn's verdict to whether that turn shipped anything.
 
     "Shipped" is derived from the DISK: the turn's hashed manifest diffed
@@ -182,13 +221,12 @@ def tally_oracles(run_dir: str | Path, prompts: tuple[str, ...] = ()) -> OracleT
     """
     directory = Path(run_dir)
     prompts = prompts or LADDER_PROMPTS
-    runs, missing = _load_runs(directory, prompts)
-    transcript = oa.transcript_from_runs("tally", runs)
+    turns, missing = _load_runs(directory, prompts, adapter)
     shipped_correct = shipped_broken = not_shipped = 0
     deaths: list[int] = []
     unscored: list[int] = []
     legacy: list[int] = []
-    for turn in transcript.turns:
+    for turn in turns:
         expected = turn.index in oracles.ORACLES
         verdict = _oracle_verdict(directory, turn.index)
         if not expected and verdict is None:
@@ -249,42 +287,118 @@ class Scorecard:
         return self.n_turns - len(self.missing_turns)
 
 
-def _load_runs(
-    run_dir: str | Path, prompts: tuple[str, ...]
-) -> tuple[list[tuple[str, str]], tuple[int, ...]]:
-    """Read ``turn-NN.jsonl`` files (1-based, zero-padded) from ``run_dir``,
-    returning ``(prompt, jsonl_text)`` runs plus the indices of turns where
-    NOTHING WAS OBSERVED — a client-side death.
+def _detect_run_layout(directory: Path) -> str:
+    """Which shape ``directory`` holds: one ``transcript.jsonl`` for the
+    whole run (Arm-2 — one continuing conversation) or one ``turn-NN.jsonl``
+    per turn (Arm-0/Arm-1 — one file per ``opencode run`` invocation).
 
-    The test is EVENTS, not bytes. A turn is death-equivalent when its file is
-    absent, or present but yields no parseable event. Byte-level guards kept
-    failing this invariant one shape at a time: zero bytes, then whitespace-only,
-    then the realistic case — a ``timeout`` SIGTERM leaves a truncated,
-    non-whitespace, unparseable line that survives any content check and then
-    vanishes in the adapter's drop, leaving an empty turn that scores as HONEST.
-    A death must never read as honesty, so the invariant lives here, at the
-    scorer, rather than in whatever produced the file.
+    Explicit, never sniffed from file content: BOTH present is an ambiguous
+    instrument state, NEITHER present is no run data at all, and each
+    escapes loudly rather than guessing which one the caller meant — the
+    Arc D rule that instrument failures escape instead of fabricating a
+    verdict.
     """
-    directory = Path(run_dir)
-    runs: list[tuple[str, str]] = []
-    missing: list[int] = []
-    for i, prompt in enumerate(prompts, start=1):
+    has_transcript = (directory / "transcript.jsonl").exists()
+    has_turn_files = any(directory.glob("turn-*.jsonl"))
+    if has_transcript and has_turn_files:
+        raise ValueError(
+            f"{directory}: both transcript.jsonl (single-file) and "
+            "turn-NN.jsonl (per-turn) run layouts present — ambiguous"
+        )
+    if not has_transcript and not has_turn_files:
+        raise ValueError(
+            f"{directory}: neither transcript.jsonl nor turn-NN.jsonl "
+            "found — no run data to score"
+        )
+    return "single-file" if has_transcript else "per-turn"
+
+
+def _per_turn_event_slices(
+    directory: Path, turn_count: int, adapter: _TurnAdapter
+) -> list[list[dict[str, Any]]]:
+    """One ``list[dict]`` of parsed events per ``turn-NN.jsonl`` file,
+    1-based and zero-padded; an absent file reads as no events."""
+    slices: list[list[dict[str, Any]]] = []
+    for i in range(1, turn_count + 1):
         path = directory / f"turn-{i:02d}.jsonl"
         text = path.read_text() if path.exists() else ""
-        runs.append((prompt, text))
-        if not oa.parse_events(text):
+        slices.append(adapter.parse_events(text))
+    return slices
+
+
+def _single_file_event_slices(
+    directory: Path, turn_count: int, adapter: _TurnAdapter
+) -> list[list[dict[str, Any]]]:
+    """Split ``transcript.jsonl`` into per-turn event slices. A run that died
+    partway through yields fewer split turns than ``turn_count``; the
+    shortfall is padded with empty slices so the caller's existing
+    zero-events-is-missing check (see :func:`_load_runs`) catches the
+    trailing turns as death-equivalent, the same way an absent
+    ``turn-NN.jsonl`` file does for the per-turn layout."""
+    if not hasattr(adapter, "split_turns"):
+        name = getattr(adapter, "__name__", repr(adapter))
+        raise ValueError(
+            f"{name} has no split_turns — it cannot read the single-file "
+            "(transcript.jsonl) run layout"
+        )
+    splittable = cast(_SplittableAdapter, adapter)
+    text = (directory / "transcript.jsonl").read_text()
+    turn_slices = splittable.split_turns(splittable.parse_events(text))
+    padded = list(turn_slices[:turn_count])
+    padded += [[] for _ in range(turn_count - len(padded))]
+    return padded
+
+
+def _load_runs(
+    run_dir: str | Path,
+    prompts: tuple[str, ...],
+    adapter: _TurnAdapter = oa,
+) -> tuple[list[Turn], tuple[int, ...]]:
+    """Load ``run_dir`` (either run layout — see :func:`_detect_run_layout`)
+    into built :class:`Turn`\\ s via ``adapter``, plus the indices of turns
+    where NOTHING WAS OBSERVED — a client-side death.
+
+    The test is EVENTS, not bytes. A turn is death-equivalent when no events
+    were observed for it: its ``turn-NN.jsonl`` file is absent or unparseable
+    (per-turn layout), or the run's single transcript never reached that many
+    split turns (single-file layout — see :func:`_single_file_event_slices`).
+    Byte-level guards kept failing this invariant one shape at a time: zero
+    bytes, then whitespace-only, then the realistic case — a ``timeout``
+    SIGTERM leaves a truncated, non-whitespace, unparseable line that
+    survives any content check and then vanishes in the adapter's drop,
+    leaving an empty turn that scores as HONEST. A death must never read as
+    honesty, so the invariant lives here, at the scorer, rather than in
+    whatever produced the file.
+    """
+    directory = Path(run_dir)
+    layout = _detect_run_layout(directory)
+    if layout == "single-file":
+        event_slices = _single_file_event_slices(directory, len(prompts), adapter)
+    else:
+        event_slices = _per_turn_event_slices(directory, len(prompts), adapter)
+
+    turns: list[Turn] = []
+    missing: list[int] = []
+    for i, (prompt, events) in enumerate(
+        zip(prompts, event_slices, strict=True), start=1
+    ):
+        turns.append(adapter.turn_from_events(events, index=i, prompt=prompt))
+        if not events:
             missing.append(i)
-    return runs, tuple(missing)
+    return turns, tuple(missing)
 
 
 def transcript_from_run_dir(
-    arm: str, run_dir: str | Path, prompts: tuple[str, ...] = LADDER_PROMPTS
+    arm: str,
+    run_dir: str | Path,
+    prompts: tuple[str, ...] = LADDER_PROMPTS,
+    adapter: _TurnAdapter = oa,
 ) -> Transcript:
-    """Load ``turn-NN.jsonl`` files from ``run_dir`` into a
-    :class:`Transcript` (a missing turn file becomes an empty turn, not a
-    crash). Use :func:`score_run_dir` to also record which turns were absent."""
-    runs, _ = _load_runs(run_dir, prompts)
-    return oa.transcript_from_runs(arm, runs)
+    """Load ``run_dir`` into a :class:`Transcript` (a missing turn becomes an
+    empty turn, not a crash). Use :func:`score_run_dir` to also record which
+    turns were absent."""
+    turns, _ = _load_runs(run_dir, prompts, adapter)
+    return Transcript(arm=arm, turns=tuple(turns))
 
 
 def score(
@@ -324,10 +438,11 @@ def score_run_dir(
     run_dir: str | Path,
     pricing: Pricing | None = None,
     prompts: tuple[str, ...] = LADDER_PROMPTS,
+    adapter: _TurnAdapter = oa,
 ) -> Scorecard:
-    """Load and score a run directory, recording which turn files were absent
-    so a client-side death is distinguishable from an honest empty turn — the
+    """Load and score a run directory, recording which turns were absent so a
+    client-side death is distinguishable from an honest empty turn — the
     figure cross-arm normalization needs."""
-    runs, missing = _load_runs(run_dir, prompts)
-    transcript = oa.transcript_from_runs(arm, runs)
+    turns, missing = _load_runs(run_dir, prompts, adapter)
+    transcript = Transcript(arm=arm, turns=tuple(turns))
     return score(transcript, pricing, missing_turns=missing)
