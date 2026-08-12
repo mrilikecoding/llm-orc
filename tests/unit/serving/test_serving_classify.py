@@ -1721,18 +1721,21 @@ def test_recap_floor_rejects_a_trailing_prepositional_continuation(task: str) ->
     assert decision["target"] != "recall-answer"
 
 
-# --- recap decider extension (review round 2 new blocker 1/3): a loose
-# maybe_recap turn the tight floor above does not resolve defers to the
-# guarded decider, mirroring #82's defer_recall exactly. CRITICAL WIRING:
-# the ledger recap is precomputed so a decider recap vote always has a
-# structural answer — never falls through to the explainer with nothing to
-# say. ---
+# --- recap decider extension (review round 2 new blocker 1/3, anchored
+# round 3): a loose maybe_recap turn the tight floor above does not resolve
+# defers to the guarded decider, mirroring #82's defer_recall exactly.
+# CRITICAL WIRING: the ledger recap is precomputed so a decider recap vote
+# always has a structural answer — never falls through to the explainer
+# with nothing to say. ---
 
 
 def test_maybe_recap_defers_to_the_decider_with_a_precomputed_answer() -> None:
+    # Round 3: _MAYBE_RECAP_RE is anchored at both ends — this phrasing
+    # misses the tight floor only by the inserted adverb "exactly", the
+    # target shape the anchored regex exists to still catch.
     decision = _classify(
         {
-            "task": "so have we built anything useful yet",
+            "task": "what exactly have you built so far?",
             "recall_ledger": [
                 {"ask": "build a todo app", "path": "todo.py", "outcome": "shipped"}
             ],
@@ -1749,12 +1752,13 @@ def test_maybe_recap_defers_to_the_decider_with_a_precomputed_answer() -> None:
 
 def test_maybe_recap_precomputes_the_nothing_built_answer_for_an_empty_ledger() -> None:
     # _ledger_recap NEVER returns an empty string — proves the "impossible
-    # by construction" claim holds even in the emptiest case. "so have we"
-    # (not "have you") avoids the higher-priority memory-interrogative
-    # mechanism, which anchors on "did/have YOU" specifically.
+    # by construction" claim holds even in the emptiest case. Round 3: an
+    # anchored "can you list everything you've made?" (a "can you" opener,
+    # missing the tight floor's exact literal phrasing) exercises the same
+    # decider-extension path.
     decision = _classify(
         {
-            "task": "so have we made anything useful yet",
+            "task": "can you list everything you've made?",
             "recall_ledger": [],
             "context": "",
         }
@@ -1776,6 +1780,109 @@ def test_maybe_recap_stays_off_a_named_file_turn() -> None:
     # a named-file explain either grounds or refuses honestly — never defers
     # to the decider for a recap vote.
     assert decision["recall_answer"] == "" or decision["needs_decider"] is False
+
+
+# --- round 3 blocker: a previous round's global is_explain widening let
+# _MAYBE_RECAP_RE (then unanchored) match "we/you + past-make-verb" ANYWHERE
+# in a sentence, dragging build/action turns onto the explain path. An
+# author-independent review diffed routing over 65 inputs against
+# origin/main: 36 changed, only 7 intended. These pins hold the reverted
+# is_explain and the anchored _MAYBE_RECAP_RE to origin/main's exact routing
+# for the reviewer's demonstrated damage classes; a diff script comparing
+# this branch's classify.py against origin/main's over the full corpus
+# confirmed byte-identical target/kind/needs_decider/build/needs_glob for
+# every case in this section. ---
+
+
+@pytest.mark.parametrize(
+    "task",
+    [
+        "unit tests for todo.py you made earlier",
+        "tests for the storage module you wrote",
+    ],
+)
+def test_recap_widening_no_longer_diverts_a_named_file_tests_ask(task: str) -> None:
+    # Was: not-grounded (an explain refusal to a build request) — worst
+    # case, fully deterministic. Now: the read-before-build seam, same as
+    # origin/main.
+    decision = _classify({"task": task})
+    assert decision["target"] in ("need-files", "tests-seat")
+    assert decision["target"] != "not-grounded"
+
+
+@pytest.mark.parametrize(
+    "task",
+    [
+        "more tests for what you wrote",
+        "tests for the parser we built",
+        "tests for the thing you built",
+    ],
+)
+def test_recap_widening_no_longer_diverts_a_bare_tests_ask(task: str) -> None:
+    # Was: decider-bound (a recap/recall vote could emit a "Shipped so far:"
+    # inventory in place of the tests build's own module-stem discovery).
+    # Now: the #83 discovery round for the module stem, same as origin/main
+    # — needs_decider False, build False (a discovery round is never itself
+    # the build).
+    decision = _classify({"task": task})
+    assert decision["target"] == "need-glob"
+    assert decision["needs_decider"] is False
+    assert decision["needs_glob"] != ""
+
+
+@pytest.mark.parametrize(
+    "task",
+    [
+        "explain the code you wrote",
+        "why does the function you made return none",
+        "what have we built our auth on?",
+    ],
+)
+def test_recap_widening_no_longer_blocks_bare_symbol_explain_discovery(
+    task: str,
+) -> None:
+    # Was: defer_recap with no glob round (a precomputed recap answer could
+    # ride a decider vote instead of the bare-symbol explain's own glob
+    # discovery). Now: the glob->read grounded-explain discovery round fires.
+    decision = _classify({"task": task})
+    assert decision["target"] == "need-glob"
+    assert decision["needs_glob"] != ""
+
+
+@pytest.mark.parametrize(
+    "task",
+    [
+        "delete the file you created",
+        "the tests you wrote are failing",
+        "rename the helper you made",
+        "port the parser we wrote to rust",
+        "improve the function you wrote",
+        "clean up the module you created",
+        "extend the storage module you built",
+        "make the module you built faster",
+        "document what you built",
+        "update the parser we wrote",
+        "revert the change you made",
+    ],
+)
+def test_recap_widening_no_longer_precomputes_a_recap_for_action_turns(
+    task: str,
+) -> None:
+    # Was: a precomputed recap that a recap decider vote would emit
+    # verbatim, in place of whatever the action turn actually asked for.
+    # Now: no recap answer is precomputed at all — a bare recap-flavored
+    # CLAUSE modifying an action/build object must never match the floor or
+    # its decider extension.
+    decision = _classify(
+        {
+            "task": task,
+            "recall_ledger": [
+                {"ask": "build a todo app", "path": "todo.py", "outcome": "shipped"}
+            ],
+        }
+    )
+    assert decision["target"] != "recall-answer"
+    assert decision["recall_answer"] == ""
 
 
 def test_run_recall_compound_does_not_leak_the_recall_message() -> None:

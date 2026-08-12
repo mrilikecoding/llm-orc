@@ -112,11 +112,24 @@ _RECAP_RE = re.compile(
 # is a genuine free-text judgment call, "is this really asking me to list
 # what I've built") or falling silently through to the free explainer (the
 # unguarded gap new blocker 1 demonstrated).
+#
+# Review round 3 blocker: the pattern above was unanchored, so "you made" /
+# "we built" / etc. matched ANYWHERE in a sentence — including as a MODIFIER
+# clause on a build/action object ("tests for the storage module you
+# wrote", "delete the file you created"). Anchored at BOTH ends now, same
+# discipline as _RECAP_RE and _SAW_QUERY_RE: an interrogative-shaped OPENER
+# (what/how/can/could/would/so/where), a we/you + past-tense make-verb
+# core, terminating at an optional trailing "so far" then "?"/end-of-string
+# — no trailing object or action clause survives. This is deliberately
+# narrower than the floor's exact literal phrasings: it exists only to
+# catch a recap QUESTION the floor misses by inflection or an inserted
+# adverb ("what exactly have you built so far?", "can you list everything
+# you've made?"), never a recap-flavored clause attached to something else.
 _MAYBE_RECAP_RE = re.compile(
-    r"\b(?:we|you)(?:'ve| have)?\b[^?.!]*"
+    r"^(?:what|how|can|could|would|so|where)\b"
+    r"[^.!?]*\b(?:we|you)\b[^.!?]*"
     r"\b(?:built|made|created|wrote|written|done)\b"
-    r"|\bhave (?:we|you)\b[^?.!]*"
-    r"\b(?:built|made|created|wrote|written|done|files)\b",
+    r"(?: so far)?\??$",
     re.IGNORECASE,
 )
 # #82 deep recall: a FIRST-anchored query about the "first thing" I/you
@@ -1147,13 +1160,11 @@ def _memory_interrogative_route(
     return True, _memory_interrogative_message(previous_ask, affirm)
 
 
-def _recap_route(
-    task: str, turn: dict, is_explain: bool, named_file: str
-) -> tuple[bool, str, bool]:
+def _recap_route(task: str, turn: dict, named_file: str) -> tuple[bool, str, bool]:
     """(is_recall_answer, recall_answer, defer_recap) for a recap-shaped
     turn ("what have we/you built so far?", "list everything you made",
-    review round 1 blocker 3, widened round 2): mirrors #82's two-layer
-    structural-floor + decider-extension pattern.
+    review round 1 blocker 3, widened round 2, anchored round 3): mirrors
+    #82's two-layer structural-floor + decider-extension pattern.
 
     - STRUCTURAL floor (``_RECAP_RE``): a tight, anchored recap phrasing
       resolves here with NO decider — the deterministic ledger recap on the
@@ -1169,9 +1180,24 @@ def _recap_route(
       with nothing to say. ``_ledger_recap`` always returns non-empty text,
       so this is impossible by construction, not by convention.
 
+    Review round 3 blocker: this used to also require the caller's global
+    ``is_explain`` flag, which forced classify to WIDEN is_explain so a
+    bare "list everything you made" (no explain marker, no interrogative
+    lead) could even reach this branch — and that widening was itself the
+    blocker, since the (then-unanchored) ``_MAYBE_RECAP_RE`` piece of it
+    matched build/action turns anywhere in the sentence and dragged them
+    onto the explain path too (36 routing changes over a 65-input diff
+    against origin/main, only 7 intended). ``_RECAP_RE``/``_MAYBE_RECAP_RE``
+    are now anchored at both ends and are themselves sufficient recap-
+    question signals — the same self-sufficiency ``_MEMORY_INTERROGATIVE_RE``
+    already had (its pattern is a strict subset of the interrogative check
+    that feeds ``is_explain``, so it never needed is_explain widened for its
+    own sake either). ``is_explain`` reverts to origin/main's exact two-
+    clause form; this route no longer takes or needs it.
+
     Never fires on a named-file turn.
     """
-    if not is_explain or named_file:
+    if named_file:
         return False, "", False
     if _RECAP_RE.search(task):
         return True, _ledger_recap(turn), False
@@ -1273,24 +1299,16 @@ def _discover_and_read(
 def main() -> None:
     turn = _turn(sys.stdin.read().strip())
     task = str(turn.get("task", "")).strip()
-    is_explain = (
-        any(marker in task.lower() for marker in _EXPLAIN_MARKERS)
-        or bool(_INTERROGATIVE_RE.match(task))
-        # review round 2 new blocker 1: several recap phrasings ("list
-        # everything you made", "recap what you've done", "give me a
-        # summary of the work", "so what do we have now") lead with neither
-        # an explain marker nor an interrogative word — without this, the
-        # is_explain gate in _recap_route's chain_plan wiring never runs at
-        # all, silently dropping BOTH the tight floor AND the critical
-        # precompute for the loose decider extension. Guarded off a build
-        # verb (_BUILD_RE) so "refactor the first thing you built" — which
-        # incidentally contains "you built" — stays build-shaped, not
-        # explain (same precedence the existing build-verb-wins rules
-        # already apply elsewhere; review finding 4 regression).
-        or (
-            not _BUILD_RE.search(task)
-            and (bool(_RECAP_RE.search(task)) or bool(_MAYBE_RECAP_RE.search(task)))
-        )
+    # Review round 3 blocker: this used to be widened with a third clause for
+    # recap phrasings, guarded only by _BUILD_RE — which misses past-tense
+    # build verbs by construction, so an unanchored _MAYBE_RECAP_RE dragged
+    # 29 non-recap turns (tests-seat builds, bare-symbol explain discovery,
+    # eleven action turns) onto the explain path. is_explain now reverts to
+    # origin/main's exact behavior; _recap_route no longer needs it widened
+    # (see its docstring) because the recap regexes are anchored and
+    # self-sufficient.
+    is_explain = any(marker in task.lower() for marker in _EXPLAIN_MARKERS) or bool(
+        _INTERROGATIVE_RE.match(task)
     )
     named_file = turn.get("file") or _extract_file(task)
     has_build_signal = bool(named_file) or bool(_BUILD_RE.search(task))
@@ -1344,17 +1362,19 @@ def main() -> None:
         if is_memory_answer:
             is_recall_answer, recall_answer = True, memory_answer
 
-    # Review round 1 blocker 3 (widened round 2): a recap-shaped turn ("what
-    # have we built so far?", "list everything you made") is answered from
-    # the deterministic ledger recap, on its own tight structural floor
-    # (never the loose defer_recall extension). A fuzzy recap phrasing the
-    # floor doesn't resolve defers to the guarded decider (defer_recap),
-    # with the answer precomputed so the decider's recap vote always has
-    # something to route to.
+    # Review round 1 blocker 3 (widened round 2, anchored round 3): a
+    # recap-shaped turn ("what have we built so far?", "list everything you
+    # made") is answered from the deterministic ledger recap, on its own
+    # tight structural floor (never the loose defer_recall extension). A
+    # fuzzy recap phrasing the floor doesn't resolve defers to the guarded
+    # decider (defer_recap), with the answer precomputed so the decider's
+    # recap vote always has something to route to. Gates on the anchored
+    # regexes alone, not the global is_explain (round 3 blocker — see
+    # _recap_route's docstring).
     defer_recap = False
     if not is_recall_answer and not defer_recall:
         is_recap_answer, recap_answer, defer_recap = _recap_route(
-            task, turn, is_explain, named_file
+            task, turn, named_file
         )
         if is_recap_answer:
             is_recall_answer, recall_answer = True, recap_answer
