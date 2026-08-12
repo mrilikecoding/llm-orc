@@ -295,3 +295,73 @@ class TestCostPerSolvedTurn:
         assert (
             metrics.cost_per_solved_turn(transcript, _SONNET_5, solved_count=0) is None
         )
+
+
+class TestCostPerSolvedTurnExcludesCache:
+    """MINOR 1 (round 3): cost_per_solved_turn's numerator is total_cost, so
+    it needs the same lower-bound companion, not a bare unqualified float."""
+
+    def test_true_when_the_underlying_total_cost_excludes_cache(self) -> None:
+        transcript = Transcript(
+            arm="sonnet-5",
+            turns=(
+                Turn(
+                    index=1,
+                    prompt="p",
+                    assistant_text="a",
+                    input_tokens=1,
+                    output_tokens=1,
+                    cache_read_tokens=500,
+                ),
+            ),
+        )
+        assert (
+            metrics.cost_per_solved_turn_excludes_cache(
+                transcript, _SONNET_5, solved_count=1
+            )
+            is True
+        )
+
+    def test_false_when_pricing_has_the_cache_rates(self) -> None:
+        transcript = Transcript(
+            arm="sonnet-5",
+            turns=(
+                Turn(
+                    index=1,
+                    prompt="p",
+                    assistant_text="a",
+                    input_tokens=1,
+                    output_tokens=1,
+                    cache_read_tokens=500,
+                ),
+            ),
+        )
+        assert (
+            metrics.cost_per_solved_turn_excludes_cache(
+                transcript, _SONNET_5_WITH_CACHE, solved_count=1
+            )
+            is False
+        )
+
+    def test_none_when_nothing_solved(self) -> None:
+        # Mirrors cost_per_solved_turn's own None -- there's no figure to
+        # qualify.
+        transcript = Transcript(
+            arm="sonnet-5",
+            turns=(
+                Turn(
+                    index=1,
+                    prompt="p",
+                    assistant_text="a",
+                    input_tokens=1,
+                    output_tokens=1,
+                    cache_read_tokens=500,
+                ),
+            ),
+        )
+        assert (
+            metrics.cost_per_solved_turn_excludes_cache(
+                transcript, _SONNET_5, solved_count=0
+            )
+            is None
+        )
