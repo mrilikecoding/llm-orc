@@ -1874,3 +1874,145 @@ def test_recall_never_fabricates_from_a_rejected_only_session(
     assert "built" in content.lower()
     assert "yet" in content.lower()
     assert "todo" not in content.lower()
+
+
+def test_memory_interrogative_discloses_run4_turn5_shape(
+    serving_project: Path, serving_client: TestClient
+) -> None:
+    """#134 (arm0-run4 turn-5 replay, docs/plans/2026-07-15-arm0-runs/
+    arm0-run4-jscore.md): reject complete_todo (seat-contract), reject
+    tests (accept-gate), then "did you see my previous query?" must quote
+    the PREVIOUS ask (the tests request) verbatim and state its rejected
+    outcome — never claim `complete_todo` exists or that tests were
+    provided, the DISHONEST answer the live run actually produced.
+    """
+    resp = serving_client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "ensemble-agent",
+            "messages": [
+                {
+                    "role": "user",
+                    "content": (
+                        "write a function that adds a todo item to a list in todo.py"
+                    ),
+                },
+                {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [
+                        _write_tool_call(
+                            "w1",
+                            "todo.py",
+                            "def add_todo_item(items, item):\n"
+                            "    items.append(item)\n"
+                            "    return items",
+                        )
+                    ],
+                },
+                {
+                    "role": "tool",
+                    "tool_call_id": "w1",
+                    "content": "Wrote file successfully.",
+                },
+                {
+                    "role": "user",
+                    "content": (
+                        "add a complete_todo function to todo.py that marks a todo done"
+                    ),
+                },
+                {
+                    "role": "assistant",
+                    "content": (
+                        "Seat contract not met: Assertion "
+                        "'envelope-carries-artifact' raised exception"
+                    ),
+                },
+                {"role": "user", "content": "explain how todo.py stores its state"},
+                {
+                    "role": "assistant",
+                    "content": (
+                        "In the current version of todo.py, there is no "
+                        "persistent storage or state management for todo "
+                        "items."
+                    ),
+                },
+                {"role": "user", "content": "write tests for todo.py"},
+                {
+                    "role": "assistant",
+                    "content": "Another round needed: tests did not pass",
+                },
+                {"role": "user", "content": "did you see my previous query?"},
+            ],
+            "tools": [_WRITE_TOOL],
+        },
+    )
+
+    assert resp.status_code == 200
+    content = resp.json()["choices"][0]["message"]["content"]
+    assert "write tests for todo.py" in content
+    assert "rejected" in content.lower()
+    assert "complete_todo" not in content
+
+
+def test_recall_discloses_run3_turn10_shape(
+    serving_project: Path, serving_client: TestClient
+) -> None:
+    """#133 (arm0-run3 turn-10 replay, docs/plans/2026-07-15-arm0-runs/
+    arm0-run3-jscore.md): the first ASK was rejected; the first thing that
+    actually SHIPPED was storage.py. Turn-10 recall must disclose both
+    facts, not silently substitute storage.py for the rejected first ask.
+    """
+    resp = serving_client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "ensemble-agent",
+            "messages": [
+                {
+                    "role": "user",
+                    "content": (
+                        "write a function that adds a todo item to a list in todo.py"
+                    ),
+                },
+                {
+                    "role": "assistant",
+                    "content": "Another round needed: tests did not pass",
+                },
+                {
+                    "role": "user",
+                    "content": (
+                        "create storage.py with save_todos and load_todos "
+                        "functions using json"
+                    ),
+                },
+                {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [
+                        _write_tool_call(
+                            "w1",
+                            "storage.py",
+                            "def save_todos(todos):\n    pass\n\n\n"
+                            "def load_todos():\n    pass",
+                        )
+                    ],
+                },
+                {
+                    "role": "tool",
+                    "tool_call_id": "w1",
+                    "content": "Wrote file successfully.",
+                },
+                {
+                    "role": "user",
+                    "content": "what did the first thing I asked you to build do?",
+                },
+            ],
+            "tools": [_WRITE_TOOL],
+        },
+    )
+
+    assert resp.status_code == 200
+    content = resp.json()["choices"][0]["message"]["content"]
+    assert "write a function that adds a todo item to a list in todo.py" in content
+    assert "rejected" in content.lower()
+    assert "storage.py" in content

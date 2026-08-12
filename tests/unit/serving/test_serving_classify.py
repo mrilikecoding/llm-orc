@@ -21,7 +21,7 @@ SCRIPTS = REPO / ".llm-orc" / "scripts" / "agentic_serving"
 CLASSIFY = SCRIPTS / "classify.py"
 
 sys.path.insert(0, str(SCRIPTS))
-from classify import _explain_stems  # type: ignore  # noqa: E402
+from classify import _explain_stems, _valid_recall_answer  # type: ignore  # noqa: E402
 
 
 def _classify(turn: dict[str, Any]) -> dict[str, Any]:
@@ -337,16 +337,19 @@ def test_non_python_target_never_requests_the_target_read() -> None:
     assert decision["needs_files"] == []
 
 
-def test_did_you_memory_question_routes_to_explainer_deterministically() -> None:
+def test_did_you_memory_question_routes_to_recall_answer_deterministically() -> None:
+    # #134: a memory-shaped "did you..." turn is answered on the
+    # recall-answer path, never the free explain seat — see the
+    # memory-interrogative tests below for the answer content itself.
     decision = _classify({"task": "did you see my previous query?"})
-    assert decision["target"] == "explainer"
+    assert decision["target"] == "recall-answer"
     assert decision["build"] is False
     assert decision["needs_decider"] is False
 
 
-def test_have_you_question_routes_to_explainer() -> None:
+def test_have_you_question_routes_to_recall_answer() -> None:
     decision = _classify({"task": "have you written any tests yet?"})
-    assert decision["target"] == "explainer"
+    assert decision["target"] == "recall-answer"
 
 
 def test_can_you_write_stays_a_build_turn() -> None:
@@ -404,8 +407,11 @@ def test_run_the_app_is_not_a_run_turn() -> None:
 
 
 def test_did_you_run_the_tests_stays_an_explain_turn() -> None:
+    # "did you run the tests?" is a memory question about a past action, not
+    # an imperative to run them now (#134: answered deterministically, never
+    # the run seam).
     decision = _classify({"task": "did you run the tests?"})
-    assert decision["target"] == "explainer"
+    assert decision["target"] == "recall-answer"
     assert decision["needs_run"] == ""
 
 
@@ -1299,6 +1305,130 @@ def test_recall_never_fabricates_from_a_rejected_only_session_via_classify() -> 
     assert "todo" not in decision["recall_answer"].lower()
 
 
+# --- memory interrogatives ("did you.../have you...") answered
+# deterministically (#134): docs/plans/2026-07-17-recap-grounding-design.md ---
+
+
+def test_memory_interrogative_states_a_rejected_outcome_from_the_previous_ask() -> None:
+    # #134 (arm0-run4 turn-5 replay): reject complete_todo (turn 2), reject
+    # tests (turn 4), then "did you see my previous query?" (turn 5). The
+    # answer must quote turn 4's ask verbatim and state ITS rejected
+    # outcome — never narrate turn 2's complete_todo as existing, and never
+    # frame turn 4 as fulfilled.
+    decision = _classify(
+        {
+            "task": "did you see my previous query?",
+            "previous_ask": {
+                "ask": "write tests for todo.py",
+                "outcome": "rejected",
+                "path": "",
+            },
+            "context": "",
+        }
+    )
+    assert decision["target"] == "recall-answer"
+    assert "write tests for todo.py" in decision["recall_answer"]
+    assert "rejected" in decision["recall_answer"].lower()
+    assert "complete_todo" not in decision["recall_answer"]
+
+
+def test_memory_interrogative_states_a_shipped_outcome_from_the_previous_ask() -> None:
+    decision = _classify(
+        {
+            "task": "did you see my previous query?",
+            "previous_ask": {
+                "ask": "build a todo app",
+                "outcome": "shipped",
+                "path": "todo.py",
+            },
+            "context": "",
+        }
+    )
+    assert decision["target"] == "recall-answer"
+    assert "build a todo app" in decision["recall_answer"]
+    assert "todo.py" in decision["recall_answer"]
+
+
+def test_memory_interrogative_about_a_read_claims_no_build_outcome() -> None:
+    # Wrong-accept-hunt target 5: "did you read/see FILE?" — the PREVIOUS ask
+    # was a read, not a build; the answer must not claim one either way.
+    decision = _classify(
+        {
+            "task": "did you read that file?",
+            "previous_ask": {
+                "ask": "read storage.py",
+                "outcome": "",
+                "path": "",
+            },
+            "context": "",
+        }
+    )
+    assert decision["target"] == "recall-answer"
+    assert "read storage.py" in decision["recall_answer"]
+    assert "rejected" not in decision["recall_answer"].lower()
+    assert "shipped" not in decision["recall_answer"].lower()
+
+
+def test_memory_interrogative_with_no_prior_turn_says_so_honestly() -> None:
+    decision = _classify(
+        {
+            "task": "have you seen this before?",
+            "previous_ask": {"ask": "", "outcome": "", "path": ""},
+            "context": "",
+        }
+    )
+    assert decision["target"] == "recall-answer"
+    assert decision["recall_answer"] != ""
+
+
+def test_memory_interrogative_with_a_named_file_stays_off_the_memory_path() -> None:
+    # "What deliberately does not change": named-file explains keep their
+    # current routing byte-for-byte — a memory-interrogative phrasing that
+    # also names a file is not this mechanism's turn.
+    decision = _classify(
+        {
+            "task": "did you see storage.py?",
+            "previous_ask": {
+                "ask": "build a todo app",
+                "outcome": "shipped",
+                "path": "todo.py",
+            },
+            "context": "",
+        }
+    )
+    assert decision["target"] != "recall-answer"
+
+
+def test_ordinal_recall_wins_when_a_memory_interrogative_also_matches() -> None:
+    # "did you build the first thing I asked?" matches BOTH the tight
+    # ordinal-recall regex and the bare memory-interrogative floor — the
+    # more specific, already-tested #82 mechanism must win.
+    context = "assistant: [wrote todo.py]\n  def add_todo():\n      return 1"
+    decision = _classify(
+        {
+            "task": "did you build the first thing I asked?",
+            "recall_ledger": [
+                {"ask": "build a todo app", "path": "todo.py", "outcome": "shipped"}
+            ],
+            "previous_ask": {"ask": "explain calc.py", "outcome": "", "path": ""},
+            "context": context,
+        }
+    )
+    assert decision["target"] == "explainer"
+    assert decision["file"] == "todo.py"
+
+
+def test_memory_answer_is_dropped_by_a_higher_priority_target() -> None:
+    # Wrong-accept-hunt target 1: _valid_recall_answer is target-agnostic —
+    # it clears ANY precomputed recall_answer (#82's or #134's) unless the
+    # turn's own routing outcome IS the recall-answer target, so a
+    # higher-priority chain can never be shadowed by a stale memory answer.
+    assert _valid_recall_answer("stale memory answer", "run-verdict", False) == ""
+    assert _valid_recall_answer("stale memory answer", "recall-answer", False) == (
+        "stale memory answer"
+    )
+
+
 def test_run_recall_compound_does_not_leak_the_recall_message() -> None:
     # Adversarial review finding 1: a run-led turn that ALSO mentions "the first
     # thing you made" must NOT carry a recall_answer. The run chain outranks the
@@ -1514,21 +1644,21 @@ def test_build_discovery_regression_after_explain_discovery_wiring() -> None:
 def test_memory_shaped_did_you_question_never_triggers_discovery() -> None:
     # "did you..."/"have you..." are memory-shaped questions (classify's own
     # _INTERROGATIVE_RE comment), not bare-symbol code questions — they must
-    # not glob the workspace.
+    # not glob the workspace. #134: answered deterministically instead.
     decision = _classify({"task": "did you see my previous query?"})
-    assert decision["target"] == "explainer"
+    assert decision["target"] == "recall-answer"
     assert decision["needs_glob"] == ""
 
 
 def test_memory_shaped_have_you_question_never_triggers_discovery() -> None:
     decision = _classify({"task": "have you written any tests yet?"})
-    assert decision["target"] == "explainer"
+    assert decision["target"] == "recall-answer"
     assert decision["needs_glob"] == ""
 
 
 def test_memory_shaped_did_you_run_never_triggers_discovery() -> None:
     decision = _classify({"task": "did you run the tests?"})
-    assert decision["target"] == "explainer"
+    assert decision["target"] == "recall-answer"
     assert decision["needs_glob"] == ""
     assert decision["needs_run"] == ""
 
