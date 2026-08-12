@@ -126,3 +126,17 @@ def cost_per_solved_turn(
     if solved_count <= 0:
         return None
     return total_cost(transcript, pricing) / solved_count
+
+
+def cost_per_solved_turn_excludes_cache(
+    transcript: Transcript, pricing: Pricing, solved_count: int
+) -> bool | None:
+    """Companion to :func:`cost_per_solved_turn`, same pattern as
+    :func:`total_cost_excludes_cache`: True when that figure's numerator
+    (``total_cost``) structurally excludes cache-token cost ``pricing`` had
+    no rate for — the last unflagged cost number otherwise. ``None`` when
+    nothing was solved, mirroring ``cost_per_solved_turn``'s own ``None``:
+    there is no figure to qualify."""
+    if solved_count <= 0:
+        return None
+    return total_cost_excludes_cache(transcript, pricing)
