@@ -678,12 +678,16 @@ def test_deferred_recap_vote_emits_the_ledger_recap_never_a_guess(
     recap_decider_client: TestClient,
 ) -> None:
     """Review round 2 new blocker 1/3, end to end (decide stubbed to a
-    recap vote): a FUZZY recap phrasing ("so have we made anything useful")
-    the tight _RECAP_RE cannot anchor defers to the guarded decider; a
-    recap vote routes to the recall-answer shape and emits the
+    recap vote): a FUZZY recap phrasing ("can you list everything you've
+    made?") the tight _RECAP_RE cannot anchor defers to the guarded
+    decider; a recap vote routes to the recall-answer shape and emits the
     deterministic ledger recap — never the free explainer's guess. This is
     the round-2 finding-1 shape (a decider recap vote) with the CRITICAL
     WIRING fix in place: classify precomputed the answer, so it ships.
+    Round 3 anchored ``_MAYBE_RECAP_RE`` at both ends (a previous round's
+    unanchored version let recap-flavored MODIFIER clauses hijack build/
+    action turns elsewhere), so the phrasing here is a whole-shape recap
+    question, not the earlier free-floating fragment.
     """
     resp = recap_decider_client.post(
         "/v1/chat/completions",
@@ -711,7 +715,7 @@ def test_deferred_recap_vote_emits_the_ledger_recap_never_a_guess(
                     ],
                 },
                 {"role": "tool", "tool_call_id": "call_1", "content": "ok"},
-                {"role": "user", "content": "so have we made anything useful yet"},
+                {"role": "user", "content": "can you list everything you've made?"},
             ],
             "tools": [_WRITE_TOOL],
         },
