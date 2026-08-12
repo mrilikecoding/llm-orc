@@ -1190,6 +1190,115 @@ def test_recall_fuzzy_first_with_a_named_file_stays_on_grounded_explain() -> Non
     assert decision["target"] == "explainer"
 
 
+def test_recall_discloses_a_rejected_first_ask_before_a_shipped_grounded_build() -> (
+    None
+):
+    # #133 (run-3 turn-10 replay): the first ASK ("write a function...") was
+    # rejected; the first thing that SHIPPED was storage.py, and it's visible
+    # on the wire (grounded). The answer must disclose BOTH facts rather than
+    # silently substituting the shipped file for the rejected first ask —
+    # selection stays shipped-anchored (storage.py), but the message says so.
+    context = (
+        "assistant: [wrote storage.py]\n"
+        "  def save_todos(todos): ...\n"
+        "  def load_todos(): ..."
+    )
+    decision = _classify(
+        {
+            "task": "what did the first thing I asked you to build do?",
+            "recall_ledger": [
+                {
+                    "ask": "write a function that adds a todo item to todo.py",
+                    "outcome": "rejected",
+                    "index": 0,
+                },
+                {
+                    "ask": "add a complete_todo function to todo.py",
+                    "outcome": "rejected",
+                    "index": 2,
+                },
+                {
+                    "ask": "create storage.py with save_todos and load_todos",
+                    "path": "storage.py",
+                    "outcome": "shipped",
+                    "index": 10,
+                },
+            ],
+            "context": context,
+        }
+    )
+    assert decision["target"] == "recall-answer"
+    assert (
+        "write a function that adds a todo item to todo.py"
+        in (decision["recall_answer"])
+    )
+    assert "rejected" in decision["recall_answer"].lower()
+    assert "storage.py" in decision["recall_answer"]
+
+
+def test_recall_discloses_a_rejected_first_ask_before_a_built_deep_ship() -> None:
+    # Same disclosure, but the first shipped build is windowed out of
+    # context (built_deep case) rather than visible — the disclosure clause
+    # must fire on both branches of the shipped-anchored selection.
+    decision = _classify(
+        {
+            "task": "what did the first thing I asked you to build do?",
+            "recall_ledger": [
+                {"ask": "build a todo app", "outcome": "rejected", "index": 0},
+                {
+                    "ask": "build storage",
+                    "path": "storage.py",
+                    "outcome": "shipped",
+                    "index": 4,
+                },
+            ],
+            "context": "",
+        }
+    )
+    assert decision["target"] == "recall-answer"
+    assert "build a todo app" in decision["recall_answer"]
+    assert "rejected" in decision["recall_answer"].lower()
+    assert "storage.py" in decision["recall_answer"]
+
+
+def test_recall_no_disclosure_when_the_first_ask_itself_shipped() -> None:
+    # What deliberately does not change: when ledger[0] is already the
+    # shipped entry, routing stays byte-for-byte today's grounded path (the
+    # named_file injection straight to the explainer), no disclosure clause.
+    context = "assistant: [wrote todo.py]\n  def add_todo():\n      return 1"
+    decision = _classify(
+        {
+            "task": "what did the first thing I asked you to build do?",
+            "recall_ledger": [
+                {"ask": "build a todo app", "path": "todo.py", "outcome": "shipped"},
+                {"ask": "build a calculator", "path": "calc.py", "outcome": "shipped"},
+            ],
+            "context": context,
+        }
+    )
+    assert decision["target"] == "explainer"
+    assert decision["file"] == "todo.py"
+
+
+def test_recall_never_fabricates_from_a_rejected_only_session_via_classify() -> None:
+    # Pins the boundary the existing endpoint test already covers end to
+    # end: when NOTHING ever shipped, "none" wins outright — no disclosure
+    # clause (there is no shipped fact to disclose alongside).
+    decision = _classify(
+        {
+            "task": "what was the first thing I asked you to build?",
+            "recall_ledger": [
+                {"ask": "build a todo app", "outcome": "rejected", "index": 0}
+            ],
+            "context": "",
+        }
+    )
+    assert decision["target"] == "recall-answer"
+    assert "built" in decision["recall_answer"].lower()
+    assert "yet" in decision["recall_answer"].lower()
+    assert "todo" not in decision["recall_answer"].lower()
+
+
 def test_run_recall_compound_does_not_leak_the_recall_message() -> None:
     # Adversarial review finding 1: a run-led turn that ALSO mentions "the first
     # thing you made" must NOT carry a recall_answer. The run chain outranks the
