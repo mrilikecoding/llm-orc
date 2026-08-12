@@ -69,10 +69,14 @@ _MEMORY_INTERROGATIVE_RE = re.compile(r"^(?:did|have) you\b", re.IGNORECASE)
 # wire. Every other "did/have you..." turn asks about a proposition the
 # ledger cannot confirm or deny wholesale ("did you delete my files?", "did
 # you run the tests?"); only THIS shape earns the affirmative "Yes -" lead
-# (_memory_interrogative_message).
+# (_memory_interrogative_message). Round 2 major 1: anchored at the END too
+# — the noun phrase must terminate the question (optional "?" only), so a
+# trailing qualifier ("...about the auth bug?") falls to the non-affirming
+# record-only template instead of affirming a claim about a DIFFERENT
+# question than the one actually on the wire.
 _SAW_QUERY_RE = re.compile(
     r"^(?:did|have) you (?:see|get|receive|read) my (?:previous|last) "
-    r"(?:query|message|question)\b",
+    r"(?:query|message|question)\??$",
     re.IGNORECASE,
 )
 # review round 1 blocker 3: a tight structural floor for recap questions —
@@ -1078,8 +1082,11 @@ def _memory_interrogative_message(previous_ask: dict, affirm: bool) -> str:
     outcome = str(previous_ask.get("outcome", ""))
     path = str(previous_ask.get("path", ""))
     reason = str(previous_ask.get("reason", ""))
-    lead = "Yes — " if affirm else ""
-    report = f'{lead}Your previous message was: "{ask}".'
+    # review round 2 minor 2: "your" stays lowercase regardless of the
+    # affirmative lead — "Yes — Your..." reads as two capitalized sentence
+    # starts stitched together.
+    lead = "Yes — your" if affirm else "Your"
+    report = f'{lead} previous message was: "{ask}".'
     if outcome == _SHIPPED:
         return f"{report} It shipped as `{path}`."
     clause = _outcome_clause(outcome, reason)
