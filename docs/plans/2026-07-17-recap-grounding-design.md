@@ -437,6 +437,26 @@ adverb), same wiring intent, narrower match. One end-to-end test
 (`test_deferred_recap_vote_emits_the_ledger_recap_never_a_guess`) carried
 the same stale phrasing and was updated identically.
 
+**Stated honestly, the residual this enlarges:** the round-2 test
+phrasings themselves — "so have we built anything useful yet?" and "have
+we built anything yet?" — no longer match `_MAYBE_RECAP_RE` at all (verified
+2026-08-12: both route to `needs_decider=True` with an EMPTY
+`recall_answer`, so a recall/recap decider vote falls through to the free
+explainer, unguarded, per `resolve.py`'s finding-5 fallback). The anchored
+regex only catches a universal recap object PRECEDING the we/you+verb
+clause ("list **everything** you've made", "**anything** you built" only
+when "anything" sits before "you built" in the sentence) or the `what/
+which...so far` frame ("what exactly have you built so far?") — not the
+plain interrogative word order where the universal object follows the verb
+("have we built anything yet?", subject-verb-object). This is an accepted
+decider-judgment residual, not a bug: an under-matched recap question falls
+through to the SAME routing an equivalent turn gets on origin/main (the
+guarded decider, when one is reachable, or the free explainer otherwise) —
+never a fabricated ledger claim. Round 4 tightens `_MAYBE_RECAP_RE` further
+(see its own amendment section) without narrowing this bound further; the
+bound predates round 4 and is restated here because round 3 introduced the
+anchoring that first created it.
+
 **Minor: `is_build_ask` over-fired on named-file and incidental-build-word
 explains.** `has_build_signal` (feeding `is_build_ask`) is `bool(named_file)
 or bool(_BUILD_RE.search(task))` — true for "explain what foo.py does" via
@@ -482,3 +502,69 @@ work intentionally changes are pinned to the new behavior. This is the
 permanent instrument against a repeat: a future change that drags one of
 the origin/main-pinned turns onto the recap/explain path fails here
 immediately, without needing another adversarial-review pass to catch it.
+
+## Amendments (review round 4, 2026-08-12)
+
+A fourth author-independent adversarial review re-ran its own 65-input
+diff against origin/main and confirmed round 3's blocker fix carried zero
+collateral. One MAJOR residual and three minors remained.
+
+**`_MAYBE_RECAP_RE`'s both-ends anchor tested the VERB'S POSITION, not its
+OBJECT (MAJOR).** Round 3 anchored the loose decider extension so a match
+had to terminate at the final make-verb plus an optional "so far" and "?".
+But an English relative clause also ends on its verb: "the helper you
+made", "the module you created". A specific-artifact question built from
+one of these clauses — "can you explain the helper you made?", "where is
+the test file you created?", "what language was the parser you wrote?",
+"how slow is the function you wrote?", "what did you name the function you
+created?", "how many bugs has the code you wrote created?", "what is wrong
+with the module you made?" — satisfied the anchor exactly and deferred to
+the guarded decider with NO glob round at all, where origin/main runs the
+bare-symbol explain's own glob→read discovery (`need-glob`) — the
+anti-speculation control the WS-3 design exists for. The same shape hit a
+build-shaped bare tests ask naming a specific stem: "can you add tests for
+the parser you built?" had already computed `needs_glob="parser"` via the
+turn's own module-stem discovery, but the decider deferral won priority
+(`CHAIN_EXPLAIN` precedes `CHAIN_BUILD`) and shadowed it, precomputing a
+"Shipped so far: ..." ledger recap that a decider vote could emit instead.
+
+Reviewer's discriminator, adopted as-is: a recap's OBJECT is universal
+(everything/anything/all, or the narrower `what/which...so far` frame) —
+never a determiner + specific noun immediately before the final make-verb.
+`_MAYBE_RECAP_RE` (the single regex) is replaced by `_is_maybe_recap(task)`,
+requiring both:
+
+- `_UNIVERSAL_RECAP_RE` — a positive match: an opener (what/how/can/could/
+  would/so/where) followed by a universal-object token (everything/
+  anything/all) before the we/you+verb clause, OR a `what/which` opener
+  with a MANDATORY (not optional) trailing "so far".
+- `_SPECIFIC_ARTIFACT_RE` — a veto: a determiner (the/that/this/my/your/
+  our) followed by a noun phrase immediately before "you/we + built/made/
+  created/wrote/written/done" fails the match even when a universal token
+  appears elsewhere in the same sentence.
+
+Tightened in the conservative direction the reviewer specified: an
+under-matched recap question falls through to routing byte-identical to
+origin/main (the same accepted decider-judgment residual round 3's own
+amendment section restates above); an over-match steals a grounding round,
+the failure this fix closes. The two named positives ("what exactly have
+you built so far?", "can you list everything you've made?") still match;
+all seven attack inputs and the reviewer's verified-benign family ("can you
+add tests for the parser you built?", "could you delete the file you
+created?", "so where did you put the file you made?") now route
+byte-identical to origin/main — verified by running this branch's post-fix
+`classify.py` against origin/main's over all ten inputs, not assumed.
+
+**Minor: routing corpus grows to 72 inputs.** The seven attack inputs and
+three verified-benign inputs are added to
+`tests/unit/serving/test_serving_routing_corpus.py`, all ten pinned to
+origin/main's byte-identical routing — this boundary is now protected in
+both directions (an over-match regresses the attack rows; an accidental
+further-narrowing regresses the two positive rows, already pinned since
+round 3).
+
+**Minor: dead `_REJECTED_CONTRACT`/`_REJECTED_GATE` constants deleted.**
+Unreferenced since round 3's TERMINALS-registry refactor — `_reject_kind`
+reads a terminal's `mints` value as a plain string off a project's own
+TERMINALS dict, never compares it against a local constant. `_REFUSED`
+stays; it still gates the reason-carrying branch. `_SHIPPED` stays too.
