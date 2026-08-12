@@ -8,12 +8,29 @@ client output into this IR, and :mod:`benchmarks.agentic_serving.honesty` /
 :mod:`benchmarks.agentic_serving.metrics` never branch on which arm produced
 it.
 
-Pure data, no logic — deterministic and CI-safe.
+Mostly pure data — deterministic and CI-safe. :class:`DeadStreamError` is
+the one piece of shared behavior vocabulary: adapters raise it, and
+:mod:`benchmarks.agentic_serving.score_run` catches it, so no adapter is
+hardcoded into the scorer just to recognize "this turn's stream died".
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+
+
+class DeadStreamError(ValueError):
+    """Raised by an adapter's ``turn_from_events`` when a turn's raw events
+    end in a shape that looks exactly like the client died mid-tool-call (an
+    unresolved ``tool_use`` with nothing captured after it) — never for any
+    other malformed shape. A :class:`ValueError` subclass, so a caller that
+    doesn't know about the distinction (or doesn't need it) still sees a
+    normal parse failure; a caller that DOES know — ``score_run._load_runs``,
+    for a single-file run's FINAL turn only — can catch it specifically and
+    route just that one turn to the death channel instead of failing the
+    whole run over what was a mid-turn crash, not a systematic schema
+    mismatch (see ``score_run``'s module docstring).
+    """
 
 
 @dataclass(frozen=True)
@@ -66,7 +83,19 @@ class Turn:
 
 @dataclass(frozen=True)
 class Transcript:
-    """One arm's full battery run — the turns in order."""
+    """One arm's full battery run — the turns in order.
+
+    ``boundary_rule`` is ``None`` for adapters with no turn-splitting
+    ambiguity at all (``opencode_adapter``: one file per turn, the caller
+    already split it). For an adapter that splits ONE continuing-conversation
+    transcript into turns (``subagent_adapter``), it names which rule
+    actually decided the split — ``"promptid"`` (the primary rule) or
+    ``"string-fallback"`` (a declared degradation — see
+    ``subagent_adapter.split_turns``) — so a caller never has to guess
+    which one was used, and a report can say so instead of presenting every
+    run's turns as equally trustworthy.
+    """
 
     arm: str
     turns: tuple[Turn, ...] = ()
+    boundary_rule: str | None = None
