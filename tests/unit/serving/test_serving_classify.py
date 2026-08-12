@@ -262,6 +262,9 @@ def test_failed_read_attempt_refuses_instead_of_relooping() -> None:
     assert decision["target"] == "need-files"
     assert decision["needs_files"] == []
     assert "could not read storage.py" in decision["read_failed"]
+    # Review round 2 new blocker 2: a build ask's read refusal must carry
+    # is_build_ask so emit mints a BUILD-scoped ledger entry, not a plain one.
+    assert decision["is_build_ask"] is True
 
 
 def test_oversize_read_attempt_refuses_with_cap_reason() -> None:
@@ -287,6 +290,19 @@ def test_normal_decisions_carry_empty_read_fields() -> None:
     decision = _classify({"task": "write a function that adds two numbers"})
     assert decision["needs_files"] == []
     assert decision["read_failed"] == ""
+
+
+def test_is_build_ask_true_for_tests_primary_with_no_build_verb_or_named_file() -> None:
+    # Review round 2 new blocker 2: has_build_signal alone under-counts —
+    # "tests for the storage module" is tests_primary (a genuine build ask)
+    # but contains no _BUILD_RE verb and names no file (no ".py" extension).
+    decision = _classify({"task": "tests for the storage module"})
+    assert decision["is_build_ask"] is True
+
+
+def test_is_build_ask_false_for_a_concept_explain() -> None:
+    decision = _classify({"task": "how does async work in python"})
+    assert decision["is_build_ask"] is False
 
 
 # --- rung 1.5: target-read reads test_<stem>.py before a fix-led build
@@ -1905,6 +1921,9 @@ def test_bare_symbol_explain_multiple_candidates_refuses_naming_them() -> None:
     assert decision["needs_glob"] == ""
     assert "/work/classify.py" in decision["glob_failed"]
     assert "/work/decide.py" in decision["glob_failed"]
+    # Review round 2 new blocker 2: a bare-symbol EXPLAIN turn's discovery
+    # glob refusal must NOT carry is_build_ask — this ask was never a build.
+    assert decision["is_build_ask"] is False
 
 
 def test_bare_symbol_explain_ignores_a_coincidental_substring_match() -> None:

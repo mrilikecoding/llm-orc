@@ -960,17 +960,22 @@ def _find_ensemble(project_dir: Path, name: str) -> Path:
 def _load_emit_reject_prefixes(path: Path) -> _RejectPrefixes:
     """The reject/refuse prefix constants read straight out of a project's
     OWN ``emit.py`` (recap grounding, #133/#134; review round 1 blocker 2
-    adds ``REFUSED_PREFIX``) — the single source of truth the design doc
-    requires, never a literal duplicated here. A project's scripts are
-    configuration, not installed package content (they live under the
-    caller's ``project_dir``, resolved per instance, same as
-    ``_find_ensemble``), so this is a dynamic file-location import rather
-    than a static one. ``emit.py`` is self-contained (stdlib-only), so it
-    needs no sys.path change; loading it under a non-``__main__`` name
-    means its ``if __name__ == "__main__"`` block never runs. Any failure
-    (missing file, syntax error, missing constants) yields no prefixes —
-    the ledger then recognizes shipped builds only, same as before
-    #133/#134, never a hard failure of the whole turn.
+    adds a refused prefix, round 2 new blocker 2 splits it into a
+    build-scoped one) — the single source of truth the design doc requires,
+    never a literal duplicated here. A project's scripts are configuration,
+    not installed package content (they live under the caller's
+    ``project_dir``, resolved per instance, same as ``_find_ensemble``), so
+    this is a dynamic file-location import rather than a static one.
+    ``emit.py`` is self-contained (stdlib-only), so it needs no sys.path
+    change; loading it under a non-``__main__`` name means its
+    ``if __name__ == "__main__"`` block never runs. Any failure (missing
+    file, syntax error, missing constants) yields no prefixes — the ledger
+    then recognizes shipped builds only, same as before #133/#134, never a
+    hard failure of the whole turn.
+
+    Reads ``BUILD_REFUSED_PREFIX``, never the plain ``REFUSED_PREFIX`` — a
+    non-build refusal (a bare-symbol explain's ambiguous glob, say) must
+    never mint a build-outcome ledger entry (review round 2 new blocker 2).
     """
     try:
         spec = importlib.util.spec_from_file_location(
@@ -985,7 +990,7 @@ def _load_emit_reject_prefixes(path: Path) -> _RejectPrefixes:
     return _RejectPrefixes(
         contract=str(getattr(module, "SEAT_CONTRACT_REJECT_PREFIX", "")),
         gate=str(getattr(module, "ACCEPT_GATE_REJECT_PREFIX", "")),
-        refused=str(getattr(module, "REFUSED_PREFIX", "")),
+        refused=str(getattr(module, "BUILD_REFUSED_PREFIX", "")),
     )
 
 

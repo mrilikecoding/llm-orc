@@ -87,6 +87,9 @@ def main() -> None:
                 "glob_failed": str(shaped.get("glob_failed", "")),
                 "not_grounded": str(shaped.get("not_grounded", "")),
                 "recall_answer": str(shaped.get("recall_answer", "")),
+                # Review round 2 new blocker 2: pass through unchanged —
+                # emit selects the build-scoped vs plain refused prefix.
+                "is_build_ask": bool(shaped.get("is_build_ask", False)),
             }
         )
     )

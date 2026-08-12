@@ -158,6 +158,18 @@ def test_needs_files_and_read_failed_pass_through_resolve() -> None:
     assert routing["read_failed"] == ""
 
 
+def test_is_build_ask_passes_through_resolve() -> None:
+    # Review round 2 new blocker 2: emit selects the build-scoped vs plain
+    # refused prefix from this field.
+    routing = _resolve(_structural(is_build_ask=True))
+    assert routing["is_build_ask"] is True
+
+
+def test_is_build_ask_defaults_false_when_absent() -> None:
+    routing = _resolve(_structural())
+    assert routing["is_build_ask"] is False
+
+
 def test_decider_path_defaults_read_fields_empty() -> None:
     routing = _resolve(
         {

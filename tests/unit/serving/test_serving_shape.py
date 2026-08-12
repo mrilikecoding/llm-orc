@@ -180,3 +180,26 @@ def test_shape_passes_not_grounded_from_the_routing_decision() -> None:
     )
     assert shaped["not_grounded"] == "todo.py"
     assert shaped["build"] is False
+
+
+def test_shape_passes_is_build_ask_from_the_routing_decision() -> None:
+    # Review round 2 new blocker 2.
+    shaped = _shape(
+        {
+            "target": "need-files",
+            "kind": "need_files",
+            "file": "test_storage.py",
+            "build": False,
+            "is_build_ask": True,
+        },
+        {"results": {"out": {"response": "Requesting client files."}}},
+    )
+    assert shaped["is_build_ask"] is True
+
+
+def test_shape_defaults_is_build_ask_false_when_absent() -> None:
+    shaped = _shape(
+        {"target": "explainer", "kind": "explanation", "file": "solution.py"},
+        {"status": "ok", "primary": "It adds two numbers."},
+    )
+    assert shaped["is_build_ask"] is False
