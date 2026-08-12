@@ -21,7 +21,12 @@ SCRIPTS = REPO / ".llm-orc" / "scripts" / "agentic_serving"
 CLASSIFY = SCRIPTS / "classify.py"
 
 sys.path.insert(0, str(SCRIPTS))
-from classify import _explain_stems, _valid_recall_answer  # type: ignore  # noqa: E402
+from classify import (  # type: ignore  # noqa: E402
+    _explain_stems,
+    _grounded_corpus,
+    _ledger_recap,
+    _valid_recall_answer,
+)
 
 
 def _classify(turn: dict[str, Any]) -> dict[str, Any]:
@@ -1726,3 +1731,67 @@ def test_last_anchor_recall_is_not_a_wrong_accept_and_stays_on_the_explainer() -
         }
     )
     assert decision["target"] != "recall-answer"
+
+
+# --- phantom-symbol backstop substrate (#133/#134, defense in depth):
+# docs/plans/2026-07-17-recap-grounding-design.md §4 ---
+
+
+def test_grounded_corpus_includes_visible_basenames_and_bodies() -> None:
+    context = (
+        "assistant: [wrote storage.py]\n"
+        "  def save_todos(todos): ...\n"
+        "  def load_todos(): ..."
+    )
+    corpus = _grounded_corpus(context)
+    assert "storage.py" in corpus
+    assert "save_todos" in corpus
+
+
+def test_grounded_corpus_is_empty_when_nothing_is_visible() -> None:
+    assert _grounded_corpus("") == ""
+
+
+def test_ledger_recap_lists_shipped_paths_and_a_rejected_count() -> None:
+    recap = _ledger_recap(
+        {
+            "recall_ledger": [
+                {"ask": "a", "path": "todo.py", "outcome": "shipped"},
+                {"ask": "b", "outcome": "rejected"},
+            ]
+        }
+    )
+    assert "todo.py" in recap
+    assert "1" in recap
+
+
+def test_ledger_recap_says_nothing_built_when_the_ledger_is_empty() -> None:
+    recap = _ledger_recap({"recall_ledger": []})
+    assert "built" in recap.lower()
+    assert "yet" in recap.lower()
+
+
+def test_defer_recall_turn_carries_memory_shaped_backstop_fields() -> None:
+    # Wrong-accept-hunt target 6 substrate: a defer_recall (loose maybe_recall,
+    # decider-bound) turn is the ONLY memory-shaped path — a fuzzy recap
+    # question a model seat may still answer, so it's the one the phantom-
+    # symbol backstop scopes to (the design's own "layer 2 only" fallback).
+    decision = _classify(
+        {
+            "task": "what did you build originally?",
+            "recall_ledger": [],
+            "context": "",
+        }
+    )
+    assert decision["needs_decider"] is True
+    assert decision["memory_shaped"] is True
+    assert decision["ledger_recap"] != ""
+
+
+def test_non_defer_turn_carries_no_memory_shaped_fields() -> None:
+    # Never concept or named-file explains — "what deliberately does not
+    # change".
+    decision = _classify({"task": "explain what foo.py does"})
+    assert decision["memory_shaped"] is False
+    assert decision["grounded_text"] == ""
+    assert decision["ledger_recap"] == ""

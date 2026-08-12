@@ -323,6 +323,47 @@ def _visible_target_body(context: str, basename: str) -> str:
     return "\n".join(body_lines).strip()
 
 
+def _grounded_corpus(context: str) -> str:
+    """Every wire-visible artifact's identifying text (recap grounding
+    #133/#134, phantom-symbol backstop, docs/plans/2026-07-17-recap-
+    grounding-design.md §4): each VISIBLE ``[wrote ...]``/``[read ...]``
+    block's basename plus its body, concatenated. The whitelist a
+    memory-shaped seat answer's backtick-quoted claims are checked
+    against — never the raw context (which also carries user/assistant
+    PROSE that could coincidentally contain a fabricated name), only real
+    shipped-or-read artifact content.
+    """
+    visible, _ = _visibility(context)
+    parts = list(visible)
+    parts.extend(_visible_target_body(context, basename) for basename in visible)
+    return "\n".join(parts)
+
+
+def _ledger_recap(turn: dict) -> str:
+    """The deterministic fallback recap for the phantom-symbol backstop
+    (#133/#134): shipped paths plus a rejected count — never more than the
+    ledger holds, the same no-claims-beyond-ledger rule as ``_recall_message``.
+    """
+    ledger = turn.get("recall_ledger") or []
+    valid = [entry for entry in ledger if isinstance(entry, dict)]
+    shipped = [
+        str(entry["path"])
+        for entry in valid
+        if entry.get("outcome", "shipped") == "shipped" and entry.get("path")
+    ]
+    rejected = sum(1 for entry in valid if entry.get("outcome") == "rejected")
+    if not shipped and not rejected:
+        return "Nothing has been built in this session yet."
+    sentences = []
+    if shipped:
+        listed = ", ".join(f"`{path}`" for path in shipped)
+        sentences.append(f"Shipped so far: {listed}.")
+    if rejected:
+        plural = "s" if rejected != 1 else ""
+        sentences.append(f"{rejected} build{plural} rejected by the accept gate.")
+    return " ".join(sentences)
+
+
 def _files_to_request(
     task: str,
     context: str,
@@ -1239,6 +1280,15 @@ def main() -> None:
     )
     chain, step_index = decision.chain, decision.step_index
     recall_answer = _valid_recall_answer(recall_answer, target, needs_decider)
+    # #133/#134 phantom-symbol backstop (defense in depth, scoped narrowly to
+    # the design's own "layer 2 only" fallback): a defer_recall turn (loose
+    # maybe_recall, decider-bound) is the one memory-shaped path a model seat
+    # may still answer — form_gate checks its backtick-quoted claims against
+    # grounded_text, failing closed to ledger_recap. Never concept or
+    # named-file explains, which never set defer_recall.
+    memory_shaped = defer_recall
+    grounded_text = _grounded_corpus(conversation_raw) if memory_shaped else ""
+    ledger_recap = _ledger_recap(turn) if memory_shaped else ""
     # needs_run mirrors the routing decision itself (rather than the old
     # pre-route "wants_run and not has_run_block" guess) so a SECOND
     # need-run round — the re-fix's write awaiting its own run — reissues
@@ -1319,6 +1369,9 @@ def main() -> None:
                 "glob_failed": glob_failed,
                 "not_grounded": not_grounded,
                 "recall_answer": recall_answer,
+                "memory_shaped": memory_shaped,
+                "grounded_text": grounded_text,
+                "ledger_recap": ledger_recap,
                 "chain": chain,
                 "step_index": step_index,
             }
