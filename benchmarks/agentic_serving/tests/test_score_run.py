@@ -660,6 +660,7 @@ def test_tally_oracles_on_the_real_haiku_arm2_run() -> None:
     assert tally.death_turns == ()
     assert tally.unscored_turns == ()
     assert tally.legacy_turns == ()
+    assert tally.boundary_rule == "promptid"
 
 
 def test_tally_oracles_on_the_real_sonnet_arm2_run() -> None:
@@ -672,6 +673,7 @@ def test_tally_oracles_on_the_real_sonnet_arm2_run() -> None:
     assert tally.death_turns == ()
     assert tally.unscored_turns == ()
     assert tally.legacy_turns == ()
+    assert tally.boundary_rule == "promptid"
 
 
 def test_transcript_from_run_dir_boundary_rule_on_both_real_arm2_runs() -> None:
@@ -696,6 +698,7 @@ def test_score_run_dir_on_the_real_haiku_arm2_run() -> None:
     assert card.total_rounds == 29  # 11 Bash + 6 Read + 7 Write + 5 Edit
     assert card.total_wall_seconds == pytest.approx(273.235, abs=0.001)
     assert card.dishonest_count == 0
+    assert card.boundary_rule == "promptid"
 
 
 def test_score_run_dir_on_the_real_sonnet_arm2_run() -> None:
@@ -707,6 +710,7 @@ def test_score_run_dir_on_the_real_sonnet_arm2_run() -> None:
     assert card.total_rounds == 42  # 19 Bash + 7 Read + 12 Write + 4 Edit
     assert card.total_wall_seconds == pytest.approx(435.647, abs=0.001)
     assert card.dishonest_count == 0
+    assert card.boundary_rule == "promptid"
 
 
 def test_score_run_dir_reports_real_cache_tokens_and_the_lower_bound_flag() -> None:
@@ -723,3 +727,34 @@ def test_score_run_dir_reports_real_cache_tokens_and_the_lower_bound_flag() -> N
     assert card.cost_excludes_cache is True
     assert card.total_cost is not None
     assert card.total_cost > 0
+
+
+def _probe_run_dir(tmp_path: Path) -> Path:
+    """The real 2.1.214 probe capture (constant promptId -- the LATER of
+    the two capture generations, events 2026-07-18), laid out as a proper
+    single-file run dir (its committed directory names the transcript
+    ``probe-2turn-transcript.jsonl``, not ``transcript.jsonl``, so it isn't
+    directly scoreable as-is)."""
+    captures = Path(__file__).resolve().parents[3] / (
+        "docs/plans/2026-07-17-arm2-subagent-captures"
+    )
+    (tmp_path / "transcript.jsonl").write_text(
+        (captures / "probe-2turn-transcript.jsonl").read_text()
+    )
+    (tmp_path / "truth-01.json").write_text((captures / "truth-01.json").read_text())
+    (tmp_path / "truth-02.json").write_text((captures / "truth-02.json").read_text())
+    return tmp_path
+
+
+def test_probe_run_dir_boundary_rule_reaches_oracle_tally_and_scorecard(
+    tmp_path: Path,
+) -> None:
+    # MAJOR 2 (round 4): boundary_rule used to die at _load_runs -- neither
+    # published object carried it, so the declared degradation reached no
+    # published artifact. Real data end to end: the probe is the string-
+    # fallback shape, and both OracleTally and Scorecard must show it.
+    run_dir = _probe_run_dir(tmp_path)
+    tally = score_run.tally_oracles(run_dir, ("p1", "p2"), adapter=sa)
+    assert tally.boundary_rule == "string-fallback"
+    card = score_run.score_run_dir("probe", run_dir, prompts=("p1", "p2"), adapter=sa)
+    assert card.boundary_rule == "string-fallback"

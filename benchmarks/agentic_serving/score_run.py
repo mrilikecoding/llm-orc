@@ -113,6 +113,12 @@ class OracleTally:
     to a mid-run instrument crash. The fallback is transcript-shaped and
     channel-keyed, so it is not comparable across arms; a published table must
     not mix the two silently, and must say WHICH story explains the flag.
+
+    ``boundary_rule`` carries the single-file layout's declared turn-split
+    rule (``None`` for the per-turn layout, which has no turn-splitting
+    ambiguity at all — see ``subagent_adapter.split_turns``) — a declared
+    degradation must reach every published artifact, this one included, not
+    just ``Transcript``.
     """
 
     shipped_correct: int
@@ -121,6 +127,7 @@ class OracleTally:
     death_turns: tuple[int, ...] = ()
     unscored_turns: tuple[int, ...] = ()
     legacy_turns: tuple[int, ...] = ()
+    boundary_rule: str | None = None
 
     @property
     def shipped(self) -> int:
@@ -221,7 +228,7 @@ def tally_oracles(
     """
     directory = Path(run_dir)
     prompts = prompts or LADDER_PROMPTS
-    turns, missing, _boundary_rule = _load_runs(directory, prompts, adapter)
+    turns, missing, boundary_rule = _load_runs(directory, prompts, adapter)
     shipped_correct = shipped_broken = not_shipped = 0
     deaths: list[int] = []
     unscored: list[int] = []
@@ -257,6 +264,7 @@ def tally_oracles(
         death_turns=tuple(deaths),
         unscored_turns=tuple(unscored),
         legacy_turns=tuple(legacy),
+        boundary_rule=boundary_rule,
     )
 
 
@@ -278,6 +286,11 @@ class Scorecard:
     cache-token cost out because ``pricing`` had no rate for tokens the run
     actually reported: ``total_cost`` is then a LOWER BOUND, not the true
     total (see ``metrics.turn_cost_excludes_cache``).
+
+    ``boundary_rule`` carries the single-file layout's declared turn-split
+    rule (``None`` for the per-turn layout — see ``OracleTally`` and
+    ``subagent_adapter.split_turns``): a declared degradation must reach
+    every published artifact, not just ``Transcript``.
     """
 
     arm: str
@@ -291,6 +304,7 @@ class Scorecard:
     total_cache_creation_tokens: int
     total_cache_read_tokens: int
     cost_excludes_cache: bool
+    boundary_rule: str | None = None
 
     @property
     def n_completed(self) -> int:
@@ -510,6 +524,7 @@ def score(
         total_cache_creation_tokens=metrics.total_cache_creation_tokens(transcript),
         total_cache_read_tokens=metrics.total_cache_read_tokens(transcript),
         cost_excludes_cache=cost_excludes_cache,
+        boundary_rule=transcript.boundary_rule,
     )
 
 
