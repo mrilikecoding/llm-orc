@@ -46,7 +46,7 @@ with the continuation boundary between them).
    1's `promptId`, distinguished only by an `isMeta: true` flag. promptId's
    meaning turned out to be version-dependent, and this probe is the LATER
    of the two capture generations, not the earlier one (its containing
-   directory is dated one day after `docs/plans/2026-07-15-arm2-runs/`, but
+   directory is dated two days after `docs/plans/2026-07-15-arm2-runs/`, and
    that folder's own events are timestamped 2026-07-16 — earlier than this
    probe's 2026-07-18). Those earlier `arm2-runs` captures (client 2.1.210,
    entrypoint `cli`) DO get a fresh `promptId` per injected prompt, which is
