@@ -1322,7 +1322,18 @@ def main() -> None:
     # ledger entry only when it actually answers one. has_build_signal alone
     # under-counts: "tests for the storage module" is tests_primary (a build
     # ask) but names no file and contains no _BUILD_RE verb.
-    is_build_ask = has_build_signal or tests_primary
+    #
+    # Review round 3 minor: has_build_signal alone OVER-counts too — a named
+    # file on an explain turn ("explain what foo.py does") or an incidental
+    # _BUILD_RE token used as an ordinary noun ("explain the code you
+    # wrote", "code" matching \bcode\b) sets has_build_signal without the
+    # turn ever asking for a build. Narrow to False on an explain turn
+    # unless it's ALSO led by a fix verb (a fix-verb-led turn is never
+    # is_explain by construction — the two vocabularies don't overlap — so
+    # this only documents the invariant rather than changing behavior).
+    is_build_ask = (has_build_signal or tests_primary) and (
+        not is_explain or bool(_FIX_VERB_RE.match(task))
+    )
 
     # Interrogatives and turns LED by an explain marker stay explain turns;
     # a trailing marker ("run the tests and tell me what failed") does not
