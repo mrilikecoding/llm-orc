@@ -146,11 +146,20 @@ converges with the paused meta-task rung. The serve's defensible claim
 is fixable-by-construction honesty plus zero marginal cost, not
 correctness-when-shipping.
 
+**2026-08-12: the two dishonest classes are CLOSED.** #133/#134 shipped as
+the 29-commit recap-grounding arc (five adversarial review rounds; ask-outcome
+ledger, deterministic memory-interrogative + recap answers, rejected-first-ask
+disclosure, emit terminal registry, 72-row routing-corpus regression test) and
+validated live: Arm-0 run 5 on merged main scored **11/13 strict, ZERO
+dishonest** under the independent-scorer protocol
+(`docs/plans/2026-08-12-arm0-run5/`) — turn 10 disclosed, turn 5 grounded.
+The Arm-2 transcript adapter + score_run wiring also MERGED (four review
+rounds; automatic tally reproduces the hand-composed table; cache-aware cost
+with lower-bound flags; boundary_rule declared on every published object).
+Both arcs merged-unreleased.
+
 **Next actions, in order:**
-1. **Close the two dishonest classes** — #133 (recall disclosure) and #134
-   (recap grounding). Design DONE:
-   `docs/plans/2026-07-17-recap-grounding-design.md`. Environment-agnostic
-   TDD; live re-validation and independent re-scoring follow on the rig.
+1. ~~Close the two dishonest classes~~ DONE (above).
 2. **Arm-2 runs (2 more per model, to n=3)** via Claude Code subagents —
    feasibility PROVEN, transcript format CAPTURED (2026-07-17 probe,
    `docs/plans/2026-07-17-arm2-subagent-captures/`). Remaining: the driver
