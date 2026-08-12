@@ -131,11 +131,6 @@ def main() -> None:
                 "glob_failed": str(decision.get("glob_failed", "")),
                 "not_grounded": str(decision.get("not_grounded", "")),
                 "recall_answer": str(decision.get("recall_answer", "")),
-                # #133/#134 phantom-symbol backstop substrate: pass through
-                # unchanged — form_gate applies the actual check.
-                "memory_shaped": bool(decision.get("memory_shaped", False)),
-                "grounded_text": str(decision.get("grounded_text", "")),
-                "ledger_recap": str(decision.get("ledger_recap", "")),
             }
         )
     )
