@@ -39,15 +39,19 @@ from llm_orc.web.serving.serving_ensemble_caller import (  # noqa: E402
     _recall_ledger,
     _reject_kind,
     _RejectPrefixes,
+    _RejectTerminal,
 )
 
-# Review round 2 new blocker 2: the ledger recognizes ONLY the build-scoped
-# refused prefix — a plain "Refused:" (read/glob refusal on a turn with no
-# build signal) never mints a build-outcome entry.
-_PREFIXES = _RejectPrefixes(
-    contract=SEAT_CONTRACT_REJECT_PREFIX,
-    gate=ACCEPT_GATE_REJECT_PREFIX,
-    refused=BUILD_REFUSED_PREFIX,
+# Review round 3 minor 1: derived by iterating emit's own TERMINALS registry
+# — never a hand-built parallel mapping — the same discipline the caller's
+# own `_load_emit_reject_prefixes` now uses. Review round 2 new blocker 2:
+# a terminal whose `mints` is empty (the plain "Refused:" prefix — a
+# read/glob refusal on a turn with no build signal) never mints a
+# build-outcome entry, so it is filtered out here exactly as it is there.
+_PREFIXES = tuple(
+    _RejectTerminal(terminal.prefix, terminal.mints)
+    for terminal in TERMINALS.values()
+    if terminal.mints
 )
 
 
@@ -397,14 +401,23 @@ def test_caller_reads_reject_prefixes_from_the_projects_real_emit_module(
 ) -> None:
     # The design requires these be IMPORTED from a project's own emit.py,
     # never a literal duplicated in the caller — this proves the dynamic
-    # per-project load actually reads the real constants.
+    # per-project load actually reads the real TERMINALS registry (round 3
+    # minor 1: iterated, not read as three individually-named constants).
     scripts = tmp_path / "scripts" / "agentic_serving"
     scripts.mkdir(parents=True)
     (scripts / "emit.py").write_text(
-        'SEAT_CONTRACT_REJECT_PREFIX = "Seat contract not met: "\n'
-        'ACCEPT_GATE_REJECT_PREFIX = "Another round needed: "\n'
-        'BUILD_REFUSED_PREFIX = "Build refused: "\n'
-        'REFUSED_PREFIX = "Refused: "\n'
+        "from typing import NamedTuple\n\n"
+        "class Terminal(NamedTuple):\n"
+        "    prefix: str\n"
+        "    mints: str\n\n"
+        "TERMINALS = {\n"
+        '    "seat_contract": Terminal(\n'
+        '        "Seat contract not met: ", "rejected_contract"\n'
+        "    ),\n"
+        '    "accept_gate": Terminal("Another round needed: ", "rejected_gate"),\n'
+        '    "build_refused": Terminal("Build refused: ", "refused"),\n'
+        '    "refused": Terminal("Refused: ", ""),\n'
+        "}\n"
     )
     caller = ServingEnsembleCaller(project_dir=tmp_path)
 
