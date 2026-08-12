@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import json
 import sys
+from typing import NamedTuple
 
 # grounded-explain design (docs/plans/2026-07-12-grounded-explain-design.md):
 # a deterministic, non-speculative honest message — never "Refused:", since
@@ -38,13 +39,31 @@ _NOT_GROUNDED_MESSAGE = (
     "workspace, ask me to read it."
 )
 
+
+class Terminal(NamedTuple):
+    """One emit reject/refuse terminal: its wire PREFIX and its ask-outcome-
+    ledger MINTING classification (review round 2 major 3 — the project's
+    behavior-migrates-downward doctrine applied to emit). Every reject/
+    refuse terminal emit can produce declares both here, in ONE place, so
+    the caller-side invariant test iterating ``TERMINALS`` catches a newly
+    added terminal that doesn't declare (or mis-declares) how the ledger
+    should read it, instead of drifting from a hand-maintained parallel
+    list. ``mints`` is ``""`` for a terminal that never contributes a
+    build-outcome ledger entry (a refusal on a turn that carried no build
+    signal — never attributed to a gate the record doesn't support).
+    """
+
+    prefix: str
+    mints: str
+
+
 # Recap grounding (docs/plans/2026-07-17-recap-grounding-design.md, #133/#134):
-# the two prefix-stable templates a build ask degrades to when nothing
-# shipped for it — exported so the caller-side ask-outcome ledger can
-# recognize a REJECTED entry from the serve's own wire messages, never a
-# duplicated regex guessing at this wording. Both are prefixes only (the
-# reason text after them varies), so caller-side matching is a startswith
-# check, not equality.
+# the prefix-stable templates a build ask degrades to when nothing shipped
+# for it — exported so the caller-side ask-outcome ledger can recognize a
+# REJECTED/REFUSED entry from the serve's own wire messages, never a
+# duplicated regex guessing at this wording. Every prefix is anchored at
+# message start only (a startswith check, never equality — the reason text
+# after it varies).
 #
 # Known bound (wrong-accept-hunt target 3): the caller loads these dynamically
 # from THIS project's current emit.py at request time (never a version pinned
@@ -57,12 +76,17 @@ _NOT_GROUNDED_MESSAGE = (
 # these constants without also considering that old-session cost.
 SEAT_CONTRACT_REJECT_PREFIX = "Seat contract not met: "
 ACCEPT_GATE_REJECT_PREFIX = "Another round needed: "
-# The read-failed/glob-failed/build-invalid family (review round 1 blocker 2):
-# a THIRD minting class the caller-side ledger recognizes, deliberately never
-# split further — a "Refused:" message never claims which gate produced it
-# (a read failure and an invalid deliverable are unrelated causes), so the
-# caller's template states the wire reason verbatim instead of guessing.
+# The read-failed/glob-failed/build-invalid family on a turn with no build
+# signal — never mints a ledger entry, since the ask it answers wasn't a
+# build ask (review round 2 new blocker 2 splits this from BUILD_REFUSED_
+# PREFIX below).
 REFUSED_PREFIX = "Refused: "
+
+TERMINALS: dict[str, Terminal] = {
+    "seat_contract": Terminal(SEAT_CONTRACT_REJECT_PREFIX, "rejected_contract"),
+    "accept_gate": Terminal(ACCEPT_GATE_REJECT_PREFIX, "rejected_gate"),
+    "refused": Terminal(REFUSED_PREFIX, ""),
+}
 
 
 def _deps(raw: str) -> dict:
@@ -81,13 +105,14 @@ def _seam_outcome(gated: dict) -> dict | None:
     """The issue-#83 delegation-seam outcome, or ``None`` when the turn
     rides no seam (a build/prose turn). Failures refuse honestly before any
     request fires — one round per seam per turn, never a re-request."""
+    refused = TERMINALS["refused"]
     read_failed = str(gated.get("read_failed", ""))
     if read_failed:
-        return {"finish": True, "content": f"{REFUSED_PREFIX}{read_failed}"}
+        return {"finish": True, "content": f"{refused.prefix}{read_failed}"}
     glob_failed = str(gated.get("glob_failed", ""))
     if glob_failed:
         # issue #83 discovery: zero or ambiguous candidates refuse honestly.
-        return {"finish": True, "content": f"{REFUSED_PREFIX}{glob_failed}"}
+        return {"finish": True, "content": f"{refused.prefix}{glob_failed}"}
     needs_files = gated.get("needs_files") or []
     if needs_files:
         # delegate the file reads to the client permission seam.
@@ -140,7 +165,7 @@ def main() -> None:
         reason = gated.get("seat_contract_reason") or "seat contract not met"
         outcome = {
             "finish": True,
-            "content": f"{SEAT_CONTRACT_REJECT_PREFIX}{reason}",
+            "content": f"{TERMINALS['seat_contract'].prefix}{reason}",
         }
     elif build and accept is False:
         # The accept gate rejected the deliverable: route another round rather
@@ -150,7 +175,7 @@ def main() -> None:
         reason = gated.get("accept_reason") or "accept gate rejected"
         outcome = {
             "finish": True,
-            "content": f"{ACCEPT_GATE_REJECT_PREFIX}{reason}",
+            "content": f"{TERMINALS['accept_gate'].prefix}{reason}",
         }
     elif build and gated.get("valid", False):
         outcome = {
@@ -159,9 +184,10 @@ def main() -> None:
             "content": content,
         }
     elif build:
+        reason = gated.get("reason", "invalid deliverable")
         outcome = {
             "finish": True,
-            "content": f"{REFUSED_PREFIX}{gated.get('reason', 'invalid deliverable')}",
+            "content": f"{TERMINALS['refused'].prefix}{reason}",
         }
     else:
         outcome = {"finish": True, "content": content}
