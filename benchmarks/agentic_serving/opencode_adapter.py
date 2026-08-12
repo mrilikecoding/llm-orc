@@ -11,7 +11,19 @@ captures/``): JSONL, one event per line keyed by ``type`` — ``step_start``
 (envelope, ``timestamp``), ``text`` (``part.text``), ``tool_use``
 (``part.tool`` / ``part.state.input`` / ``part.state.output``), ``step_finish``
 (``part.tokens`` / ``part.cost``). See
-``docs/plans/2026-07-14-opencode-ir-adapter-design.md``. Deterministic, pure.
+``docs/plans/2026-07-14-opencode-ir-adapter-design.md``.
+
+Cache tokens (``part.tokens.cache.{write,read}``, demonstrated in
+``docs/plans/2026-07-14-arm0-runs/arm0-run1/turn-01.jsonl``) map to
+``Turn.cache_creation_tokens`` / ``Turn.cache_read_tokens`` — never
+discarded (round-3 review, MAJOR 3: leaving them out is arm-asymmetric,
+since ``subagent_adapter`` captures them, so a paid opencode arm would
+otherwise read ``cost_excludes_cache=False`` on a figure that actually
+omits real cache cost). Pricing them, and flagging a cost figure as a
+lower bound when the caller's ``Pricing`` has no rate for them, is
+:mod:`benchmarks.agentic_serving.metrics`'s job.
+
+Deterministic, pure.
 """
 
 from __future__ import annotations
@@ -81,12 +93,30 @@ def _tool_call(part: dict[str, Any]) -> ToolCall:
     )
 
 
+def _step_finish_tokens(part: dict[str, Any]) -> tuple[int, int, int, int]:
+    """One ``step_finish`` event's own ``(input, output, cache_creation,
+    cache_read)`` contribution. Reasoning bills at the OUTPUT rate
+    (Anthropic), so it's folded into output here rather than dropped."""
+    tokens = part.get("tokens", {}) or {}
+    input_tokens = int(tokens.get("input", 0) or 0)
+    output_tokens = int(tokens.get("output", 0) or 0) + int(
+        tokens.get("reasoning", 0) or 0
+    )
+    cache = tokens.get("cache", {}) or {}
+    cache_creation = int(cache.get("write", 0) or 0)
+    cache_read = int(cache.get("read", 0) or 0)
+    return input_tokens, output_tokens, cache_creation, cache_read
+
+
 def turn_from_events(events: list[dict[str, Any]], *, index: int, prompt: str) -> Turn:
     """Build one :class:`Turn` from a turn's ordered opencode events."""
     texts: list[str] = []
     tool_events: dict[object, dict[str, Any]] = {}
     input_sum = 0
     output_sum = 0
+    cache_creation_sum = 0
+    cache_read_sum = 0
+    saw_step_finish = False
     timestamps: list[int] = []
 
     for event in events:
@@ -106,18 +136,14 @@ def turn_from_events(events: list[dict[str, Any]], *, index: int, prompt: str) -
             call_id: object = part.get("callID") or object()
             tool_events[call_id] = part
         elif etype == "step_finish":
-            tokens = part.get("tokens", {}) or {}
-            input_sum += int(tokens.get("input", 0) or 0)
-            # Reasoning bills at the OUTPUT rate (Anthropic), so fold it into
-            # output. Cache-read/write tokens are EXCLUDED: they bill at
-            # 0.1x/1.25x rates a flat `Pricing` can't express, and opencode's
-            # paid-path token shape isn't captured yet. So cost here is
-            # FRESH-token cost — a lower bound on a cache-heavy paid turn;
-            # close it in Arc D with a real paid capture (grow IR/Pricing for
-            # cache). Documented, pinned by test, not silently dropped.
-            output_sum += int(tokens.get("output", 0) or 0) + int(
-                tokens.get("reasoning", 0) or 0
+            saw_step_finish = True
+            step_input, step_output, step_cache_creation, step_cache_read = (
+                _step_finish_tokens(part)
             )
+            input_sum += step_input
+            output_sum += step_output
+            cache_creation_sum += step_cache_creation
+            cache_read_sum += step_cache_read
 
     tool_calls = [_tool_call(part) for part in tool_events.values()]
 
@@ -129,6 +155,15 @@ def turn_from_events(events: list[dict[str, Any]], *, index: int, prompt: str) -
     else:
         input_tokens = input_sum
         output_tokens = output_sum
+
+    # Cache tokens are captured whenever a step_finish was observed at all
+    # (None only for a turn with NO token accounting whatsoever, matching
+    # subagent_adapter's convention — never discarded, and never conflated
+    # with a genuinely-zero report). Pricing them, and flagging a cost
+    # figure as a lower bound when pricing has no rate for them, is
+    # metrics.Pricing's job (metrics.turn_cost_excludes_cache).
+    cache_creation_tokens: int | None = cache_creation_sum if saw_step_finish else None
+    cache_read_tokens: int | None = cache_read_sum if saw_step_finish else None
 
     # Zero point: opencode's per-turn stream has no separate "prompt
     # arrived" event -- its FIRST event already is generation start (a
@@ -151,6 +186,8 @@ def turn_from_events(events: list[dict[str, Any]], *, index: int, prompt: str) -
         wall_seconds=wall_seconds,
         input_tokens=input_tokens,
         output_tokens=output_tokens,
+        cache_creation_tokens=cache_creation_tokens,
+        cache_read_tokens=cache_read_tokens,
     )
 
 

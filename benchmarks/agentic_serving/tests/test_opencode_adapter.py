@@ -158,10 +158,12 @@ class TestTokensAndWall:
         assert turn.input_tokens == 100
         assert turn.output_tokens == 50
 
-    def test_cache_tokens_are_excluded_documented_limit(self) -> None:
-        # Cache-read/write bill at 0.1x/1.25x, no slot in the flat Pricing and
-        # no real paid capture yet — excluded, so cost is fresh-token cost.
-        # This test PINS that deferral (documented, not silent).
+    def test_cache_tokens_are_captured_not_excluded(self) -> None:
+        # Round-3 review MAJOR 3: excluding cache tokens was arm-asymmetric
+        # (subagent_adapter captures them; opencode not capturing them made
+        # a paid opencode arm read cost_excludes_cache=False on a figure
+        # that actually omitted real cache cost). cache.write ->
+        # cache_creation_tokens, cache.read -> cache_read_tokens.
         events = [
             {
                 "type": "step_finish",
@@ -177,6 +179,27 @@ class TestTokensAndWall:
         turn = oa.turn_from_events(events, index=1, prompt="x")
         assert turn.input_tokens == 200
         assert turn.output_tokens == 30
+        assert turn.cache_creation_tokens == 100
+        assert turn.cache_read_tokens == 8000
+
+    def test_cache_tokens_are_none_only_when_no_step_finish_was_observed(
+        self,
+    ) -> None:
+        turn = oa.turn_from_events([], index=1, prompt="x")
+        assert turn.cache_creation_tokens is None
+        assert turn.cache_read_tokens is None
+
+    def test_real_arm0_turn_reports_zero_cache_tokens_not_none(self) -> None:
+        # arm0-run1/turn-01.jsonl: local/unbilled, so cache.{write,read} are
+        # genuinely 0 -- but a step_finish event WAS observed, so this must
+        # be a real reported zero, not the "no accounting at all" None.
+        text = (
+            Path(__file__).resolve().parents[3]
+            / "docs/plans/2026-07-14-arm0-runs/arm0-run1/turn-01.jsonl"
+        ).read_text()
+        turn = oa.turn_from_jsonl(text, index=1, prompt="x")
+        assert turn.cache_creation_tokens == 0
+        assert turn.cache_read_tokens == 0
 
     def test_all_cache_input_with_output_is_not_mislabeled_arm0(self) -> None:
         # A paid turn served entirely from cache-read input, but with real
