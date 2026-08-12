@@ -119,19 +119,19 @@ def test_a_turn_whose_transcript_yields_no_events_counts_as_missing(
     # honesty, which is what missing_turns exists to prevent. The invariant is
     # about EVENTS, not bytes: no events survived, so nothing was observed.
     (tmp_path / "turn-01.jsonl").write_text('{"type": "step_start", "timesta')
-    _, missing = score_run._load_runs(tmp_path, ("p1",))
+    _turns, missing, _rule = score_run._load_runs(tmp_path, ("p1",))
     assert missing == (1,)
 
 
 def test_a_whitespace_only_transcript_counts_as_missing(tmp_path: Path) -> None:
     (tmp_path / "turn-01.jsonl").write_text("\n  \n")
-    _, missing = score_run._load_runs(tmp_path, ("p1",))
+    _turns, missing, _rule = score_run._load_runs(tmp_path, ("p1",))
     assert missing == (1,)
 
 
 def test_a_turn_with_real_events_is_not_missing(tmp_path: Path) -> None:
     (tmp_path / "turn-01.jsonl").write_text('{"type":"text","part":{"text":"hi"}}')
-    _, missing = score_run._load_runs(tmp_path, ("p1",))
+    _turns, missing, _rule = score_run._load_runs(tmp_path, ("p1",))
     assert missing == ()
 
 
@@ -419,8 +419,11 @@ def test_single_file_layout_loads_via_the_given_adapter(tmp_path: Path) -> None:
         tmp_path,
         [_subagent_turn("p1", wrote=True), _subagent_turn("p2", wrote=False)],
     )
-    turns, missing = score_run._load_runs(tmp_path, ("p1", "p2"), adapter=sa)
+    turns, missing, boundary_rule = score_run._load_runs(
+        tmp_path, ("p1", "p2"), adapter=sa
+    )
     assert missing == ()
+    assert boundary_rule == "promptid"
     assert [t.index for t in turns] == [1, 2]
     assert turns[0].tool_calls[0].name == "write"
     assert turns[0].tool_calls[0].path == "todo.py"
@@ -435,7 +438,9 @@ def test_single_file_truncated_run_flags_trailing_turns_as_missing(
         tmp_path,
         [_subagent_turn("p1", wrote=True), _subagent_turn("p2", wrote=False)],
     )
-    turns, missing = score_run._load_runs(tmp_path, ("a", "b", "c", "d"), adapter=sa)
+    turns, missing, _rule = score_run._load_runs(
+        tmp_path, ("a", "b", "c", "d"), adapter=sa
+    )
     assert missing == (3, 4)
     assert turns[2].assistant_text == ""
     assert turns[2].tool_calls == ()
@@ -520,13 +525,23 @@ def test_single_file_raises_when_split_turns_exceed_declared_prompts(
         score_run._load_runs(tmp_path, ("p1", "p2"), adapter=sa)
 
 
-def test_an_interruption_notice_never_masks_a_later_death(tmp_path: Path) -> None:
-    # The BLOCKER-1 shape end to end: an interruption notice mid-turn-1
-    # reuses turn 1's promptId (a phantom boundary under the old
-    # string-only rule), and the run then genuinely dies before turn 2 ever
-    # starts. Under the old rule this would silently read as TWO completed
-    # turns (masking the real death); now it must refuse to score at all
-    # rather than report a wrong missing set.
+def test_a_died_before_end_plus_phantom_case_still_raises(tmp_path: Path) -> None:
+    # DOCUMENTED RESIDUAL, round-3 review MAJOR 1 point (c): this fixture
+    # carries only ONE promptId throughout, so promptId carries zero signal
+    # and split_turns falls back to the string-content rule. The
+    # interruption notice then becomes a real (phantom) turn-2 boundary
+    # under that fallback -- there is no promptId signal left to catch it
+    # with. That is a stated bound, not solved here: on a string-fallback
+    # capture, a phantom split plus a genuine death CAN coincidentally land
+    # on the declared count with the turns misaligned.
+    #
+    # In THIS fixture it still raises rather than silently mis-scoring --
+    # but INCIDENTALLY, not by guarantee: splitting on the phantom strands
+    # turn 1's own tool_use unresolved WITHIN turn 1's own slice (its
+    # tool_result landed in the phantom "turn 2" instead), an unlinked
+    # tool_use that is NOT this run's final turn, so it fails the whole
+    # run rather than reading as a clean death. A differently-shaped
+    # phantom+death combination is not guaranteed to be caught this way.
     events: list[dict[str, Any]] = [
         {"type": "user", "promptId": "pid-1", "message": {"content": "p1"}},
         {
@@ -560,8 +575,73 @@ def test_an_interruption_notice_never_masks_a_later_death(tmp_path: Path) -> Non
         },
     ]
     _write_transcript(tmp_path, [events])
-    with pytest.raises(ValueError, match="disagree"):
+    with pytest.raises(ValueError, match="unlinked"):
         score_run._load_runs(tmp_path, ("p1", "p2"), adapter=sa)
+
+
+def _real_haiku_lines() -> list[str]:
+    path = Path(__file__).resolve().parents[3] / (
+        "docs/plans/2026-07-15-arm2-runs/haiku-run1/transcript.jsonl"
+    )
+    return [line for line in path.read_text().splitlines() if line.strip()]
+
+
+def _truncated_after_turn_12_tool_use() -> str:
+    """Real haiku-run1 events, truncated right after turn 12's FIRST
+    tool_use (raw line 92, 0-indexed 91) with no result ever captured --
+    the exact shape a process killed mid-tool-call leaves. Turns 1-11
+    (including all three oracled turns, 1/6/7) are fully intact ahead of
+    the cut."""
+    return "\n".join(_real_haiku_lines()[:92])
+
+
+def test_a_mid_tool_call_death_scores_every_turn_before_it(tmp_path: Path) -> None:
+    # Review MAJOR 2: this used to make the WHOLE run unscoreable (turns
+    # 1-11, including all three oracled turns, lost with it) -- a
+    # sample-selection channel favoring the comparator, since Arm-2 deaths
+    # got rerun/dropped while Arm-0 deaths stayed published. Now only the
+    # turn that actually died is a death.
+    (tmp_path / "transcript.jsonl").write_text(_truncated_after_turn_12_tool_use())
+    turns, missing, boundary_rule = score_run._load_runs(
+        tmp_path, score_run.LADDER_PROMPTS, adapter=sa
+    )
+    assert boundary_rule == "promptid"
+    assert missing == (12, 13)
+    assert len(turns) == 13
+    # Turns 1-11 scored normally, not collateral damage.
+    for turn in turns[:11]:
+        assert turn.tool_calls or turn.assistant_text
+    assert turns[10].index == 11
+
+
+def test_a_mid_tool_call_death_scorecard_records_only_the_dead_turns(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "transcript.jsonl").write_text(_truncated_after_turn_12_tool_use())
+    card = score_run.score_run_dir(
+        "arm2-haiku", tmp_path, prompts=score_run.LADDER_PROMPTS, adapter=sa
+    )
+    assert card.n_turns == 13
+    assert card.missing_turns == (12, 13)
+    assert card.n_completed == 11
+    # The 11 real, intact turns still contribute real rounds -- not zeroed
+    # out along with the two dead ones.
+    assert card.total_rounds > 0
+
+
+def test_a_mid_run_unlinked_tool_use_still_raises_the_whole_run(
+    tmp_path: Path,
+) -> None:
+    # The SAME unresolved call as above, but turn 13's boundary follows it
+    # directly -- the run CONTINUED, so this cannot be explained as "the
+    # client died at the end". Must still fail the whole run: MAJOR 2 is
+    # narrow by design, only the run's actual final turn gets the death
+    # treatment.
+    lines = _real_haiku_lines()
+    text = "\n".join(lines[:92] + lines[98:])
+    (tmp_path / "transcript.jsonl").write_text(text)
+    with pytest.raises(ValueError, match="unlinked"):
+        score_run._load_runs(tmp_path, score_run.LADDER_PROMPTS, adapter=sa)
 
 
 def _real_arm2_run(run: str) -> Path:
@@ -592,6 +672,15 @@ def test_tally_oracles_on_the_real_sonnet_arm2_run() -> None:
     assert tally.death_turns == ()
     assert tally.unscored_turns == ()
     assert tally.legacy_turns == ()
+
+
+def test_transcript_from_run_dir_boundary_rule_on_both_real_arm2_runs() -> None:
+    for run in ("haiku-run1", "sonnet-run1"):
+        transcript = score_run.transcript_from_run_dir(
+            f"arm2-{run}", _real_arm2_run(run), adapter=sa
+        )
+        assert transcript.boundary_rule == "promptid"
+        assert len(transcript.turns) == 13
 
 
 def test_score_run_dir_on_the_real_haiku_arm2_run() -> None:
