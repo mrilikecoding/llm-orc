@@ -363,10 +363,11 @@ def _write_confirmed(items: Sequence[Any], call_id: str) -> bool:
 # matched, retained on the ledger entry so the recall templates can state an
 # honest, kind-specific outcome instead of a generic "rejected" — never
 # attribute a seat-contract miss or a read/glob/build-invalid refusal to "the
-# accept gate".
+# accept gate". "rejected_contract"/"rejected_gate" themselves are read as
+# plain strings off a project's own TERMINALS registry (round 3 minor 1) and
+# never compared against a local constant here — only "shipped" and
+# "refused" (the reason-carrying kind) are referenced by name in this module.
 _SHIPPED = "shipped"
-_REJECTED_CONTRACT = "rejected_contract"
-_REJECTED_GATE = "rejected_gate"
 _REFUSED = "refused"
 
 
