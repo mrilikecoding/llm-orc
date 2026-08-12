@@ -7,24 +7,29 @@ arm-agnostic IR (:mod:`benchmarks.agentic_serving.transcript`) so
 branches on arm; this adapter is where the subagent-specific shape is
 absorbed.
 
-Schema pinned by real captures (``docs/plans/2026-07-15-arm2-runs/`` — two
-committed 13-turn runs, haiku and sonnet; probed and documented at
-``docs/plans/2026-07-17-arm2-subagent-captures/README.md``). One run is ONE
-continuing conversation logged to a SINGLE JSONL file (unlike opencode's
-one-file-per-turn), so this module also splits a run into turns.
+Schema pinned by real captures — THREE of them, and ``promptId``'s meaning is
+VERSION-DEPENDENT across them (corrected round-3 review; the original capture
+README finding 4 claimed promptId alone was the boundary signal, which the
+probe's OWN data falsifies — see the dated correction note in the README):
 
-Turn boundaries (capture README finding 4): the PRIMARY rule is the first
-occurrence of a new ``promptId`` on a ``user``-typed event. A ``user``-typed
-event with a plain-STRING ``message.content`` is kept as an independent
-CROSS-CHECK, because it is what every real injected prompt looks like too —
-but it is also what an in-turn interruption notice
-("[Request interrupted by user]") looks like, and that notice REUSES the
-current turn's promptId rather than starting a new one. When the two rules
-disagree, :func:`split_turns` raises rather than guessing: silently
-following the string rule alone would either misalign every later turn
-against its oracle, or — if the phantom boundary lands at the end of a
-transcript — invent an extra completed turn and MASK a genuine death. That
-phantom class is unrepresentable today, by design, until it needs handling.
+- ``docs/plans/2026-07-15-arm2-runs/{haiku,sonnet}-run1/transcript.jsonl``
+  (client version 2.1.210, entrypoint ``cli``) — two committed 13-turn runs.
+  Each injected prompt gets a FRESH ``promptId``; a tool-result event or an
+  in-turn interruption notice ("[Request interrupted by user]") REUSES the
+  current turn's promptId. promptId-change is the reliable, PRIMARY signal.
+- ``docs/plans/2026-07-17-arm2-subagent-captures/probe-2turn-transcript.jsonl``
+  (client version 2.1.214, entrypoint ``remote_mobile``) — ONE promptId for
+  the entire 36-event, two-turn session; its own genuine turn-2 boundary
+  REUSES turn 1's promptId, distinguished only by an ``isMeta: true`` flag
+  (a candidate discriminator for future verification, not keyed on here
+  with n=1 evidence). promptId carries ZERO signal in this file.
+
+One run is ONE continuing conversation logged to a SINGLE JSONL file (unlike
+opencode's one-file-per-turn), so this module also splits a run into turns —
+see :func:`split_turns` for the full directional rule (promptId primary when
+it varies, string-content fallback — declared via ``boundary_rule``, never
+silent — when it doesn't) and the residual bound it states rather than
+solves.
 
 Top-level event ``type`` is one of ``user`` / ``assistant`` / ``attachment``.
 ``assistant`` message content blocks are ``thinking`` (skipped — no scored
@@ -51,13 +56,21 @@ to an empty turn: a silently-dropped stream would read as honest restraint
 in the shipped/oracle tally, which is exactly the bias-toward-comparator
 failure this instrument exists to avoid. The same applies at TOOL
 granularity: a ``tool_result`` whose ``tool_use_id`` matches no observed
-call (orphaned), a ``tool_use`` that never gets a linked ``tool_result``
-(unlinked — the realistic shape a dead-mid-tool-call subagent leaves), or a
+call (orphaned) always raises. A ``tool_use`` that never gets a linked
+``tool_result`` (unlinked) raises too — as :class:`DeadStreamError
+<benchmarks.agentic_serving.transcript.DeadStreamError>` specifically when
+it is the LAST thing the turn's own slice captured (the realistic shape a
+process killed mid-tool-call leaves; ``score_run`` catches this ONE typed
+exception for a single-file run's final turn only, routing that turn to
+the death channel instead of failing the whole run — MAJOR 2, round 3), or
+plain ``ValueError`` for any other unlinked shape (something else was
+captured after the call, so a client-side crash doesn't explain it). A
 ``tool_result`` with non-string ``content`` (documented as verbatim
 elsewhere; a structured value would otherwise get silently ``str()``-repr'd)
-all RAISE rather than producing a ``ToolCall`` with an empty or mangled
-``result_text`` that a downstream honesty check could misread as "verified,
-but nothing observed" instead of "this stream is unsafe to score."
+also raises. None of these ever produce a ``ToolCall`` with an empty or
+mangled ``result_text`` that a downstream honesty check could misread as
+"verified, but nothing observed" instead of "this stream is unsafe to
+score."
 
 Usage/token accounting: multiple JSONL lines share one assistant
 ``message.id`` (streaming increments — a growing usage snapshot per content
@@ -95,7 +108,12 @@ import json
 from datetime import datetime
 from typing import Any
 
-from benchmarks.agentic_serving.transcript import ToolCall, Transcript, Turn
+from benchmarks.agentic_serving.transcript import (
+    DeadStreamError,
+    ToolCall,
+    Transcript,
+    Turn,
+)
 
 # Real tool names -> lowercase IR names, demonstrated in BOTH committed runs
 # (see module docstring for the Edit discrepancy). Anything else raises.
@@ -159,11 +177,11 @@ def _string_content_boundary_indices(events: list[dict[str, Any]]) -> list[int]:
 
 
 def _promptid_boundary_indices(events: list[dict[str, Any]]) -> list[int]:
-    """The PRIMARY boundary rule (capture README finding 4): a new turn
-    starts at the first ``user``-typed event to carry a given ``promptId``.
-    A tool-result event, or an interruption notice, reuses the CURRENT
-    turn's promptId and is never a boundary under this rule, unlike the
-    string-content rule above."""
+    """A new turn starts at the first ``user``-typed event to carry a given
+    ``promptId``. A tool-result event, or an interruption notice, reuses the
+    CURRENT turn's promptId and is never a boundary under this rule, unlike
+    the string-content rule above. Only meaningful when promptId actually
+    VARIES across the file — see :func:`split_turns`."""
     seen: set[str] = set()
     boundaries: list[int] = []
     for i, event in enumerate(events):
@@ -178,36 +196,97 @@ def _promptid_boundary_indices(events: list[dict[str, Any]]) -> list[int]:
     return boundaries
 
 
-def split_turns(events: list[dict[str, Any]]) -> list[list[dict[str, Any]]]:
-    """Split one run's full ordered event stream into per-turn slices at
-    each injected-prompt boundary. A stream with no boundary (empty, or
-    truncated before the first prompt survived parsing) splits into zero
-    turns.
+def _distinct_promptids(events: list[dict[str, Any]]) -> set[str]:
+    """Every distinct ``promptId`` observed on a ``user``-typed event. 0 or
+    1 distinct value means promptId carries NO discriminating signal in this
+    file (the 2.1.214 remote_mobile probe shape: one promptId for the whole
+    session); 2+ means it does (the 2.1.210 cli shape: a fresh promptId per
+    injected prompt). See :func:`split_turns`."""
+    ids: set[str] = set()
+    for event in events:
+        if event.get("type") != "user":
+            continue
+        prompt_id = event.get("promptId")
+        if isinstance(prompt_id, str):
+            ids.add(prompt_id)
+    return ids
 
-    Raises when the promptId-based rule and the string-content cross-check
-    disagree (see the module docstring), or when any event precedes the
-    first boundary — nothing should exist before the first injected prompt,
-    and silently dropping such events would hide a schema surprise the same
-    way silently mis-splitting would.
+
+def split_turns(
+    events: list[dict[str, Any]],
+) -> tuple[list[list[dict[str, Any]]], str]:
+    """Split one run's full ordered event stream into per-turn slices at
+    each injected-prompt boundary, returning ``(turn_slices, boundary_rule)``.
+    A stream with no boundary (empty, or truncated before the first prompt
+    survived parsing) splits into zero turns.
+
+    promptId's meaning is VERSION-DEPENDENT (falsified round-3 review,
+    against the 2.1.214 ``probe-2turn-transcript.jsonl`` capture, which
+    carries ONE promptId across all 36 events — its own genuine turn-2
+    boundary reuses turn 1's promptId, distinguished only by an ``isMeta:
+    true`` flag that is a CANDIDATE discriminator for future verification,
+    not keyed on here with n=1 evidence). A DIRECTIONAL guard, not a
+    symmetric equality check:
+
+    - If promptId VARIES across the file (2+ distinct values — the 2.1.210
+      cli shape, both committed 13-turn runs): promptId-change is PRIMARY.
+      A string-content boundary whose promptId was already seen is a
+      NON-boundary (the phantom/interruption-notice class — silently
+      absorbed, no raise). A promptId-change boundary the string rule
+      does NOT corroborate (list content, not a string) RAISES as schema
+      drift — a legitimate list-content prompt this adapter doesn't know
+      how to handle yet, or genuine drift; either way, not silently guessed.
+    - If the file carries 0 or 1 distinct promptId throughout (the 2.1.214
+      probe shape): promptId carries ZERO signal. Falls back to the
+      string-content rule alone, and RECORDS that fallback explicitly via
+      ``boundary_rule`` (``"promptid"`` or ``"string-fallback"``) — a
+      declared degradation, never silent.
+
+    RESIDUAL BOUND, stated honestly rather than solved: on a
+    string-fallback capture, a phantom string event still splits as an
+    extra turn (there is no promptId signal left to catch it with). The
+    long-direction raise in ``score_run`` catches a resulting COUNT
+    mismatch, but a phantom turn plus a genuine death can coincidentally
+    land back on the declared count with the turns misaligned against their
+    oracles. Not solved here — a stated bound.
+
+    Also raises when any NON-ATTACHMENT event precedes the first boundary
+    (attachment events are allowed there — both real captures already place
+    them immediately after the boundary, so before it is one harness change
+    away and benign by type); silently dropping a leading user/assistant
+    event would hide a schema surprise the same way silently mis-splitting
+    would.
     """
-    by_promptid = _promptid_boundary_indices(events)
     by_string = _string_content_boundary_indices(events)
-    if by_promptid != by_string:
-        raise ValueError(
-            "turn-boundary rules disagree: promptId-based boundaries "
-            f"{by_promptid} != string-content boundaries {by_string} -- "
-            "refusing to guess which is right (see split_turns docstring)"
-        )
-    boundaries = by_promptid
+    if len(_distinct_promptids(events)) <= 1:
+        boundaries = by_string
+        boundary_rule = "string-fallback"
+    else:
+        by_promptid = _promptid_boundary_indices(events)
+        missed = [i for i in by_promptid if i not in by_string]
+        if missed:
+            raise ValueError(
+                f"promptId boundary(ies) at {missed} have no matching "
+                "string-content event -- schema drift (a list-content "
+                "injected prompt?), refusing to guess (see split_turns "
+                "docstring)"
+            )
+        boundaries = by_promptid
+        boundary_rule = "promptid"
+
     if not boundaries:
-        return []
-    if boundaries[0] != 0:
+        return [], boundary_rule
+    leading = [
+        event for event in events[: boundaries[0]] if event.get("type") != "attachment"
+    ]
+    if leading:
         raise ValueError(
-            f"{boundaries[0]} event(s) precede the first turn boundary at "
-            f"index {boundaries[0]}"
+            f"{len(leading)} non-attachment event(s) precede the first "
+            f"turn boundary at index {boundaries[0]}"
         )
     ends = boundaries[1:] + [len(events)]
-    return [events[start:end] for start, end in zip(boundaries, ends, strict=True)]
+    slices = [events[start:end] for start, end in zip(boundaries, ends, strict=True)]
+    return slices, boundary_rule
 
 
 def _tool_ir_name(raw_name: str) -> str:
@@ -336,6 +415,53 @@ def _dedup_usage(
     return input_sum, output_sum, cache_creation_sum, cache_read_sum
 
 
+def _last_call_is_terminal(
+    events: list[dict[str, Any]], state: _TurnState, unlinked: list[str]
+) -> bool:
+    """True when the LAST tool_use this turn attempted is unlinked AND the
+    LAST raw event in the turn's own slice is the assistant message that
+    emitted it — nothing else was captured after the call fired, exactly
+    the shape a process killed mid-tool-call leaves. A tool_use unresolved
+    somewhere EARLIER while the turn otherwise continues is a different,
+    less explicable shape and does not qualify (see :class:`DeadStreamError`
+    and ``score_run``'s MAJOR-2 fix)."""
+    if not state.tool_order or state.tool_order[-1] not in unlinked:
+        return False
+    if not events:
+        return False
+    last_event = events[-1]
+    if last_event.get("type") != "assistant":
+        return False
+    content = (last_event.get("message") or {}).get("content")
+    if not isinstance(content, list):
+        return False
+    last_call_id = state.tool_order[-1]
+    return any(
+        isinstance(block, dict)
+        and block.get("type") == "tool_use"
+        and block.get("id") == last_call_id
+        for block in content
+    )
+
+
+def _raise_for_unlinked(
+    events: list[dict[str, Any]], state: _TurnState, unlinked: list[str]
+) -> None:
+    """Never returns normally: raises :class:`DeadStreamError` when the LAST
+    tool_use this turn attempted is unlinked and terminal (see
+    :func:`_last_call_is_terminal`), else plain :class:`ValueError` for any
+    other unlinked shape."""
+    if _last_call_is_terminal(events, state, unlinked):
+        raise DeadStreamError(
+            f"unlinked tool_use call {state.tool_order[-1]!r}, no "
+            "tool_result observed, and nothing captured after it -- "
+            "the shape a process killed mid-tool-call leaves"
+        )
+    raise ValueError(
+        f"unlinked tool_use call(s), no tool_result observed: {unlinked!r}"
+    )
+
+
 def turn_from_events(events: list[dict[str, Any]], *, index: int, prompt: str) -> Turn:
     """Build one :class:`Turn` from one turn's ordered subagent events."""
     state = _TurnState()
@@ -365,9 +491,7 @@ def turn_from_events(events: list[dict[str, Any]], *, index: int, prompt: str) -
         call_id for call_id in state.tool_order if call_id not in state.tool_results
     ]
     if unlinked:
-        raise ValueError(
-            f"unlinked tool_use call(s), no tool_result observed: {unlinked!r}"
-        )
+        _raise_for_unlinked(events, state, unlinked)
 
     tool_calls = tuple(
         _tool_call(
@@ -411,12 +535,13 @@ def transcript_from_run(
     ONE file) into turns at each injected-prompt boundary and assemble a
     :class:`Transcript`, numbered from 1. ``prompts`` must match the number
     of turns found — a mismatch raises rather than silently misaligning
-    prompts to turns."""
-    turn_slices = split_turns(parse_events(jsonl_text))
+    prompts to turns. ``Transcript.boundary_rule`` carries which rule
+    :func:`split_turns` actually used (see its docstring) — never silent."""
+    turn_slices, boundary_rule = split_turns(parse_events(jsonl_text))
     turns = tuple(
         turn_from_events(events, index=i, prompt=prompt)
         for i, (events, prompt) in enumerate(
             zip(turn_slices, prompts, strict=True), start=1
         )
     )
-    return Transcript(arm=arm, turns=turns)
+    return Transcript(arm=arm, turns=turns, boundary_rule=boundary_rule)

@@ -22,6 +22,7 @@ import pytest
 from benchmarks.agentic_serving import honesty
 from benchmarks.agentic_serving import subagent_adapter as sa
 from benchmarks.agentic_serving.score_run import LADDER_PROMPTS
+from benchmarks.agentic_serving.transcript import DeadStreamError
 
 _RUNS = Path(__file__).resolve().parents[3] / "docs/plans/2026-07-15-arm2-runs"
 
@@ -34,7 +35,14 @@ def _run_text(run: str) -> str:
 @cache
 def _run_turns(run: str) -> tuple[tuple[dict[str, Any], ...], ...]:
     events = sa.parse_events(_run_text(run))
-    return tuple(tuple(turn) for turn in sa.split_turns(events))
+    turns, _boundary_rule = sa.split_turns(events)
+    return tuple(tuple(turn) for turn in turns)
+
+
+_PROBE_PATH = (
+    Path(__file__).resolve().parents[3]
+    / "docs/plans/2026-07-17-arm2-subagent-captures/probe-2turn-transcript.jsonl"
+)
 
 
 class TestParseEvents:
@@ -63,7 +71,18 @@ class TestSplitTurns:
             assert isinstance(first["message"]["content"], str)
 
     def test_no_events_is_no_turns(self) -> None:
-        assert sa.split_turns([]) == []
+        turns, _rule = sa.split_turns([])
+        assert turns == []
+
+    def test_haiku_run_boundary_rule_is_promptid(self) -> None:
+        # A fresh promptId per injected prompt (2.1.210 cli) -- the primary
+        # rule, not the string-content fallback.
+        _turns, rule = sa.split_turns(sa.parse_events(_run_text("haiku-run1")))
+        assert rule == "promptid"
+
+    def test_sonnet_run_boundary_rule_is_promptid(self) -> None:
+        _turns, rule = sa.split_turns(sa.parse_events(_run_text("sonnet-run1")))
+        assert rule == "promptid"
 
 
 class TestFullTurnFromRealCapture:
@@ -222,6 +241,47 @@ class TestTranscriptFromRun:
         names = {call.name for turn in transcript.turns for call in turn.tool_calls}
         assert names == {"bash", "read", "write", "edit"}
 
+    def test_haiku_run_boundary_rule_is_promptid(self) -> None:
+        transcript = sa.transcript_from_run(
+            "arm2-haiku", _run_text("haiku-run1"), LADDER_PROMPTS
+        )
+        assert transcript.boundary_rule == "promptid"
+
+
+class TestProbeCaptureFallback:
+    """The 2.1.214 remote_mobile probe (round-3 review, MAJOR 1 blocker):
+    ONE promptId for the entire 36-event session -- its own genuine turn-2
+    boundary REUSES turn 1's promptId, distinguished only by ``isMeta:
+    true`` (a candidate discriminator for future verification, not keyed on
+    here with n=1 evidence). promptId carries zero signal in this file, so
+    split_turns must fall back to the string-content rule and say so via
+    boundary_rule, rather than either raising (round-2's bug, falsified by
+    this exact capture) or silently trusting an unverifiable split."""
+
+    def test_probe_splits_into_two_turns_via_the_string_fallback(self) -> None:
+        events = sa.parse_events(_PROBE_PATH.read_text())
+        turns, rule = sa.split_turns(events)
+        assert rule == "string-fallback"
+        assert len(turns) == 2
+
+    def test_probe_has_a_single_promptid_throughout(self) -> None:
+        # The falsifying evidence itself, pinned: ONE promptId on all 36
+        # events, including the genuine turn-2 boundary (isMeta: true).
+        events = sa.parse_events(_PROBE_PATH.read_text())
+        pids = {
+            e.get("promptId")
+            for e in events
+            if e.get("type") == "user" and isinstance(e.get("promptId"), str)
+        }
+        assert pids == {"4542968f-eddb-4c6b-9e77-2b9db5ebc944"}
+
+    def test_probe_transcript_from_run_surfaces_the_fallback(self) -> None:
+        transcript = sa.transcript_from_run(
+            "probe", _PROBE_PATH.read_text(), ("p1", "p2")
+        )
+        assert transcript.boundary_rule == "string-fallback"
+        assert len(transcript.turns) == 2
+
 
 class TestEdges:
     def test_empty_stream_is_an_empty_turn(self) -> None:
@@ -235,7 +295,8 @@ class TestEdges:
         assert turn.wall_seconds is None
 
     def test_empty_text_produces_no_turns(self) -> None:
-        assert sa.split_turns(sa.parse_events("")) == []
+        turns, _rule = sa.split_turns(sa.parse_events(""))
+        assert turns == []
 
 
 class TestFailLoudly:
@@ -325,38 +386,44 @@ def _tool_result_event(
 
 
 class TestTurnBoundaries:
-    """The capture README's finding 4: a turn starts at the first occurrence
-    of a NEW promptId, not at any user event with string content. A
-    "[Request interrupted by user]" notice is a user-typed, string-content
-    event that REUSES the current turn's promptId — the string-only rule
-    used to read it as a phantom extra boundary."""
+    """The capture README's finding 4, corrected (round-3 review, MAJOR 1
+    blocker): promptId's meaning is VERSION-DEPENDENT, not universal. In the
+    2.1.210 cli captures (both committed 13-turn runs), a fresh promptId per
+    injected prompt is PRIMARY: a phantom string-content event (an
+    interruption notice reusing the CURRENT turn's promptId) is silently
+    absorbed, never a boundary -- proven directly here, not just asserted.
+    A promptId-change the string rule doesn't corroborate (no string
+    content) raises as schema drift. See TestProbeCaptureFallback for the
+    single-promptId (2.1.214) shape, where promptId carries no signal at
+    all and split_turns falls back to the string rule instead."""
 
-    def _interrupted_turn(self) -> list[dict[str, Any]]:
-        return [
-            _boundary("do the thing", "pid-1"),
-            _tool_use_event("t1", "Bash", input_={"command": "sleep 5"}),
+    def test_a_reused_promptid_phantom_is_absorbed_not_a_boundary(self) -> None:
+        # Two REAL turns (promptId varies across the file), the second
+        # carrying an interruption notice that reuses ITS OWN promptId --
+        # the phantom shape. Must split into exactly two turns, not three.
+        events = [
+            _boundary("turn one", "pid-1"),
+            _tool_use_event("t1", "Bash", input_={"command": "x"}),
+            _tool_result_event("t1", "pid-1"),
+            _boundary("turn two", "pid-2"),
+            _tool_use_event(
+                "t2", "Bash", message_id="m2", input_={"command": "sleep 5"}
+            ),
             {
                 "type": "user",
-                "promptId": "pid-1",  # SAME id -- reused, not a new prompt
+                "promptId": "pid-2",  # SAME id as turn two's own boundary
                 "message": {"content": "[Request interrupted by user]"},
             },
-            _tool_result_event("t1", "pid-1", "done"),
+            _tool_result_event("t2", "pid-2", "done"),
         ]
-
-    def test_promptid_rule_ignores_a_reused_promptid_string_event(self) -> None:
-        # Rule (a) alone, in isolation: the interruption notice must not
-        # register as a second boundary.
-        assert sa._promptid_boundary_indices(self._interrupted_turn()) == [0]
-
-    def test_split_turns_raises_when_the_two_rules_disagree(self) -> None:
-        # Rule (b), the cross-check: the string-content rule DOES flag the
-        # notice (index 2) as a boundary, so the two rules disagree and
-        # split_turns refuses to guess which one is right -- the phantom
-        # class is unrepresentable, not silently mis-split (which would
-        # either misalign every later turn against its oracle, or mask a
-        # genuine death by inventing an extra completed turn).
-        with pytest.raises(ValueError, match="disagree"):
-            sa.split_turns(self._interrupted_turn())
+        turns, rule = sa.split_turns(events)
+        assert rule == "promptid"
+        assert len(turns) == 2
+        assert turns[1][0]["message"]["content"] == "turn two"
+        # Turn two's own tool call still resolves correctly around the
+        # phantom (which is a no-op string-content event mid-slice).
+        turn_two = sa.turn_from_events(turns[1], index=2, prompt="turn two")
+        assert turn_two.tool_calls[0].name == "bash"
 
     def test_a_genuinely_new_promptid_is_a_real_boundary(self) -> None:
         events = [
@@ -365,36 +432,104 @@ class TestTurnBoundaries:
             _tool_result_event("t1", "pid-1"),
             _boundary("turn two", "pid-2"),
         ]
-        turns = sa.split_turns(events)
+        turns, rule = sa.split_turns(events)
+        assert rule == "promptid"
         assert len(turns) == 2
         assert turns[1][0]["message"]["content"] == "turn two"
 
+    def test_a_promptid_boundary_with_no_string_content_raises_schema_drift(
+        self,
+    ) -> None:
+        # A NEW promptId the string rule doesn't corroborate -- a
+        # legitimate list-content injected prompt, or genuine schema drift.
+        # Either way this adapter doesn't know how to handle it yet, so it
+        # raises rather than silently picking a side.
+        events: list[dict[str, Any]] = [
+            _boundary("turn one", "pid-1"),
+            {
+                "type": "user",
+                "promptId": "pid-2",
+                "message": {
+                    "content": [
+                        {"type": "tool_result", "tool_use_id": "x", "content": "y"}
+                    ]
+                },
+            },
+        ]
+        with pytest.raises(ValueError, match="schema drift"):
+            sa.split_turns(events)
+
     def test_events_before_the_first_boundary_raise(self) -> None:
         events: list[dict[str, Any]] = [
-            {"type": "attachment", "attachment": {"type": "skill_listing"}},
+            {"type": "assistant"},
             _boundary("turn one", "pid-1"),
         ]
         with pytest.raises(ValueError, match="precede"):
             sa.split_turns(events)
 
+    def test_attachment_events_may_precede_the_first_boundary(self) -> None:
+        # Review MINOR 2: benign by type, and one harness change away from
+        # actually happening (both real captures have attachments right
+        # AFTER the boundary today, not before). Does not raise; the
+        # leading attachment simply isn't part of any turn's slice, same as
+        # it carries nothing the IR scores when it appears mid-transcript.
+        events: list[dict[str, Any]] = [
+            {"type": "attachment", "attachment": {"type": "skill_listing"}},
+            _boundary("turn one", "pid-1"),
+        ]
+        turns, _rule = sa.split_turns(events)
+        assert len(turns) == 1
+        assert turns[0][0]["message"]["content"] == "turn one"
+
 
 class TestOrphanedAndUnlinkedToolCalls:
-    """Review MAJOR 3: a dead tool stream at TOOL granularity used to yield
-    result_text="" and score HONEST (verified=True, observed=None) over a
-    green claim. Both shapes now raise instead."""
+    """Review MAJOR 3 (round 2) + MAJOR 2 (round 3): a dead tool stream at
+    TOOL granularity used to yield result_text="" and score HONEST
+    (verified=True, observed=None) over a green claim. An orphaned
+    tool_result always raises the whole turn. An unlinked tool_use raises
+    DeadStreamError (a ValueError subclass) ONLY when it's the LAST thing
+    this turn captured -- the shape a process killed mid-tool-call leaves.
+    score_run only ever catches DeadStreamError for a single-file run's
+    FINAL turn; any other unlinked shape (or DeadStreamError from a turn
+    that isn't final) still fails the whole run."""
 
     def test_orphaned_tool_result_raises(self) -> None:
         events = [_boundary("p", "pid-1"), _tool_result_event("unknown-id", "pid-1")]
         with pytest.raises(ValueError, match="orphaned"):
             sa.turn_from_events(events, index=1, prompt="p")
 
-    def test_unlinked_tool_use_raises(self) -> None:
+    def test_unlinked_tool_use_as_the_last_event_raises_dead_stream_error(
+        self,
+    ) -> None:
+        events = [
+            _boundary("p", "pid-1"),
+            _tool_use_event("t1", "Bash", input_={"command": "sleep 5"}),
+        ]
+        with pytest.raises(DeadStreamError, match="unlinked"):
+            sa.turn_from_events(events, index=1, prompt="p")
+
+    def test_dead_stream_error_is_still_a_value_error(self) -> None:
         events = [
             _boundary("p", "pid-1"),
             _tool_use_event("t1", "Bash", input_={"command": "sleep 5"}),
         ]
         with pytest.raises(ValueError, match="unlinked"):
             sa.turn_from_events(events, index=1, prompt="p")
+
+    def test_unlinked_tool_use_with_a_trailing_event_is_plain_value_error(
+        self,
+    ) -> None:
+        # Something else was captured AFTER the unresolved call -- not the
+        # truncation shape, so a caller must never read this as a clean
+        # death.
+        events: list[dict[str, Any]] = [
+            _boundary("p", "pid-1"),
+            _tool_use_event("t1", "Bash", input_={"command": "sleep 5"}),
+            {"type": "attachment", "attachment": {"type": "skill_listing"}},
+        ]
+        with pytest.raises(ValueError, match="unlinked") as excinfo:
+            sa.turn_from_events(events, index=1, prompt="p")
+        assert not isinstance(excinfo.value, DeadStreamError)
 
 
 class TestMalformedAssistantMessage:
