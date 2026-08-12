@@ -38,19 +38,27 @@ with the continuation boundary between them).
    transcript file. The turn boundary is visible as a new `promptId` on the
    injected user event.
 
-   **Correction (2026-08-12, WS-8 round-3 review).** That last sentence does
-   not hold in this probe's OWN committed data: `probe-2turn-transcript.jsonl`
-   carries exactly ONE `promptId` across all 36 events (client version
-   2.1.214, entrypoint `remote_mobile`) — turn 2's genuine injected prompt
-   REUSES turn 1's `promptId`, distinguished only by an `isMeta: true` flag.
-   promptId's meaning turned out to be version-dependent: the later
-   `docs/plans/2026-07-15-arm2-runs/` captures (client 2.1.210, entrypoint
-   `cli`) DO get a fresh `promptId` per injected prompt, which is what this
-   finding was actually describing. `subagent_adapter.split_turns` now
-   treats promptId-variation as the signal for which rule applies (a
-   directional guard, not a symmetric read of this finding), falling back to
-   the string-content rule with a declared `boundary_rule` when promptId
-   doesn't vary — see the adapter's module docstring for the full account.
+   **Correction (2026-08-12, WS-8 round-3 review; chronology fixed round-4).**
+   That last sentence does not hold in this probe's OWN committed data:
+   `probe-2turn-transcript.jsonl` carries exactly ONE `promptId` across all
+   36 events (client version 2.1.214, entrypoint `remote_mobile`, events
+   timestamped 2026-07-18) — turn 2's genuine injected prompt REUSES turn
+   1's `promptId`, distinguished only by an `isMeta: true` flag. promptId's
+   meaning turned out to be version-dependent, and this probe is the LATER
+   of the two capture generations, not the earlier one (its containing
+   directory is dated one day after `docs/plans/2026-07-15-arm2-runs/`, but
+   that folder's own events are timestamped 2026-07-16 — earlier than this
+   probe's 2026-07-18). Those earlier `arm2-runs` captures (client 2.1.210,
+   entrypoint `cli`) DO get a fresh `promptId` per injected prompt, which is
+   what this finding was actually describing — but as the LEGACY-capture
+   behavior, not the standing rule. Since THIS probe is the newer client
+   generation, its constant-promptId shape is the path future Arm-2
+   captures most likely take. `subagent_adapter.split_turns` falls back to
+   the string-content rule (with a declared `boundary_rule`) when promptId
+   doesn't vary, and — after a round-4 correction of its own — uses a
+   strict symmetric check when it does, rather than presuming which
+   same-promptId events are safe to treat as non-boundaries; see the
+   adapter's module docstring for the full account.
 5. **The shared truth substrate runs here.** `capture_truth.sh` is zsh; the
    container has none by default but `apt-get install zsh` works (driver
    setup step). With `TRUTH_PYTEST="uv run pytest"`, turn captures produced
