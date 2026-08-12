@@ -8,10 +8,12 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 from benchmarks.agentic_serving import score_run
+from benchmarks.agentic_serving import subagent_adapter as sa
 from benchmarks.agentic_serving.metrics import Pricing
 from benchmarks.agentic_serving.transcript import ToolCall, Transcript, Turn
 
@@ -337,3 +339,187 @@ def test_arm0_run1_reports_its_never_run_oracles_as_unscored() -> None:
     tally = score_run.tally_oracles(run1)
     assert tally.unscored_turns == (1, 6, 7)
     assert tally.turns == 0
+
+
+# ---------------------------------------------------------------------------
+# Arm-2 wiring: an `adapter` parameter threaded through _load_runs/
+# tally_oracles/score_run_dir, plus explicit (not sniffed) run-layout
+# detection so a single-file (subagent, one continuing conversation) run
+# scores through the SAME functions the per-turn-file (opencode) layout
+# uses. Arm-0 behavior above this line is unchanged: every existing test
+# omits `adapter`, so it defaults to opencode_adapter and every run dir
+# above only ever creates turn-NN.jsonl files (per-turn layout).
+# ---------------------------------------------------------------------------
+
+
+def _subagent_turn(prompt_text: str, *, wrote: bool) -> list[dict[str, Any]]:
+    """One minimal, valid subagent-shaped turn: the injected-prompt boundary
+    event, plus (when ``wrote``) a Write tool call and its result — enough
+    for split_turns to find the boundary and turn_from_events to build a
+    real Turn with a tool call."""
+    events: list[dict[str, Any]] = [
+        {"type": "user", "message": {"content": prompt_text}}
+    ]
+    if wrote:
+        events.append(
+            {
+                "type": "assistant",
+                "message": {
+                    "id": "m1",
+                    "usage": {"input_tokens": 1, "output_tokens": 1},
+                    "content": [
+                        {
+                            "type": "tool_use",
+                            "id": "t1",
+                            "name": "Write",
+                            "input": {"file_path": "todo.py", "content": "x"},
+                        }
+                    ],
+                },
+            }
+        )
+        events.append(
+            {
+                "type": "user",
+                "message": {
+                    "content": [
+                        {"type": "tool_result", "tool_use_id": "t1", "content": "ok"}
+                    ]
+                },
+            }
+        )
+    return events
+
+
+def _write_transcript(tmp_path: Path, turns: list[list[dict[str, Any]]]) -> None:
+    events = [event for turn in turns for event in turn]
+    (tmp_path / "transcript.jsonl").write_text(
+        "\n".join(json.dumps(event) for event in events)
+    )
+
+
+def test_a_run_dir_with_both_layouts_raises(tmp_path: Path) -> None:
+    (tmp_path / "turn-01.jsonl").write_text('{"type":"text","part":{"text":"hi"}}\n')
+    _write_transcript(tmp_path, [_subagent_turn("p1", wrote=False)])
+    with pytest.raises(ValueError, match="both"):
+        score_run._load_runs(tmp_path, ("p1",))
+
+
+def test_a_run_dir_with_neither_layout_raises(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="neither"):
+        score_run._load_runs(tmp_path, ("p1",))
+
+
+def test_single_file_layout_loads_via_the_given_adapter(tmp_path: Path) -> None:
+    _write_transcript(
+        tmp_path,
+        [_subagent_turn("p1", wrote=True), _subagent_turn("p2", wrote=False)],
+    )
+    turns, missing = score_run._load_runs(tmp_path, ("p1", "p2"), adapter=sa)
+    assert missing == ()
+    assert [t.index for t in turns] == [1, 2]
+    assert turns[0].tool_calls[0].name == "write"
+    assert turns[0].tool_calls[0].path == "todo.py"
+
+
+def test_single_file_truncated_run_flags_trailing_turns_as_missing(
+    tmp_path: Path,
+) -> None:
+    # The run died after turn 2: only two split turns exist in the
+    # transcript, but four prompts were expected.
+    _write_transcript(
+        tmp_path,
+        [_subagent_turn("p1", wrote=True), _subagent_turn("p2", wrote=False)],
+    )
+    turns, missing = score_run._load_runs(tmp_path, ("a", "b", "c", "d"), adapter=sa)
+    assert missing == (3, 4)
+    assert turns[2].assistant_text == ""
+    assert turns[2].tool_calls == ()
+
+
+def test_death_and_unscored_channels_do_not_collapse_into_each_other(
+    tmp_path: Path,
+) -> None:
+    # Turn 1: split turn present, shipped, oracle passed -> shipped_correct.
+    # Turn 6: split turn PRESENT but its truth-06.json is simply never
+    #         written (the capture channel failed, the client did not) ->
+    #         unscored, never not_shipped, never a death.
+    # Turn 7: split turn ABSENT -- the run died before turn 7 -- even though
+    #         a truth-07.json exists (the battery still ran its oracle after
+    #         the client was already gone) -> death, never unscored, never
+    #         not_shipped.
+    _write_transcript(
+        tmp_path,
+        [
+            _subagent_turn("a", wrote=True),
+            _subagent_turn("b", wrote=False),
+            _subagent_turn("c", wrote=False),
+            _subagent_turn("d", wrote=False),
+            _subagent_turn("e", wrote=False),
+            _subagent_turn("f", wrote=False),  # turn 6: present, no truth file
+        ],
+    )
+    _truth_with_manifest(tmp_path, 0, {})
+    _truth_with_manifest(tmp_path, 1, {"todo.py": "aa"}, oracle={"passed": True})
+    _truth(tmp_path, 7, {"passed": False, "detail": "died"})
+
+    tally = score_run.tally_oracles(
+        tmp_path, ("a", "b", "c", "d", "e", "f", "g"), adapter=sa
+    )
+    assert tally.unscored_turns == (6,)
+    assert tally.death_turns == (7,)
+    assert tally.not_shipped == 0
+    assert (tally.shipped_correct, tally.shipped_broken) == (1, 0)
+
+
+def test_single_file_scorecard_records_missing_turns(tmp_path: Path) -> None:
+    _write_transcript(tmp_path, [_subagent_turn("p1", wrote=False)])
+    card = score_run.score_run_dir(
+        "arm2-haiku", tmp_path, prompts=("a", "b", "c"), adapter=sa
+    )
+    assert card.n_turns == 3
+    assert card.missing_turns == (2, 3)
+    assert card.n_completed == 1
+
+
+def test_transcript_from_run_dir_with_the_single_file_layout(tmp_path: Path) -> None:
+    _write_transcript(
+        tmp_path,
+        [_subagent_turn("p1", wrote=True), _subagent_turn("p2", wrote=False)],
+    )
+    transcript = score_run.transcript_from_run_dir(
+        "arm2-haiku", tmp_path, prompts=("a", "b"), adapter=sa
+    )
+    assert transcript.arm == "arm2-haiku"
+    assert [t.index for t in transcript.turns] == [1, 2]
+    assert transcript.turns[0].tool_calls[0].name == "write"
+
+
+def _real_arm2_run(run: str) -> Path:
+    return Path(__file__).resolve().parents[3] / (
+        f"docs/plans/2026-07-15-arm2-runs/{run}"
+    )
+
+
+def test_tally_oracles_on_the_real_haiku_arm2_run() -> None:
+    tally = score_run.tally_oracles(_real_arm2_run("haiku-run1"), adapter=sa)
+    assert (tally.shipped_correct, tally.shipped_broken, tally.not_shipped) == (
+        3,
+        0,
+        0,
+    )
+    assert tally.death_turns == ()
+    assert tally.unscored_turns == ()
+    assert tally.legacy_turns == ()
+
+
+def test_tally_oracles_on_the_real_sonnet_arm2_run() -> None:
+    tally = score_run.tally_oracles(_real_arm2_run("sonnet-run1"), adapter=sa)
+    assert (tally.shipped_correct, tally.shipped_broken, tally.not_shipped) == (
+        3,
+        0,
+        0,
+    )
+    assert tally.death_turns == ()
+    assert tally.unscored_turns == ()
+    assert tally.legacy_turns == ()
