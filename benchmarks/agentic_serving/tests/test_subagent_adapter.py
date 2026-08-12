@@ -386,21 +386,30 @@ def _tool_result_event(
 
 
 class TestTurnBoundaries:
-    """The capture README's finding 4, corrected (round-3 review, MAJOR 1
-    blocker): promptId's meaning is VERSION-DEPENDENT, not universal. In the
-    2.1.210 cli captures (both committed 13-turn runs), a fresh promptId per
-    injected prompt is PRIMARY: a phantom string-content event (an
-    interruption notice reusing the CURRENT turn's promptId) is silently
-    absorbed, never a boundary -- proven directly here, not just asserted.
-    A promptId-change the string rule doesn't corroborate (no string
-    content) raises as schema drift. See TestProbeCaptureFallback for the
+    """The capture README's finding 4, corrected (round-3 review, MAJOR 1),
+    then corrected AGAIN (round-4 review, MAJOR 1 -- the round-3 fix was
+    itself a regression): promptId's meaning is VERSION-DEPENDENT, not
+    universal, but that does NOT license absorbing a same-promptId string
+    event as a presumed interruption-notice phantom in a varying-promptId
+    file. No committed capture evidences that class; round 3's absorption
+    was demonstrated unsafe on REAL haiku-run1 data (see
+    TestRealDataDisagreementRaises below) -- it silently merged two real
+    turns, produced a phantom death, and corrupted both hidden-oracle turns
+    6/7's transcripts while boundary_rule kept reporting "promptid". A
+    varying-promptId file now uses a strict SYMMETRIC check: ANY
+    disagreement between the promptId-based and string-content boundaries
+    raises, full stop -- until a real interruption-notice capture exists to
+    design absorption against. See TestProbeCaptureFallback for the
     single-promptId (2.1.214) shape, where promptId carries no signal at
     all and split_turns falls back to the string rule instead."""
 
-    def test_a_reused_promptid_phantom_is_absorbed_not_a_boundary(self) -> None:
+    def test_a_reused_promptid_string_event_raises_disagreement(self) -> None:
         # Two REAL turns (promptId varies across the file), the second
-        # carrying an interruption notice that reuses ITS OWN promptId --
-        # the phantom shape. Must split into exactly two turns, not three.
+        # carrying a string-content event that reuses ITS OWN promptId --
+        # the class round 3 silently absorbed (a presumed interruption
+        # notice) and round 4 found unsafe: nothing distinguishes this
+        # shape from a genuinely re-pointed/corrupted boundary without
+        # real evidence, so it must raise rather than guess.
         events = [
             _boundary("turn one", "pid-1"),
             _tool_use_event("t1", "Bash", input_={"command": "x"}),
@@ -416,14 +425,8 @@ class TestTurnBoundaries:
             },
             _tool_result_event("t2", "pid-2", "done"),
         ]
-        turns, rule = sa.split_turns(events)
-        assert rule == "promptid"
-        assert len(turns) == 2
-        assert turns[1][0]["message"]["content"] == "turn two"
-        # Turn two's own tool call still resolves correctly around the
-        # phantom (which is a no-op string-content event mid-slice).
-        turn_two = sa.turn_from_events(turns[1], index=2, prompt="turn two")
-        assert turn_two.tool_calls[0].name == "bash"
+        with pytest.raises(ValueError, match="disagree"):
+            sa.split_turns(events)
 
     def test_a_genuinely_new_promptid_is_a_real_boundary(self) -> None:
         events = [
@@ -437,9 +440,7 @@ class TestTurnBoundaries:
         assert len(turns) == 2
         assert turns[1][0]["message"]["content"] == "turn two"
 
-    def test_a_promptid_boundary_with_no_string_content_raises_schema_drift(
-        self,
-    ) -> None:
+    def test_a_promptid_boundary_with_no_string_content_raises(self) -> None:
         # A NEW promptId the string rule doesn't corroborate -- a
         # legitimate list-content injected prompt, or genuine schema drift.
         # Either way this adapter doesn't know how to handle it yet, so it
@@ -456,7 +457,7 @@ class TestTurnBoundaries:
                 },
             },
         ]
-        with pytest.raises(ValueError, match="schema drift"):
+        with pytest.raises(ValueError, match="disagree"):
             sa.split_turns(events)
 
     def test_events_before_the_first_boundary_raise(self) -> None:
@@ -480,6 +481,30 @@ class TestTurnBoundaries:
         turns, _rule = sa.split_turns(events)
         assert len(turns) == 1
         assert turns[0][0]["message"]["content"] == "turn one"
+
+
+class TestRealDataDisagreementRaises:
+    """Round-4 review MAJOR 1 (blocking), the reviewer's own demonstrating
+    input: real haiku-run1 with turn 5's boundary event's promptId
+    corrupted to turn 4's. Under round-3's absorb-in-varying-file logic
+    this silently produced 12 turns, a phantom death at (13), and left the
+    hidden-oracle turns 6/7 holding the WRONG transcript content -- all
+    while boundary_rule still reported "promptid". It must raise instead."""
+
+    def test_a_repointed_turn_boundary_raises(self) -> None:
+        events = sa.parse_events(_run_text("haiku-run1"))
+        turn_boundaries = [
+            i
+            for i, event in enumerate(events)
+            if event.get("type") == "user"
+            and isinstance(event.get("message", {}).get("content"), str)
+        ]
+        assert len(turn_boundaries) == 13  # sanity: the real, unedited data
+        turn4_index, turn5_index = turn_boundaries[3], turn_boundaries[4]
+        events[turn5_index] = dict(events[turn5_index])
+        events[turn5_index]["promptId"] = events[turn4_index]["promptId"]
+        with pytest.raises(ValueError, match="disagree"):
+            sa.split_turns(events)
 
 
 class TestOrphanedAndUnlinkedToolCalls:

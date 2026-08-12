@@ -10,26 +10,32 @@ absorbed.
 Schema pinned by real captures — THREE of them, and ``promptId``'s meaning is
 VERSION-DEPENDENT across them (corrected round-3 review; the original capture
 README finding 4 claimed promptId alone was the boundary signal, which the
-probe's OWN data falsifies — see the dated correction note in the README):
+LATER of the two capture generations below falsifies — see the dated
+correction note in the README). Chronologically:
 
 - ``docs/plans/2026-07-15-arm2-runs/{haiku,sonnet}-run1/transcript.jsonl``
-  (client version 2.1.210, entrypoint ``cli``) — two committed 13-turn runs.
-  Each injected prompt gets a FRESH ``promptId``; a tool-result event or an
-  in-turn interruption notice ("[Request interrupted by user]") REUSES the
-  current turn's promptId. promptId-change is the reliable, PRIMARY signal.
+  (client version 2.1.210, entrypoint ``cli``, events 2026-07-16 — the
+  EARLIER capture) — two committed 13-turn runs. Each injected prompt gets a
+  FRESH ``promptId``. This is the LEGACY-capture shape: reliable, but not
+  necessarily what future Arm-2 captures will look like.
 - ``docs/plans/2026-07-17-arm2-subagent-captures/probe-2turn-transcript.jsonl``
-  (client version 2.1.214, entrypoint ``remote_mobile``) — ONE promptId for
-  the entire 36-event, two-turn session; its own genuine turn-2 boundary
-  REUSES turn 1's promptId, distinguished only by an ``isMeta: true`` flag
-  (a candidate discriminator for future verification, not keyed on here
-  with n=1 evidence). promptId carries ZERO signal in this file.
+  (client version 2.1.214, entrypoint ``remote_mobile``, events 2026-07-18 —
+  the LATER capture, despite living in a directory dated one day before the
+  arm2-runs above) — ONE promptId for the entire 36-event, two-turn session;
+  its own genuine turn-2 boundary REUSES turn 1's promptId, distinguished
+  only by an ``isMeta: true`` flag (a candidate discriminator for future
+  verification, not keyed on here with n=1 evidence). promptId carries ZERO
+  signal in this file. Since this is the NEWER client generation, the
+  constant-promptId shape — and therefore the string-content fallback — is
+  the EXPECTED-FORWARD path for future Arm-2 captures, not a legacy
+  exception to a promptId-primary rule.
 
 One run is ONE continuing conversation logged to a SINGLE JSONL file (unlike
 opencode's one-file-per-turn), so this module also splits a run into turns —
-see :func:`split_turns` for the full directional rule (promptId primary when
-it varies, string-content fallback — declared via ``boundary_rule``, never
-silent — when it doesn't) and the residual bound it states rather than
-solves.
+see :func:`split_turns` for the full rule (string-content fallback — declared
+via ``boundary_rule``, never silent — when promptId carries no signal; a
+strict symmetric check, escaping loudly on any disagreement, when it does
+vary) and the residual bound it states rather than solves.
 
 Top-level event ``type`` is one of ``user`` / ``assistant`` / ``attachment``.
 ``assistant`` message content blocks are ``thinking`` (skipped — no scored
@@ -220,27 +226,40 @@ def split_turns(
     A stream with no boundary (empty, or truncated before the first prompt
     survived parsing) splits into zero turns.
 
-    promptId's meaning is VERSION-DEPENDENT (falsified round-3 review,
-    against the 2.1.214 ``probe-2turn-transcript.jsonl`` capture, which
-    carries ONE promptId across all 36 events — its own genuine turn-2
-    boundary reuses turn 1's promptId, distinguished only by an ``isMeta:
-    true`` flag that is a CANDIDATE discriminator for future verification,
-    not keyed on here with n=1 evidence). A DIRECTIONAL guard, not a
-    symmetric equality check:
+    promptId's meaning is VERSION-DEPENDENT across the two capture
+    generations (round-3 review): the 2.1.210 ``cli`` captures (both
+    committed 13-turn runs, events 2026-07-16 — the EARLIER capture) give
+    each injected prompt a fresh promptId; the 2.1.214 ``remote_mobile``
+    probe (``probe-2turn-transcript.jsonl``, events 2026-07-18 — the LATER
+    one) carries ONE promptId across all 36 events, with its own genuine
+    turn-2 boundary reusing turn 1's, distinguished only by an ``isMeta:
+    true`` flag. Since the later client generation is the constant-promptId
+    shape, string-fallback is the path future Arm-2 captures most likely
+    take — the expected-forward path, not a legacy exception; promptid-primary
+    is the legacy-capture path, both declared via ``boundary_rule``.
 
-    - If promptId VARIES across the file (2+ distinct values — the 2.1.210
-      cli shape, both committed 13-turn runs): promptId-change is PRIMARY.
-      A string-content boundary whose promptId was already seen is a
-      NON-boundary (the phantom/interruption-notice class — silently
-      absorbed, no raise). A promptId-change boundary the string rule
-      does NOT corroborate (list content, not a string) RAISES as schema
-      drift — a legitimate list-content prompt this adapter doesn't know
-      how to handle yet, or genuine drift; either way, not silently guessed.
     - If the file carries 0 or 1 distinct promptId throughout (the 2.1.214
       probe shape): promptId carries ZERO signal. Falls back to the
       string-content rule alone, and RECORDS that fallback explicitly via
       ``boundary_rule`` (``"promptid"`` or ``"string-fallback"``) — a
       declared degradation, never silent.
+    - If promptId VARIES across the file (2+ distinct values — the 2.1.210
+      cli shape): a SYMMETRIC equality check — ANY disagreement between the
+      promptId-based boundaries and the string-content boundaries RAISES,
+      full stop. Round 3 tried a directional guard here (promptId-change
+      primary, absorbing an already-seen-promptId string event as a
+      presumed interruption-notice phantom) and that absorption was ITSELF
+      the round-4 blocker: demonstrated on real haiku-run1 data by
+      re-pointing turn 5's boundary at turn 4's promptId, it silently
+      merged two real turns, produced a phantom death, and left both
+      hidden-oracle turns 6/7 holding the WRONG transcript — all while
+      ``boundary_rule`` kept reporting ``"promptid"`` as if nothing were
+      wrong. The interruption-notice-reuses-promptId premise behind that
+      absorption is backed by NO committed capture; a real captured
+      interruption notice is what absorption needs to be designed against,
+      not assumed. Both real 13-turn runs agree perfectly under the
+      symmetric check (see ``TestSplitTurns``), so restoring it loses
+      nothing scoreable today.
 
     RESIDUAL BOUND, stated honestly rather than solved: on a
     string-fallback capture, a phantom string event still splits as an
@@ -263,13 +282,13 @@ def split_turns(
         boundary_rule = "string-fallback"
     else:
         by_promptid = _promptid_boundary_indices(events)
-        missed = [i for i in by_promptid if i not in by_string]
-        if missed:
+        if by_promptid != by_string:
             raise ValueError(
-                f"promptId boundary(ies) at {missed} have no matching "
-                "string-content event -- schema drift (a list-content "
-                "injected prompt?), refusing to guess (see split_turns "
-                "docstring)"
+                "turn-boundary rules disagree: promptId-based boundaries "
+                f"{by_promptid} != string-content boundaries {by_string} -- "
+                "refusing to guess which is right (a repointed/reused "
+                "promptId, a list-content prompt, or genuine schema drift; "
+                "see split_turns docstring)"
             )
         boundaries = by_promptid
         boundary_rule = "promptid"
