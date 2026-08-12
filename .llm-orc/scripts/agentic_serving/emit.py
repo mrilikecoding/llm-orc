@@ -38,6 +38,16 @@ _NOT_GROUNDED_MESSAGE = (
     "workspace, ask me to read it."
 )
 
+# Recap grounding (docs/plans/2026-07-17-recap-grounding-design.md, #133/#134):
+# the two prefix-stable templates a build ask degrades to when nothing
+# shipped for it — exported so the caller-side ask-outcome ledger can
+# recognize a REJECTED entry from the serve's own wire messages, never a
+# duplicated regex guessing at this wording. Both are prefixes only (the
+# reason text after them varies), so caller-side matching is a startswith
+# check, not equality.
+SEAT_CONTRACT_REJECT_PREFIX = "Seat contract not met: "
+ACCEPT_GATE_REJECT_PREFIX = "Another round needed: "
+
 
 def _deps(raw: str) -> dict:
     try:
@@ -112,14 +122,20 @@ def main() -> None:
         # than the loop-level accept below. Only an explicit False refuses; an
         # ungated seat (None) or an admitted one falls through.
         reason = gated.get("seat_contract_reason") or "seat contract not met"
-        outcome = {"finish": True, "content": f"Seat contract not met: {reason}"}
+        outcome = {
+            "finish": True,
+            "content": f"{SEAT_CONTRACT_REJECT_PREFIX}{reason}",
+        }
     elif build and accept is False:
         # The accept gate rejected the deliverable: route another round rather
         # than ship it, even though it parses (ODP-2, the client owns the loop;
         # ADR-048 §1). Only an explicit False rejects — an ungated turn (accept
         # None) or an accepted one falls through to the normal path.
         reason = gated.get("accept_reason") or "accept gate rejected"
-        outcome = {"finish": True, "content": f"Another round needed: {reason}"}
+        outcome = {
+            "finish": True,
+            "content": f"{ACCEPT_GATE_REJECT_PREFIX}{reason}",
+        }
     elif build and gated.get("valid", False):
         outcome = {
             "finish": False,

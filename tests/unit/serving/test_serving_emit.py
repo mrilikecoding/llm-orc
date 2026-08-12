@@ -16,7 +16,14 @@ from pathlib import Path
 from typing import Any
 
 REPO = Path(__file__).resolve().parents[3]
-EMIT = REPO / ".llm-orc" / "scripts" / "agentic_serving" / "emit.py"
+SCRIPTS = REPO / ".llm-orc" / "scripts" / "agentic_serving"
+EMIT = SCRIPTS / "emit.py"
+
+sys.path.insert(0, str(SCRIPTS))
+from emit import (  # type: ignore  # noqa: E402
+    ACCEPT_GATE_REJECT_PREFIX,
+    SEAT_CONTRACT_REJECT_PREFIX,
+)
 
 
 def _emit(gated: dict[str, Any]) -> dict[str, Any]:
@@ -266,6 +273,38 @@ def test_normal_decisions_carry_empty_not_grounded() -> None:
         }
     )
     assert outcome == {"finish": True, "content": "It adds two numbers."}
+
+
+def test_seat_contract_rejection_uses_the_exported_prefix() -> None:
+    # #133/#134 recap grounding: the ask-outcome ledger recognizes a rejected
+    # build from this EXACT wire prefix, so emit's own literal must stay in
+    # lockstep with the exported constant (never drift independently).
+    outcome = _emit(
+        {
+            "build": True,
+            "seat_admitted": False,
+            "seat_contract_reason": "Assertion 'x' raised exception",
+        }
+    )
+    assert outcome["finish"] is True
+    assert outcome["content"] == (
+        f"{SEAT_CONTRACT_REJECT_PREFIX}Assertion 'x' raised exception"
+    )
+
+
+def test_accept_gate_rejection_uses_the_exported_prefix() -> None:
+    outcome = _emit(
+        {
+            "build": True,
+            "valid": True,
+            "file": "a.py",
+            "content": "def f():\n    pass",
+            "accept": False,
+            "accept_reason": "tests did not pass",
+        }
+    )
+    assert outcome["finish"] is True
+    assert outcome["content"] == f"{ACCEPT_GATE_REJECT_PREFIX}tests did not pass"
 
 
 def test_recall_answer_field_emits_the_honest_message() -> None:
