@@ -8,6 +8,8 @@ judgment. Run with the llm_orc coverage gate disabled:
 
 from __future__ import annotations
 
+import pytest
+
 from benchmarks.agentic_serving import metrics
 from benchmarks.agentic_serving.transcript import ToolCall, Transcript, Turn
 
@@ -66,6 +68,12 @@ class TestTotalWallSeconds:
 
 
 _SONNET_5 = metrics.Pricing(input_per_mtok=3.00, output_per_mtok=15.00)
+_SONNET_5_WITH_CACHE = metrics.Pricing(
+    input_per_mtok=3.00,
+    output_per_mtok=15.00,
+    cache_creation_per_mtok=3.75,
+    cache_read_per_mtok=0.30,
+)
 
 
 class TestTurnCost:
@@ -84,6 +92,77 @@ class TestTurnCost:
         isn't billed per token, so the turn contributes no cost data."""
         turn = Turn(index=1, prompt="p", assistant_text="a")
         assert metrics.turn_cost(turn, _SONNET_5) is None
+
+    def test_adds_cache_cost_when_pricing_has_cache_rates(self) -> None:
+        turn = Turn(
+            index=1,
+            prompt="p",
+            assistant_text="a",
+            input_tokens=0,
+            output_tokens=0,
+            cache_creation_tokens=1_000_000,
+            cache_read_tokens=1_000_000,
+        )
+        assert metrics.turn_cost(turn, _SONNET_5_WITH_CACHE) == pytest.approx(4.05)
+
+    def test_excludes_cache_cost_when_pricing_has_no_cache_rates(self) -> None:
+        # The fresh input/output figure is unchanged: a caller with no cache
+        # rates gets a smaller, deliberately excl-cache number, never a
+        # crash and never a silently-wrong inflated-looking total.
+        turn = Turn(
+            index=1,
+            prompt="p",
+            assistant_text="a",
+            input_tokens=1_000_000,
+            output_tokens=1_000_000,
+            cache_creation_tokens=1_000_000,
+            cache_read_tokens=1_000_000,
+        )
+        assert metrics.turn_cost(turn, _SONNET_5) == 18.00
+
+
+class TestTurnCostExcludesCache:
+    def test_true_when_cache_tokens_present_but_rate_missing(self) -> None:
+        turn = Turn(
+            index=1,
+            prompt="p",
+            assistant_text="a",
+            input_tokens=0,
+            output_tokens=0,
+            cache_read_tokens=500,
+        )
+        assert metrics.turn_cost_excludes_cache(turn, _SONNET_5) is True
+
+    def test_false_when_cache_tokens_present_and_rate_given(self) -> None:
+        turn = Turn(
+            index=1,
+            prompt="p",
+            assistant_text="a",
+            input_tokens=0,
+            output_tokens=0,
+            cache_read_tokens=500,
+        )
+        assert metrics.turn_cost_excludes_cache(turn, _SONNET_5_WITH_CACHE) is False
+
+    def test_false_when_no_cache_tokens_at_all(self) -> None:
+        turn = Turn(
+            index=1, prompt="p", assistant_text="a", input_tokens=1, output_tokens=1
+        )
+        assert metrics.turn_cost_excludes_cache(turn, _SONNET_5) is False
+
+    def test_false_when_cache_tokens_are_exactly_zero(self) -> None:
+        # Zero is a real, reported count -- there is nothing to exclude, so
+        # this must not read the same as "cache accounting unavailable".
+        turn = Turn(
+            index=1,
+            prompt="p",
+            assistant_text="a",
+            input_tokens=1,
+            output_tokens=1,
+            cache_creation_tokens=0,
+            cache_read_tokens=0,
+        )
+        assert metrics.turn_cost_excludes_cache(turn, _SONNET_5) is False
 
 
 class TestTotalCost:
@@ -116,6 +195,70 @@ class TestTotalCost:
             arm="serve", turns=(Turn(index=1, prompt="p", assistant_text="a"),)
         )
         assert metrics.total_cost(transcript, _SONNET_5) == 0.0
+
+
+class TestTotalCostExcludesCache:
+    def test_true_if_any_turn_excludes_cache(self) -> None:
+        transcript = Transcript(
+            arm="sonnet-5",
+            turns=(
+                Turn(
+                    index=1,
+                    prompt="p",
+                    assistant_text="a",
+                    input_tokens=1,
+                    output_tokens=1,
+                ),
+                Turn(
+                    index=2,
+                    prompt="p",
+                    assistant_text="a",
+                    input_tokens=1,
+                    output_tokens=1,
+                    cache_read_tokens=500,
+                ),
+            ),
+        )
+        assert metrics.total_cost_excludes_cache(transcript, _SONNET_5) is True
+
+    def test_false_when_no_turn_carries_unpriced_cache_tokens(self) -> None:
+        transcript = Transcript(
+            arm="sonnet-5",
+            turns=(Turn(index=1, prompt="p", assistant_text="a", input_tokens=1),),
+        )
+        assert metrics.total_cost_excludes_cache(transcript, _SONNET_5) is False
+
+
+class TestCacheTokenTotals:
+    def test_sums_cache_creation_and_read_across_turns(self) -> None:
+        transcript = Transcript(
+            arm="sonnet-5",
+            turns=(
+                Turn(
+                    index=1,
+                    prompt="p",
+                    assistant_text="a",
+                    cache_creation_tokens=100,
+                    cache_read_tokens=10,
+                ),
+                Turn(
+                    index=2,
+                    prompt="p",
+                    assistant_text="a",
+                    cache_creation_tokens=200,
+                    cache_read_tokens=20,
+                ),
+            ),
+        )
+        assert metrics.total_cache_creation_tokens(transcript) == 300
+        assert metrics.total_cache_read_tokens(transcript) == 30
+
+    def test_turns_with_no_cache_tokens_contribute_zero(self) -> None:
+        transcript = Transcript(
+            arm="serve", turns=(Turn(index=1, prompt="p", assistant_text="a"),)
+        )
+        assert metrics.total_cache_creation_tokens(transcript) == 0
+        assert metrics.total_cache_read_tokens(transcript) == 0
 
 
 class TestCostPerSolvedTurn:

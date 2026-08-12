@@ -15,11 +15,16 @@ class TestToolCall:
         assert call.command is None
         assert call.path is None
         assert call.result_text == ""
+        assert call.is_error is False
 
     def test_carries_command_and_result(self) -> None:
         call = ToolCall(name="bash", command="pytest -q", result_text="3 passed")
         assert call.command == "pytest -q"
         assert call.result_text == "3 passed"
+
+    def test_carries_is_error(self) -> None:
+        call = ToolCall(name="bash", result_text="boom", is_error=True)
+        assert call.is_error is True
 
 
 class TestTurn:
@@ -29,6 +34,19 @@ class TestTurn:
         assert turn.wall_seconds is None
         assert turn.input_tokens is None
         assert turn.output_tokens is None
+        assert turn.cache_creation_tokens is None
+        assert turn.cache_read_tokens is None
+
+    def test_carries_cache_token_counts(self) -> None:
+        turn = Turn(
+            index=1,
+            prompt="p",
+            assistant_text="a",
+            cache_creation_tokens=1200,
+            cache_read_tokens=340,
+        )
+        assert turn.cache_creation_tokens == 1200
+        assert turn.cache_read_tokens == 340
 
     def test_carries_tool_calls_in_order(self) -> None:
         first = ToolCall(name="read", path="test_buggy.py")
