@@ -195,3 +195,51 @@ Sonnet-class implementable from this doc: seams are
 and `emit.py`'s reject-template constants (exported). Design and review
 stay with the lead session; the reviewer runs the wrong-accept hunt
 against the six named targets plus their own.
+
+## Amendments (review round 1, 2026-08-12)
+
+An author-independent adversarial review against the real node pipeline
+returned REQUEST-CHANGES (3 blockers, 2 majors, 5 minors). Fixes landed
+on the same branch; recorded here as what changed and why.
+
+**Template split (blocker 1).** The memory-interrogative template led
+with "Yes —" for every `did/have you…` question, including ones the
+ledger cannot confirm or deny ("did you delete my files?"). A tight
+`_SAW_QUERY_RE` (did/have you see/get/receive/read my previous/last
+query/message/question) now gates the affirmative lead — seeing the
+message is structurally certain, so it's the only proposition this
+mechanism can honestly confirm. Every other memory interrogative reports
+the record with no leading Yes/No: `Your previous message was: "<ask>".
+Its outcome: …`.
+
+**Outcome-kind vocabulary and `Refused:` minting (blocker 2).** The
+ledger recognized only two reject templates, so a build ask that hit
+`Refused:` (read-failed/glob-failed/build-invalid) minted no entry —
+silently losing disclosure, and in one case letting a *later* ask's text
+get misattributed as "the first thing you asked". The ledger now
+recognizes `emit.REFUSED_PREFIX` as a third minting class and retains
+WHICH prefix matched as an outcome kind — `rejected_contract` (seat
+contract), `rejected_gate` (accept gate), or `refused` (with the wire
+reason retained verbatim) — instead of a generic `rejected`. Templates
+key wording on the kind, never attributing a seat-contract miss or a
+read/glob/build-invalid refusal to "the accept gate". Disclosure anchors
+on the ledger's earliest entry; an unrecognized kind fails closed to
+disclosing uncertainty rather than guessing. **Known bound:** a
+build-intent ask that classify itself misroutes to a prose explain path
+mints nothing (out of scope — a classify routing question, not an
+honesty gap this ledger can see).
+
+**Recap floor and backstop rescoping (blocker 3 / major 1).** The
+phantom-symbol backstop keyed on classify's `defer_recall` flag, which
+fires on *any* incidental ordinal word — including inside a genuine
+concept question ("explain how first-class functions work", matching on
+"first-class") — so a correct seat answer was getting replaced by the
+ledger recap. Two changes: (a) a tight `_RECAP_RE` structural floor
+("what have we/you built so far?", "what did we build?", "summarize
+what we've built" — the design's own motivating phrasing, which has no
+ordinal word and was never covered at all) answers deterministically
+from the ledger, same architecture as the memory-interrogative route,
+never a model seat; (b) the backstop itself now applies only when the
+DECIDER's own vote confirms recall intent, not classify's loose
+pre-filter alone — a decider that correctly votes "explainer" for a
+concept question leaves the seat's answer untouched.
