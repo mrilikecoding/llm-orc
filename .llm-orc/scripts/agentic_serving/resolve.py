@@ -31,6 +31,12 @@ _DERIVED = {
 # entry); it routes to the recall-answer shape carrying classify's pre-computed
 # honest message. Recognized by the decider, handled specially in main().
 _RECALL_TARGET = "recall"
+# Review round 2 new blocker 1/3: the recap floor's own decider-extension
+# vote, mirroring _RECALL_TARGET exactly — a DIFFERENT semantic ("list
+# everything built" vs "which thing was built first"), so a distinct token,
+# but the SAME structural handling: routes to the recall-answer shape
+# carrying classify's precomputed ledger recap.
+_RECAP_TARGET = "recap"
 # The intent -> serving shape mapping is now operator-curated (WP-C8): each shape
 # declares the intent it ``serves`` and the Shape Catalog derives the map from the
 # library, replacing the hardcoded default WP-D8 left here. ``build-gated`` serves
@@ -60,9 +66,10 @@ def _decider_target(response: str) -> str:
     Strict first: the first JSON object's ``target`` if it is a known target.
     Fallback: exactly one known token present in the raw text. No token, or an
     ambiguous both-tokens output, resolves to "" (deterministic dispatch fail).
-    The recognized set is the seat set plus ``recall`` (#82 detection layer 2).
+    The recognized set is the seat set plus ``recall`` (#82 detection layer 2)
+    and ``recap`` (review round 2 new blocker 1/3).
     """
-    recognized = (*_DERIVED, _RECALL_TARGET)
+    recognized = (*_DERIVED, _RECALL_TARGET, _RECAP_TARGET)
     match = _JSON_RE.search(response or "")
     if match:
         try:
@@ -100,22 +107,26 @@ def main() -> None:
 
     if classify.get("needs_decider"):
         target = _decider_target(_response(deps.get("decide", {})))
-        if target == _RECALL_TARGET and recall_answer:
-            # #82 detection layer 2: the model confirmed recall and classify
-            # pre-computed the honest answer. Route to the recall-answer shape
-            # and keep the message — selection was already structural.
+        if target in (_RECALL_TARGET, _RECAP_TARGET) and recall_answer:
+            # #82 detection layer 2 (recap: review round 2 new blocker 1/3):
+            # the model confirmed recall/recap and classify pre-computed the
+            # honest answer. Route to the recall-answer shape and keep the
+            # message — selection was already structural.
             target, kind, build = "recall-answer", "recall", False
         else:
-            if target == _RECALL_TARGET:
-                # finding 5: a recall vote with no pre-computed message (the
-                # decider mis-fired on a non-deferred turn) is not actionable —
-                # fall back to the explainer, never a degenerate empty recall
-                # shape.
+            if target in (_RECALL_TARGET, _RECAP_TARGET):
+                # finding 5: a recall/recap vote with no pre-computed message
+                # (the decider mis-fired on a non-deferred turn) is not
+                # actionable — fall back to the explainer, never a
+                # degenerate empty recall shape. classify's precompute makes
+                # this unreachable for a genuinely deferred turn (defer_recall/
+                # defer_recap always set recall_answer), so this only
+                # protects against a misfire on an unrelated ambiguous turn.
                 target = "explainer"
             kind, build = _DERIVED.get(target, ("", False))
-            # A non-recall outcome on a deferred turn: drop the pre-computed
-            # recall message so emit (which fires on its presence) does not
-            # shadow the seat's real output.
+            # A non-recall/recap outcome on a deferred turn: drop the
+            # pre-computed message so emit (which fires on its presence)
+            # does not shadow the seat's real output.
             recall_answer = ""
     else:
         target = classify.get("target", "")

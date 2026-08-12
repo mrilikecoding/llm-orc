@@ -79,15 +79,44 @@ _SAW_QUERY_RE = re.compile(
     r"(?:query|message|question)\??$",
     re.IGNORECASE,
 )
-# review round 1 blocker 3: a tight structural floor for recap questions —
-# deliberately NOT keyed on the loose _MAYBE_RECALL_RE/defer_recall
-# extension, which fires on any incidental ordinal word (including inside a
-# genuine concept question like "explain how first-class functions work").
-# A small closed set, same shape as _MEMORY_INTERROGATIVE_RE.
+# review round 1 blocker 3 (widened round 2, new blocker 1): a tight
+# structural floor for recap questions — deliberately NOT keyed on the loose
+# _MAYBE_RECALL_RE/defer_recall extension, which fires on any incidental
+# ordinal word (including inside a genuine concept question like "explain
+# how first-class functions work"). Anchored at BOTH ends (optional "?"
+# only, round 2 major 2): "what did we build?" resolves here, but "what did
+# we build this with?" — a trailing prepositional continuation asking about
+# something else entirely (the tool, not the artifact) — falls through
+# instead of being answered as if the object were "everything".
 _RECAP_RE = re.compile(
-    r"^what (?:have|'ve) (?:we|you) (?:built|made|done|written) so far\b"
-    r"|^what did (?:we|you) build\b"
-    r"|^summarize what (?:we|you)(?:'ve| have) built\b",
+    r"^what (?:have|'ve) (?:we|you) (?:built|made|done|written) so far\??$"
+    r"|^what did (?:we|you) build\??$"
+    r"|^summarize what (?:we|you)(?:'ve| have) built\??$"
+    r"|^list everything (?:we|you) (?:made|created|built|wrote)\??$"
+    r"|^list everything (?:we|you)(?:'ve| have) (?:made|created|built|wrote)\??$"
+    r"|^recap what (?:we|you)(?:'ve| have) done\??$"
+    r"|^what files have (?:we|you) (?:created|made|written)\??$"
+    r"|^give me a summary of the work\??$"
+    r"|^summarize the (?:work|session)\??$"
+    r"|^so what do we have now\??$"
+    r"|^where did we end up\??$",
+    re.IGNORECASE,
+)
+# Review round 2 new blocker 1 (fuzzy recap unguarded) + new blocker 3 (the
+# now-deleted phantom-symbol backstop was dead code): one architectural
+# resolution mirroring #82's shipped two-layer pattern (_RECALL_RE tight
+# floor + _MAYBE_RECALL_RE loose decider extension). A loose recap-flavored
+# turn the tight floor above did not resolve — first/second person plus an
+# artifact-verb flavor — defers to the guarded decider with a "recap"
+# option, instead of either answering deterministically (too risky — this
+# is a genuine free-text judgment call, "is this really asking me to list
+# what I've built") or falling silently through to the free explainer (the
+# unguarded gap new blocker 1 demonstrated).
+_MAYBE_RECAP_RE = re.compile(
+    r"\b(?:we|you)(?:'ve| have)?\b[^?.!]*"
+    r"\b(?:built|made|created|wrote|written|done)\b"
+    r"|\bhave (?:we|you)\b[^?.!]*"
+    r"\b(?:built|made|created|wrote|written|done|files)\b",
     re.IGNORECASE,
 )
 # #82 deep recall: a FIRST-anchored query about the "first thing" I/you
@@ -1120,18 +1149,35 @@ def _memory_interrogative_route(
 
 def _recap_route(
     task: str, turn: dict, is_explain: bool, named_file: str
-) -> tuple[bool, str]:
-    """(is_recall_answer, recall_answer) for a recap-shaped turn ("what have
-    we/you built so far?", review round 1 blocker 3): a tight structural
-    floor (``_RECAP_RE``) routed to the deterministic ledger recap on the
-    SAME recall-answer emit path as ordinal recall and memory
-    interrogatives — never a model seat, so a genuine recap question is
-    never left to free-text narration (and never confused with the loose
-    ``_MAYBE_RECALL_RE`` extension, which over-fires on incidental ordinal
-    words inside unrelated concept questions)."""
-    if not is_explain or named_file or not _RECAP_RE.search(task):
-        return False, ""
-    return True, _ledger_recap(turn)
+) -> tuple[bool, str, bool]:
+    """(is_recall_answer, recall_answer, defer_recap) for a recap-shaped
+    turn ("what have we/you built so far?", "list everything you made",
+    review round 1 blocker 3, widened round 2): mirrors #82's two-layer
+    structural-floor + decider-extension pattern.
+
+    - STRUCTURAL floor (``_RECAP_RE``): a tight, anchored recap phrasing
+      resolves here with NO decider — the deterministic ledger recap on the
+      SAME recall-answer emit path as ordinal recall and memory
+      interrogatives, never a model seat.
+    - DECIDER extension (``_MAYBE_RECAP_RE``): a loose recap-flavored turn
+      the tight floor did not resolve defers to the guarded decider (a
+      "recap" vote alongside #82's "recall"). CRITICAL WIRING (round 2 new
+      blocker 3): the ledger recap is PRECOMPUTED here into
+      ``recall_answer``, exactly like ``defer_recall`` precomputes its
+      message — a decider recap vote always has a structural answer to
+      resolve to (``resolve.py``), never falling through to the explainer
+      with nothing to say. ``_ledger_recap`` always returns non-empty text,
+      so this is impossible by construction, not by convention.
+
+    Never fires on a named-file turn.
+    """
+    if not is_explain or named_file:
+        return False, "", False
+    if _RECAP_RE.search(task):
+        return True, _ledger_recap(turn), False
+    if _MAYBE_RECAP_RE.search(task):
+        return False, _ledger_recap(turn), True
+    return False, "", False
 
 
 def _valid_recall_answer(recall_answer: str, target: str, needs_decider: bool) -> str:
@@ -1227,8 +1273,24 @@ def _discover_and_read(
 def main() -> None:
     turn = _turn(sys.stdin.read().strip())
     task = str(turn.get("task", "")).strip()
-    is_explain = any(marker in task.lower() for marker in _EXPLAIN_MARKERS) or bool(
-        _INTERROGATIVE_RE.match(task)
+    is_explain = (
+        any(marker in task.lower() for marker in _EXPLAIN_MARKERS)
+        or bool(_INTERROGATIVE_RE.match(task))
+        # review round 2 new blocker 1: several recap phrasings ("list
+        # everything you made", "recap what you've done", "give me a
+        # summary of the work", "so what do we have now") lead with neither
+        # an explain marker nor an interrogative word — without this, the
+        # is_explain gate in _recap_route's chain_plan wiring never runs at
+        # all, silently dropping BOTH the tight floor AND the critical
+        # precompute for the loose decider extension. Guarded off a build
+        # verb (_BUILD_RE) so "refactor the first thing you built" — which
+        # incidentally contains "you built" — stays build-shaped, not
+        # explain (same precedence the existing build-verb-wins rules
+        # already apply elsewhere; review finding 4 regression).
+        or (
+            not _BUILD_RE.search(task)
+            and (bool(_RECAP_RE.search(task)) or bool(_MAYBE_RECAP_RE.search(task)))
+        )
     )
     named_file = turn.get("file") or _extract_file(task)
     has_build_signal = bool(named_file) or bool(_BUILD_RE.search(task))
@@ -1276,16 +1338,22 @@ def main() -> None:
         if is_memory_answer:
             is_recall_answer, recall_answer = True, memory_answer
 
-    # Review round 1 blocker 3: a recap-shaped turn ("what have we built so
-    # far?") is answered from the SAME deterministic ledger recap the
-    # phantom-symbol backstop falls back to — its own tight structural
-    # floor, never the loose defer_recall extension.
+    # Review round 1 blocker 3 (widened round 2): a recap-shaped turn ("what
+    # have we built so far?", "list everything you made") is answered from
+    # the deterministic ledger recap, on its own tight structural floor
+    # (never the loose defer_recall extension). A fuzzy recap phrasing the
+    # floor doesn't resolve defers to the guarded decider (defer_recap),
+    # with the answer precomputed so the decider's recap vote always has
+    # something to route to.
+    defer_recap = False
     if not is_recall_answer and not defer_recall:
-        is_recap_answer, recap_answer = _recap_route(
+        is_recap_answer, recap_answer, defer_recap = _recap_route(
             task, turn, is_explain, named_file
         )
         if is_recap_answer:
             is_recall_answer, recall_answer = True, recap_answer
+        elif defer_recap:
+            recall_answer = recap_answer
 
     # Grounded explain (docs/plans/2026-07-12-grounded-explain-design.md): a
     # real named-file target gates on _visibility of the SAME wire the
@@ -1339,6 +1407,7 @@ def main() -> None:
             and not fix_chain
             and not is_recall_answer
             and not defer_recall
+            and not defer_recap
             and not _MEMORY_INTERROGATIVE_RE.match(task)
         )
         else []
@@ -1382,6 +1451,7 @@ def main() -> None:
         kind_hint=str(turn.get("kind", "python_module")),
         is_recall_answer=is_recall_answer,
         defer_recall=defer_recall,
+        defer_recap=defer_recap,
     )
     decision = _advance(bundle)
     target, kind, build, needs_decider = (

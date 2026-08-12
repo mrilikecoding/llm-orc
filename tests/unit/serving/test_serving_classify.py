@@ -1614,8 +1614,8 @@ def test_memory_answer_is_dropped_by_a_higher_priority_target() -> None:
     )
 
 
-# --- recap floor (review round 1 blocker 3): docs/plans/2026-07-17-recap-
-# grounding-design.md, amended 2026-08-12 ---
+# --- recap floor (review round 1 blocker 3, widened round 2 new blocker 1):
+# docs/plans/2026-07-17-recap-grounding-design.md, amended 2026-08-12 ---
 
 
 @pytest.mark.parametrize(
@@ -1630,6 +1630,20 @@ def test_memory_answer_is_dropped_by_a_higher_priority_target() -> None:
         "what did you build?",
         "summarize what we've built",
         "summarize what we have built",
+        # round 2 new blocker 1: the reviewer's demonstrated phrasings.
+        "list everything you made",
+        "list everything you created",
+        "list everything you built",
+        "list everything you wrote",
+        "recap what you've done",
+        "what files have you created",
+        "what files have you made",
+        "what files have you written",
+        "give me a summary of the work",
+        "summarize the work",
+        "summarize the session",
+        "so what do we have now",
+        "where did we end up",
     ],
 )
 def test_recap_floor_answers_deterministically_from_the_ledger(task: str) -> None:
@@ -1665,6 +1679,87 @@ def test_recap_floor_stays_off_a_named_file_turn() -> None:
         }
     )
     assert decision["target"] != "recall-answer"
+
+
+@pytest.mark.parametrize(
+    "task",
+    [
+        "what did we build this with?",
+        "what did you build the parser with?",
+    ],
+)
+def test_recap_floor_rejects_a_trailing_prepositional_continuation(task: str) -> None:
+    # Round 2 major 2: "what did we/you build" is anchored at the END too —
+    # a trailing continuation means the question is asking about something
+    # else entirely (the tool, not an inventory of everything built), so it
+    # must not be answered as if the object were "everything".
+    decision = _classify(
+        {
+            "task": task,
+            "recall_ledger": [
+                {"ask": "build a todo app", "path": "todo.py", "outcome": "shipped"}
+            ],
+            "context": "",
+        }
+    )
+    assert decision["target"] != "recall-answer"
+
+
+# --- recap decider extension (review round 2 new blocker 1/3): a loose
+# maybe_recap turn the tight floor above does not resolve defers to the
+# guarded decider, mirroring #82's defer_recall exactly. CRITICAL WIRING:
+# the ledger recap is precomputed so a decider recap vote always has a
+# structural answer — never falls through to the explainer with nothing to
+# say. ---
+
+
+def test_maybe_recap_defers_to_the_decider_with_a_precomputed_answer() -> None:
+    decision = _classify(
+        {
+            "task": "so have we built anything useful yet",
+            "recall_ledger": [
+                {"ask": "build a todo app", "path": "todo.py", "outcome": "shipped"}
+            ],
+            "context": "",
+        }
+    )
+    assert decision["target"] == ""
+    assert decision["needs_decider"] is True
+    # the CRITICAL WIRING: precomputed, never empty, so a decider recap vote
+    # can never fall through with nothing to route to.
+    assert decision["recall_answer"] != ""
+    assert "todo.py" in decision["recall_answer"]
+
+
+def test_maybe_recap_precomputes_the_nothing_built_answer_for_an_empty_ledger() -> None:
+    # _ledger_recap NEVER returns an empty string — proves the "impossible
+    # by construction" claim holds even in the emptiest case. "so have we"
+    # (not "have you") avoids the higher-priority memory-interrogative
+    # mechanism, which anchors on "did/have YOU" specifically.
+    decision = _classify(
+        {
+            "task": "so have we made anything useful yet",
+            "recall_ledger": [],
+            "context": "",
+        }
+    )
+    assert decision["needs_decider"] is True
+    assert decision["recall_answer"] != ""
+    assert "built" in decision["recall_answer"].lower()
+
+
+def test_maybe_recap_stays_off_a_named_file_turn() -> None:
+    decision = _classify(
+        {
+            "task": "what have you made of storage.py so far",
+            "recall_ledger": [],
+            "context": "",
+        }
+    )
+    assert decision["target"] != "recall-answer"
+    # a named-file explain either grounds or refuses honestly — never defers
+    # to the decider for a recap vote.
+    assert decision["recall_answer"] == "" or decision["needs_decider"] is False
 
 
 def test_run_recall_compound_does_not_leak_the_recall_message() -> None:

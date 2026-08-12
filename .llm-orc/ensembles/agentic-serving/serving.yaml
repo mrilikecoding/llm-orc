@@ -63,6 +63,15 @@ agents:
       code concept ("the first argument to a function", "first-class functions")
       is "explainer", not "recall".
 
+      Choose "recap" when the request asks for an INVENTORY of everything
+      built or asked in THIS session — "list everything you've made", "recap
+      what we've done", "give me a summary of the work", "what files have you
+      created". It is about the session's own history as a whole, not one
+      ordinal item (that's "recall") and not a code concept (that's
+      "explainer"). A request that names a code concept using similar words
+      ("what have you built with, a compiler or an interpreter") is
+      "explainer", not "recap".
+
       Examples:
       "a function that checks whether a number is prime" -> {"target": "code-seat"}
       "a script to rename files in a folder" -> {"target": "code-seat"}
@@ -72,10 +81,12 @@ agents:
       "how does async work in Python" -> {"target": "explainer"}
       "the earliest thing you built in this session" -> {"target": "recall"}
       "what was the first module you made" -> {"target": "recall"}
+      "list everything you've made this session" -> {"target": "recap"}
+      "recap what we've done so far" -> {"target": "recap"}
 
       Respond with ONLY a JSON object, no other text and no code fences:
-      {"target": "code-seat"}, {"target": "tests-seat"}, {"target": "explainer"}
-      or {"target": "recall"}
+      {"target": "code-seat"}, {"target": "tests-seat"}, {"target": "explainer"},
+      {"target": "recall"}, or {"target": "recap"}
 
   - name: resolve
     script: scripts/agentic_serving/resolve.py

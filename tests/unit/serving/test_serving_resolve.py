@@ -311,3 +311,68 @@ def test_decider_non_recall_vote_drops_the_precomputed_recall_answer() -> None:
     routing = _resolve(classify_decision, decide_response='{"target": "explainer"}')
     assert routing["target"] == "explainer"
     assert routing["recall_answer"] == ""
+
+
+def test_decider_recap_vote_routes_to_the_recall_answer_shape() -> None:
+    # Review round 2 new blocker 1/3: mirrors the recall vote exactly, with
+    # a distinct decider token ("recap") for the distinct semantic ("list
+    # everything built" vs "which thing was built first").
+    classify_decision = {
+        "target": "",
+        "kind": "",
+        "file": "solution.py",
+        "dispatch_input": "list everything you made",
+        "build": False,
+        "needs_decider": True,
+        "recall_answer": "Shipped so far: `todo.py`, `storage.py`.",
+    }
+    routing = _resolve(classify_decision, decide_response='{"target": "recap"}')
+    assert routing["target"] == "recall-answer"
+    assert routing["build"] is False
+    assert "todo.py" in routing["recall_answer"]
+
+
+def test_recap_vote_never_falls_through_empty_for_a_genuinely_deferred_turn() -> None:
+    # Round 2 new blocker 3's CRITICAL WIRING claim, made explicit: for any
+    # turn classify actually deferred as maybe_recap (needs_decider=True
+    # via defer_recap), recall_answer is ALWAYS precomputed and non-empty
+    # (_ledger_recap never returns "") — so a decider "recap" vote on such a
+    # turn is impossible to route to a degenerate empty recall-answer shape.
+    # This is the realistic shape classify actually emits (contrast with
+    # the NEXT test, which demonstrates the misfire-on-an-unrelated-turn
+    # safety net still holds too).
+    for recall_answer in (
+        "Nothing has been built in this session yet.",  # empty ledger
+        "Shipped so far: `todo.py`.",  # non-empty ledger
+    ):
+        classify_decision = {
+            "target": "",
+            "kind": "",
+            "file": "solution.py",
+            "dispatch_input": "so have we made anything useful yet",
+            "build": False,
+            "needs_decider": True,
+            "recall_answer": recall_answer,
+        }
+        routing = _resolve(classify_decision, decide_response='{"target": "recap"}')
+        assert routing["target"] == "recall-answer"
+        assert routing["recall_answer"] == recall_answer
+
+
+def test_recap_vote_without_a_precomputed_message_falls_back_to_explainer() -> None:
+    # The recap sibling of finding 5: a recap vote on a turn classify never
+    # deferred as maybe_recap (so it never precomputed anything) is not
+    # actionable — fall back to the explainer, never a degenerate empty
+    # recall shape.
+    classify_decision = {
+        "target": "",
+        "kind": "",
+        "file": "solution.py",
+        "dispatch_input": "sort this data for me",
+        "build": False,
+        "needs_decider": True,
+        "recall_answer": "",
+    }
+    routing = _resolve(classify_decision, decide_response='{"target": "recap"}')
+    assert routing["target"] == "explainer"
+    assert routing["recall_answer"] == ""
