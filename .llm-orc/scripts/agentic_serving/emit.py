@@ -45,6 +45,16 @@ _NOT_GROUNDED_MESSAGE = (
 # duplicated regex guessing at this wording. Both are prefixes only (the
 # reason text after them varies), so caller-side matching is a startswith
 # check, not equality.
+#
+# Known bound (wrong-accept-hunt target 3): the caller loads these dynamically
+# from THIS project's current emit.py at request time (never a version pinned
+# into a session), so a session that merely spans a long-running process with
+# no restart always matches the live prefix text. The one real skew case is
+# changing this literal text itself in a way old wire messages (already
+# rendered into a client's history before the edit) won't match — the ledger
+# then silently under-reports that one old rejection as "no outcome" rather
+# than misreporting it, which is the safe direction to fail. Never rename
+# these constants without also considering that old-session cost.
 SEAT_CONTRACT_REJECT_PREFIX = "Seat contract not met: "
 ACCEPT_GATE_REJECT_PREFIX = "Another round needed: "
 
