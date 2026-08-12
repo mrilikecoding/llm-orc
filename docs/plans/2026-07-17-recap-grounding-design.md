@@ -338,3 +338,147 @@ true (only build-scoped entries mint, verified with a dedicated fixture);
 conftest teardown race under `-n auto` (`FileNotFoundError` on the shared
 `.llm-orc/artifacts/serving` path) is noted but out of scope for this
 design — a test-parallelism concern, not a routing or honesty gap.
+
+## Amendments (review round 3, 2026-08-12)
+
+A third author-independent adversarial review diffed routing on origin/main
+vs this branch over 65 inputs: 36 changed, only 7 intended (memory
+interrogatives, the recap floor, the recap decider extension). The other 29
+were collateral damage from round 2's own fix and are the blocker recorded
+here.
+
+**is_explain's global widening dragged 29 non-recap turns onto the explain
+path (blocker).** Round 2 added a third clause to `is_explain` — `not
+_BUILD_RE.search(task) and (_RECAP_RE.search(task) or
+_MAYBE_RECAP_RE.search(task))` — so a bare recap phrasing with no explain
+marker and no interrogative lead ("list everything you made") could still
+reach `_recap_route`. The guard was `_BUILD_RE`, which matches present-tense
+build verbs only (`write|implement|create|build|generate|refactor|fix|
+add|code`) and therefore misses every past-tense form the recap detectors
+themselves key on (`built|made|created|wrote|written|done`) by construction.
+Combined with `_MAYBE_RECAP_RE` being unanchored — matching `(?:we|you)
+[^?.!]*(?:built|made|created|wrote|written|done)` ANYWHERE in a sentence,
+not just as the shape of a whole recap QUESTION — the widening fired on any
+sentence containing a we/you + past-make-verb pair as a MODIFIER clause on
+something else entirely:
+
+- Named-file tests asks ("unit tests for todo.py you made earlier", "tests
+  for the storage module you wrote"): `is_explain` went True, so the
+  explain-turn's grounded-explain gate ran instead of the build path — a
+  named file not yet visible became `not-grounded` (an explain refusal to a
+  build request) instead of `need-files` (read-before-build). Worst case in
+  the set: fully deterministic, no model seat involved, but the wrong
+  deterministic answer.
+- Bare tests asks ("tests for the parser we built", "tests for the thing
+  you built", "more tests for what you wrote"): `_recap_route`'s
+  `_MAYBE_RECAP_RE` branch fired, setting `defer_recap` — the turn's own
+  `#83` module-stem discovery (`need-glob`) never ran; a recap-vote decider
+  outcome would have emitted a "Shipped so far: ..." ledger inventory in
+  place of the tests build's own discovery round.
+- Bare-symbol explain discovery ("explain the code you wrote", "why does
+  the function you made return none", "what have we built our auth on?"):
+  these are genuine `is_explain` turns via their own explain marker or
+  interrogative lead (unaffected by the widening itself), but
+  `_MAYBE_RECAP_RE`'s unanchored match still set `defer_recap` — which
+  `main()`'s `explain_stems` gate explicitly excludes (`not defer_recap`),
+  so the WS-3 glob→read discovery round for the bare symbol never ran.
+- Eleven action turns ("delete the file you created", "the tests you wrote
+  are failing", "rename the helper you made", "port the parser we wrote to
+  rust", "improve the function you wrote", "clean up the module you
+  created", "extend the storage module you built", "make the module you
+  built faster", "document what you built", "update the parser we wrote",
+  "revert the change you made"): none carries an explain marker, an
+  interrogative lead, or (mostly) a `_BUILD_RE` verb, so each was an
+  ambiguous decider-fallthrough turn in origin/main. The widening made
+  `is_explain` True and `_MAYBE_RECAP_RE` set `defer_recap`, precomputing a
+  ledger-recap `recall_answer` that a decider's `"recap"` vote would emit
+  verbatim — in place of whatever the action turn actually asked for.
+
+Resolution: **`is_explain` reverts to origin/main's exact two-clause form**
+(`any(marker in task.lower() for marker in _EXPLAIN_MARKERS) or
+bool(_INTERROGATIVE_RE.match(task))`) — no third clause, no global
+widening, full stop. `_recap_route` no longer takes or requires
+`is_explain` as a precondition: its own guard is now just "no named file",
+relying on `_RECAP_RE`/`_MAYBE_RECAP_RE` being self-sufficient recap-
+question signals. This mirrors `_MEMORY_INTERROGATIVE_RE`'s existing
+discipline — its pattern (`^(?:did|have) you\b`) is a strict subset of the
+interrogative alternation already inside `is_explain`, so it never needed
+`is_explain` widened for its own sake; `_recap_route`'s regexes now carry
+the same self-sufficiency by being fully anchored (below) instead of by
+textual subset.
+
+**`_MAYBE_RECAP_RE` anchored at both ends (blocker, same fix).**
+Previously: `\b(?:we|you)(?:'ve| have)?\b[^?.!]*\b(?:built|made|created|
+wrote|written|done)\b|...` — matched anywhere in a sentence. Now:
+
+```
+^(?:what|how|can|could|would|so|where)\b
+[^.!?]*\b(?:we|you)\b[^.!?]*
+\b(?:built|made|created|wrote|written|done)\b
+(?: so far)?\??$
+```
+
+An interrogative-shaped OPENER, a we/you + past-make-verb core, terminating
+at an optional trailing "so far" then `?`/end-of-string — no trailing
+object or action clause survives. Deliberately narrower than the floor's
+literal phrasings: it exists only to catch a recap QUESTION `_RECAP_RE`
+misses by inflection or an inserted adverb ("what exactly have you built so
+far?", "can you list everything you've made?"), never a recap-flavored
+clause used as a MODIFIER of a build/action object. Verified against every
+collateral-damage input above (none matches) and against the target set
+(both match). `_RECAP_RE` itself needed no further change — it was already
+anchored at both ends as of round 2.
+
+Two round-2 tests exercising the old unanchored decider extension ("so have
+we built/made anything useful yet" — a trailing clause after the verb) no
+longer match under the new anchoring; updated to shapes the anchored regex
+still catches (missing the tight floor only by an inserted opener or
+adverb), same wiring intent, narrower match. One end-to-end test
+(`test_deferred_recap_vote_emits_the_ledger_recap_never_a_guess`) carried
+the same stale phrasing and was updated identically.
+
+**Minor: `is_build_ask` over-fired on named-file and incidental-build-word
+explains.** `has_build_signal` (feeding `is_build_ask`) is `bool(named_file)
+or bool(_BUILD_RE.search(task))` — true for "explain what foo.py does" via
+the named file alone, and true for "explain the code you wrote" via `_BUILD_RE`
+matching the ordinary noun "code" (`\bcode\b` is one of the build-verb
+alternatives). Neither turn asked for a build. `is_build_ask` now narrows to
+False whenever the turn `is_explain`, unless it is also led by a fix verb —
+fix-verb-led turns are never `is_explain` by construction (the two
+vocabularies don't overlap), so this only documents the invariant rather
+than changing behavior for them.
+
+**Minor: the caller's reject-kind lookup now iterates emit's TERMINALS
+registry.** `_reject_kind`/`_load_emit_reject_prefixes` previously read
+three individually-named constants (`SEAT_CONTRACT_REJECT_PREFIX`,
+`ACCEPT_GATE_REJECT_PREFIX`, `BUILD_REFUSED_PREFIX`) off a project's
+emit.py — a parallel mapping a newly added TERMINALS entry could drift from
+without anything catching it, the exact shape round 2's major 3 already
+closed on emit's own `main()`. `_RejectPrefixes` is now a tuple of `(prefix,
+mints)` pairs built by iterating a project's `TERMINALS` dict directly,
+filtering out any terminal whose `mints` is empty (the plain "Refused: "
+prefix, which must never mint a ledger entry); `_reject_kind` loops the
+tuple instead of checking three named fields. No behavior change.
+
+**Minor: emit's module docstring updated to the build-scoped refusal
+contract.** The wire-shape table still documented the pre-#133/#134
+contract (plain "Refused:" for every read-failed/glob-failed/build-invalid
+outcome) and never mentioned the seat-contract, accept-gate, or
+recall-answer outcomes at all. Now documents the build-scoped split
+(`BUILD_REFUSED_PREFIX` on turns that carried a build ask, the plain
+`REFUSED_PREFIX` otherwise) and every outcome shape `main()` actually
+emits. Docs only, no code change.
+
+**Routing-corpus instrument.** `tests/unit/serving/test_serving_routing_corpus.py`
+pins classify's full routing decision (target, needs_decider, build,
+discovery stems) for 62 inputs: the 13 ladder-battery prompts, every
+collateral-damage class demonstrated above, the recap floor's full phrasing
+set, the recap decider extension's target set, memory interrogatives, and
+ordinal recall. Every expected value was computed by running this branch's
+post-fix `classify.py` and origin/main's side by side and diffing, never
+hand-derived — non-memory/recap turns are pinned to origin/main's
+byte-identical routing, and only the turns this branch's #133/#134/round-3
+work intentionally changes are pinned to the new behavior. This is the
+permanent instrument against a repeat: a future change that drags one of
+the origin/main-pinned turns onto the recap/explain path fails here
+immediately, without needing another adversarial-review pass to catch it.
