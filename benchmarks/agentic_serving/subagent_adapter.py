@@ -20,7 +20,7 @@ correction note in the README). Chronologically:
   necessarily what future Arm-2 captures will look like.
 - ``docs/plans/2026-07-17-arm2-subagent-captures/probe-2turn-transcript.jsonl``
   (client version 2.1.214, entrypoint ``remote_mobile``, events 2026-07-18 —
-  the LATER capture, despite living in a directory dated one day before the
+  the LATER capture, consistent with its directory date, two days after the
   arm2-runs above) — ONE promptId for the entire 36-event, two-turn session;
   its own genuine turn-2 boundary REUSES turn 1's promptId, distinguished
   only by an ``isMeta: true`` flag (a candidate discriminator for future
