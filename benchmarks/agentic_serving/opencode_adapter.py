@@ -130,6 +130,15 @@ def turn_from_events(events: list[dict[str, Any]], *, index: int, prompt: str) -
         input_tokens = input_sum
         output_tokens = output_sum
 
+    # Zero point: opencode's per-turn stream has no separate "prompt
+    # arrived" event -- its FIRST event already is generation start (a
+    # step_start envelope), so summing from the earliest timestamp here
+    # never includes prompt-arrival/dispatch latency. subagent_adapter's
+    # transcript DOES log the injected prompt as its own event, so it
+    # deliberately starts its span at the first ASSISTANT event instead of
+    # its boundary event, to match this same zero point rather than
+    # inflating its own wall-clock by that latency (documented next to
+    # subagent_adapter.turn_from_events).
     wall_seconds: float | None = None
     if len(timestamps) >= 2:
         wall_seconds = (max(timestamps) - min(timestamps)) / 1000.0

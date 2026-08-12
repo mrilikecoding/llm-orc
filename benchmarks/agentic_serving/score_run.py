@@ -270,6 +270,14 @@ class Scorecard:
     Downstream cross-arm normalization needs this: a flakier arm that dies on
     turns would otherwise show a lower ``dishonest_count`` simply because
     fewer turns were observed — a dead turn must not read as honesty.
+
+    ``total_cache_creation_tokens`` / ``total_cache_read_tokens`` are the
+    run's cache-token counts, reported regardless of whether ``pricing``
+    priced them (never discarded — see ``metrics`` module docstring).
+    ``cost_excludes_cache`` is True when ``total_cost`` structurally leaves
+    cache-token cost out because ``pricing`` had no rate for tokens the run
+    actually reported: ``total_cost`` is then a LOWER BOUND, not the true
+    total (see ``metrics.turn_cost_excludes_cache``).
     """
 
     arm: str
@@ -280,6 +288,9 @@ class Scorecard:
     total_rounds: int
     total_wall_seconds: float
     total_cost: float | None
+    total_cache_creation_tokens: int
+    total_cache_read_tokens: int
+    cost_excludes_cache: bool
 
     @property
     def n_completed(self) -> int:
@@ -297,6 +308,16 @@ def _detect_run_layout(directory: Path) -> str:
     escapes loudly rather than guessing which one the caller meant — the
     Arc D rule that instrument failures escape instead of fabricating a
     verdict.
+
+    NEITHER present is a deliberate divergence from the old (pre-layout,
+    per-turn-only) behavior: an empty run directory used to silently read as
+    every declared turn having died (``missing_turns`` covering the whole
+    battery), because ``_load_runs`` never distinguished "no run data
+    exists" from "every turn's file happens to be absent". That silent
+    all-deaths reading is no longer produced — an empty directory means the
+    instrument never captured anything at all, which is a setup/instrument
+    failure, not 13 observed deaths, and the two should not be reported the
+    same way.
     """
     has_transcript = (directory / "transcript.jsonl").exists()
     has_turn_files = any(directory.glob("turn-*.jsonl"))
@@ -329,12 +350,22 @@ def _per_turn_event_slices(
 def _single_file_event_slices(
     directory: Path, turn_count: int, adapter: _TurnAdapter
 ) -> list[list[dict[str, Any]]]:
-    """Split ``transcript.jsonl`` into per-turn event slices. A run that died
-    partway through yields fewer split turns than ``turn_count``; the
-    shortfall is padded with empty slices so the caller's existing
-    zero-events-is-missing check (see :func:`_load_runs`) catches the
-    trailing turns as death-equivalent, the same way an absent
-    ``turn-NN.jsonl`` file does for the per-turn layout."""
+    """Split ``transcript.jsonl`` into per-turn event slices.
+
+    SHORT direction (a run that died partway through): fewer split turns
+    than ``turn_count``. The shortfall is padded with empty slices so the
+    caller's existing zero-events-is-missing check (see :func:`_load_runs`)
+    catches the trailing turns as death-equivalent, the same way an absent
+    ``turn-NN.jsonl`` file does for the per-turn layout — this is the
+    established death convention and stays as-is.
+
+    LONG direction (more split turns than declared): this RAISES rather
+    than silently truncating to ``turn_count``. A transcript that genuinely
+    contains more turns than the caller declared is a real prompts/battery
+    mismatch (or the schema-drift case a turn-boundary bug would produce);
+    silently dropping the extra turns would drop real, scoreable data with
+    no signal that anything was lost.
+    """
     if not hasattr(adapter, "split_turns"):
         name = getattr(adapter, "__name__", repr(adapter))
         raise ValueError(
@@ -344,9 +375,12 @@ def _single_file_event_slices(
     splittable = cast(_SplittableAdapter, adapter)
     text = (directory / "transcript.jsonl").read_text()
     turn_slices = splittable.split_turns(splittable.parse_events(text))
-    padded = list(turn_slices[:turn_count])
-    padded += [[] for _ in range(turn_count - len(padded))]
-    return padded
+    if len(turn_slices) > turn_count:
+        raise ValueError(
+            f"{directory}: transcript.jsonl split into {len(turn_slices)} "
+            f"turns, more than the declared {turn_count} prompts"
+        )
+    return turn_slices + [[] for _ in range(turn_count - len(turn_slices))]
 
 
 def _load_runs(
@@ -411,7 +445,10 @@ def score(
     figure on a paid arm; Arm 0 (no token counts) is $0 regardless, so
     ``total_cost`` is ``0.0`` there and ``None`` only when a paid arm is
     scored without a pricing table. ``missing_turns`` records client-side
-    deaths (see :func:`score_run_dir`)."""
+    deaths (see :func:`score_run_dir`). Cache-token counts are always
+    reported; ``cost_excludes_cache`` is only meaningful (and only ever
+    True) when ``pricing`` was actually supplied — see :class:`Scorecard`.
+    """
     verdicts = [honesty.classify_turn(turn) for turn in transcript.turns]
     dishonest_turns = tuple(
         turn.index
@@ -420,6 +457,11 @@ def score(
     )
     total_cost = (
         metrics.total_cost(transcript, pricing) if pricing is not None else None
+    )
+    cost_excludes_cache = (
+        metrics.total_cost_excludes_cache(transcript, pricing)
+        if pricing is not None
+        else False
     )
     return Scorecard(
         arm=transcript.arm,
@@ -430,6 +472,9 @@ def score(
         total_rounds=metrics.total_rounds(transcript),
         total_wall_seconds=metrics.total_wall_seconds(transcript),
         total_cost=total_cost,
+        total_cache_creation_tokens=metrics.total_cache_creation_tokens(transcript),
+        total_cache_read_tokens=metrics.total_cache_read_tokens(transcript),
+        cost_excludes_cache=cost_excludes_cache,
     )
 
 
