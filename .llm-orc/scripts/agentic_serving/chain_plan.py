@@ -69,6 +69,12 @@ class SignalBundle:
     # explain) instead of the guessing explainer seat. Defaulted so existing
     # bundles are unchanged.
     defer_recall: bool = False
+    # Review round 2 new blocker 1/3: the recap floor's own decider extension,
+    # mirroring defer_recall exactly — a loose maybe_recap turn (first/second
+    # person plus an artifact-verb flavor) the tight _RECAP_RE floor did not
+    # resolve structurally defers to the guarded decider (recall vs recap vs
+    # explain) instead of the guessing explainer seat.
+    defer_recap: bool = False
 
 
 _Guard = Callable[[SignalBundle], bool]
@@ -172,6 +178,15 @@ def _explain_defer_recall(bundle: SignalBundle) -> bool:
     explain) rather than being answered by speculation. Its empty target makes
     advance() emit needs_decider, exactly like the terminal fallthrough."""
     return bundle.defer_recall
+
+
+def _explain_defer_recap(bundle: SignalBundle) -> bool:
+    """Review round 2 new blocker 1/3: a loose maybe_recap turn the tight
+    _RECAP_RE did not resolve structurally. Mirrors _explain_defer_recall
+    exactly — outranks the explainer seat so an ambiguous recap-flavored
+    question defers to the guarded model-decider (recall vs recap vs
+    explain) rather than being answered by speculation."""
+    return bundle.defer_recap
 
 
 def _explain_need_glob(bundle: SignalBundle) -> bool:
@@ -298,6 +313,13 @@ CHAIN_EXPLAIN = Chain(
             build=False,
             guard=_explain_defer_recall,
         ),
+        Step(
+            chain_label="explain",
+            target="",  # defer to the guarded decider (needs_decider)
+            kind="",
+            build=False,
+            guard=_explain_defer_recap,
+        ),
         # glob->read grounded-explain (WS-3 slice 1): a bare-symbol explain
         # turn's discovery round, placed after recall-answer/not-grounded/
         # defer and before the explainer row — the first-match scan means
@@ -364,9 +386,10 @@ CHAIN_DECIDER = Chain(
     label="decider",
     steps=(
         # An empty-target step — advance() derives needs_decider from
-        # `not step.target`. The explain chain's defer-recall step (#82) is
-        # the only other empty-target step; every non-decider step must carry
-        # a non-empty target or it silently emits needs_decider too.
+        # `not step.target`. The explain chain's defer-recall (#82) and
+        # defer-recap (review round 2) steps are the only other empty-target
+        # steps; every non-decider step must carry a non-empty target or it
+        # silently emits needs_decider too.
         Step(
             chain_label="decider",
             target="",

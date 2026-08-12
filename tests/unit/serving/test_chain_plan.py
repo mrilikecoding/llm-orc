@@ -124,6 +124,13 @@ def test_defer_recall_falls_through_to_the_decider() -> None:
     assert _decide(is_explain=True, defer_recall=True) == ("", "", False, True)
 
 
+def test_defer_recap_falls_through_to_the_decider() -> None:
+    # Review round 2 new blocker 1/3: mirrors defer_recall exactly — a loose
+    # maybe_recap turn defers to the guarded model-decider rather than the
+    # guessing explainer seat.
+    assert _decide(is_explain=True, defer_recap=True) == ("", "", False, True)
+
+
 # --- glob->read grounded-explain (WS-3 slice 1, docs/plans/2026-07-14-glob-
 # read-grounded-explain-design.md): two new CHAIN_EXPLAIN rows, placed after
 # recall-answer/not-grounded/defer and before the explainer row ---
@@ -195,7 +202,8 @@ def test_chain_explain_row_order_is_recall_notgrounded_defer_glob_files_explaine
     assert targets == [
         "recall-answer",
         "not-grounded",
-        "",  # defer to the guarded decider
+        "",  # defer to the guarded decider (recall)
+        "",  # defer to the guarded decider (recap, review round 2)
         "need-glob",
         "need-files",
         "explainer",
