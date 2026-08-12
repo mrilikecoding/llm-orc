@@ -24,6 +24,7 @@ from emit import (  # type: ignore  # noqa: E402
     ACCEPT_GATE_REJECT_PREFIX,
     REFUSED_PREFIX,
     SEAT_CONTRACT_REJECT_PREFIX,
+    TERMINALS,
 )
 
 
@@ -323,6 +324,18 @@ def test_build_invalid_refusal_uses_the_exported_refused_prefix() -> None:
         }
     )
     assert outcome["content"] == f"{REFUSED_PREFIX}not valid Python"
+
+
+def test_terminals_registry_agrees_with_the_exported_prefix_constants() -> None:
+    # Round 2 major 3: emit renders from TERMINALS, not inline literals — the
+    # registry entries must stay in lockstep with the individually exported
+    # prefix constants (kept exported for the caller's dynamic import).
+    assert TERMINALS["seat_contract"] == (
+        SEAT_CONTRACT_REJECT_PREFIX,
+        "rejected_contract",
+    )
+    assert TERMINALS["accept_gate"] == (ACCEPT_GATE_REJECT_PREFIX, "rejected_gate")
+    assert TERMINALS["refused"] == (REFUSED_PREFIX, "")
 
 
 def test_recall_answer_field_emits_the_honest_message() -> None:
