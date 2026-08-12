@@ -370,43 +370,53 @@ _REJECTED_GATE = "rejected_gate"
 _REFUSED = "refused"
 
 
-class _RejectPrefixes(NamedTuple):
-    """emit's reject/refuse prefix set the ask-outcome ledger recognizes,
-    sourced from a project's own emit.py — never duplicated literals here.
-    Defaults to all-empty so a bare call (the existing #82 test suite)
-    recognizes shipped builds only, byte for byte."""
+class _RejectTerminal(NamedTuple):
+    """One recognized reject/refuse prefix the ask-outcome ledger mints an
+    entry for, mirroring emit.py's own ``Terminal`` shape (``prefix``,
+    ``mints``) by structural duck-typing — read dynamically from a
+    project's own emit.py TERMINALS registry (review round 3 minor 1),
+    never a parallel field-per-kind mapping a newly added terminal could
+    drift from."""
 
-    contract: str = ""
-    gate: str = ""
-    refused: str = ""
+    prefix: str
+    mints: str
 
 
+# emit's reject/refuse prefix set the ask-outcome ledger recognizes, sourced
+# from a project's own emit.py TERMINALS registry — never duplicated
+# literals here. Defaults to empty so a bare call (the existing #82 test
+# suite) recognizes shipped builds only, byte for byte.
+_RejectPrefixes = tuple[_RejectTerminal, ...]
 # A single shared empty instance for default-argument use (ruff B008: a
-# function call in an argument default is flagged even though NamedTuple
-# instances are immutable).
-_NO_REJECT_PREFIXES = _RejectPrefixes()
+# function call in an argument default is flagged even though an empty
+# tuple literal is immutable).
+_NO_REJECT_PREFIXES: _RejectPrefixes = ()
 
 
 def _reject_kind(message: Any, reject_prefixes: _RejectPrefixes) -> tuple[str, str]:
-    """(kind, reason) for an ASSISTANT-role wire message matching one of
-    emit's reject/refuse prefixes (review round 1 blocker 2), or ("", "")
-    when it matches none. ``reason`` is the wire text after the prefix,
-    retained only for "refused" — the template states it verbatim rather
-    than claiming a specific gate the record doesn't support. Never inferred
-    from free text and never from a user or tool message — the same
-    spoof-guard discipline as ``_message_write_path``."""
+    """(kind, reason) for an ASSISTANT-role wire message matching one of the
+    recognized reject/refuse prefixes (review round 1 blocker 2; round 3
+    minor 1 iterates the terminals derived from emit's own TERMINALS
+    registry, in the registry's own order, instead of checking three
+    individually-named fields — a new minting terminal in emit.py needs no
+    matching code change here), or ("", "") when it matches none. ``reason``
+    is the wire text after the prefix, retained only for the "refused" kind
+    — the template states it verbatim rather than claiming a specific gate
+    the record doesn't support. Never inferred from free text and never
+    from a user or tool message — the same spoof-guard discipline as
+    ``_message_write_path``."""
     if getattr(message, "role", "") != "assistant":
         return "", ""
     content = getattr(message, "content", None)
     if not isinstance(content, str):
         return "", ""
     stripped = content.strip()
-    if reject_prefixes.contract and stripped.startswith(reject_prefixes.contract):
-        return _REJECTED_CONTRACT, ""
-    if reject_prefixes.gate and stripped.startswith(reject_prefixes.gate):
-        return _REJECTED_GATE, ""
-    if reject_prefixes.refused and stripped.startswith(reject_prefixes.refused):
-        return _REFUSED, stripped[len(reject_prefixes.refused) :]
+    for terminal in reject_prefixes:
+        if stripped.startswith(terminal.prefix):
+            reason = (
+                stripped[len(terminal.prefix) :] if terminal.mints == _REFUSED else ""
+            )
+            return terminal.mints, reason
     return "", ""
 
 
@@ -958,40 +968,49 @@ def _find_ensemble(project_dir: Path, name: str) -> Path:
 
 
 def _load_emit_reject_prefixes(path: Path) -> _RejectPrefixes:
-    """The reject/refuse prefix constants read straight out of a project's
-    OWN ``emit.py`` (recap grounding, #133/#134; review round 1 blocker 2
-    adds a refused prefix, round 2 new blocker 2 splits it into a
-    build-scoped one) — the single source of truth the design doc requires,
-    never a literal duplicated here. A project's scripts are configuration,
-    not installed package content (they live under the caller's
-    ``project_dir``, resolved per instance, same as ``_find_ensemble``), so
-    this is a dynamic file-location import rather than a static one.
-    ``emit.py`` is self-contained (stdlib-only), so it needs no sys.path
-    change; loading it under a non-``__main__`` name means its
-    ``if __name__ == "__main__"`` block never runs. Any failure (missing
-    file, syntax error, missing constants) yields no prefixes — the ledger
-    then recognizes shipped builds only, same as before #133/#134, never a
-    hard failure of the whole turn.
+    """The reject/refuse terminals read straight out of a project's OWN
+    ``emit.py`` TERMINALS registry (recap grounding, #133/#134; review
+    round 1 blocker 2 adds a refused prefix, round 2 new blocker 2 splits it
+    into a build-scoped one, round 3 minor 1 switches from three
+    individually-named constants to iterating the registry itself) — the
+    single source of truth the design doc requires, never a literal
+    duplicated here and never a parallel mapping a newly added terminal
+    could drift from. A project's scripts are configuration, not installed
+    package content (they live under the caller's ``project_dir``, resolved
+    per instance, same as ``_find_ensemble``), so this is a dynamic
+    file-location import rather than a static one. ``emit.py`` is
+    self-contained (stdlib-only), so it needs no sys.path change; loading it
+    under a non-``__main__`` name means its ``if __name__ == "__main__"``
+    block never runs. Any failure (missing file, syntax error, missing or
+    malformed TERMINALS) yields no prefixes — the ledger then recognizes
+    shipped builds only, same as before #133/#134, never a hard failure of
+    the whole turn.
 
-    Reads ``BUILD_REFUSED_PREFIX``, never the plain ``REFUSED_PREFIX`` — a
-    non-build refusal (a bare-symbol explain's ambiguous glob, say) must
-    never mint a build-outcome ledger entry (review round 2 new blocker 2).
+    A TERMINALS entry whose ``mints`` is empty (the plain "Refused: "
+    prefix) is filtered out here — a non-build refusal (a bare-symbol
+    explain's ambiguous glob, say) must never mint a build-outcome ledger
+    entry (review round 2 new blocker 2).
     """
     try:
         spec = importlib.util.spec_from_file_location(
             "_serving_emit_reject_prefixes", path
         )
         if spec is None or spec.loader is None:
-            return _RejectPrefixes()
+            return ()
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
     except Exception:
-        return _RejectPrefixes()
-    return _RejectPrefixes(
-        contract=str(getattr(module, "SEAT_CONTRACT_REJECT_PREFIX", "")),
-        gate=str(getattr(module, "ACCEPT_GATE_REJECT_PREFIX", "")),
-        refused=str(getattr(module, "BUILD_REFUSED_PREFIX", "")),
-    )
+        return ()
+    terminals = getattr(module, "TERMINALS", None)
+    if not isinstance(terminals, dict):
+        return ()
+    recognized: list[_RejectTerminal] = []
+    for terminal in terminals.values():
+        prefix = str(getattr(terminal, "prefix", ""))
+        mints = str(getattr(terminal, "mints", ""))
+        if prefix and mints:
+            recognized.append(_RejectTerminal(prefix, mints))
+    return tuple(recognized)
 
 
 def _serve_outcome(result: dict[str, Any]) -> dict[str, Any]:
@@ -1125,7 +1144,7 @@ class ServingEnsembleCaller:
         try:
             mtime = path.stat().st_mtime
         except OSError:
-            return _RejectPrefixes()
+            return ()
         if self._emit_reject_cache is not None:
             cached_path, cached_mtime, cached = self._emit_reject_cache
             if cached_path == path and cached_mtime == mtime:
