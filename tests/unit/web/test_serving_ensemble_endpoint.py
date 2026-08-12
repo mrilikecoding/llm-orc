@@ -2136,3 +2136,53 @@ def test_recap_floor_answers_deterministically_end_to_end(
     assert resp.status_code == 200
     content = resp.json()["choices"][0]["message"]["content"]
     assert "todo.py" in content
+
+
+def test_recap_floor_ignores_a_non_build_explain_glob_refusal(
+    serving_project: Path, serving_client: TestClient
+) -> None:
+    """Review round 2 new blocker 2, end to end: a bare-symbol EXPLAIN
+    turn's ambiguous-glob refusal ("Refused: multiple files match...") sits
+    on the wire alongside a genuine shipped build. The recap answer must
+    list the shipped file and report NO not-shipped count — the explain
+    refusal never carried a build signal, so it must never mint a
+    build-outcome ledger entry (never inflate a "did not ship" tally with
+    something that was never a build ask).
+    """
+    resp = serving_client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "ensemble-agent",
+            "messages": [
+                {"role": "user", "content": "how does error handling work?"},
+                {
+                    "role": "assistant",
+                    "content": (
+                        "Refused: multiple files match 'error,handling,work' in "
+                        "the workspace listing: /src/errors.py, /src/handling.py "
+                        "— please name one"
+                    ),
+                },
+                {"role": "user", "content": "build a todo app in todo.py"},
+                {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [
+                        _write_tool_call("w1", "todo.py", "def add_item(): ...")
+                    ],
+                },
+                {
+                    "role": "tool",
+                    "tool_call_id": "w1",
+                    "content": "Wrote file successfully.",
+                },
+                {"role": "user", "content": "what have we built so far?"},
+            ],
+            "tools": [_WRITE_TOOL],
+        },
+    )
+
+    assert resp.status_code == 200
+    content = resp.json()["choices"][0]["message"]["content"]
+    assert "todo.py" in content
+    assert "did not ship" not in content.lower()

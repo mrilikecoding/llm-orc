@@ -76,15 +76,27 @@ class Terminal(NamedTuple):
 # these constants without also considering that old-session cost.
 SEAT_CONTRACT_REJECT_PREFIX = "Seat contract not met: "
 ACCEPT_GATE_REJECT_PREFIX = "Another round needed: "
-# The read-failed/glob-failed/build-invalid family on a turn with no build
-# signal — never mints a ledger entry, since the ask it answers wasn't a
-# build ask (review round 2 new blocker 2 splits this from BUILD_REFUSED_
-# PREFIX below).
+# Review round 2 new blocker 2: the invariant is "a ledger entry may claim a
+# build outcome only when the turn carried a build ask" — the wire-only
+# ledger means the PREFIX itself must encode build-ness, since a read/glob
+# refusal renders identically (build=False) whether it answers a build ask's
+# discovery round or a bare-symbol explain's. BUILD_REFUSED_PREFIX is used
+# EXACTLY on refusal paths where the turn carried classify's build signal
+# (threaded as ``is_build_ask``); REFUSED_PREFIX (below) is everything else
+# and never mints a ledger entry.
+#
+# Known historical bound: wire text from a session predating this split (the
+# plain "Refused: " prefix) will not mint a refused entry on replay — the
+# same safe-direction-to-fail bound already recorded for the other prefixes
+# above (a session spanning a template-wording change under-reports, never
+# misreports).
+BUILD_REFUSED_PREFIX = "Build refused: "
 REFUSED_PREFIX = "Refused: "
 
 TERMINALS: dict[str, Terminal] = {
     "seat_contract": Terminal(SEAT_CONTRACT_REJECT_PREFIX, "rejected_contract"),
     "accept_gate": Terminal(ACCEPT_GATE_REJECT_PREFIX, "rejected_gate"),
+    "build_refused": Terminal(BUILD_REFUSED_PREFIX, "refused"),
     "refused": Terminal(REFUSED_PREFIX, ""),
 }
 
@@ -104,8 +116,16 @@ def _response(dep: object) -> str:
 def _seam_outcome(gated: dict) -> dict | None:
     """The issue-#83 delegation-seam outcome, or ``None`` when the turn
     rides no seam (a build/prose turn). Failures refuse honestly before any
-    request fires — one round per seam per turn, never a re-request."""
-    refused = TERMINALS["refused"]
+    request fires — one round per seam per turn, never a re-request.
+
+    Review round 2 new blocker 2: a read/glob refusal mints a BUILD-scoped
+    ledger entry only when the turn carried classify's build signal
+    (``is_build_ask``, threaded from classify through resolve/shape/
+    form_gate) — the SAME refusal shape (build=False) otherwise answers a
+    bare-symbol explain's discovery round, which is never a build ask.
+    """
+    is_build_ask = bool(gated.get("is_build_ask", False))
+    refused = TERMINALS["build_refused"] if is_build_ask else TERMINALS["refused"]
     read_failed = str(gated.get("read_failed", ""))
     if read_failed:
         return {"finish": True, "content": f"{refused.prefix}{read_failed}"}
@@ -184,10 +204,14 @@ def main() -> None:
             "content": content,
         }
     elif build:
+        # build=True already proves this turn carried a build ask (this
+        # branch is a form-gate parse failure, only ever reachable on the
+        # build path) — no is_build_ask threading needed, always the
+        # build-scoped prefix (review round 2 new blocker 2).
         reason = gated.get("reason", "invalid deliverable")
         outcome = {
             "finish": True,
-            "content": f"{TERMINALS['refused'].prefix}{reason}",
+            "content": f"{TERMINALS['build_refused'].prefix}{reason}",
         }
     else:
         outcome = {"finish": True, "content": content}

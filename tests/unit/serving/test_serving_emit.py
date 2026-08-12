@@ -22,6 +22,7 @@ EMIT = SCRIPTS / "emit.py"
 sys.path.insert(0, str(SCRIPTS))
 from emit import (  # type: ignore  # noqa: E402
     ACCEPT_GATE_REJECT_PREFIX,
+    BUILD_REFUSED_PREFIX,
     REFUSED_PREFIX,
     SEAT_CONTRACT_REJECT_PREFIX,
     TERMINALS,
@@ -68,7 +69,7 @@ def test_refused_build_degrades_to_a_prose_finish_with_no_write() -> None:
         }
     )
     assert outcome["finish"] is True
-    assert "Refused" in outcome["content"]
+    assert "refused" in outcome["content"].lower()
     assert "file" not in outcome
 
 
@@ -132,6 +133,9 @@ def test_needs_files_emits_a_reads_outcome() -> None:
 
 
 def test_read_failed_emits_an_honest_refusal() -> None:
+    # is_build_ask absent/False: a non-build turn's read refusal (e.g. a
+    # bare-symbol explain-discovery's ambiguous read) never claims a build
+    # outcome (review round 2 new blocker 2).
     outcome = _emit(
         gated={
             "build": False,
@@ -150,6 +154,33 @@ def test_read_failed_emits_an_honest_refusal() -> None:
     assert outcome["finish"] is True
     assert outcome["content"] == (
         "Refused: could not read storage.py: client read failed"
+    )
+
+
+def test_build_ask_read_failed_uses_the_build_refused_prefix() -> None:
+    # Review round 2 new blocker 2: a build ask (write tests for existing
+    # X) needing to read X first, where the read fails, must mint a BUILD
+    # outcome — the plain "Refused:" prefix never claims build-ness, so the
+    # caller-side ledger would silently drop this disclosure otherwise.
+    outcome = _emit(
+        gated={
+            "build": False,
+            "file": "test_storage.py",
+            "content": "Requesting client files.",
+            "valid": True,
+            "reason": "ok",
+            "needs_files": [],
+            "read_failed": "could not read storage.py: client read failed",
+            "is_build_ask": True,
+            "accept": None,
+            "accept_reason": "",
+            "seat_admitted": None,
+            "seat_contract_reason": "",
+        }
+    )
+    assert outcome["finish"] is True
+    assert outcome["content"] == (
+        "Build refused: could not read storage.py: client read failed"
     )
 
 
@@ -196,6 +227,7 @@ def test_needs_glob_emits_a_glob_outcome() -> None:
 
 
 def test_glob_failed_emits_an_honest_refusal() -> None:
+    # is_build_ask absent/False: an explain-discovery glob refusal.
     outcome = _emit(
         {
             "build": False,
@@ -217,6 +249,34 @@ def test_glob_failed_emits_an_honest_refusal() -> None:
     assert outcome["finish"] is True
     assert outcome["content"] == (
         "Refused: no file matching 'storage' in the workspace listing"
+    )
+
+
+def test_build_ask_glob_failed_uses_the_build_refused_prefix() -> None:
+    # Review round 2 new blocker 2: a build ask's discovery glob refusal
+    # must mint a BUILD outcome too.
+    outcome = _emit(
+        {
+            "build": False,
+            "file": "solution.py",
+            "content": "Requesting a workspace listing.",
+            "valid": True,
+            "reason": "ok",
+            "needs_files": [],
+            "read_failed": "",
+            "needs_run": "",
+            "needs_glob": "",
+            "glob_failed": "no file matching 'storage' in the workspace listing",
+            "is_build_ask": True,
+            "accept": None,
+            "accept_reason": "",
+            "seat_admitted": None,
+            "seat_contract_reason": "",
+        }
+    )
+    assert outcome["finish"] is True
+    assert outcome["content"] == (
+        "Build refused: no file matching 'storage' in the workspace listing"
     )
 
 
@@ -309,11 +369,11 @@ def test_accept_gate_rejection_uses_the_exported_prefix() -> None:
     assert outcome["content"] == f"{ACCEPT_GATE_REJECT_PREFIX}tests did not pass"
 
 
-def test_build_invalid_refusal_uses_the_exported_refused_prefix() -> None:
-    # Review round 1 blocker 2: REFUSED_PREFIX is shared by read-failed,
-    # glob-failed, and build-invalid — all three ARE "Refused: <reason>" on
-    # the wire; the caller states the reason verbatim rather than guessing
-    # which gate produced it.
+def test_build_invalid_refusal_uses_the_build_refused_prefix() -> None:
+    # Review round 2 new blocker 2: a form-gate parse failure only ever
+    # happens on a build turn (this branch requires build=True already —
+    # proof enough on its own, no is_build_ask threading needed here), so
+    # it always mints a BUILD outcome, never the ambiguous plain "Refused:".
     outcome = _emit(
         {
             "build": True,
@@ -323,7 +383,7 @@ def test_build_invalid_refusal_uses_the_exported_refused_prefix() -> None:
             "reason": "not valid Python",
         }
     )
-    assert outcome["content"] == f"{REFUSED_PREFIX}not valid Python"
+    assert outcome["content"] == f"{BUILD_REFUSED_PREFIX}not valid Python"
 
 
 def test_terminals_registry_agrees_with_the_exported_prefix_constants() -> None:
@@ -335,6 +395,7 @@ def test_terminals_registry_agrees_with_the_exported_prefix_constants() -> None:
         "rejected_contract",
     )
     assert TERMINALS["accept_gate"] == (ACCEPT_GATE_REJECT_PREFIX, "rejected_gate")
+    assert TERMINALS["build_refused"] == (BUILD_REFUSED_PREFIX, "refused")
     assert TERMINALS["refused"] == (REFUSED_PREFIX, "")
 
 

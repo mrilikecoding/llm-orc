@@ -143,3 +143,23 @@ def test_form_gate_passes_not_grounded_through() -> None:
     )
     assert gated["not_grounded"] == "todo.py"
     assert gated["valid"] is True
+
+
+def test_form_gate_passes_is_build_ask_through() -> None:
+    # Review round 2 new blocker 2.
+    gated = _gate(
+        {
+            "build": False,
+            "file": "test_storage.py",
+            "content": "Requesting client files.",
+            "needs_files": ["storage.py"],
+            "read_failed": "",
+            "is_build_ask": True,
+        }
+    )
+    assert gated["is_build_ask"] is True
+
+
+def test_form_gate_defaults_is_build_ask_false_when_absent() -> None:
+    gated = _gate({"build": False, "file": "solution.py", "content": "prose"})
+    assert gated["is_build_ask"] is False

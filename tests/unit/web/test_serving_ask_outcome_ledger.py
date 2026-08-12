@@ -27,8 +27,10 @@ EMIT = SCRIPTS / "emit.py"
 sys.path.insert(0, str(SCRIPTS))
 from emit import (  # type: ignore  # noqa: E402
     ACCEPT_GATE_REJECT_PREFIX,
+    BUILD_REFUSED_PREFIX,
     REFUSED_PREFIX,
     SEAT_CONTRACT_REJECT_PREFIX,
+    TERMINALS,
 )
 
 from llm_orc.web.serving.serving_ensemble_caller import (  # noqa: E402
@@ -39,10 +41,13 @@ from llm_orc.web.serving.serving_ensemble_caller import (  # noqa: E402
     _RejectPrefixes,
 )
 
+# Review round 2 new blocker 2: the ledger recognizes ONLY the build-scoped
+# refused prefix — a plain "Refused:" (read/glob refusal on a turn with no
+# build signal) never mints a build-outcome entry.
 _PREFIXES = _RejectPrefixes(
     contract=SEAT_CONTRACT_REJECT_PREFIX,
     gate=ACCEPT_GATE_REJECT_PREFIX,
-    refused=REFUSED_PREFIX,
+    refused=BUILD_REFUSED_PREFIX,
 )
 
 
@@ -121,13 +126,14 @@ def test_ledger_recognizes_a_rejected_build_from_the_accept_gate_prefix() -> Non
 
 
 def test_ledger_recognizes_a_refused_build_and_retains_the_reason() -> None:
-    # Review round 1 blocker 2: the third minting class — read-failed,
-    # glob-failed, and build-invalid all degrade to "Refused: <reason>",
-    # never attributed to a specific gate the record doesn't support.
+    # Review round 1 blocker 2 (build-scoped round 2 new blocker 2): the
+    # third minting class — a build ask's read-failed, glob-failed, or
+    # build-invalid degrades to "Build refused: <reason>", never attributed
+    # to a specific gate the record doesn't support.
     messages = [
         _user("write tests for existing missing.py"),
         _assistant_prose(
-            REFUSED_PREFIX + "could not read missing.py: client read failed"
+            BUILD_REFUSED_PREFIX + "could not read missing.py: client read failed"
         ),
         _user("did you see my previous query?"),
     ]
@@ -138,6 +144,23 @@ def test_ledger_recognizes_a_refused_build_and_retains_the_reason() -> None:
     assert ledger[0]["outcome"] == "refused"
     assert ledger[0]["reason"] == "could not read missing.py: client read failed"
     assert "path" not in ledger[0]
+
+
+def test_ledger_never_mints_from_a_plain_non_build_refused_message() -> None:
+    # Review round 2 new blocker 2: a plain "Refused:" — a bare-symbol
+    # explain's ambiguous-glob refusal, say — carries no build signal at
+    # all, so it must never mint a build-outcome ledger entry.
+    messages = [
+        _user("how does error handling work?"),
+        _assistant_prose(
+            REFUSED_PREFIX + "no file matching 'error' in the workspace listing"
+        ),
+        _user("did you see my previous query?"),
+    ]
+
+    ledger = _recall_ledger(messages, _PREFIXES)
+
+    assert ledger == []
 
 
 def test_ledger_ignores_reject_prose_when_no_prefixes_are_supplied() -> None:
@@ -331,7 +354,7 @@ def test_previous_ask_reports_a_refused_outcome_with_its_reason() -> None:
     messages = [
         _user("write tests for existing missing.py"),
         _assistant_prose(
-            REFUSED_PREFIX + "could not read missing.py: client read failed"
+            BUILD_REFUSED_PREFIX + "could not read missing.py: client read failed"
         ),
         _user("did you see my previous query?"),
     ]
@@ -380,6 +403,7 @@ def test_caller_reads_reject_prefixes_from_the_projects_real_emit_module(
     (scripts / "emit.py").write_text(
         'SEAT_CONTRACT_REJECT_PREFIX = "Seat contract not met: "\n'
         'ACCEPT_GATE_REJECT_PREFIX = "Another round needed: "\n'
+        'BUILD_REFUSED_PREFIX = "Build refused: "\n'
         'REFUSED_PREFIX = "Refused: "\n'
     )
     caller = ServingEnsembleCaller(project_dir=tmp_path)
@@ -421,6 +445,31 @@ def _emit(gated: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
+def test_every_registry_terminal_agrees_with_the_ledgers_recognition() -> None:
+    """Review round 2 major 3: the invariant test iterates the REGISTRY
+    itself (``TERMINALS``, imported from emit.py) — never a hand-maintained
+    parallel list, whose "every terminal declares a minting class" claim
+    was false (nothing forced a new terminal onto that list too). For each
+    registry entry, a synthetic message carrying that PREFIX must be
+    recognized by ``_reject_kind`` as producing EXACTLY that minting class
+    — including "" for the plain "refused" terminal, which must never mint.
+    A newly added TERMINALS entry with a wrong (or missing) ``mints``
+    declaration fails HERE, not silently in production.
+    """
+    for name, terminal in TERMINALS.items():
+        message = SimpleNamespace(
+            role="assistant", content=f"{terminal.prefix}some reason", tool_calls=None
+        )
+        kind, _ = _reject_kind(message, _PREFIXES)
+        assert kind == terminal.mints, (
+            f"TERMINALS[{name!r}] declares mints={terminal.mints!r} but "
+            f"_reject_kind returned {kind!r} for a {terminal.prefix!r} message"
+        )
+
+
+# Wrong-accept-hunt-style integration check (blocker 2b, round 1): the
+# REAL emit.py subprocess, for the concrete build-ask-reachable shapes, in
+# case a future main() edit stops actually rendering from TERMINALS.
 _BUILD_ASK_REJECT_SHAPES: list[dict[str, Any]] = [
     # seat contract not met
     {"build": True, "seat_admitted": False, "seat_contract_reason": "bad envelope"},
@@ -439,6 +488,7 @@ _BUILD_ASK_REJECT_SHAPES: list[dict[str, Any]] = [
         "file": "x.py",
         "content": "n/a",
         "read_failed": "client read failed",
+        "is_build_ask": True,
     },
     # glob failed (a build ask's discovery round found no/many candidates)
     {
@@ -446,6 +496,7 @@ _BUILD_ASK_REJECT_SHAPES: list[dict[str, Any]] = [
         "file": "x.py",
         "content": "n/a",
         "glob_failed": "no file matching 'x' in the workspace listing",
+        "is_build_ask": True,
     },
     # build invalid (form-gate parse failure)
     {
@@ -467,4 +518,34 @@ def test_every_build_reachable_emit_terminal_mints_a_ledger_entry() -> None:
         kind, _ = _reject_kind(message, _PREFIXES)
         assert kind, (
             f"emit terminal {gated} minted no ledger kind: {outcome['content']!r}"
+        )
+
+
+def test_non_build_ask_read_and_glob_refusals_never_mint() -> None:
+    # Review round 2 new blocker 2's own invariant, via the real subprocess:
+    # is_build_ask absent/False must never mint, even for the SAME
+    # read_failed/glob_failed reasons a build ask would mint for.
+    shapes = [
+        {
+            "build": False,
+            "file": "x.py",
+            "content": "n/a",
+            "read_failed": "client read failed",
+        },
+        {
+            "build": False,
+            "file": "x.py",
+            "content": "n/a",
+            "glob_failed": "no file matching 'x' in the workspace listing",
+        },
+    ]
+    for gated in shapes:
+        outcome = _emit(gated)
+        message = SimpleNamespace(
+            role="assistant", content=outcome["content"], tool_calls=None
+        )
+        kind, _ = _reject_kind(message, _PREFIXES)
+        assert kind == "", (
+            f"non-build refusal {gated} unexpectedly minted {kind!r}: "
+            f"{outcome['content']!r}"
         )

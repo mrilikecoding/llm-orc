@@ -1299,6 +1299,12 @@ def main() -> None:
     tests_primary = bool(_TESTS_PRIMARY_RE.search(task)) or named_basename.startswith(
         "test_"
     )
+    # Review round 2 new blocker 2: whether THIS turn carried a build ask at
+    # all — threaded to emit so a read/glob refusal can mint a build-scoped
+    # ledger entry only when it actually answers one. has_build_signal alone
+    # under-counts: "tests for the storage module" is tests_primary (a build
+    # ask) but names no file and contains no _BUILD_RE verb.
+    is_build_ask = has_build_signal or tests_primary
 
     # Interrogatives and turns LED by an explain marker stay explain turns;
     # a trailing marker ("run the tests and tell me what failed") does not
@@ -1542,6 +1548,7 @@ def main() -> None:
                 "glob_failed": glob_failed,
                 "not_grounded": not_grounded,
                 "recall_answer": recall_answer,
+                "is_build_ask": is_build_ask,
                 "chain": chain,
                 "step_index": step_index,
             }
