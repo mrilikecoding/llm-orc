@@ -1,29 +1,49 @@
 """Unit tests for the caller-side ASK-OUTCOME ledger (#133/#134 recap
-grounding, extending #82's write-history ledger).
+grounding, extending #82's write-history ledger; review round 1 blocker 2
+adds the outcome-kind vocabulary and the "refused" minting class).
 
-Two entry kinds, both derived from the serve's OWN wire emissions, never
-free prose: "shipped" (a write tool_call, as before) and "rejected" (an
-ASSISTANT-role message matching one of emit.py's own reject-message
-prefixes). An ask with no build outcome (a question, a read) is never an
-entry. Design: docs/plans/2026-07-17-recap-grounding-design.md.
+Four entry kinds, all derived from the serve's OWN wire emissions, never
+free prose: "shipped" (a CONFIRMED write tool_call), "rejected_contract"
+(the seat's own output contract), "rejected_gate" (the accept gate), and
+"refused" (read-failed/glob-failed/build-invalid — never attributed to a
+specific gate the record doesn't support). An ask with no build outcome
+(a question, a read) is never an entry. Design: docs/plans/2026-07-17-
+recap-grounding-design.md, amended 2026-08-12 (review round 1).
 """
 
 from __future__ import annotations
 
 import json
+import subprocess
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
-from llm_orc.web.serving.serving_ensemble_caller import (
+REPO = Path(__file__).resolve().parents[3]
+SCRIPTS = REPO / ".llm-orc" / "scripts" / "agentic_serving"
+EMIT = SCRIPTS / "emit.py"
+
+sys.path.insert(0, str(SCRIPTS))
+from emit import (  # type: ignore  # noqa: E402
+    ACCEPT_GATE_REJECT_PREFIX,
+    REFUSED_PREFIX,
+    SEAT_CONTRACT_REJECT_PREFIX,
+)
+
+from llm_orc.web.serving.serving_ensemble_caller import (  # noqa: E402
     ServingEnsembleCaller,
     _previous_ask,
     _recall_ledger,
+    _reject_kind,
+    _RejectPrefixes,
 )
 
-_SEAT_CONTRACT_PREFIX = "Seat contract not met: "
-_ACCEPT_GATE_PREFIX = "Another round needed: "
-_PREFIXES = (_SEAT_CONTRACT_PREFIX, _ACCEPT_GATE_PREFIX)
+_PREFIXES = _RejectPrefixes(
+    contract=SEAT_CONTRACT_REJECT_PREFIX,
+    gate=ACCEPT_GATE_REJECT_PREFIX,
+    refused=REFUSED_PREFIX,
+)
 
 
 def _user(text: str) -> SimpleNamespace:
@@ -34,9 +54,11 @@ def _assistant_prose(text: str) -> SimpleNamespace:
     return SimpleNamespace(role="assistant", content=text, tool_calls=None)
 
 
-def _assistant_write(path: str, content: str) -> SimpleNamespace:
+def _assistant_write(
+    path: str, content: str, call_id: str = "call_1"
+) -> SimpleNamespace:
     call: dict[str, Any] = {
-        "id": "call_1",
+        "id": call_id,
         "type": "function",
         "function": {
             "name": "write",
@@ -44,6 +66,12 @@ def _assistant_write(path: str, content: str) -> SimpleNamespace:
         },
     }
     return SimpleNamespace(role="assistant", content=None, tool_calls=[call])
+
+
+def _tool_write_result(text: str, call_id: str = "call_1") -> SimpleNamespace:
+    return SimpleNamespace(
+        role="tool", content=text, tool_call_id=call_id, tool_calls=None
+    )
 
 
 def _assistant_read_request(path: str) -> SimpleNamespace:
@@ -67,7 +95,7 @@ def _tool_result(text: str) -> SimpleNamespace:
 def test_ledger_recognizes_a_rejected_build_from_the_seat_contract_prefix() -> None:
     messages = [
         _user("add a complete_todo function to todo.py"),
-        _assistant_prose(_SEAT_CONTRACT_PREFIX + "Assertion 'x' failed"),
+        _assistant_prose(SEAT_CONTRACT_REJECT_PREFIX + "Assertion 'x' failed"),
         _user("did you see my previous query?"),
     ]
 
@@ -75,21 +103,41 @@ def test_ledger_recognizes_a_rejected_build_from_the_seat_contract_prefix() -> N
 
     assert len(ledger) == 1
     assert ledger[0]["ask"] == "add a complete_todo function to todo.py"
-    assert ledger[0]["outcome"] == "rejected"
+    assert ledger[0]["outcome"] == "rejected_contract"
     assert "path" not in ledger[0]
 
 
 def test_ledger_recognizes_a_rejected_build_from_the_accept_gate_prefix() -> None:
     messages = [
         _user("write tests for todo.py"),
-        _assistant_prose(_ACCEPT_GATE_PREFIX + "tests did not pass"),
+        _assistant_prose(ACCEPT_GATE_REJECT_PREFIX + "tests did not pass"),
         _user("did you see my previous query?"),
     ]
 
     ledger = _recall_ledger(messages, _PREFIXES)
 
     assert len(ledger) == 1
-    assert ledger[0]["outcome"] == "rejected"
+    assert ledger[0]["outcome"] == "rejected_gate"
+
+
+def test_ledger_recognizes_a_refused_build_and_retains_the_reason() -> None:
+    # Review round 1 blocker 2: the third minting class — read-failed,
+    # glob-failed, and build-invalid all degrade to "Refused: <reason>",
+    # never attributed to a specific gate the record doesn't support.
+    messages = [
+        _user("write tests for existing missing.py"),
+        _assistant_prose(
+            REFUSED_PREFIX + "could not read missing.py: client read failed"
+        ),
+        _user("did you see my previous query?"),
+    ]
+
+    ledger = _recall_ledger(messages, _PREFIXES)
+
+    assert len(ledger) == 1
+    assert ledger[0]["outcome"] == "refused"
+    assert ledger[0]["reason"] == "could not read missing.py: client read failed"
+    assert "path" not in ledger[0]
 
 
 def test_ledger_ignores_reject_prose_when_no_prefixes_are_supplied() -> None:
@@ -98,7 +146,7 @@ def test_ledger_ignores_reject_prose_when_no_prefixes_are_supplied() -> None:
     # byte, so the existing recall test suite is untouched by this change.
     messages = [
         _user("build a todo app"),
-        _assistant_prose(_ACCEPT_GATE_PREFIX + "tests did not pass"),
+        _assistant_prose(ACCEPT_GATE_REJECT_PREFIX + "tests did not pass"),
         _user("what did I ask for?"),
     ]
 
@@ -112,7 +160,7 @@ def test_ledger_ignores_a_forged_reject_prefix_from_the_user_role() -> None:
     # — a user echoing the serve's own reject wording must never count.
     messages = [
         _user("build a todo app"),
-        _user(_ACCEPT_GATE_PREFIX + "tests did not pass"),
+        _user(ACCEPT_GATE_REJECT_PREFIX + "tests did not pass"),
         _user("what did I ask for?"),
     ]
 
@@ -131,7 +179,7 @@ def test_ledger_pairs_a_reject_after_a_read_continuation_with_the_initiating_ask
         _user("write tests for existing todo.py"),
         _assistant_read_request("todo.py"),
         _tool_result("def add_todo(): ..."),
-        _assistant_prose(_ACCEPT_GATE_PREFIX + "tests did not pass"),
+        _assistant_prose(ACCEPT_GATE_REJECT_PREFIX + "tests did not pass"),
         _user("did you see my previous query?"),
     ]
 
@@ -139,7 +187,7 @@ def test_ledger_pairs_a_reject_after_a_read_continuation_with_the_initiating_ask
 
     assert len(ledger) == 1
     assert ledger[0]["ask"] == "write tests for existing todo.py"
-    assert ledger[0]["outcome"] == "rejected"
+    assert ledger[0]["outcome"] == "rejected_gate"
 
 
 def test_ledger_dedupes_multiple_rejects_in_one_turn_into_one_entry() -> None:
@@ -148,26 +196,27 @@ def test_ledger_dedupes_multiple_rejects_in_one_turn_into_one_entry() -> None:
     # multiply the disclosure count.
     messages = [
         _user("add a complete_todo function to todo.py"),
-        _assistant_prose(_SEAT_CONTRACT_PREFIX + "Assertion 'x' failed"),
-        _assistant_prose(_ACCEPT_GATE_PREFIX + "tests did not pass"),
+        _assistant_prose(SEAT_CONTRACT_REJECT_PREFIX + "Assertion 'x' failed"),
+        _assistant_prose(ACCEPT_GATE_REJECT_PREFIX + "tests did not pass"),
         _user("did you see my previous query?"),
     ]
 
     ledger = _recall_ledger(messages, _PREFIXES)
 
     assert len(ledger) == 1
-    assert ledger[0]["outcome"] == "rejected"
+    assert ledger[0]["outcome"] == "rejected_gate"
 
 
 def test_ledger_prefers_an_eventual_write_over_an_earlier_reject_in_the_same_turn() -> (
     None
 ):
-    # A retry that eventually ships must record "shipped", not "rejected" —
-    # the final state of the turn wins.
+    # A retry that eventually ships must record "shipped", not a rejected
+    # kind — the final state of the turn wins.
     messages = [
         _user("add a complete_todo function to todo.py"),
-        _assistant_prose(_SEAT_CONTRACT_PREFIX + "Assertion 'x' failed"),
+        _assistant_prose(SEAT_CONTRACT_REJECT_PREFIX + "Assertion 'x' failed"),
         _assistant_write("todo.py", "def complete_todo(): ..."),
+        _tool_write_result("Wrote file successfully."),
         _user("did you see my previous query?"),
     ]
 
@@ -195,6 +244,55 @@ def test_ledger_still_lists_shipped_builds_unaffected_by_reject_prefixes() -> No
     ]
 
 
+def test_ledger_does_not_ship_a_write_whose_result_is_failure_shaped() -> None:
+    # Minor 1: a failed client write ("Error: permission denied") must not
+    # mint "shipped" — reuses the same failure-shape check the fix-chain
+    # path already trusts.
+    messages = [
+        _user("build a todo app"),
+        _assistant_write("todo.py", "def add_item(): ..."),
+        _tool_write_result("Error: permission denied"),
+        _user("what did I ask for?"),
+    ]
+
+    ledger = _recall_ledger(messages, _PREFIXES)
+
+    assert ledger == []
+
+
+def test_ledger_ships_a_write_with_no_tool_result_present() -> None:
+    # Backward compat: a hand-built fixture (or any wire never carrying an
+    # explicit tool-result message) defaults to shipped — unchanged #82
+    # behavior, only an EXPLICIT failure disqualifies.
+    messages = [
+        _user("build a todo app"),
+        _assistant_write("todo.py", "def add_item(): ..."),
+        _user("what did I ask for?"),
+    ]
+
+    ledger = _recall_ledger(messages, _PREFIXES)
+
+    assert ledger == [
+        {"ask": "build a todo app", "outcome": "shipped", "index": 0, "path": "todo.py"}
+    ]
+
+
+def test_ledger_truncates_a_long_ask_with_a_marker_within_the_cap() -> None:
+    # Minor 2: a truncated ask must never present as verbatim.
+    messages = [
+        _user("build a todo app " + "x" * 1000),
+        _assistant_write("todo.py", "def add_item(): ..."),
+        _user("what was the first thing I asked?"),
+    ]
+
+    ledger = _recall_ledger(messages, _PREFIXES)
+
+    ask = ledger[0]["ask"]
+    assert len(ask) <= 200
+    assert ask.startswith("build a todo app")
+    assert ask.endswith("...")
+
+
 def test_previous_ask_reports_a_shipped_outcome() -> None:
     messages = [
         _user("build a todo app"),
@@ -208,13 +306,14 @@ def test_previous_ask_reports_a_shipped_outcome() -> None:
         "ask": "build a todo app",
         "outcome": "shipped",
         "path": "todo.py",
+        "reason": "",
     }
 
 
-def test_previous_ask_reports_a_rejected_outcome() -> None:
+def test_previous_ask_reports_a_rejected_gate_outcome() -> None:
     messages = [
         _user("write tests for todo.py"),
-        _assistant_prose(_ACCEPT_GATE_PREFIX + "tests did not pass"),
+        _assistant_prose(ACCEPT_GATE_REJECT_PREFIX + "tests did not pass"),
         _user("did you see my previous query?"),
     ]
 
@@ -222,8 +321,28 @@ def test_previous_ask_reports_a_rejected_outcome() -> None:
 
     assert result == {
         "ask": "write tests for todo.py",
-        "outcome": "rejected",
+        "outcome": "rejected_gate",
         "path": "",
+        "reason": "",
+    }
+
+
+def test_previous_ask_reports_a_refused_outcome_with_its_reason() -> None:
+    messages = [
+        _user("write tests for existing missing.py"),
+        _assistant_prose(
+            REFUSED_PREFIX + "could not read missing.py: client read failed"
+        ),
+        _user("did you see my previous query?"),
+    ]
+
+    result = _previous_ask(messages, _PREFIXES)
+
+    assert result == {
+        "ask": "write tests for existing missing.py",
+        "outcome": "refused",
+        "path": "",
+        "reason": "could not read missing.py: client read failed",
     }
 
 
@@ -239,7 +358,7 @@ def test_previous_ask_reports_no_outcome_for_a_read_or_question() -> None:
 
     result = _previous_ask(messages, _PREFIXES)
 
-    assert result == {"ask": "read storage.py", "outcome": "", "path": ""}
+    assert result == {"ask": "read storage.py", "outcome": "", "path": "", "reason": ""}
 
 
 def test_previous_ask_is_empty_for_the_first_turn_of_a_session() -> None:
@@ -247,7 +366,7 @@ def test_previous_ask_is_empty_for_the_first_turn_of_a_session() -> None:
 
     result = _previous_ask(messages, _PREFIXES)
 
-    assert result == {"ask": "", "outcome": "", "path": ""}
+    assert result == {"ask": "", "outcome": "", "path": "", "reason": ""}
 
 
 def test_caller_reads_reject_prefixes_from_the_projects_real_emit_module(
@@ -261,12 +380,13 @@ def test_caller_reads_reject_prefixes_from_the_projects_real_emit_module(
     (scripts / "emit.py").write_text(
         'SEAT_CONTRACT_REJECT_PREFIX = "Seat contract not met: "\n'
         'ACCEPT_GATE_REJECT_PREFIX = "Another round needed: "\n'
+        'REFUSED_PREFIX = "Refused: "\n'
     )
     caller = ServingEnsembleCaller(project_dir=tmp_path)
 
     prefixes = caller._emit_reject_prefixes()
 
-    assert prefixes == (_SEAT_CONTRACT_PREFIX, _ACCEPT_GATE_PREFIX)
+    assert prefixes == _PREFIXES
 
 
 def test_caller_yields_no_prefixes_when_the_project_has_no_emit_module(
@@ -276,4 +396,75 @@ def test_caller_yields_no_prefixes_when_the_project_has_no_emit_module(
 
     prefixes = caller._emit_reject_prefixes()
 
-    assert prefixes == ()
+    assert prefixes == _RejectPrefixes()
+
+
+# --- blocker 2b: every emit.py terminal reachable from a BUILD ask either
+# ships (a real write tool_call, caught by the caller's OWN write
+# detection — never emit prose) or mints a recognized reject/refuse kind.
+# Runs the REAL emit.py subprocess for each shape, so a future emit
+# terminal that mints nothing fails HERE, not silently in production. ---
+
+
+def _emit(gated: dict[str, Any]) -> dict[str, Any]:
+    payload = json.dumps(
+        {"dependencies": {"form_gate": {"response": json.dumps(gated)}}}
+    )
+    out = subprocess.run(
+        [sys.executable, str(EMIT)],
+        input=payload,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    result: dict[str, Any] = json.loads(out)
+    return result
+
+
+_BUILD_ASK_REJECT_SHAPES: list[dict[str, Any]] = [
+    # seat contract not met
+    {"build": True, "seat_admitted": False, "seat_contract_reason": "bad envelope"},
+    # accept gate rejected
+    {
+        "build": True,
+        "valid": True,
+        "file": "a.py",
+        "content": "x = 1",
+        "accept": False,
+        "accept_reason": "tests failed",
+    },
+    # read failed (a build ask needing to read an existing file first)
+    {
+        "build": False,
+        "file": "x.py",
+        "content": "n/a",
+        "read_failed": "client read failed",
+    },
+    # glob failed (a build ask's discovery round found no/many candidates)
+    {
+        "build": False,
+        "file": "x.py",
+        "content": "n/a",
+        "glob_failed": "no file matching 'x' in the workspace listing",
+    },
+    # build invalid (form-gate parse failure)
+    {
+        "build": True,
+        "valid": False,
+        "file": "a.py",
+        "content": "bad",
+        "reason": "not valid Python",
+    },
+]
+
+
+def test_every_build_reachable_emit_terminal_mints_a_ledger_entry() -> None:
+    for gated in _BUILD_ASK_REJECT_SHAPES:
+        outcome = _emit(gated)
+        message = SimpleNamespace(
+            role="assistant", content=outcome["content"], tool_calls=None
+        )
+        kind, _ = _reject_kind(message, _PREFIXES)
+        assert kind, (
+            f"emit terminal {gated} minted no ledger kind: {outcome['content']!r}"
+        )
