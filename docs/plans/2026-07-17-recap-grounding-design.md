@@ -243,3 +243,98 @@ never a model seat; (b) the backstop itself now applies only when the
 DECIDER's own vote confirms recall intent, not classify's loose
 pre-filter alone — a decider that correctly votes "explainer" for a
 concept question leaves the seat's answer untouched.
+
+## Amendments (review round 2, 2026-08-12)
+
+A second author-independent adversarial review verified every round-1 fix
+at its own demonstrating input, then found 3 new blockers and 2 majors,
+all demonstrated against the real node pipeline. Fixes landed on the same
+branch; recorded here as what changed, why, and — honestly — what is
+still an open bound rather than a solved problem.
+
+**Fuzzy recap unguarded + the backstop was dead code (new blocker 1 / new
+blocker 3), one resolution.** Round 1's `_RECAP_RE` only covered a few
+literal phrasings, so most of the reviewer's demonstrated recap questions
+("list everything you made", "recap what you've done", "what files have
+you created", "give me a summary of the work", "summarize the
+work/session", "so what do we have now", "where did we end up") fell
+through to the free explainer, unguarded. Separately, round 1's rescoped
+phantom-symbol backstop (memory_shaped = defer_recall AND
+decider_agreed_recall) turned out to be **identically false across every
+reachable input**: classify's `_recall_message` never returns an empty
+string for a `defer_recall` turn, so a decider agreeing with "recall"
+always resolves to the deterministic recall-answer shape and never
+reaches a seat at all. The round-1 test suite exercised the backstop only
+via hand-built classify_decision dicts that could never actually come out
+of classify — the fixtures concealed that the mechanism could not fire.
+
+Resolution: **the backstop is deleted**, not re-scoped again. The guarded
+surface for recap questions is now the SAME two-layer pattern #82 already
+shipped for ordinal recall: (a) `_RECAP_RE` widened with the reviewer's
+phrasings, anchored at BOTH ends (optional `?` only) so a trailing
+continuation ("what did we build this with?") falls through instead of
+being answered as if the object were "everything" (this is also new
+blocker 1's sibling, major 2); (b) `_MAYBE_RECAP_RE`, a loose decider
+extension exactly like `_MAYBE_RECALL_RE` — a recap-flavored turn the
+floor doesn't resolve defers to the guarded decider with a new `"recap"`
+vote option. The CRITICAL WIRING (why round 2's own vote=recall demo
+still shipped the fabrication): classify now PRECOMPUTES the ledger recap
+into `recall_answer` for every `defer_recap` turn, the way `defer_recall`
+already precomputes its message — a decider recap vote always has a
+structural answer to route to. `_ledger_recap` never returns an empty
+string, so this is impossible by construction; `test_serving_resolve.py`
+pins it directly with a realistic (not hand-built-impossible) fixture.
+
+**Stated honestly, not as a solved problem:** the guarded surface is now
+floor + decider extension, nothing more. The RESIDUAL risk — a decider
+FALSE NEGATIVE on a fuzzy recap phrasing the loose `_MAYBE_RECAP_RE`
+pre-filter also missed, reaching the free explainer with no structural
+answer available at all — is real and undefended. This is a documented
+bound to be measured by the live ladder run (does a real decider actually
+mis-vote on recap-flavored turns in practice), not a control this design
+claims to close.
+
+**Non-build `Refused:` mints build outcomes (new blocker 2).** The
+invariant is "a ledger entry may claim a build outcome only when the turn
+carried a build ask" — the wire-only ledger means the PREFIX itself must
+encode build-ness, since read-failed/glob-failed refusals render
+identically (`build=False`) whether they answer a build ask's discovery
+round or a bare-symbol explain's. `emit.BUILD_REFUSED_PREFIX` ("Build
+refused: ") is now used exactly on refusal paths where the turn carried
+classify's build signal (`is_build_ask`, threaded through
+resolve/shape/form_gate from a new classify field —
+`has_build_signal OR tests_primary`, since `has_build_signal` alone
+under-counts a tests-primary ask naming no file and no build verb, e.g.
+"tests for the storage module"). The plain `REFUSED_PREFIX` stays for
+every non-build refusal and never mints a ledger entry. **Known
+historical bound** (same shape as round 1's version-skew bound): wire
+text from a session predating this split carries the plain prefix and
+will not mint a refused entry on replay — under-reports, never
+misreports, the same safe direction to fail already recorded for the
+other prefixes.
+
+**`_SAW_QUERY_RE` trailing qualifiers (major 1).** The affirmative-lead
+regex anchored only at the start, so "did you see my last message about
+the auth bug?" still matched and got the "Yes —" lead even though the
+actual proposition (a message about a specific bug) is not the
+structurally-certain "did I receive a message" claim the lead exists to
+back. Anchored at the end too (optional `?` only) — the noun phrase must
+terminate the question.
+
+**Terminal-enumeration test enumerated a hardcoded list (major 3).**
+Round 1's invariant test iterated a hand-maintained parallel list of
+shapes, so its "every terminal declares a minting class" claim was false
+— nothing forced a new terminal onto that list too. Every emit
+reject/refuse terminal now lives in one module-level `TERMINALS` registry
+(name → `(prefix, minting-class)`); `main()` renders from the registry
+instead of inline literals (structural commit, landed before the
+behavioral new-blocker-2 changes); the caller-side invariant test now
+iterates `TERMINALS` itself, so a newly added terminal must declare (and
+correctly declare) its minting class or the test fails.
+
+**Minors:** `_ledger_recap`'s "N build(s) did not ship" wording is now
+true (only build-scoped entries mint, verified with a dedicated fixture);
+"Yes — Your" capitalization fixed to "Yes — your"; a pre-existing
+conftest teardown race under `-n auto` (`FileNotFoundError` on the shared
+`.llm-orc/artifacts/serving` path) is noted but out of scope for this
+design — a test-parallelism concern, not a routing or honesty gap.
