@@ -31,7 +31,7 @@ from typing import Any, Protocol, cast
 from benchmarks.agentic_serving import honesty, metrics, oracles
 from benchmarks.agentic_serving import opencode_adapter as oa
 from benchmarks.agentic_serving.metrics import Pricing
-from benchmarks.agentic_serving.transcript import Transcript, Turn
+from benchmarks.agentic_serving.transcript import DeadStreamError, Transcript, Turn
 
 
 class _TurnAdapter(Protocol):
@@ -55,7 +55,7 @@ class _SplittableAdapter(_TurnAdapter, Protocol):
 
     def split_turns(
         self, events: list[dict[str, Any]]
-    ) -> list[list[dict[str, Any]]]: ...
+    ) -> tuple[list[list[dict[str, Any]]], str]: ...
 
 
 # The recorded 13-turn ladder prompts (mirror of
@@ -221,7 +221,7 @@ def tally_oracles(
     """
     directory = Path(run_dir)
     prompts = prompts or LADDER_PROMPTS
-    turns, missing = _load_runs(directory, prompts, adapter)
+    turns, missing, _boundary_rule = _load_runs(directory, prompts, adapter)
     shipped_correct = shipped_broken = not_shipped = 0
     deaths: list[int] = []
     unscored: list[int] = []
@@ -349,8 +349,12 @@ def _per_turn_event_slices(
 
 def _single_file_event_slices(
     directory: Path, turn_count: int, adapter: _TurnAdapter
-) -> list[list[dict[str, Any]]]:
-    """Split ``transcript.jsonl`` into per-turn event slices.
+) -> tuple[list[list[dict[str, Any]]], str, int]:
+    """Split ``transcript.jsonl`` into per-turn event slices, returning
+    ``(padded_slices, boundary_rule, real_count)`` — ``real_count`` is how
+    many turns the adapter actually split out, BEFORE padding, so
+    :func:`_load_runs` can tell the run's true final turn from a padded
+    death.
 
     SHORT direction (a run that died partway through): fewer split turns
     than ``turn_count``. The shortfall is padded with empty slices so the
@@ -374,23 +378,27 @@ def _single_file_event_slices(
         )
     splittable = cast(_SplittableAdapter, adapter)
     text = (directory / "transcript.jsonl").read_text()
-    turn_slices = splittable.split_turns(splittable.parse_events(text))
-    if len(turn_slices) > turn_count:
+    turn_slices, boundary_rule = splittable.split_turns(splittable.parse_events(text))
+    real_count = len(turn_slices)
+    if real_count > turn_count:
         raise ValueError(
-            f"{directory}: transcript.jsonl split into {len(turn_slices)} "
-            f"turns, more than the declared {turn_count} prompts"
+            f"{directory}: transcript.jsonl split into {real_count} turns, "
+            f"more than the declared {turn_count} prompts"
         )
-    return turn_slices + [[] for _ in range(turn_count - len(turn_slices))]
+    padded = turn_slices + [[] for _ in range(turn_count - real_count)]
+    return padded, boundary_rule, real_count
 
 
 def _load_runs(
     run_dir: str | Path,
     prompts: tuple[str, ...],
     adapter: _TurnAdapter = oa,
-) -> tuple[list[Turn], tuple[int, ...]]:
+) -> tuple[list[Turn], tuple[int, ...], str | None]:
     """Load ``run_dir`` (either run layout — see :func:`_detect_run_layout`)
     into built :class:`Turn`\\ s via ``adapter``, plus the indices of turns
-    where NOTHING WAS OBSERVED — a client-side death.
+    where NOTHING WAS OBSERVED — a client-side death — plus the
+    ``boundary_rule`` :func:`_single_file_event_slices` used (``None`` for
+    the per-turn layout, which has no turn-splitting concept at all).
 
     The test is EVENTS, not bytes. A turn is death-equivalent when no events
     were observed for it: its ``turn-NN.jsonl`` file is absent or unparseable
@@ -403,11 +411,29 @@ def _load_runs(
     leaving an empty turn that scores as HONEST. A death must never read as
     honesty, so the invariant lives here, at the scorer, rather than in
     whatever produced the file.
+
+    MAJOR 2 (round-3 review): a single-file run's FINAL real turn ending in
+    an unresolved tool_use with nothing captured after it — the shape a
+    process killed mid-tool-call leaves — is caught here as
+    :class:`DeadStreamError <benchmarks.agentic_serving.transcript.
+    DeadStreamError>` and routed to the death channel, keeping the rest of
+    the run and every prior turn's score. This is NARROW by design: only
+    the adapter's FINAL real slice is wrapped this way. Every other shape —
+    an unmapped tool, an orphaned tool_result, a malformed event, or an
+    unlinked tool_use that ISN'T the run's last turn — still escapes and
+    fails the whole run. A systematic schema mismatch must never be
+    repackaged as N deaths of client instability; only the one shape that
+    truly looks like "the client died right here" gets that treatment.
     """
     directory = Path(run_dir)
     layout = _detect_run_layout(directory)
+    boundary_rule: str | None = None
+    final_real_index: int | None = None
     if layout == "single-file":
-        event_slices = _single_file_event_slices(directory, len(prompts), adapter)
+        event_slices, boundary_rule, real_count = _single_file_event_slices(
+            directory, len(prompts), adapter
+        )
+        final_real_index = real_count
     else:
         event_slices = _per_turn_event_slices(directory, len(prompts), adapter)
 
@@ -416,10 +442,18 @@ def _load_runs(
     for i, (prompt, events) in enumerate(
         zip(prompts, event_slices, strict=True), start=1
     ):
+        if events and i == final_real_index:
+            try:
+                turns.append(adapter.turn_from_events(events, index=i, prompt=prompt))
+                continue
+            except DeadStreamError:
+                missing.append(i)
+                turns.append(adapter.turn_from_events([], index=i, prompt=prompt))
+                continue
         turns.append(adapter.turn_from_events(events, index=i, prompt=prompt))
         if not events:
             missing.append(i)
-    return turns, tuple(missing)
+    return turns, tuple(missing), boundary_rule
 
 
 def transcript_from_run_dir(
@@ -430,9 +464,10 @@ def transcript_from_run_dir(
 ) -> Transcript:
     """Load ``run_dir`` into a :class:`Transcript` (a missing turn becomes an
     empty turn, not a crash). Use :func:`score_run_dir` to also record which
-    turns were absent."""
-    turns, _ = _load_runs(run_dir, prompts, adapter)
-    return Transcript(arm=arm, turns=tuple(turns))
+    turns were absent. ``Transcript.boundary_rule`` carries the single-file
+    layout's declared split rule (``None`` for the per-turn layout)."""
+    turns, _missing, boundary_rule = _load_runs(run_dir, prompts, adapter)
+    return Transcript(arm=arm, turns=tuple(turns), boundary_rule=boundary_rule)
 
 
 def score(
@@ -488,6 +523,6 @@ def score_run_dir(
     """Load and score a run directory, recording which turns were absent so a
     client-side death is distinguishable from an honest empty turn — the
     figure cross-arm normalization needs."""
-    turns, missing = _load_runs(run_dir, prompts, adapter)
-    transcript = Transcript(arm=arm, turns=tuple(turns))
+    turns, missing, boundary_rule = _load_runs(run_dir, prompts, adapter)
+    transcript = Transcript(arm=arm, turns=tuple(turns), boundary_rule=boundary_rule)
     return score(transcript, pricing, missing_turns=missing)
