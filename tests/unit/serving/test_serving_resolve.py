@@ -313,15 +313,16 @@ def test_decider_non_recall_vote_drops_the_precomputed_recall_answer() -> None:
     assert routing["recall_answer"] == ""
 
 
-def test_memory_shaped_backstop_fields_pass_through_to_the_explainer_fallback() -> None:
-    # #133/#134 §4: the phantom-symbol backstop's substrate must survive
-    # resolve's merge exactly on the path it's scoped to — a defer_recall
-    # turn whose decider vote falls through to the free explainer.
+def test_memory_shaped_backstop_survives_when_the_decider_agrees_it_is_recall() -> None:
+    # Review round 1 blocker 3: the backstop applies ONLY when the decider's
+    # OWN vote confirms recall intent — here it votes "recall" but classify
+    # never precomputed a message (finding-5 edge case), so it still falls
+    # through to the explainer, and the backstop substrate must survive.
     classify_decision = {
         "target": "",
         "kind": "",
         "file": "solution.py",
-        "dispatch_input": "what have you built so far?",
+        "dispatch_input": "what did you build originally?",
         "build": False,
         "needs_decider": True,
         "recall_answer": "",
@@ -329,11 +330,56 @@ def test_memory_shaped_backstop_fields_pass_through_to_the_explainer_fallback() 
         "grounded_text": "todo.py\ndef add_todo(): ...",
         "ledger_recap": "Shipped so far: `todo.py`.",
     }
-    routing = _resolve(classify_decision, decide_response='{"target": "explainer"}')
+    routing = _resolve(classify_decision, decide_response='{"target": "recall"}')
     assert routing["target"] == "explainer"
     assert routing["memory_shaped"] is True
     assert routing["grounded_text"] == "todo.py\ndef add_todo(): ..."
     assert routing["ledger_recap"] == "Shipped so far: `todo.py`."
+
+
+def test_memory_shaped_backstop_clears_when_the_decider_disagrees() -> None:
+    # Review round 1 blocker 3 (the measured false positive): classify's
+    # loose maybe_recall pre-filter fires on "explain how first-class
+    # functions work" (the incidental "first"), setting memory_shaped=True —
+    # but the decider correctly votes "explainer", not "recall". The
+    # backstop must NOT survive, so the seat's real answer is never
+    # replaced.
+    classify_decision = {
+        "target": "",
+        "kind": "",
+        "file": "solution.py",
+        "dispatch_input": "explain how first-class functions work in python",
+        "build": False,
+        "needs_decider": True,
+        "recall_answer": "",
+        "memory_shaped": True,
+        "grounded_text": "",
+        "ledger_recap": "Nothing has been built in this session yet.",
+    }
+    routing = _resolve(classify_decision, decide_response='{"target": "explainer"}')
+    assert routing["target"] == "explainer"
+    assert routing["memory_shaped"] is False
+
+
+def test_memory_shaped_backstop_clears_on_the_deterministic_recall_answer() -> None:
+    # No seat runs on this branch (the message was already precomputed and
+    # deterministic) — the backstop must never check our OWN template's
+    # backticks (wrong-accept-hunt target 6).
+    classify_decision = {
+        "target": "",
+        "kind": "",
+        "file": "solution.py",
+        "dispatch_input": "what did you build originally?",
+        "build": False,
+        "needs_decider": True,
+        "recall_answer": "The first thing built was `todo.py`. Ask me to read it.",
+        "memory_shaped": True,
+        "grounded_text": "",
+        "ledger_recap": "Shipped so far: `todo.py`.",
+    }
+    routing = _resolve(classify_decision, decide_response='{"target": "recall"}')
+    assert routing["target"] == "recall-answer"
+    assert routing["memory_shaped"] is False
 
 
 def test_missing_memory_shaped_fields_default_safely() -> None:
