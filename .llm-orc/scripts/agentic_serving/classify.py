@@ -30,6 +30,7 @@ from __future__ import annotations
 import json
 import re
 import sys
+from typing import NamedTuple
 
 from _helpers import PRIOR_CODE_MARKER as _PRIOR_CODE_MARKER
 from _helpers import latest_ran_block as _latest_ran_block
@@ -63,6 +64,28 @@ _INTERROGATIVE_RE = re.compile(
 # explain-discovery must never glob the workspace for one (a category
 # mismatch, not an honesty gap the mechanism is meant to close).
 _MEMORY_INTERROGATIVE_RE = re.compile(r"^(?:did|have) you\b", re.IGNORECASE)
+# review round 1 blocker 1: the memory-interrogative sub-shape where seeing
+# (receiving) the previous message is STRUCTURALLY certain — it's on the
+# wire. Every other "did/have you..." turn asks about a proposition the
+# ledger cannot confirm or deny wholesale ("did you delete my files?", "did
+# you run the tests?"); only THIS shape earns the affirmative "Yes -" lead
+# (_memory_interrogative_message).
+_SAW_QUERY_RE = re.compile(
+    r"^(?:did|have) you (?:see|get|receive|read) my (?:previous|last) "
+    r"(?:query|message|question)\b",
+    re.IGNORECASE,
+)
+# review round 1 blocker 3: a tight structural floor for recap questions —
+# deliberately NOT keyed on the loose _MAYBE_RECALL_RE/defer_recall
+# extension, which fires on any incidental ordinal word (including inside a
+# genuine concept question like "explain how first-class functions work").
+# A small closed set, same shape as _MEMORY_INTERROGATIVE_RE.
+_RECAP_RE = re.compile(
+    r"^what (?:have|'ve) (?:we|you) (?:built|made|done|written) so far\b"
+    r"|^what did (?:we|you) build\b"
+    r"|^summarize what (?:we|you)(?:'ve| have) built\b",
+    re.IGNORECASE,
+)
 # #82 deep recall: a FIRST-anchored query about the "first thing" I/you
 # built ("what did the first thing I asked you to build do?"). This is an
 # INTERIM structural detector, deliberately tight to avoid the review's
@@ -340,9 +363,15 @@ def _grounded_corpus(context: str) -> str:
 
 
 def _ledger_recap(turn: dict) -> str:
-    """The deterministic fallback recap for the phantom-symbol backstop
-    (#133/#134): shipped paths plus a rejected count — never more than the
-    ledger holds, the same no-claims-beyond-ledger rule as ``_recall_message``.
+    """The deterministic ledger recap: shipped paths plus a not-shipped
+    count. Used both as the recap-floor's own answer (review round 1
+    blocker 3, "what have we built so far?") and as the phantom-symbol
+    backstop's fail-closed fallback (#133/#134 §4) — never more than the
+    ledger holds, the same no-claims-beyond-ledger rule as
+    ``_recall_message``. The count combines every non-shipped kind
+    (rejected_contract/rejected_gate/refused, review round 1 blocker 2)
+    rather than naming a gate for each — an aggregate tally has no
+    gate-specific claim to get wrong.
     """
     ledger = turn.get("recall_ledger") or []
     valid = [entry for entry in ledger if isinstance(entry, dict)]
@@ -351,16 +380,18 @@ def _ledger_recap(turn: dict) -> str:
         for entry in valid
         if entry.get("outcome", "shipped") == "shipped" and entry.get("path")
     ]
-    rejected = sum(1 for entry in valid if entry.get("outcome") == "rejected")
-    if not shipped and not rejected:
+    not_shipped = sum(
+        1 for entry in valid if entry.get("outcome", "shipped") != "shipped"
+    )
+    if not shipped and not not_shipped:
         return "Nothing has been built in this session yet."
     sentences = []
     if shipped:
         listed = ", ".join(f"`{path}`" for path in shipped)
         sentences.append(f"Shipped so far: {listed}.")
-    if rejected:
-        plural = "s" if rejected != 1 else ""
-        sentences.append(f"{rejected} build{plural} rejected by the accept gate.")
+    if not_shipped:
+        plural = "s" if not_shipped != 1 else ""
+        sentences.append(f"{not_shipped} build{plural} did not ship.")
     return " ".join(sentences)
 
 
@@ -856,11 +887,51 @@ def _failure_shape(context: str) -> str:
     return "localized"
 
 
-def _recall_select(turn: dict, context: str) -> tuple[str, str, str, str]:
-    """(case, ask, path, rejected_ask) — deterministic ordinal SELECTION over
+def _outcome_clause(kind: str, reason: str) -> str:
+    """The honest, kind-specific outcome phrase for a non-shipped ledger
+    entry (review round 1 blocker 2 / major 2) — never claims a SPECIFIC
+    gate the record doesn't support: a seat-contract miss is never called
+    an accept-gate rejection, and a read/glob/build-invalid refusal is
+    never attributed to either gate. "" for an unrecognized kind — the
+    caller fails CLOSED to disclosing uncertainty instead of guessing."""
+    if kind == _REJECTED_CONTRACT:
+        return "did not clear the seat contract"
+    if kind == _REJECTED_GATE:
+        return "was rejected by the accept gate"
+    if kind == _REFUSED:
+        return f"was refused: {reason}" if reason else "was refused"
+    return ""
+
+
+# Ledger outcome kinds (review round 1 blocker 2), mirrored from the caller
+# (serving_ensemble_caller._SHIPPED/_REJECTED_CONTRACT/_REJECTED_GATE/
+# _REFUSED) — classify never mints a ledger entry itself, only reads the
+# kind the caller already recorded, so these are read-side constants only.
+_SHIPPED = "shipped"
+_REJECTED_CONTRACT = "rejected_contract"
+_REJECTED_GATE = "rejected_gate"
+_REFUSED = "refused"
+
+
+class _Disclosure(NamedTuple):
+    """The first-ask disclosure clause's ingredients (review round 1
+    blocker 2c): the verbatim first ask, its outcome KIND, and (for
+    "refused") the wire reason. Empty fields mean nothing to disclose."""
+
+    ask: str = ""
+    kind: str = ""
+    reason: str = ""
+
+
+_NO_DISCLOSURE = _Disclosure()
+
+
+def _recall_select(turn: dict, context: str) -> tuple[str, str, str, _Disclosure]:
+    """(case, ask, path, disclosure) — deterministic ordinal SELECTION over
     the caller's ask-outcome ledger (#82 deep recall; disclosure extension
-    #133, docs/plans/2026-07-17-recap-grounding-design.md), independent of
-    detection.
+    #133, docs/plans/2026-07-17-recap-grounding-design.md; review round 1
+    blocker 2c anchors disclosure on the EARLIEST LEDGERED entry), independent
+    of detection.
 
     ``case``: "grounded" (the first SHIPPED build is visible -> ride the
     grounded explainer via a named_file injection), "built_deep" (shipped but
@@ -870,59 +941,72 @@ def _recall_select(turn: dict, context: str) -> tuple[str, str, str, str]:
     pre-#133/#134 ledger shape) is treated as shipped, so the existing
     ordinal-recall test suite is unaffected.
 
-    ``rejected_ask`` is the verbatim FIRST ask in the ledger (rejected or
-    not) when it was itself rejected — i.e. when the very first thing the
-    user asked for is not the same as the first thing that shipped. Empty
-    when nothing was ever rejected, or when nothing ever shipped (the "none"
-    case already says so honestly; there is no shipped fact to disclose
-    alongside).
+    ``disclosure`` carries the ledger's FIRST entry's ask/kind/reason when
+    that entry is not itself shipped — i.e. when the very first thing the
+    user asked for is not the same as the first thing that shipped. Every
+    build-reachable emit terminal mints a ledger entry now (blocker 2a/2b:
+    "Refused:" is recognized alongside the seat-contract/accept-gate
+    prefixes), so the earliest entry IS the first build-outcome ask, no
+    prose inference required. Empty when nothing was ever rejected/refused,
+    or when nothing ever shipped (the "none" case already says so honestly;
+    there is no shipped fact to disclose alongside).
     """
     ledger = turn.get("recall_ledger") or []
     valid = [entry for entry in ledger if isinstance(entry, dict)]
-    shipped = [entry for entry in valid if entry.get("outcome", "shipped") == "shipped"]
+    shipped = [entry for entry in valid if entry.get("outcome", "shipped") == _SHIPPED]
     first = shipped[0] if shipped else {}
     path = str(first.get("path", ""))
     ask = str(first.get("ask", ""))
     if not path:
-        return "none", "", "", ""
-    rejected_ask = ""
-    if valid and valid[0].get("outcome") == "rejected":
-        rejected_ask = str(valid[0].get("ask", ""))
+        return "none", "", "", _NO_DISCLOSURE
+    disclosure = _NO_DISCLOSURE
+    first_entry = valid[0]
+    first_outcome = str(first_entry.get("outcome", "shipped"))
+    if first_outcome != _SHIPPED:
+        disclosure = _Disclosure(
+            ask=str(first_entry.get("ask", "")),
+            kind=first_outcome,
+            reason=str(first_entry.get("reason", "")),
+        )
     visible, _ = _visibility(context)
     if path.rsplit("/", 1)[-1] in visible:
-        return "grounded", ask, path, rejected_ask
-    return "built_deep", ask, path, rejected_ask
+        return "grounded", ask, path, disclosure
+    return "built_deep", ask, path, disclosure
 
 
-# #133 disclosure clause: when the first ASK was rejected, the recall answer
-# discloses it alongside the first thing that actually shipped — selection
-# stays shipped-anchored (the design's reconciliation of Arc D's design-vs-
-# rubric tension), only the message changes.
-_DISCLOSURE_PREFIX = (
-    'The first thing you asked me to build ("{rejected_ask}") was rejected '
-    "by the accept gate — nothing shipped for it. "
-)
-
-
-def _recall_message(case: str, ask: str, path: str, rejected_ask: str = "") -> str:
+def _recall_message(
+    case: str, ask: str, path: str, disclosure: _Disclosure = _NO_DISCLOSURE
+) -> str:
     """The honest, deterministic recall answer. Framed as what SHIPPED
     (structural), never as an unverifiable "asked" — except the disclosure
-    clause (#133), which states the rejected first ask as a ledger FACT,
-    never a guess at what it "was"."""
-    disclosure = (
-        _DISCLOSURE_PREFIX.format(rejected_ask=rejected_ask) if rejected_ask else ""
-    )
+    clause (#133), which states the first ask's recorded outcome as a
+    ledger FACT, kind-specific (review round 1 blocker 2 / major 2), never
+    a guess at what it "was". An unrecognized disclosure kind fails CLOSED
+    to disclosing uncertainty rather than claiming a gate."""
+    clause_text = ""
+    if disclosure.ask:
+        clause = _outcome_clause(disclosure.kind, disclosure.reason)
+        if clause:
+            clause_text = (
+                f'The first thing you asked me to build ("{disclosure.ask}") '
+                f"{clause} — nothing shipped for it. "
+            )
+        else:
+            clause_text = (
+                "I can't confirm the outcome of your first ask from the "
+                "record. "
+            )
     if case == "none":
         return "Nothing has been built in this session yet."
     if case == "built_deep":
         return (
-            f"{disclosure}The first thing that actually shipped was `{path}` "
+            f"{clause_text}The first thing that actually shipped was `{path}` "
             f"(from your request '{ask}'). Ask me to read `{path}` and I'll "
             "explain what it does."
         )
-    if case == "grounded" and disclosure:
+    if case == "grounded" and clause_text:
         return (
-            f"{disclosure}The first thing that actually shipped was `{path}` "
+            f"{clause_text}The first thing that actually shipped was `{path}` "
             f"(from your request '{ask}'). Ask me to explain `{path}` and "
             "I'll walk through what it does."
         )
@@ -952,29 +1036,30 @@ def _recall_route(
       message on this path so resolve stays a thin merge.
     A non-recall turn returns no effects.
 
-    #133 disclosure: when the FIRST ask in the ledger was rejected, the
-    grounded case ALSO answers deterministically (never rides the explainer
-    seat) — doctrine 9, no model judgment on an honesty-critical path. The
-    plain (no rejection) grounded case keeps its routing byte-for-byte.
+    #133 disclosure: when the FIRST ask in the ledger was rejected/refused,
+    the grounded case ALSO answers deterministically (never rides the
+    explainer seat) — doctrine 9, no model judgment on an honesty-critical
+    path. The plain (no disclosure owed) grounded case keeps its routing
+    byte-for-byte.
     """
     if not is_explain:
         return named_file, named_basename, False, "", False
     if _RECALL_RE.search(task):
-        case, ask, path, rejected_ask = _recall_select(turn, context)
-        if case == "grounded" and not rejected_ask:
+        case, ask, path, disclosure = _recall_select(turn, context)
+        if case == "grounded" and not disclosure.ask:
             return path, path.rsplit("/", 1)[-1], False, "", False
-        message = _recall_message(case, ask, path, rejected_ask)
+        message = _recall_message(case, ask, path, disclosure)
         return named_file, named_basename, True, message, False
     if not named_file and _MAYBE_RECALL_RE.search(task):
-        case, ask, path, rejected_ask = _recall_select(turn, context)
-        if case == "built_deep" or (case == "grounded" and rejected_ask):
+        case, ask, path, disclosure = _recall_select(turn, context)
+        if case == "built_deep" or (case == "grounded" and disclosure.ask):
             # Finding 2 fail-closed: the first build is windowed out of context
             # (or a disclosure is owed), so an ungrounded explainer could only
             # GUESS or omit a fact the ledger already knows. Answer
             # structurally (no decider) — deterministic honesty on the
             # deep-history case #82 exists for. Over-fire on a concept
             # question is irrelevant-but-true, never a lie.
-            message = _recall_message(case, ask, path, rejected_ask)
+            message = _recall_message(case, ask, path, disclosure)
             return named_file, named_basename, True, message, False
         # grounded (first build visible, nothing to disclose) or none: the
         # explainer can answer honestly (from the visible wire, or a concept
@@ -982,33 +1067,41 @@ def _recall_route(
         # mis-vote here is not a deep-history guess. grounded collapses into
         # the built_deep "ask me to read" message.
         msg_case = "built_deep" if case == "grounded" else case
-        message = _recall_message(msg_case, ask, path, rejected_ask)
+        message = _recall_message(msg_case, ask, path, disclosure)
         return named_file, named_basename, False, message, True
     return named_file, named_basename, False, "", False
 
 
-def _memory_interrogative_message(previous_ask: dict) -> str:
+def _memory_interrogative_message(previous_ask: dict, affirm: bool) -> str:
     """The deterministic memory-interrogative answer (#134, docs/plans/
-    2026-07-17-recap-grounding-design.md): quote the previous query
-    verbatim from the wire (structurally present — the caller supplies it),
-    state its outcome from the ask-outcome ledger — shipped (with path),
-    rejected, or no outcome claim at all when the ask itself carried no
-    build outcome (a question, a read). Never enumerates beyond what
-    ``previous_ask`` holds."""
+    2026-07-17-recap-grounding-design.md; review round 1 blocker 1 splits
+    the template): quote the previous query verbatim from the wire
+    (structurally present — the caller supplies it), state its outcome from
+    the ask-outcome ledger — shipped (with path), a kind-specific
+    rejected/refused clause, or no outcome claim at all when the ask itself
+    carried no build outcome (a question, a read).
+
+    ``affirm`` (from ``_SAW_QUERY_RE``) gates the ONLY honest "Yes -" lead:
+    seeing/receiving the previous message is structurally certain. Every
+    other memory interrogative ("did you run the tests?", "did you delete
+    my files?") asks about a proposition the ledger cannot confirm or deny
+    wholesale — it only reports the record, never leading with Yes/No.
+    Never enumerates beyond what ``previous_ask`` holds.
+    """
     ask = str(previous_ask.get("ask", ""))
     if not ask:
         return "I don't have a previous message in this session to confirm."
     outcome = str(previous_ask.get("outcome", ""))
     path = str(previous_ask.get("path", ""))
-    quoted = f'Yes — your previous message was: "{ask}".'
-    if outcome == "shipped":
-        return f"{quoted} It shipped as `{path}`."
-    if outcome == "rejected":
-        return (
-            f"{quoted} That build was rejected by the accept gate — nothing "
-            "shipped for it."
-        )
-    return quoted
+    reason = str(previous_ask.get("reason", ""))
+    lead = "Yes — " if affirm else ""
+    report = f'{lead}Your previous message was: "{ask}".'
+    if outcome == _SHIPPED:
+        return f"{report} It shipped as `{path}`."
+    clause = _outcome_clause(outcome, reason)
+    if clause:
+        return f"{report} That build {clause}."
+    return report
 
 
 def _memory_interrogative_route(
@@ -1030,7 +1123,24 @@ def _memory_interrogative_route(
     previous_ask = turn.get("previous_ask")
     if not isinstance(previous_ask, dict):
         previous_ask = {}
-    return True, _memory_interrogative_message(previous_ask)
+    affirm = bool(_SAW_QUERY_RE.match(task))
+    return True, _memory_interrogative_message(previous_ask, affirm)
+
+
+def _recap_route(
+    task: str, turn: dict, is_explain: bool, named_file: str
+) -> tuple[bool, str]:
+    """(is_recall_answer, recall_answer) for a recap-shaped turn ("what have
+    we/you built so far?", review round 1 blocker 3): a tight structural
+    floor (``_RECAP_RE``) routed to the deterministic ledger recap on the
+    SAME recall-answer emit path as ordinal recall and memory
+    interrogatives — never a model seat, so a genuine recap question is
+    never left to free-text narration (and never confused with the loose
+    ``_MAYBE_RECALL_RE`` extension, which over-fires on incidental ordinal
+    words inside unrelated concept questions)."""
+    if not is_explain or named_file or not _RECAP_RE.search(task):
+        return False, ""
+    return True, _ledger_recap(turn)
 
 
 def _valid_recall_answer(recall_answer: str, target: str, needs_decider: bool) -> str:
@@ -1174,6 +1284,17 @@ def main() -> None:
         )
         if is_memory_answer:
             is_recall_answer, recall_answer = True, memory_answer
+
+    # Review round 1 blocker 3: a recap-shaped turn ("what have we built so
+    # far?") is answered from the SAME deterministic ledger recap the
+    # phantom-symbol backstop falls back to — its own tight structural
+    # floor, never the loose defer_recall extension.
+    if not is_recall_answer and not defer_recall:
+        is_recap_answer, recap_answer = _recap_route(
+            task, turn, is_explain, named_file
+        )
+        if is_recap_answer:
+            is_recall_answer, recall_answer = True, recap_answer
 
     # Grounded explain (docs/plans/2026-07-12-grounded-explain-design.md): a
     # real named-file target gates on _visibility of the SAME wire the

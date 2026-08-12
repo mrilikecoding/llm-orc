@@ -16,6 +16,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 REPO = Path(__file__).resolve().parents[3]
 SCRIPTS = REPO / ".llm-orc" / "scripts" / "agentic_serving"
 CLASSIFY = SCRIPTS / "classify.py"
@@ -344,17 +346,46 @@ def test_non_python_target_never_requests_the_target_read() -> None:
 
 def test_did_you_memory_question_routes_to_recall_answer_deterministically() -> None:
     # #134: a memory-shaped "did you..." turn is answered on the
-    # recall-answer path, never the free explain seat — see the
-    # memory-interrogative tests below for the answer content itself.
-    decision = _classify({"task": "did you see my previous query?"})
+    # recall-answer path, never the free explain seat. Review round 1
+    # blocker 1: supplies previous_ask so this pins the REAL branch (the
+    # reviewer's finding: the earlier version of this test passed no
+    # previous_ask and so never exercised the Yes template at all).
+    decision = _classify(
+        {
+            "task": "did you see my previous query?",
+            "previous_ask": {
+                "ask": "build a todo app",
+                "outcome": "shipped",
+                "path": "todo.py",
+            },
+        }
+    )
     assert decision["target"] == "recall-answer"
     assert decision["build"] is False
     assert decision["needs_decider"] is False
+    # "did you see my previous query?" matches _SAW_QUERY_RE — seeing the
+    # message is structurally certain, so the affirmative lead is honest.
+    assert decision["recall_answer"].startswith("Yes —")
 
 
 def test_have_you_question_routes_to_recall_answer() -> None:
-    decision = _classify({"task": "have you written any tests yet?"})
+    # "have you written any tests yet?" is NOT a _SAW_QUERY_RE shape — it
+    # asks about a proposition (were tests written) the ledger cannot
+    # confirm or deny wholesale, so no "Yes -" lead (review round 1
+    # blocker 1).
+    decision = _classify(
+        {
+            "task": "have you written any tests yet?",
+            "previous_ask": {
+                "ask": "build a todo app",
+                "outcome": "shipped",
+                "path": "todo.py",
+            },
+        }
+    )
     assert decision["target"] == "recall-answer"
+    assert not decision["recall_answer"].startswith("Yes")
+    assert not decision["recall_answer"].startswith("No")
 
 
 def test_can_you_write_stays_a_build_turn() -> None:
@@ -414,10 +445,22 @@ def test_run_the_app_is_not_a_run_turn() -> None:
 def test_did_you_run_the_tests_stays_an_explain_turn() -> None:
     # "did you run the tests?" is a memory question about a past action, not
     # an imperative to run them now (#134: answered deterministically, never
-    # the run seam).
-    decision = _classify({"task": "did you run the tests?"})
+    # the run seam). Review round 1 blocker 1: not a _SAW_QUERY_RE shape, so
+    # no "Yes -" lead — the ledger cannot confirm or deny whether tests ran.
+    decision = _classify(
+        {
+            "task": "did you run the tests?",
+            "previous_ask": {
+                "ask": "build a todo app",
+                "outcome": "shipped",
+                "path": "todo.py",
+            },
+        }
+    )
     assert decision["target"] == "recall-answer"
     assert decision["needs_run"] == ""
+    assert not decision["recall_answer"].startswith("Yes")
+    assert not decision["recall_answer"].startswith("No")
 
 
 def test_non_run_decisions_carry_empty_needs_run() -> None:
@@ -1220,12 +1263,12 @@ def test_recall_discloses_a_rejected_first_ask_before_a_shipped_grounded_build()
             "recall_ledger": [
                 {
                     "ask": "write a function that adds a todo item to todo.py",
-                    "outcome": "rejected",
+                    "outcome": "rejected_gate",
                     "index": 0,
                 },
                 {
                     "ask": "add a complete_todo function to todo.py",
-                    "outcome": "rejected",
+                    "outcome": "rejected_contract",
                     "index": 2,
                 },
                 {
@@ -1255,7 +1298,7 @@ def test_recall_discloses_a_rejected_first_ask_before_a_built_deep_ship() -> Non
         {
             "task": "what did the first thing I asked you to build do?",
             "recall_ledger": [
-                {"ask": "build a todo app", "outcome": "rejected", "index": 0},
+                {"ask": "build a todo app", "outcome": "rejected_gate", "index": 0},
                 {
                     "ask": "build storage",
                     "path": "storage.py",
@@ -1291,6 +1334,32 @@ def test_recall_no_disclosure_when_the_first_ask_itself_shipped() -> None:
     assert decision["file"] == "todo.py"
 
 
+def test_recall_disclosure_fails_closed_on_an_unrecognized_outcome_kind() -> None:
+    # Review round 1 blocker 2c: an unrecognized disclosure kind (a future
+    # ledger entry shape this classify version doesn't know) must never be
+    # claimed as a specific gate — fail closed to disclosing uncertainty.
+    decision = _classify(
+        {
+            "task": "what did the first thing I asked you to build do?",
+            "recall_ledger": [
+                {"ask": "build a todo app", "outcome": "some_future_kind", "index": 0},
+                {
+                    "ask": "build storage",
+                    "path": "storage.py",
+                    "outcome": "shipped",
+                    "index": 4,
+                },
+            ],
+            "context": "",
+        }
+    )
+    assert decision["target"] == "recall-answer"
+    assert "can't confirm" in decision["recall_answer"].lower()
+    assert "accept gate" not in decision["recall_answer"].lower()
+    assert "seat contract" not in decision["recall_answer"].lower()
+    assert "storage.py" in decision["recall_answer"]
+
+
 def test_recall_never_fabricates_from_a_rejected_only_session_via_classify() -> None:
     # Pins the boundary the existing endpoint test already covers end to
     # end: when NOTHING ever shipped, "none" wins outright — no disclosure
@@ -1299,7 +1368,7 @@ def test_recall_never_fabricates_from_a_rejected_only_session_via_classify() -> 
         {
             "task": "what was the first thing I asked you to build?",
             "recall_ledger": [
-                {"ask": "build a todo app", "outcome": "rejected", "index": 0}
+                {"ask": "build a todo app", "outcome": "rejected_gate", "index": 0}
             ],
             "context": "",
         }
@@ -1319,22 +1388,61 @@ def test_memory_interrogative_states_a_rejected_outcome_from_the_previous_ask() 
     # tests (turn 4), then "did you see my previous query?" (turn 5). The
     # answer must quote turn 4's ask verbatim and state ITS rejected
     # outcome — never narrate turn 2's complete_todo as existing, and never
-    # frame turn 4 as fulfilled.
+    # frame turn 4 as fulfilled. This phrasing matches _SAW_QUERY_RE (seeing
+    # the message is structurally certain), so the "Yes -" lead is honest.
     decision = _classify(
         {
             "task": "did you see my previous query?",
             "previous_ask": {
                 "ask": "write tests for todo.py",
-                "outcome": "rejected",
+                "outcome": "rejected_gate",
                 "path": "",
             },
             "context": "",
         }
     )
     assert decision["target"] == "recall-answer"
+    assert decision["recall_answer"].startswith("Yes —")
     assert "write tests for todo.py" in decision["recall_answer"]
     assert "rejected" in decision["recall_answer"].lower()
     assert "complete_todo" not in decision["recall_answer"]
+
+
+def test_memory_interrogative_states_a_seat_contract_outcome_precisely() -> None:
+    # Review round 1 blocker 2 / major 2: a seat-contract miss must never be
+    # attributed to "the accept gate".
+    decision = _classify(
+        {
+            "task": "did you see my previous query?",
+            "previous_ask": {
+                "ask": "add a complete_todo function to todo.py",
+                "outcome": "rejected_contract",
+                "path": "",
+            },
+            "context": "",
+        }
+    )
+    assert "seat contract" in decision["recall_answer"].lower()
+    assert "accept gate" not in decision["recall_answer"].lower()
+
+
+def test_memory_interrogative_states_a_refused_outcome_with_its_reason() -> None:
+    decision = _classify(
+        {
+            "task": "did you see my previous query?",
+            "previous_ask": {
+                "ask": "write tests for existing missing.py",
+                "outcome": "refused",
+                "path": "",
+                "reason": "could not read missing.py: client read failed",
+            },
+            "context": "",
+        }
+    )
+    assert "refused" in decision["recall_answer"].lower()
+    assert "could not read missing.py: client read failed" in decision["recall_answer"]
+    assert "accept gate" not in decision["recall_answer"].lower()
+    assert "seat contract" not in decision["recall_answer"].lower()
 
 
 def test_memory_interrogative_states_a_shipped_outcome_from_the_previous_ask() -> None:
@@ -1372,6 +1480,48 @@ def test_memory_interrogative_about_a_read_claims_no_build_outcome() -> None:
     assert "read storage.py" in decision["recall_answer"]
     assert "rejected" not in decision["recall_answer"].lower()
     assert "shipped" not in decision["recall_answer"].lower()
+    assert not decision["recall_answer"].startswith("Yes")
+    assert not decision["recall_answer"].startswith("No")
+
+
+# Review round 1 blocker 1: the reviewer's own demonstrated inputs — the
+# template answered "Yes -" to EVERY did/have-you question, including ones
+# the ledger cannot possibly confirm or deny. Only _SAW_QUERY_RE's tight
+# shape earns the affirmative lead; everything else reports the record with
+# no leading affirmation and no claim beyond what the ledger holds.
+@pytest.mark.parametrize(
+    "task",
+    [
+        "did you run the tests?",
+        "have you written any tests yet?",
+        "did you delete my files?",
+        "have you pushed to main?",
+    ],
+)
+def test_memory_interrogative_never_leads_with_an_affirmation_it_cannot_back(
+    task: str,
+) -> None:
+    decision = _classify(
+        {
+            "task": task,
+            "previous_ask": {
+                "ask": "build a todo app",
+                "outcome": "shipped",
+                "path": "todo.py",
+            },
+            "context": "",
+        }
+    )
+    answer = decision["recall_answer"]
+    assert decision["target"] == "recall-answer"
+    assert not answer.startswith("Yes")
+    assert not answer.startswith("No")
+    # No claim beyond ledger contents: the answer reports the record of the
+    # PREVIOUS ask (build a todo app / shipped as todo.py), never a claim
+    # about the CURRENT question's own proposition (tests run, files
+    # deleted, a push to main — none of which the ledger has any entry for).
+    assert "build a todo app" in answer
+    assert "todo.py" in answer
 
 
 def test_memory_interrogative_with_no_prior_turn_says_so_honestly() -> None:
@@ -1432,6 +1582,59 @@ def test_memory_answer_is_dropped_by_a_higher_priority_target() -> None:
     assert _valid_recall_answer("stale memory answer", "recall-answer", False) == (
         "stale memory answer"
     )
+
+
+# --- recap floor (review round 1 blocker 3): docs/plans/2026-07-17-recap-
+# grounding-design.md, amended 2026-08-12 ---
+
+
+@pytest.mark.parametrize(
+    "task",
+    [
+        "what have we built so far?",
+        "what have you built so far?",
+        "what have we made so far?",
+        "what have we done so far?",
+        "what have we written so far?",
+        "what did we build?",
+        "what did you build?",
+        "summarize what we've built",
+        "summarize what we have built",
+    ],
+)
+def test_recap_floor_answers_deterministically_from_the_ledger(task: str) -> None:
+    decision = _classify(
+        {
+            "task": task,
+            "recall_ledger": [
+                {"ask": "build a todo app", "path": "todo.py", "outcome": "shipped"}
+            ],
+            "context": "",
+        }
+    )
+    assert decision["target"] == "recall-answer"
+    assert decision["needs_decider"] is False
+    assert "todo.py" in decision["recall_answer"]
+
+
+def test_recap_floor_says_nothing_built_for_an_empty_ledger() -> None:
+    decision = _classify(
+        {"task": "what have we built so far?", "recall_ledger": [], "context": ""}
+    )
+    assert decision["target"] == "recall-answer"
+    assert "built" in decision["recall_answer"].lower()
+    assert "yet" in decision["recall_answer"].lower()
+
+
+def test_recap_floor_stays_off_a_named_file_turn() -> None:
+    decision = _classify(
+        {
+            "task": "what have we built so far in storage.py?",
+            "recall_ledger": [],
+            "context": "",
+        }
+    )
+    assert decision["target"] != "recall-answer"
 
 
 def test_run_recall_compound_does_not_leak_the_recall_message() -> None:
@@ -1752,17 +1955,22 @@ def test_grounded_corpus_is_empty_when_nothing_is_visible() -> None:
     assert _grounded_corpus("") == ""
 
 
-def test_ledger_recap_lists_shipped_paths_and_a_rejected_count() -> None:
+def test_ledger_recap_lists_shipped_paths_and_a_not_shipped_count() -> None:
+    # The count combines every non-shipped kind (rejected_contract/
+    # rejected_gate/refused, review round 1 blocker 2) into one aggregate
+    # tally — no gate-specific claim to get wrong.
     recap = _ledger_recap(
         {
             "recall_ledger": [
                 {"ask": "a", "path": "todo.py", "outcome": "shipped"},
-                {"ask": "b", "outcome": "rejected"},
+                {"ask": "b", "outcome": "rejected_gate"},
+                {"ask": "c", "outcome": "rejected_contract"},
+                {"ask": "d", "outcome": "refused", "reason": "client read failed"},
             ]
         }
     )
     assert "todo.py" in recap
-    assert "1" in recap
+    assert "3" in recap
 
 
 def test_ledger_recap_says_nothing_built_when_the_ledger_is_empty() -> None:
