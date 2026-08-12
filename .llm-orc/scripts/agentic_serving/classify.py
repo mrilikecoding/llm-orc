@@ -815,40 +815,75 @@ def _failure_shape(context: str) -> str:
     return "localized"
 
 
-def _recall_select(turn: dict, context: str) -> tuple[str, str, str]:
-    """(case, ask, path) — deterministic ordinal SELECTION over the caller's
-    write-history ledger (#82 deep recall), independent of detection.
+def _recall_select(turn: dict, context: str) -> tuple[str, str, str, str]:
+    """(case, ask, path, rejected_ask) — deterministic ordinal SELECTION over
+    the caller's ask-outcome ledger (#82 deep recall; disclosure extension
+    #133, docs/plans/2026-07-17-recap-grounding-design.md), independent of
+    detection.
 
-    ``case``: "grounded" (the first shipped build is visible -> ride the
+    ``case``: "grounded" (the first SHIPPED build is visible -> ride the
     grounded explainer via a named_file injection), "built_deep" (shipped but
     windowed out of the context -> name it, defer the body to a read), or
-    "none" (nothing shipped this session). The ledger is shipped writes only,
-    so there is no prose-inferred "rejected" case to fabricate. Selection is
-    structural, so the answer is always true; the two detection layers that
-    route turns here (structural _RECALL_RE, loose maybe_recall) sit on top.
+    "none" (nothing shipped this session). Selection over "shipped" entries
+    stays #82's exact behavior — an entry with no ``outcome`` key (the
+    pre-#133/#134 ledger shape) is treated as shipped, so the existing
+    ordinal-recall test suite is unaffected.
+
+    ``rejected_ask`` is the verbatim FIRST ask in the ledger (rejected or
+    not) when it was itself rejected — i.e. when the very first thing the
+    user asked for is not the same as the first thing that shipped. Empty
+    when nothing was ever rejected, or when nothing ever shipped (the "none"
+    case already says so honestly; there is no shipped fact to disclose
+    alongside).
     """
     ledger = turn.get("recall_ledger") or []
-    first = ledger[0] if ledger and isinstance(ledger[0], dict) else {}
+    valid = [entry for entry in ledger if isinstance(entry, dict)]
+    shipped = [entry for entry in valid if entry.get("outcome", "shipped") == "shipped"]
+    first = shipped[0] if shipped else {}
     path = str(first.get("path", ""))
     ask = str(first.get("ask", ""))
     if not path:
-        return "none", "", ""
+        return "none", "", "", ""
+    rejected_ask = ""
+    if valid and valid[0].get("outcome") == "rejected":
+        rejected_ask = str(valid[0].get("ask", ""))
     visible, _ = _visibility(context)
     if path.rsplit("/", 1)[-1] in visible:
-        return "grounded", ask, path
-    return "built_deep", ask, path
+        return "grounded", ask, path, rejected_ask
+    return "built_deep", ask, path, rejected_ask
 
 
-def _recall_message(case: str, ask: str, path: str) -> str:
-    """The honest, deterministic recall answer for a non-grounded case. Framed
-    as what SHIPPED (structural), never as an unverifiable "asked"."""
+# #133 disclosure clause: when the first ASK was rejected, the recall answer
+# discloses it alongside the first thing that actually shipped — selection
+# stays shipped-anchored (the design's reconciliation of Arc D's design-vs-
+# rubric tension), only the message changes.
+_DISCLOSURE_PREFIX = (
+    'The first thing you asked me to build ("{rejected_ask}") was rejected '
+    "by the accept gate — nothing shipped for it. "
+)
+
+
+def _recall_message(case: str, ask: str, path: str, rejected_ask: str = "") -> str:
+    """The honest, deterministic recall answer. Framed as what SHIPPED
+    (structural), never as an unverifiable "asked" — except the disclosure
+    clause (#133), which states the rejected first ask as a ledger FACT,
+    never a guess at what it "was"."""
+    disclosure = (
+        _DISCLOSURE_PREFIX.format(rejected_ask=rejected_ask) if rejected_ask else ""
+    )
     if case == "none":
         return "Nothing has been built in this session yet."
     if case == "built_deep":
         return (
-            f"The first thing built in this session was `{path}` (from your "
-            f"request '{ask}'). Ask me to read `{path}` and I'll explain what "
-            "it does."
+            f"{disclosure}The first thing that actually shipped was `{path}` "
+            f"(from your request '{ask}'). Ask me to read `{path}` and I'll "
+            "explain what it does."
+        )
+    if case == "grounded" and disclosure:
+        return (
+            f"{disclosure}The first thing that actually shipped was `{path}` "
+            f"(from your request '{ask}'). Ask me to explain `{path}` and "
+            "I'll walk through what it does."
         )
     return ""
 
@@ -875,30 +910,38 @@ def _recall_route(
       apply on a recall vote; grounded collapses into the "ask me to read"
       message on this path so resolve stays a thin merge.
     A non-recall turn returns no effects.
+
+    #133 disclosure: when the FIRST ask in the ledger was rejected, the
+    grounded case ALSO answers deterministically (never rides the explainer
+    seat) — doctrine 9, no model judgment on an honesty-critical path. The
+    plain (no rejection) grounded case keeps its routing byte-for-byte.
     """
     if not is_explain:
         return named_file, named_basename, False, "", False
     if _RECALL_RE.search(task):
-        case, ask, path = _recall_select(turn, context)
-        if case == "grounded":
+        case, ask, path, rejected_ask = _recall_select(turn, context)
+        if case == "grounded" and not rejected_ask:
             return path, path.rsplit("/", 1)[-1], False, "", False
-        return named_file, named_basename, True, _recall_message(case, ask, path), False
+        message = _recall_message(case, ask, path, rejected_ask)
+        return named_file, named_basename, True, message, False
     if not named_file and _MAYBE_RECALL_RE.search(task):
-        case, ask, path = _recall_select(turn, context)
-        if case == "built_deep":
-            # Finding 2 fail-closed: the first build is windowed out of context,
-            # so an ungrounded explainer could only GUESS. Answer structurally
-            # (no decider) — deterministic honesty on the deep-history case #82
-            # exists for. Over-fire on a concept question is irrelevant-but-
-            # true, never a lie.
-            message = _recall_message(case, ask, path)
+        case, ask, path, rejected_ask = _recall_select(turn, context)
+        if case == "built_deep" or (case == "grounded" and rejected_ask):
+            # Finding 2 fail-closed: the first build is windowed out of context
+            # (or a disclosure is owed), so an ungrounded explainer could only
+            # GUESS or omit a fact the ledger already knows. Answer
+            # structurally (no decider) — deterministic honesty on the
+            # deep-history case #82 exists for. Over-fire on a concept
+            # question is irrelevant-but-true, never a lie.
+            message = _recall_message(case, ask, path, rejected_ask)
             return named_file, named_basename, True, message, False
-        # grounded (first build visible) or none: the explainer can answer
-        # honestly (from the visible wire, or a concept explanation), so let the
-        # decider judge recall-vs-concept — a mis-vote here is not a deep-history
-        # guess. grounded collapses into the built_deep "ask me to read" message.
+        # grounded (first build visible, nothing to disclose) or none: the
+        # explainer can answer honestly (from the visible wire, or a concept
+        # explanation), so let the decider judge recall-vs-concept — a
+        # mis-vote here is not a deep-history guess. grounded collapses into
+        # the built_deep "ask me to read" message.
         msg_case = "built_deep" if case == "grounded" else case
-        message = _recall_message(msg_case, ask, path)
+        message = _recall_message(msg_case, ask, path, rejected_ask)
         return named_file, named_basename, False, message, True
     return named_file, named_basename, False, "", False
 
