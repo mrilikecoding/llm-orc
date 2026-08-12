@@ -305,6 +305,28 @@ def test_is_build_ask_false_for_a_concept_explain() -> None:
     assert decision["is_build_ask"] is False
 
 
+def test_is_build_ask_false_for_a_named_file_explain() -> None:
+    # Round 3 minor: has_build_signal fires on the named file alone
+    # ("foo.py" extracted by _extract_file), but "explain what foo.py does"
+    # never asked for a build — narrow is_build_ask to False on an explain
+    # turn (unless it's also fix-verb-led).
+    decision = _classify({"task": "explain what foo.py does"})
+    assert decision["is_build_ask"] is False
+
+
+def test_is_build_ask_false_when_a_build_word_is_used_as_a_plain_noun() -> None:
+    # "code" is a _BUILD_RE token, but here it's an ordinary noun inside a
+    # genuine explain turn — has_build_signal fires on the token alone, so
+    # the same narrowing applies.
+    decision = _classify({"task": "explain the code you wrote"})
+    assert decision["is_build_ask"] is False
+
+
+def test_is_build_ask_stays_true_for_a_fix_verb_turn() -> None:
+    decision = _classify({"task": "fix storage.py"})
+    assert decision["is_build_ask"] is True
+
+
 # --- rung 1.5: target-read reads test_<stem>.py before a fix-led build
 # (docs/plans/2026-07-12-convergent-fix-design.md) ---
 
