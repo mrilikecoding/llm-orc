@@ -1407,6 +1407,37 @@ def test_memory_interrogative_states_a_rejected_outcome_from_the_previous_ask() 
     assert "complete_todo" not in decision["recall_answer"]
 
 
+@pytest.mark.parametrize(
+    "task",
+    [
+        "did you see my last message about the auth bug?",
+        "have you read my previous query regarding the login flow?",
+        "did you get my last question about deployment?",
+    ],
+)
+def test_saw_query_with_a_trailing_qualifier_does_not_affirm(task: str) -> None:
+    # Round 2 major 1: _SAW_QUERY_RE anchors at the END too — a trailing
+    # qualifier means the noun phrase never terminates the question, so the
+    # PROPOSITION being asked about ("...about the auth bug") is not the
+    # structurally-certain "did I receive a message" claim. Falls to the
+    # non-affirming record-only template.
+    decision = _classify(
+        {
+            "task": task,
+            "previous_ask": {
+                "ask": "build a todo app",
+                "outcome": "shipped",
+                "path": "todo.py",
+            },
+            "context": "",
+        }
+    )
+    assert decision["target"] == "recall-answer"
+    assert not decision["recall_answer"].startswith("Yes")
+    assert not decision["recall_answer"].startswith("No")
+    assert "build a todo app" in decision["recall_answer"]
+
+
 def test_memory_interrogative_states_a_seat_contract_outcome_precisely() -> None:
     # Review round 1 blocker 2 / major 2: a seat-contract miss must never be
     # attributed to "the accept gate".
