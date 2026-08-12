@@ -16,6 +16,7 @@ the ensemble.
 from __future__ import annotations
 
 import asyncio
+import importlib.util
 import json
 import re
 import uuid
@@ -325,29 +326,65 @@ def _message_write_path(message: Any) -> str:
     return ""
 
 
-def _ask_outcome(items: list[Any], index: int) -> tuple[str, bool]:
-    """(written path, shipped) for the build-ask at ``index``: the first write
-    in the assistant turn(s) before the next user message. No write ->
-    ("", False), the rejected outcome."""
+def _is_reject_message(message: Any, reject_prefixes: tuple[str, ...]) -> bool:
+    """True when ``message`` is an ASSISTANT-role wire message matching one
+    of emit's own reject-message prefixes (recap grounding, #133/#134:
+    docs/plans/2026-07-17-recap-grounding-design.md). Never inferred from
+    free text and never from a user or tool message — the same spoof-guard
+    discipline as ``_message_write_path`` — so a forged prefix in user prose
+    can never mint a rejected ledger entry."""
+    if getattr(message, "role", "") != "assistant":
+        return False
+    content = getattr(message, "content", None)
+    if not isinstance(content, str):
+        return False
+    stripped = content.strip()
+    return any(prefix and stripped.startswith(prefix) for prefix in reject_prefixes)
+
+
+def _ask_outcome(
+    items: list[Any], index: int, reject_prefixes: tuple[str, ...] = ()
+) -> tuple[str, str]:
+    """(outcome, path) for the ask at ``index``: "shipped" with the written
+    path, "rejected" with an empty path, or ("", "") when the turn carries
+    neither — a question, a read, anything with no build outcome.
+
+    Scans the WHOLE turn (every message up to the next user message) rather
+    than stopping at the first signal, so an eventual write always wins over
+    an earlier reject in the same turn (a retry that ships), and several
+    reject messages in one turn (retry rounds) still collapse to a single
+    "rejected" outcome (recap-grounding design, wrong-accept-hunt target 4).
+    """
+    rejected = False
     for message in items[index + 1 :]:
         if getattr(message, "role", "") == "user":
             break
         path = _message_write_path(message)
         if path:
-            return path, True
-    return "", False
+            return "shipped", path
+        if _is_reject_message(message, reject_prefixes):
+            rejected = True
+    return ("rejected", "") if rejected else ("", "")
 
 
-def _recall_ledger(messages: Sequence[Any]) -> list[dict[str, Any]]:
-    """The chronological write-history a recall query selects over (#82).
+def _recall_ledger(
+    messages: Sequence[Any], reject_prefixes: tuple[str, ...] = ()
+) -> list[dict[str, Any]]:
+    """The chronological ASK-OUTCOME history a recall query selects over
+    (#82 deep recall, extended into an outcome-anchored ledger by recap
+    grounding #133/#134: docs/plans/2026-07-17-recap-grounding-design.md).
 
-    One entry per file that ACTUALLY SHIPPED (a write tool_call), in wire
-    order, ``{ask, path}`` — the deep-history retrieval the windowed,
-    relevance-sorted transcript render cannot provide. Write history is
-    fully structural: nothing inferred from free-form prose (a build verb in
-    an ordinary question, a rejected build) can enter, so the selection can
-    never fabricate or mislabel. Selects over the PRIOR history (before the
-    latest user message), so the current recall query is never an entry.
+    One entry per user ask that has a build outcome, in wire order:
+    ``{ask, path, outcome: "shipped", index}`` for a shipped write, or
+    ``{ask, outcome: "rejected", index}`` (no ``path``) for a build one of
+    the serve's own reject templates (``reject_prefixes``, sourced from
+    emit.py — never a duplicated regex here) reports as unshipped. An ask
+    with no build outcome (a question, a read) is never an entry. Existing
+    consumers filtering on ``outcome == "shipped"`` see exactly today's #82
+    ledger, unchanged — ``reject_prefixes`` defaults to empty, so a bare
+    call (as the existing #82 test suite makes) recognizes shipped builds
+    only, byte for byte. Selects over the PRIOR history (before the latest
+    user message), so the current recall query is never an entry.
     """
     items = list(messages)
     boundary = _latest_user_index(items)
@@ -356,12 +393,38 @@ def _recall_ledger(messages: Sequence[Any]) -> list[dict[str, Any]]:
     for index, message in enumerate(prior):
         if getattr(message, "role", "") != "user":
             continue
-        path, shipped = _ask_outcome(prior, index)
-        if not shipped:
+        outcome, path = _ask_outcome(prior, index, reject_prefixes)
+        if not outcome:
             continue
         ask = str(getattr(message, "content", "") or "").strip()[:_RECALL_ASK_CAP]
-        ledger.append({"ask": ask, "path": path})
+        entry: dict[str, Any] = {"ask": ask, "outcome": outcome, "index": index}
+        if path:
+            entry["path"] = path
+        ledger.append(entry)
     return ledger
+
+
+def _previous_ask(
+    messages: Sequence[Any], reject_prefixes: tuple[str, ...] = ()
+) -> dict[str, str]:
+    """The immediately preceding user turn's verbatim ask plus its build
+    outcome (#134 memory-interrogative substrate): ``{ask, outcome, path}``.
+
+    NOT the ledger's last entry — that could be an older turn when the
+    immediately preceding one had no build outcome at all (a question, a
+    read), and a memory interrogative ("did you see my previous query?")
+    answers about that one specific turn, never an older build. Empty
+    ask/outcome/path when there is no preceding turn.
+    """
+    items = list(messages)
+    boundary = _latest_user_index(items)
+    prior = items[:boundary] if boundary >= 0 else []
+    prev_index = _latest_user_index(prior)
+    if prev_index < 0:
+        return {"ask": "", "outcome": "", "path": ""}
+    outcome, path = _ask_outcome(prior, prev_index, reject_prefixes)
+    ask = str(getattr(prior[prev_index], "content", "") or "").strip()
+    return {"ask": ask[:_RECALL_ASK_CAP], "outcome": outcome, "path": path}
 
 
 def _indent_body(text: str) -> str:
@@ -797,6 +860,37 @@ def _find_ensemble(project_dir: Path, name: str) -> Path:
     )
 
 
+def _load_emit_reject_prefixes(path: Path) -> tuple[str, ...]:
+    """The reject-message prefix constants read straight out of a project's
+    OWN ``emit.py`` (recap grounding, #133/#134) — the single source of
+    truth the design doc requires, never a literal duplicated here. A
+    project's scripts are configuration, not installed package content
+    (they live under the caller's ``project_dir``, resolved per instance,
+    same as ``_find_ensemble``), so this is a dynamic file-location import
+    rather than a static one. ``emit.py`` is self-contained (stdlib-only),
+    so it needs no sys.path change; loading it under a non-``__main__``
+    name means its ``if __name__ == "__main__"`` block never runs. Any
+    failure (missing file, syntax error, missing constants) yields no
+    prefixes — the ledger then recognizes shipped builds only, same as
+    before #133/#134, never a hard failure of the whole turn.
+    """
+    try:
+        spec = importlib.util.spec_from_file_location(
+            "_serving_emit_reject_prefixes", path
+        )
+        if spec is None or spec.loader is None:
+            return ()
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+    except Exception:
+        return ()
+    prefixes = (
+        getattr(module, "SEAT_CONTRACT_REJECT_PREFIX", ""),
+        getattr(module, "ACCEPT_GATE_REJECT_PREFIX", ""),
+    )
+    return tuple(prefix for prefix in prefixes if prefix)
+
+
 def _serve_outcome(result: dict[str, Any]) -> dict[str, Any]:
     """The terminal ``emit`` node's serve outcome (shape -> form-gate -> emit)."""
     results = result.get("results", {}) if isinstance(result, dict) else {}
@@ -903,6 +997,10 @@ class ServingEnsembleCaller:
         # rglob fallback walk) on every turn while still picking up live
         # edits to the serving ensemble (issue #93)
         self._config_cache: tuple[Path, float, Any] | None = None
+        # (path, mtime) -> reject-prefix tuple: mirrors _config_cache above,
+        # recap grounding (#133/#134) — reloads emit.py's constants only
+        # when the file actually changes.
+        self._emit_reject_cache: tuple[Path, float, tuple[str, ...]] | None = None
 
     def _load_config(self) -> Any:
         path = _find_ensemble(self._project_dir, self._ensemble)
@@ -915,6 +1013,24 @@ class ServingEnsembleCaller:
         self._config_cache = (path, mtime, config)
         return config
 
+    def _emit_reject_prefixes(self) -> tuple[str, ...]:
+        """This project's real reject-message prefixes (recap grounding,
+        #133/#134), cached by (path, mtime) like ``_load_config``. Empty
+        when the project has no ``scripts/agentic_serving/emit.py`` — the
+        ask-outcome ledger then recognizes shipped builds only."""
+        path = self._project_dir / "scripts" / "agentic_serving" / "emit.py"
+        try:
+            mtime = path.stat().st_mtime
+        except OSError:
+            return ()
+        if self._emit_reject_cache is not None:
+            cached_path, cached_mtime, cached = self._emit_reject_cache
+            if cached_path == path and cached_mtime == mtime:
+                return cached
+        prefixes = _load_emit_reject_prefixes(path)
+        self._emit_reject_cache = (path, mtime, prefixes)
+        return prefixes
+
     async def run(self, context: SessionContext) -> AsyncIterator[OrchestratorChunk]:
         if not context.tools:
             yield ContentDelta(content=_aux_reply(context.messages))
@@ -925,13 +1041,15 @@ class ServingEnsembleCaller:
             yield ContentDelta(content=ack)
             yield Completion(finish_reason="stop")
             return
+        reject_prefixes = self._emit_reject_prefixes()
         outcome = await self._serve(
             _task_from(context.messages),
             _render_context(context.messages),
             wrote_path=_wrote_path_this_turn(context.messages),
             wrote_content=_wrote_content_this_turn(context.messages),
             write_count=_write_count_this_turn(context.messages),
-            recall_ledger=_recall_ledger(context.messages),
+            recall_ledger=_recall_ledger(context.messages, reject_prefixes),
+            previous_ask=_previous_ask(context.messages, reject_prefixes),
         )
         for chunk in _outcome_chunks(outcome, context.tools):
             yield chunk
@@ -944,6 +1062,7 @@ class ServingEnsembleCaller:
         wrote_content: str = "",
         write_count: int = 0,
         recall_ledger: list[dict[str, Any]] | None = None,
+        previous_ask: dict[str, str] | None = None,
     ) -> dict[str, Any]:
         config = self._load_config()
         executor = ExecutorFactory.create_root_executor(project_dir=self._project_dir)
@@ -957,6 +1076,8 @@ class ServingEnsembleCaller:
                     "wrote_content": wrote_content,
                     "write_count": write_count,
                     "recall_ledger": recall_ledger or [],
+                    "previous_ask": previous_ask
+                    or {"ask": "", "outcome": "", "path": ""},
                 }
             ),
         )
