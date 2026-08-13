@@ -49,8 +49,14 @@ _PRIOR_CODE_SPLIT_RE = re.compile(
 # accept_gather.py's _FILE_HEADER_RE/_workspace: body lines carry a two-
 # space indent the renderer added, so a header lookalike in untrusted
 # content can never be mistaken for a real header (fenced block grammar).
+# MAJOR 1 (review round 1, #145): '(over-budget)' (C1) joins the variant
+# alternation alongside accept_gather.py's fix — a missing variant here
+# doesn't materialize a phantom file (visible_test only accepts a
+# test_*.py-shaped, non-variant name), but it silently mis-parses the
+# header instead of correctly recognizing it as unavailable.
 _FILE_HEADER_RE = re.compile(
-    r"^assistant: \[(?:wrote|read) ([^\]]+?)( \((?:truncated|failed|oversize)\))?\]$"
+    r"^assistant: \[(?:wrote|read) ([^\]]+?)"
+    r"( \((?:truncated|failed|oversize|over-budget)\))?\]$"
 )
 
 

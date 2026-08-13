@@ -538,6 +538,24 @@ def test_failed_and_oversize_read_lines_never_materialize() -> None:
     assert workspace == {}
 
 
+def test_over_budget_read_line_never_materializes() -> None:
+    # MAJOR 1 (review round 1): _FILE_HEADER_RE didn't know the
+    # "(over-budget)" variant (C1, #145), so its name-group absorbed the
+    # whole " (over-budget)" suffix into the "path" and the header still
+    # matched as a bare (unvariant) header — materializing
+    # "invoice.py (over-budget)" as an EMPTY workspace file, violating
+    # _workspace's own header invariant. The reviewer's demonstrating
+    # context: the workspace must contain ONLY ledger.py.
+    context = (
+        "assistant: [read ledger.py]\n"
+        "  class Ledger:\n"
+        "      pass\n"
+        "assistant: [read invoice.py (over-budget)]"
+    )
+    workspace = _workspace(context)
+    assert workspace == {"ledger.py": "class Ledger:\n    pass"}
+
+
 def test_truncated_wrote_block_still_never_materializes() -> None:
     context = "assistant: [wrote storage.py (truncated)]\ndef put(k"
     assert _workspace(context) == {}
