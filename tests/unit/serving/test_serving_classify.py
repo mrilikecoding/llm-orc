@@ -2420,6 +2420,88 @@ def test_strip_removes_every_truncated_block_not_only_the_latest() -> None:
     assert "/work/notes.md" in decision["dispatch_input"]
 
 
+# --- MAJOR B (round 2 review): _strip_truncated_glob_block's own
+# mutation-testing net — the same five context shapes that killed the
+# routing guard's mutants (M1 above), now run through the EXPLAIN seam
+# and asserted on dispatch_input CONTENT, not on target. Every context
+# below opens with a non-glob line before the first "[globbed ...]"
+# header — a real conversation always opens with the user's own line, a
+# glob block is never at line 0 (S3's point). ---
+
+
+def test_strip_render_through_51_paths_removes_the_block_from_dispatch_input() -> None:
+    # Fed through the real caller-side renderer, not typed as an
+    # independent literal on this side of the src/.llm-orc boundary.
+    raw = "\n".join(f"/w/mod{i}.py" for i in range(51))
+    block = _render_glob_block("**/*mod*", raw)
+    context = f"user: previous turn\n{block}"
+    decision = _classify({"task": "how does the mod system work?", "context": context})
+    assert decision["target"] == "explainer"
+    assert "[globbed mod (truncated)]" not in decision["dispatch_input"]
+    assert "/w/mod0.py" not in decision["dispatch_input"]
+
+
+def test_strip_requires_the_exact_rendered_suffix_or_leaves_the_block_alone() -> None:
+    # A header containing "(truncated)" WITHOUT the real render's exact
+    # shape (leading space before the parenthesis) is not truncated as far
+    # as the strip is concerned — the block stays in dispatch_input, same
+    # discipline as the routing guard.
+    context = "user: previous turn\nassistant: [globbed mod(truncated)]\n  /w/other.py"
+    decision = _classify({"task": "how does the mod system work?", "context": context})
+    assert decision["target"] == "explainer"
+    assert "[globbed mod(truncated)]" in decision["dispatch_input"]
+    assert "/w/other.py" in decision["dispatch_input"]
+
+
+def test_strip_does_not_tolerate_trailing_whitespace_after_the_header() -> None:
+    # The real render never emits trailing whitespace after the header's
+    # closing bracket, so a header with it is not recognized as truncated
+    # either — the block stays.
+    context = (
+        "user: previous turn\nassistant: [globbed mod (truncated)]  \n  /w/other.py"
+    )
+    decision = _classify({"task": "how does the mod system work?", "context": context})
+    assert decision["target"] == "explainer"
+    assert "[globbed mod (truncated)]" in decision["dispatch_input"]
+    assert "/w/other.py" in decision["dispatch_input"]
+
+
+def test_strip_stacked_complete_then_truncated_removes_only_the_truncated_one() -> None:
+    context = (
+        "user: previous turn\n"
+        "assistant: [globbed system]\n"
+        "  /w/other.py\n"
+        "assistant: [globbed mod (truncated)]\n"
+        "  /w/mod0.py"
+    )
+    decision = _classify({"task": "how does the mod system work?", "context": context})
+    assert decision["target"] == "explainer"
+    assert "[globbed mod (truncated)]" not in decision["dispatch_input"]
+    assert "/w/mod0.py" not in decision["dispatch_input"]
+    assert "[globbed system]" in decision["dispatch_input"]
+    assert "/w/other.py" in decision["dispatch_input"]
+
+
+def test_strip_stacked_truncated_then_complete_removes_the_earlier_one() -> None:
+    # The mirror of the case above, and the same shape minor 1's own test
+    # pins — repeated here (different filenames) as MAJOR B's fifth
+    # instrument shape, opening on a non-glob line for full production-real
+    # fidelity.
+    context = (
+        "user: previous turn\n"
+        "assistant: [globbed mod (truncated)]\n"
+        "  /w/mod0.py\n"
+        "assistant: [globbed system]\n"
+        "  /w/other.py"
+    )
+    decision = _classify({"task": "how does the mod system work?", "context": context})
+    assert decision["target"] == "explainer"
+    assert "[globbed mod (truncated)]" not in decision["dispatch_input"]
+    assert "/w/mod0.py" not in decision["dispatch_input"]
+    assert "[globbed system]" in decision["dispatch_input"]
+    assert "/w/other.py" in decision["dispatch_input"]
+
+
 def test_bare_symbol_explain_multiple_candidates_refuses_naming_them() -> None:
     context = (
         "assistant: [globbed classify,decide,routing]\n"
