@@ -1400,6 +1400,39 @@ def test_truncated_wrote_block_does_not_ground_the_explain() -> None:
     assert decision["target"] == "not-grounded"
 
 
+def test_not_grounded_reflects_a_recorded_oversize_attempt() -> None:
+    # minor 3 (review round 1): when the asked file already has a recorded
+    # attempt reason (a prior turn's build read that refused), the
+    # not-grounded routing carries that reason so emit can compose an
+    # honest message instead of suggesting the exact action that just
+    # failed ("ask me to read it").
+    context = "assistant: [read big.py (oversize)]"
+    decision = _classify({"task": "explain big.py", "context": context})
+    assert decision["target"] == "not-grounded"
+    assert decision["not_grounded"] == "big.py"
+    assert str(_READ_CAP_KB) in decision["not_grounded_reason"]
+
+
+def test_not_grounded_reflects_a_recorded_failed_attempt() -> None:
+    context = "assistant: [read gone.py (failed)] Error: ENOENT"
+    decision = _classify({"task": "explain gone.py", "context": context})
+    assert decision["target"] == "not-grounded"
+    assert decision["not_grounded_reason"] == "client read failed"
+
+
+def test_not_grounded_reflects_a_recorded_over_budget_attempt() -> None:
+    context = "assistant: [read big3.py (over-budget)]"
+    decision = _classify({"task": "explain big3.py", "context": context})
+    assert decision["target"] == "not-grounded"
+    assert str(_CLASSIFY_READ_TOKEN_BUDGET) in decision["not_grounded_reason"]
+
+
+def test_not_grounded_reason_is_empty_when_never_attempted() -> None:
+    decision = _classify({"task": "explain how todo.py stores its state"})
+    assert decision["target"] == "not-grounded"
+    assert decision["not_grounded_reason"] == ""
+
+
 def test_recall_selects_the_first_shipped_build_never_a_later_file() -> None:
     # The turn-10 conversion at the routing layer: the first SHIPPED build
     # (todo.py) is selected, never the later/salient calc.py. Selection is

@@ -1611,8 +1611,9 @@ def main() -> None:
     # ...] line in the user's own task prose cannot flip the gate (spoof-
     # probe requirement). Conceptual explains (no named_file) never gate.
     explain_ungrounded = False
+    explain_attempted: dict[str, str] = {}
     if is_explain and named_file:
-        explain_visible, _ = _visibility(conversation_raw)
+        explain_visible, explain_attempted = _visibility(conversation_raw)
         explain_ungrounded = named_basename not in explain_visible
 
     # Chained fix-execution: a fix-intent turn whose gated build already
@@ -1721,6 +1722,14 @@ def main() -> None:
     # visible build or read on the wire — emit.py composes the honest
     # message from it; empty for every other routing decision.
     not_grounded = named_file if target == "not-grounded" else ""
+    # minor 3 (review round 1): when a PRIOR turn already attempted (and
+    # failed) to read this exact target — recorded in explain_attempted
+    # from the SAME _visibility scan the gate above used — emit composes a
+    # message that states the recorded reason instead of suggesting the
+    # exact action that just failed ("ask me to read it").
+    not_grounded_reason = (
+        explain_attempted.get(named_basename, "") if target == "not-grounded" else ""
+    )
 
     if target == _TESTS_SEAT:
         if named_basename.startswith("test_"):
@@ -1804,6 +1813,7 @@ def main() -> None:
                 "needs_glob": needs_glob,
                 "glob_failed": glob_failed,
                 "not_grounded": not_grounded,
+                "not_grounded_reason": not_grounded_reason,
                 "recall_answer": recall_answer,
                 "is_build_ask": is_build_ask,
                 "chain": chain,
