@@ -698,6 +698,16 @@ def _latest_glob_listing(context: str) -> list[str] | None:
     ``_globbed_candidates`` (the single-stem build seam) and
     ``_explain_glob_candidates`` (the multi-stem explain-discovery seam,
     glob->read grounded-explain design).
+
+    A ``(truncated)`` header (issue #148) means the caller's
+    ``_GLOB_MAX_PATHS`` cap cut the listing — real stem families bust it,
+    and the underlying glob order is mtime-based, so which paths survive
+    is nondeterministic. A grounding decision is only made over the
+    COMPLETE candidate set, so a truncated block returns an empty listing
+    rather than the partial one: both candidate functions already have a
+    disciplined "no candidates" fallback (refuse / fall through to the
+    conceptual explainer), and that is what a truncated listing gets too —
+    never a confident single-file ground on a coin-flip subset.
     """
     lines = context.splitlines()
     start = -1
@@ -706,6 +716,8 @@ def _latest_glob_listing(context: str) -> list[str] | None:
             start = index
     if start < 0:
         return None
+    if lines[start].endswith(" (truncated)]"):
+        return []
     paths: list[str] = []
     for line in lines[start + 1 :]:
         if not line.startswith("  "):
