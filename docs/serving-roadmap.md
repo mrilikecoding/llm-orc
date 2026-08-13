@@ -107,8 +107,13 @@ Remaining, in order:
 - [x] #143 — CLOSED as an honest miss: component-subset refuted at
   class level; model gate refuted empirically (pre-registered bar,
   8b+14b, all variants); reopen rides #119 with the committed spike
-- [ ] #145 #121 #144 — remaining meta-task rungs (#145 wants a #139
-  context-curve decision first)
+- [x] #139 — context curve measured (flat through 32K recall / 24K
+  synthesis; 4KB cap defensible; latency is the binding constraint)
+- [x] #145 — repo-scale reads merged + live-validated (96KB cap,
+  token-denominated read budget, runtime truncation backstop, #150
+  fixed; five review rounds; dogfood entry 1 converted). classify.py
+  refuses over-budget by design → chunked reads deferred; #151 open
+- [ ] #121 #144 — remaining meta-task rungs
 - [ ] #141 #138 #63 — parity v2 inputs (CLAUDE.md confound, volume scaling, statistics), then parity table v2 with realism rows
 - [ ] #126 — long-horizon 30-turn battery (#136 #137 feed the design)
 - [ ] #139 #140 — memory spikes; #127 plexus substrate; #82 remainder (cross-session)
