@@ -16,6 +16,7 @@ import json
 import math
 from typing import Any
 
+from llm_orc.web.serving.token_estimate import projected_tokens_v2
 from llm_orc.web.serving.turn_trace import (
     WINDOW,
     _truncation_check,
@@ -161,6 +162,74 @@ def test_truncation_check_flags_a_turn_with_deep_overflow() -> None:
     assert detail is not None
     assert detail["prompt_eval_counts"] == [5000]
     assert detail["projected_prompt_tokens"] > 40000
+
+
+def test_truncation_check_ignores_small_sibling_when_big_call_is_in_window() -> None:
+    # review round 4: _truncation_check compared EVERY recorded count
+    # against the seat's projection — so a legitimately near-ceiling
+    # session (exactly the state this feature exists to produce: the
+    # read accumulator admits up to _READ_TOKEN_BUDGET, close to the
+    # trigger near-window gate) plus ANY small sibling call (a decide
+    # child ~40 tok, a verdict child ~260 tok) still false-fired: the
+    # sibling's own tiny prompt_eval_count, compared against the BIG
+    # dispatch_input's projection, looks like a huge under-run even
+    # though that sibling was never asked to process the big prompt at
+    # all. Truncation always lands on the call that received the big
+    # prompt, so only the MAX of the recorded counts is the meaningful
+    # signal — the small sibling here must not cause a false positive.
+    dispatch_input = "word " * 21600
+    classify_response = json.dumps(
+        {
+            "target": "explainer",
+            "chain": "explain",
+            "step_index": 0,
+            "dispatch_input": dispatch_input,
+        }
+    )
+    projected = projected_tokens_v2(dispatch_input)
+    big_count = round(projected / 1.59)  # a genuinely non-truncated ratio
+    nodes: list[dict[str, Any]] = [
+        {"node": "classify", "response": classify_response},
+        {
+            "node": "seat",
+            "seat": [
+                {"node": "explainer", "prompt_eval_count": big_count},
+                {"node": "verdict", "prompt_eval_count": 260},
+            ],
+        },
+    ]
+
+    assert _truncation_check(nodes, classify_response) is None
+
+
+def test_truncation_check_flags_via_max_despite_a_small_sibling() -> None:
+    # the paired shape: the big call carries the measured discard
+    # signature (over-window truncation) while a small sibling call is
+    # also present — max(counts) must still catch it.
+    dispatch_input = "word " * 21600
+    classify_response = json.dumps(
+        {
+            "target": "explainer",
+            "chain": "explain",
+            "step_index": 0,
+            "dispatch_input": dispatch_input,
+        }
+    )
+    nodes: list[dict[str, Any]] = [
+        {"node": "classify", "response": classify_response},
+        {
+            "node": "seat",
+            "seat": [
+                {"node": "explainer", "prompt_eval_count": 20482},
+                {"node": "verdict", "prompt_eval_count": 260},
+            ],
+        },
+    ]
+
+    detail = _truncation_check(nodes, classify_response)
+
+    assert detail is not None
+    assert detail["prompt_eval_counts"] == [20482, 260]
 
 
 def test_truncation_check_returns_none_without_dispatch_input() -> None:

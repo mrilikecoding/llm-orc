@@ -307,13 +307,29 @@ def _truncation_check(
 ) -> dict[str, Any] | None:
     """The turn's truncation verdict, or ``None`` when nothing indicates
     truncation — including when there is no dispatch_input or no recorded
-    usage to check at all (never a false positive on absent data)."""
+    usage to check at all (never a false positive on absent data).
+
+    Checks only ``max(counts)`` against the seat's projection (review
+    round 4) — NOT every recorded count. A turn can carry several usage-
+    bearing calls (the seat that actually answered from the big
+    dispatch_input, plus small siblings like a decide child ~40 tokens
+    or a verdict child ~260 tokens with their own, unrelated, genuinely
+    small prompts). Comparing a small sibling's own prompt_eval_count
+    against the BIG projection false-fires: a legitimately near-ceiling
+    session (exactly the state this feature exists to produce, since the
+    read accumulator admits up to _READ_TOKEN_BUDGET, close to the
+    trigger near-window gate) would otherwise discard a correct answer
+    just because an unrelated small call's count looks tiny next to the
+    big prompt's projection. Truncation always lands on the call that
+    received the big prompt, so the maximum recorded count is the only
+    one that can ever be that call.
+    """
     dispatch_input = _dispatch_input(classify_response)
     if not dispatch_input:
         return None
     projected = projected_tokens_v2(dispatch_input)
     counts = _prompt_eval_counts(nodes)
-    if not any(_truncation_detected(count, projected) for count in counts):
+    if not counts or not _truncation_detected(max(counts), projected):
         return None
     return {"projected_prompt_tokens": projected, "prompt_eval_counts": counts}
 
