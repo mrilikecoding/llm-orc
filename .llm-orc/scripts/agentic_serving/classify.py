@@ -402,6 +402,43 @@ def _run_test_command(task: str) -> str:
     return " ".join(["pytest", "-q", *named]).strip()
 
 
+def _attempt_reason(variant: str, visible: set[str]) -> str:
+    """The failure detail a read-attempt variant records, shared by the
+    basename-keyed ``_visibility`` and the full-path ``_visibility_paths``
+    (#144) so the two namespaces can never word the same refusal
+    differently."""
+    if variant == "oversize":
+        return f"file exceeds the {_READ_CAP_KB} KB read cap"
+    if variant == "failed":
+        return "client read failed"
+    if variant == "over-budget":
+        # C1 (#145): the caller already refused to render this read's
+        # body (it would have pushed the total held projected-token
+        # count over budget) — name the budget and the files already
+        # holding it, and state the remedy as its own plain sentence
+        # (minor 5, review round 1) so the refusal is actionable, not
+        # just honest. Plain terms (review round 2): "the session read
+        # budget", not the raw projected-token figure — the number
+        # isn't actionable to a user, only the remedy is. _READ_TOKEN_
+        # BUDGET stays mirrored (drift-asserted) even though it no
+        # longer appears in this string.
+        if visible:
+            held = ", ".join(sorted(visible))
+            return (
+                f"the session read budget is already held by {held}. "
+                "Start a fresh session, or ask about one file at a time."
+            )
+        # #144 pre-flight finding 5: a lone whale — nothing else holds
+        # the budget, so "held by other files" and "start a fresh
+        # session" would both be false claims. The honest reason is
+        # that the file's own content exceeds the budget.
+        return (
+            "its content alone exceeds the session read budget. "
+            "The file is too large to ground an answer in one read."
+        )
+    return ""
+
+
 def _visibility(context: str) -> tuple[set[str], dict[str, str]]:
     """(visible basenames, attempted basename -> failure detail)."""
     visible = {
@@ -411,37 +448,9 @@ def _visibility(context: str) -> tuple[set[str], dict[str, str]]:
     }
     attempted: dict[str, str] = {}
     for path, _, variant in _READ_ATTEMPT_RE.findall(context):
-        basename = path.rsplit("/", 1)[-1]
-        if variant == "oversize":
-            attempted[basename] = f"file exceeds the {_READ_CAP_KB} KB read cap"
-        elif variant == "failed":
-            attempted[basename] = "client read failed"
-        elif variant == "over-budget":
-            # C1 (#145): the caller already refused to render this read's
-            # body (it would have pushed the total held projected-token
-            # count over budget) — name the budget and the files already
-            # holding it, and state the remedy as its own plain sentence
-            # (minor 5, review round 1) so the refusal is actionable, not
-            # just honest. Plain terms (review round 2): "the session read
-            # budget", not the raw projected-token figure — the number
-            # isn't actionable to a user, only the remedy is. _READ_TOKEN_
-            # BUDGET stays mirrored (drift-asserted) even though it no
-            # longer appears in this string.
-            if visible:
-                held = ", ".join(sorted(visible))
-                attempted[basename] = (
-                    f"the session read budget is already held by {held}. "
-                    "Start a fresh session, or ask about one file at a time."
-                )
-            else:
-                # #144 pre-flight finding 5: a lone whale — nothing else
-                # holds the budget, so "held by other files" and "start a
-                # fresh session" would both be false claims. The honest
-                # reason is that the file's own content exceeds the budget.
-                attempted[basename] = (
-                    "its content alone exceeds the session read budget. "
-                    "The file is too large to ground an answer in one read."
-                )
+        reason = _attempt_reason(variant, visible)
+        if reason:
+            attempted[path.rsplit("/", 1)[-1]] = reason
     return visible, attempted
 
 
@@ -815,6 +824,19 @@ def _globbed_candidates(context: str, stem: str) -> tuple[list[str], bool] | Non
     return candidates, False
 
 
+def _basename_components(basename: str) -> set[str]:
+    """Significant word-components of a ``.py`` candidate's basename-stem
+    (len >= 3, non-digit, split on non-alphanumerics) — the named-after-the-
+    symbol subset rule's component set, shared by the workspace listing rule
+    (``_explain_glob_candidates``) and the serve-owned rule (#144)."""
+    name = basename[: -len(".py")].lower()
+    return {
+        component
+        for component in re.split(r"[^a-z0-9]+", name)
+        if len(component) >= 3 and not component.isdigit()
+    }
+
+
 def _explain_glob_candidates(context: str, stems: list[str]) -> list[str] | None:
     """Candidate paths from the turn's ``[globbed ...]`` block whose basename
     is NAMED-AFTER-the-symbol by the question, or ``None`` when no listing
@@ -851,12 +873,7 @@ def _explain_glob_candidates(context: str, stems: list[str]) -> list[str] | None
         basename = path.rsplit("/", 1)[-1]
         if not basename.endswith(".py") or basename.startswith("test_"):
             continue
-        name = basename[: -len(".py")].lower()
-        components = {
-            component
-            for component in re.split(r"[^a-z0-9]+", name)
-            if len(component) >= 3 and not component.isdigit()
-        }
+        components = _basename_components(basename)
         if components and components <= stem_set:
             candidates.append(path)
     return candidates
