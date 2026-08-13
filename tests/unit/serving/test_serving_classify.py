@@ -25,8 +25,13 @@ CLASSIFY = SCRIPTS / "classify.py"
 sys.path.insert(0, str(SCRIPTS))
 from classify import (  # type: ignore  # noqa: E402
     _explain_stems,
+    _latest_glob_listing,
     _ledger_recap,
     _valid_recall_answer,
+)
+
+from llm_orc.web.serving.serving_ensemble_caller import (  # noqa: E402
+    _render_glob_block,
 )
 
 
@@ -723,6 +728,100 @@ def test_truncated_listing_still_grounds_via_a_prior_visible_read() -> None:
     assert decision["target"] == "tests-seat"
     assert decision["needs_glob"] == ""
     assert decision["glob_failed"] == ""
+
+
+# --- M1 (adversarial review round on #148): mutation-testing net. Four
+# guard mutants survived the first pass — a substring check instead of the
+# exact suffix, a hardcoded lines[0] instead of the LATEST header, the
+# literal missing its leading space, and an rstrip variant tolerating
+# trailing whitespace — because nothing rendered through the REAL
+# _render_glob_block, and every test put the header on line 0. ---
+
+
+def test_render_through_51_paths_is_marked_truncated() -> None:
+    # Fed through the real caller-side renderer (src/llm_orc/web/serving/
+    # serving_ensemble_caller.py), not typed as an independent literal on
+    # this side of the src/.llm-orc boundary.
+    raw = "\n".join(f"/w/mod{i}.py" for i in range(51))
+    block = _render_glob_block("**/*mod*", raw)
+    listing = _latest_glob_listing(block)
+    assert listing is not None
+    assert listing.truncated is True
+    assert len(listing.paths) == 50
+
+
+def test_render_through_50_paths_is_not_marked_truncated() -> None:
+    raw = "\n".join(f"/w/mod{i}.py" for i in range(50))
+    block = _render_glob_block("**/*mod*", raw)
+    listing = _latest_glob_listing(block)
+    assert listing is not None
+    assert listing.truncated is False
+    assert len(listing.paths) == 50
+
+
+def test_stacked_glob_blocks_complete_then_truncated_refuses_on_the_latest() -> None:
+    # Two glob rounds stacked in one context — the ephemeral per-turn render
+    # normally emits at most one, but the scan itself must not silently
+    # trust an earlier block just because it sits at line 0. Complete
+    # first, truncated second: the LATEST (truncated) block governs, so
+    # this refuses even though the earlier complete block named the same
+    # file.
+    context = (
+        "assistant: [globbed storage]\n"
+        "  /work/storage.py\n"
+        "assistant: [globbed storage (truncated)]\n"
+        "  /work/storage.py"
+    )
+    decision = _classify(
+        {"task": "write tests for the storage module", "context": context}
+    )
+    assert decision["target"] == "need-glob"
+    assert "cut at 50 paths" in decision["glob_failed"]
+
+
+def test_stacked_glob_blocks_truncated_then_complete_grounds_on_the_latest() -> None:
+    # The mirror: truncated first, complete second — the LATEST (complete)
+    # block governs, so this grounds normally.
+    context = (
+        "assistant: [globbed storage (truncated)]\n"
+        "  /work/storage.py\n"
+        "assistant: [globbed storage]\n"
+        "  /work/storage.py"
+    )
+    decision = _classify(
+        {"task": "write tests for the storage module", "context": context}
+    )
+    assert decision["target"] == "need-files"
+    assert decision["needs_files"] == ["/work/storage.py"]
+
+
+def test_truncation_marker_requires_the_exact_rendered_suffix() -> None:
+    # A header containing the substring "(truncated)" WITHOUT the real
+    # render's exact shape (a leading space before the parenthesis) must
+    # not be recognized as truncated — _render_glob_block always emits the
+    # space. Kills both the substring-check mutant ("(truncated)" in
+    # lines[start]) and the missing-leading-space literal mutant: either
+    # one would misclassify this header as truncated and refuse instead of
+    # grounding.
+    context = "assistant: [globbed storage(truncated)]\n  /work/storage.py"
+    decision = _classify(
+        {"task": "write tests for the storage module", "context": context}
+    )
+    assert decision["target"] == "need-files"
+    assert decision["needs_files"] == ["/work/storage.py"]
+
+
+def test_truncation_marker_does_not_tolerate_trailing_whitespace() -> None:
+    # The real render never emits trailing whitespace after the header's
+    # closing bracket, so a header with it does not match the exact suffix
+    # either — an rstrip-the-line-first variant would wrongly recognize
+    # this as truncated.
+    context = "assistant: [globbed storage (truncated)]  \n  /work/storage.py"
+    decision = _classify(
+        {"task": "write tests for the storage module", "context": context}
+    )
+    assert decision["target"] == "need-files"
+    assert decision["needs_files"] == ["/work/storage.py"]
 
 
 def test_untruncated_single_stem_listing_still_grounds() -> None:
