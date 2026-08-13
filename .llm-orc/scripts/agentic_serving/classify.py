@@ -690,24 +690,46 @@ def _module_stem(task: str) -> str:
     return stems[0] if len(stems) == 1 else ""
 
 
-def _latest_glob_listing(context: str) -> list[str] | None:
-    """Raw path lines from the turn's LATEST ``[globbed ...]`` block, or
-    ``None`` when no listing exists yet (pass 1 fires). Column-0 anchored
-    header scan (fenced block grammar) — an indented lookalike inside a
-    read or run body never counts as a listing. Shared by
-    ``_globbed_candidates`` (the single-stem build seam) and
-    ``_explain_glob_candidates`` (the multi-stem explain-discovery seam,
-    glob->read grounded-explain design).
+# Mirrors serving_ensemble_caller._GLOB_MAX_PATHS (issue #148) — classify.py
+# runs as a standalone script with no import across the src/.llm-orc
+# boundary (the same reason _READ_CAP_KB above duplicates its caller's read
+# cap), so the number is repeated here for the truncation refusal's
+# wording. The M1 render-through tests catch drift between the two.
+_GLOB_MAX_PATHS = 50
+
+
+class _GlobListing(NamedTuple):
+    """The turn's latest ``[globbed ...]`` block (issue #148 M3): its raw
+    path lines, plus whether the caller's ``_GLOB_MAX_PATHS`` cap cut it.
+    A grounding decision is only made over the COMPLETE candidate set, so
+    ``truncated`` is a third state distinct from "no listing yet" (which
+    ``_latest_glob_listing`` signals with ``None``, not this type) and
+    "complete, no match" (``truncated=False`` with ``paths`` empty or non-
+    matching). Collapsing truncated into either of those was the bug: into
+    "no match" it produced a confidently false "no file matching" claim the
+    wire itself contradicts (BLOCKER 1); into a bare ``[]`` with no signal
+    at all it killed the visible-file fallback for a turn where a PRIOR
+    read already grounds the file even though this round's listing is
+    unusable (M3)."""
+
+    paths: list[str]
+    truncated: bool
+
+
+def _latest_glob_listing(context: str) -> _GlobListing | None:
+    """The turn's LATEST ``[globbed ...]`` block, or ``None`` when no
+    listing exists yet (pass 1 fires). Column-0 anchored header scan
+    (fenced block grammar) — an indented lookalike inside a read or run
+    body never counts as a listing. Shared by ``_globbed_candidates`` (the
+    single-stem build seam) and ``_explain_glob_candidates`` (the
+    multi-stem explain-discovery seam, glob->read grounded-explain design).
 
     A ``(truncated)`` header (issue #148) means the caller's
     ``_GLOB_MAX_PATHS`` cap cut the listing — real stem families bust it,
-    and the underlying glob order is mtime-based, so which paths survive
-    is nondeterministic. A grounding decision is only made over the
-    COMPLETE candidate set, so a truncated block returns an empty listing
-    rather than the partial one: both candidate functions already have a
-    disciplined "no candidates" fallback (refuse / fall through to the
-    conceptual explainer), and that is what a truncated listing gets too —
-    never a confident single-file ground on a coin-flip subset.
+    and the underlying glob order is mtime-based, so which paths survive is
+    nondeterministic. The paths are still returned (a caller may want them
+    for diagnostics), but ``truncated=True`` tells every caller a grounding
+    decision must not be made over them — see ``_GlobListing``.
     """
     lines = context.splitlines()
     start = -1
@@ -716,28 +738,34 @@ def _latest_glob_listing(context: str) -> list[str] | None:
             start = index
     if start < 0:
         return None
-    if lines[start].endswith(" (truncated)]"):
-        return []
+    truncated = lines[start].endswith(" (truncated)]")
     paths: list[str] = []
     for line in lines[start + 1 :]:
         if not line.startswith("  "):
             break
         paths.append(line.strip())
-    return paths
+    return _GlobListing(paths=paths, truncated=truncated)
 
 
-def _globbed_candidates(context: str, stem: str) -> list[str] | None:
-    """Candidate paths from the turn's ``[globbed ...]`` block, or ``None``
-    when no listing exists yet (pass 1 fires).
+def _globbed_candidates(context: str, stem: str) -> tuple[list[str], bool] | None:
+    """(candidates, truncated) from the turn's ``[globbed ...]`` block, or
+    ``None`` when no listing exists yet (pass 1 fires).
 
     Matching is deterministic on the rendered block only (design bounds):
-    basename contains the stem, ``.py``, not ``test_*``-named.
+    basename contains the stem, ``.py``, not ``test_*``-named. A truncated
+    listing (issue #148 M3) never contributes a candidate — the listing is
+    not the complete candidate set, so matching against it could ground on
+    a coin-flip subset; ``truncated=True`` lets ``_discovery`` fall back to
+    visibility instead of silently treating this as "complete, zero
+    matches".
     """
     listing = _latest_glob_listing(context)
     if listing is None:
         return None
+    if listing.truncated:
+        return [], True
     candidates: list[str] = []
-    for path in listing:
+    for path in listing.paths:
         basename = path.rsplit("/", 1)[-1]
         if (
             stem in basename.lower()
@@ -745,7 +773,7 @@ def _globbed_candidates(context: str, stem: str) -> list[str] | None:
             and not basename.startswith("test_")
         ):
             candidates.append(path)
-    return candidates
+    return candidates, False
 
 
 def _explain_glob_candidates(context: str, stems: list[str]) -> list[str] | None:
@@ -766,13 +794,21 @@ def _explain_glob_candidates(context: str, stems: list[str]) -> list[str] | None
     symbol" bound: ``classify.py`` ({classify}) and ``accept_gate.py``
     ({accept, gate}) still match when fully named; ``project_context.py``
     ({project, context}) does not, because "project" is not named.
+
+    A truncated listing (issue #148 M3) never contributes a candidate,
+    exactly like ``_globbed_candidates`` — ``_explain_discover``'s existing
+    zero-candidate fall-through (answer conceptually, never a false refusal
+    claim) already covers this case correctly, so truncation collapses into
+    it rather than needing its own branch here.
     """
     listing = _latest_glob_listing(context)
     if listing is None:
         return None
+    if listing.truncated:
+        return []
     stem_set = set(stems)
     candidates: list[str] = []
-    for path in listing:
+    for path in listing.paths:
         basename = path.rsplit("/", 1)[-1]
         if not basename.endswith(".py") or basename.startswith("test_"):
             continue
@@ -840,6 +876,49 @@ def _explain_discover(
     return "", "", "", refusal, [], ""
 
 
+def _visible_stem_matches(context: str, stem: str) -> list[str]:
+    """Visible (already read/written) ``.py`` files whose stem exactly
+    matches ``stem``, not ``test_*``-named, sorted for determinism (the same
+    candidate discipline as the globbed MATCH step — review blocker
+    2026-07-10: any-extension + set-order pick shipped a
+    test_storage.json deliverable). Shared by ``_discovery``'s "no listing
+    yet" and "truncated listing" (issue #148 M3) fallback branches — a
+    truncated glob listing disables LISTING-based grounding only, so a file
+    already visible from a prior read/write still grounds either way.
+    """
+    visible, _ = _visibility(context)
+    return sorted(
+        name
+        for name in visible
+        if name.rsplit(".", 1)[0].lower() == stem
+        and name.endswith(".py")
+        and not name.startswith("test_")
+    )
+
+
+def _visible_stem_result(context: str, stem: str) -> tuple[str, str, str] | None:
+    """The visible-file fallback shared by ``_discovery``'s "no listing yet"
+    and "truncated listing" (issue #148 M3) branches: exactly one visible
+    match names the file (nothing left to discover), several refuse rather
+    than guess, and no match at all returns ``None`` so the caller supplies
+    its own next step (issue a glob request, or the truncation-specific
+    refusal)."""
+    matches = _visible_stem_matches(context, stem)
+    if len(matches) == 1:
+        # the stem IS a visible file — nothing to discover, but it is
+        # still the turn's named file (live finding 2026-07-10: without
+        # this a retried module turn shipped to test_solution.py)
+        return "", matches[0], ""
+    if len(matches) > 1:
+        listed = ", ".join(matches)
+        return (
+            "",
+            "",
+            f"multiple visible files match '{stem}': {listed} — please name one",
+        )
+    return None
+
+
 def _discovery(
     task: str, context: str, tests_primary: bool, has_build_signal: bool
 ) -> tuple[str, str, str]:
@@ -851,6 +930,12 @@ def _discovery(
     exists the deterministic MATCH step takes over — exactly one candidate
     becomes the turn's named file (the existing read seam fires next); zero
     or several candidates refuse honestly, never re-glob.
+
+    A truncated listing (issue #148 M3) is a third state: LISTING-based
+    matching is disabled, but the visible-file fallback still runs (a prior
+    read grounds the file regardless of this round's glob), and the
+    honest-refusal wording says so truthfully (BLOCKER 1) — never the "no
+    file matching" claim, which the truncated block itself may contradict.
     """
     wants_existing = tests_primary or (
         has_build_signal and bool(_EXISTING_RE.search(task))
@@ -864,34 +949,24 @@ def _discovery(
     stem = _module_stem(task)
     if not stem:
         return "", "", ""
-    candidates = _globbed_candidates(context, stem)
-    if candidates is None:
-        visible, _ = _visibility(context)
-        # The same candidate discipline as the globbed MATCH step (review
-        # blocker 2026-07-10: any-extension + set-order pick shipped a
-        # test_storage.json deliverable): .py only, not test_*, sorted for
-        # determinism; one match names the file, several refuse, none
-        # falls through to the glob request — the listing decides.
-        matches = sorted(
-            name
-            for name in visible
-            if name.rsplit(".", 1)[0].lower() == stem
-            and name.endswith(".py")
-            and not name.startswith("test_")
+    result = _globbed_candidates(context, stem)
+    if result is None:
+        visible_result = _visible_stem_result(context, stem)
+        return visible_result if visible_result is not None else (stem, "", "")
+    candidates, truncated = result
+    if truncated:
+        visible_result = _visible_stem_result(context, stem)
+        if visible_result is not None:
+            return visible_result
+        return (
+            "",
+            "",
+            (
+                f"the workspace listing for '{stem}' was cut at "
+                f"{_GLOB_MAX_PATHS} paths, so I can't tell which files "
+                "match — please name the file"
+            ),
         )
-        if len(matches) == 1:
-            # the stem IS a visible file — nothing to discover, but it is
-            # still the turn's named file (live finding 2026-07-10: without
-            # this a retried module turn shipped to test_solution.py)
-            return "", matches[0], ""
-        if len(matches) > 1:
-            listed = ", ".join(matches)
-            return (
-                "",
-                "",
-                f"multiple visible files match '{stem}': {listed} — please name one",
-            )
-        return stem, "", ""
     if len(candidates) == 1:
         return "", candidates[0], ""
     if not candidates:
