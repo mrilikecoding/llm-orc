@@ -41,6 +41,16 @@ Not built here (deferred until a real need appears, per YAGNI): chunked
 or windowed reads for >96KB files. The refusal message names the actual
 bound, so the next dogfood hit documents itself.
 
+**Update (review round 3, 2026-08-13):** the same deferral now also
+covers files that pass the 96KB BYTE cap but exceed the TOKEN
+accumulator budget (`_READ_TOKEN_BUDGET`, 35,000) on their own —
+classify.py, at its current size, is the first real instance: rendered
+through the actual guard, it projects to ~35,030 and refuses. Its
+explain-ability (grounding an "explain classify.py" turn on the whole
+file in one read) moves to this same deferred chunked-reads rung rather
+than forcing another budget increase to admit one specific file — see
+the round-3 resolution below.
+
 ## Invariants and instruments
 
 1. Whole-file-or-refuse unchanged: no truncated module body ever enters
@@ -231,6 +241,11 @@ refusal now speaks in plain terms ("the session read budget") instead of
 surfacing the raw figure. `test_classify_py_sanity_constraint_conflict_is_open`
 is re-pointed to `test_classify_py_projects_under_budget_with_real_margin`,
 asserting the RESOLVED fact so it fails loudly if either number regresses.
+(**Superseded by round 3 below**: this admission check measured RAW
+SOURCE TEXT, not the rendered block the guard actually charges — the
+34,341 figure above and that test no longer exist in this form; see the
+round-3 section for the corrected measurement and the current pinned
+fact.)
 
 **Part 2 — the runtime backstop (#151's core) shipped**, with corrected
 dual thresholds (a single 0.5 ratio would false-positive on estimator
@@ -239,7 +254,8 @@ at factor 1.59, putting a legitimate in-window call's ratio as low as
 ~0.465). `turn_trace._truncation_check` computes projected tokens over
 classify's own `dispatch_input` and flags the turn when EITHER fires:
 trigger 1 (`prompt_eval_count < projected * 0.42`, catching deep
-overflow directly) or trigger 2 (`prompt_eval_count` within 64 of
+overflow directly — **lowered to 0.35 and gated in round 3 below**) or
+trigger 2 (`prompt_eval_count` within 64 of
 `WINDOW // 2`, gated on `projected > WINDOW * 0.8` so a small legitimate
 call can never trip the signature alone — both real captured over-window
 prompts returned exactly `WINDOW // 2 + 2`). `WINDOW = 40960` is a
@@ -249,3 +265,65 @@ window and threshold re-measurement per model era.
 returns a hardcoded refusal when the trace flags it — pinned end-to-end
 with a mocked executor (the withheld answer text never leaks into the
 refusal).
+
+## Review round 3 (2026-08-13): 3 mechanical blockers, all resolved
+
+**Blockers A+B — the admission test measured the wrong quantity, and the
+pinned fact changes.** Round 2's admission test compared RAW SOURCE TEXT
+against the budget via `projected_tokens_v2` directly. The live guard
+(`_budget_read_blocks`) never sees raw source — it costs the RENDERED
+BLOCK `_render_read_block` produces (header + wire-wrapped, 2-space-
+indented body), which is substantially larger: every line gains its own
+indent token-unit under v2's rule (f). Measuring the RIGHT quantity,
+classify.py — which grew 458 chars during this arc, including the round-2
+mirror-constant commit's own comment changes — projects to ~35,030
+against the 35,000 budget and REFUSES by a narrow margin.
+
+We are NOT raising the budget again. That is a treadmill: the file
+grows, the margin was already thin (round 2's own 1.4%), and it crossed
+during review. The honest resolution instead: (1) admission tests
+re-point to the quantity the guard actually charges
+(`test_serving_context_render.test_real_repo_files_admit_or_refuse_at_
+current_size`, driven through the real render pipeline); (2) the pinned
+FACT changes — `subagent_adapter.py` (~10,900) and
+`serving_ensemble_caller.py` (~26,750) admit with real margin (the #145
+exit gate's own grounding targets, untouched), and classify.py at its
+current size REFUSES over budget, asserted as the honest `(over-budget)`
+shape — the designed failure mode, confirmed working, not a crash or a
+silent truncation. The budget stays 35,000 (the window arithmetic was
+clean and unrelated to this bug). classify.py's explain-ability moves to
+the deferred chunked-reads rung (see the "Not built here" update above).
+Stale docstring numbers (the 21,598/34,341 raw-source snapshot) in
+`token_estimate.py` and `serving_ensemble_caller.py` are corrected to
+the rendered-block figures; the stale round-2 "NOT YET WIRED" comment on
+`SAFETY_FACTOR` is fixed (minor 3).
+
+**Blocker C — trigger 1 false-positived on small legitimate calls.**
+Round 2's trigger 1 (deep-overflow ratio) was ungated — it fired for any
+call whose ratio dipped below 0.42, including three confirmed real
+shapes with no truncation involved: a deferred decide-child (~40
+tokens), a run-verdict child (~260 tokens), and other tiny deferred
+calls, where small-N overhead (header/template tokens dominating a tiny
+real prompt) drives the ratio down. Fix: trigger 1 now shares trigger
+2's near-window gate (`projected_prompt_tokens > WINDOW * 0.8`) —
+verified to stop all three false positives while the live over-window
+case still fires. Also (minor 1) lowers the ratio floor 0.42 → 0.35: the
+measured in-window floor for the most over-projected density class
+(CJK+code) came in at 0.438, leaving only ~4% headroom at 0.42; 0.35
+gives ~25%. Coverage of the borderline ratio band isn't lost — the
+measured discard signature still catches it via trigger 2, independent
+of ratio. Division of labor, now documented at the constants: trigger 1
+= deep overflow on large projections, trigger 2 = the discard signature.
+
+**Minor 2 — the conservativeness tax, recorded honestly.** At safety
+factor 1.59, a single ASCII-source read admits roughly 22K REAL tokens
+of the 35K budget (`35,000 / 1.59 ≈ 22,000`) — about three medium repo
+files, or one large one, before the accumulator refuses further reads.
+That gap between the nominal budget and what it actually holds is the
+safety price paid for a uniformly conservative estimator across every
+density class (base64, PEM, CJK, ordinary source alike) rather than a
+per-density-aware one. It is not reclaimed here. The path to reclaiming
+it is #151's remainder: a server-queried window (rather than the
+hardcoded 40,960) and per-model-era threshold/factor re-measurement,
+which would let the safety margin tighten as real tokenizer behavior is
+re-verified rather than assumed conservative indefinitely.
