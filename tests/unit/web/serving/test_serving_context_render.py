@@ -12,8 +12,10 @@ import json
 from llm_orc.core.session.messages import ChatMessage
 from llm_orc.web.serving.chunks import ClientToolCall
 from llm_orc.web.serving.serving_ensemble_caller import (
+    _READ_TOKEN_BUDGET,
     _glob_pattern,
     _outcome_chunks,
+    _projected_tokens,
     _render_context,
     _tool_result_ack,
 )
@@ -472,15 +474,22 @@ def test_a_file_between_the_old_and_new_read_cap_now_renders_whole() -> None:
 
 
 def test_multi_file_read_accumulation_refuses_the_crossing_read() -> None:
-    # C1 (#145 pre-flight, blocking): the accumulator's TOTAL rendered-read
-    # bytes are bounded, not just each file's own cap — two large held
-    # reads (60,000 bytes each, well under the 96KB per-file cap) render
-    # whole; a third read of the same size would push the running total
-    # (120,000 + 60,030) past _READ_TOTAL_BUDGET (131,072), so it refuses
-    # instead of silently blowing the window (measured: three real ~58,100-
-    # token reads returned prompt_eval_count 20,482, a third of what was
-    # sent).
-    body = "x" * 60000
+    # C1 (#145 pre-flight, blocking) + BLOCKER 1 (review round 1): the
+    # accumulator's TOTAL PROJECTED-TOKEN cost is bounded, not just each
+    # file's own byte cap — two large held reads (15,000 projected tokens
+    # each, well under the 96KB per-file cap) render whole; a third read of
+    # the same size would push the running total (30,000 + ~15,008) past
+    # _READ_TOKEN_BUDGET (34,000), so it refuses instead of silently
+    # blowing the window (measured: three real ~58,100-token reads
+    # returned prompt_eval_count 20,482, a third of what was sent).
+    #
+    # A word-dense body (space-separated single-char "words") is required
+    # here: each word is its own ASCII word-char run, so the estimator
+    # counts it as exactly one projected token. A repeated-character body
+    # like "x" * N would NOT exercise this budget at all — it collapses to
+    # a SINGLE run (~1 token, regardless of length) — which is exactly why
+    # char-length was the wrong unit for the budget (BLOCKER 1).
+    body = "a " * 15000
     messages = [
         ChatMessage(role="user", content="fix big1.py, big2.py, and big3.py"),
         ChatMessage(
@@ -502,15 +511,16 @@ def test_multi_file_read_accumulation_refuses_the_crossing_read() -> None:
     assert "[read big1.py]" in rendered
     assert "[read big2.py]" in rendered
     assert "[read big3.py (over-budget)]" in rendered
-    assert rendered.count(body) == 2
 
 
 def test_budget_refusal_never_drops_an_already_held_block() -> None:
     # C1 pin: the earlier-held reads' bodies stay COMPLETE — the budget
     # refusal only ever affects the new crossing read, never truncates or
     # evicts an already-fitting one (the anti-read-loop exemption: dropping
-    # a held read would make classify re-request it).
-    body = "x" * 60000
+    # a held read would make classify re-request it). Word-dense bodies,
+    # see the comment above (BLOCKER 1: char-length does not exercise the
+    # token budget).
+    body = "a " * 15000
     messages = [
         ChatMessage(role="user", content="fix big1.py, big2.py, and big3.py"),
         ChatMessage(
@@ -531,7 +541,211 @@ def test_budget_refusal_never_drops_an_already_held_block() -> None:
 
     assert "[read big1.py (over-budget)]" not in rendered
     assert "[read big2.py (over-budget)]" not in rendered
-    assert body in rendered  # at least one full body survives intact
+    assert body.strip() in rendered  # at least one full body survives intact
+
+
+def test_projected_tokens_is_conservative_across_density_classes() -> None:
+    """BLOCKER 1 (review round 1): the estimator must never UNDER-count —
+    for each density class, projected tokens implied by the review's
+    measured real chars/token ratio must not exceed what the estimator
+    reports, so the budget check never admits more real tokens than it
+    thinks it does. A 10% tolerance absorbs this fixture being one sample,
+    not the review's full corpus.
+
+    Reality-check table (review round 1, real chars/token): ASCII Python
+    4.0, JSON 2.07, CJK 1.99, emoji 1.0.
+    """
+    ascii_fixture = (
+        "def divide(a, b):\n"
+        "    if b == 0:\n"
+        '        raise ValueError("cannot divide by zero")\n'
+        "    return a / b\n\n\n"
+        "def percent(part, whole):\n"
+        "    return divide(part, whole) * 100\n"
+    ) * 20
+    json_fixture = (
+        '{"name": "test", "values": [1, 2, 3, 4, 5], '
+        '"nested": {"a": true, "b": null, "c": 3.14159}, '
+        '"list_of_objs": [{"id": 1, "tag": "x"}, {"id": 2, "tag": "y"}]}'
+    ) * 20
+    cjk_fixture = (
+        "这是一个测试文件用于验证读取上限的计算方式是否正确并且能够处理中文字符"
+    ) * 20
+    emoji_fixture = "🎉🚀🔥💯😀😃😄😁😆😅😂🤣☺️😊😇🙂🙃😉😌😍🥰😘" * 20
+
+    density_classes = (
+        ("ascii", ascii_fixture, 4.0),
+        ("json", json_fixture, 2.07),
+        ("cjk", cjk_fixture, 1.99),
+        ("emoji", emoji_fixture, 1.0),
+    )
+    for name, text, real_chars_per_token in density_classes:
+        implied_real_tokens = len(text) / real_chars_per_token
+        estimated = _projected_tokens(text)
+        assert estimated >= implied_real_tokens * 0.90, (
+            f"{name}: estimated {estimated} tokens is not conservative "
+            f"against the implied real {implied_real_tokens:.0f}"
+        )
+
+
+def test_low_token_density_json_file_refuses_despite_fitting_the_byte_cap() -> None:
+    # BLOCKER 1's demonstrating case: a ~90KB JSON file (under the 96KB
+    # per-file byte cap, so the coarse whole-file-or-refuse gate admits it)
+    # but its low real chars/token density (JSON ~2.07) means its
+    # projected token count alone (~50,900) crosses _READ_TOKEN_BUDGET
+    # (34,000) — refused at the FIRST read, before any other file is held.
+    # This is exactly what the char-denominated budget missed: a same-size
+    # file passed both old caps and silently overflowed the window.
+    json_unit = (
+        '{"id": 1, "name": "item", "values": [1, 2, 3, 4, 5], '
+        '"active": true, "meta": {"a": 1, "b": null}}, '
+    )
+    json_blob = "[" + json_unit * 909 + "]"
+    assert len(json_blob) < 98304  # under the per-file byte cap
+
+    messages = [
+        ChatMessage(role="user", content="fix data.json"),
+        ChatMessage(
+            role="assistant", content=None, tool_calls=(_read_call("c1", "data.json"),)
+        ),
+        ChatMessage(role="tool", tool_call_id="c1", content=json_blob),
+    ]
+
+    rendered = _render_context(messages)
+
+    assert "[read data.json (over-budget)]" in rendered
+    assert "[read data.json]" not in rendered
+
+
+def test_high_char_low_density_ascii_source_still_admits() -> None:
+    # The companion case: an ~80KB ASCII source file (classify.py's real
+    # shape) has HIGH real chars/token density (~4.0), so its projected
+    # token count (~24,200) stays comfortably under the 34,000 budget —
+    # admitted, matching the design doc's own classify.py measurement
+    # (~25K projected, admitted).
+    py_unit = (
+        "def compute_value(a, b, c):\n"
+        "    if a > b:\n"
+        "        return a - b + c\n"
+        "    return b - a + c\n\n"
+    )
+    py_blob = py_unit * 898
+    assert len(py_blob) < 98304  # under the per-file byte cap
+
+    messages = [
+        ChatMessage(role="user", content="fix source.py"),
+        ChatMessage(
+            role="assistant", content=None, tool_calls=(_read_call("c1", "source.py"),)
+        ),
+        ChatMessage(role="tool", tool_call_id="c1", content=py_blob),
+    ]
+
+    rendered = _render_context(messages)
+
+    assert "[read source.py]" in rendered
+    assert "(over-budget)" not in rendered
+
+
+def test_budget_boundary_pin_exact_admits_plus_one_refuses() -> None:
+    # minor 1 (review round 1, B2 mutant): the exact boundary of the `>`
+    # comparison — a block that projects to EXACTLY _READ_TOKEN_BUDGET
+    # tokens is admitted; one token more refuses. Word count is derived
+    # (not hand-computed) because the header itself ("assistant: [read
+    # boundary.py]") carries its own fixed token overhead.
+    from llm_orc.web.serving.serving_ensemble_caller import _indent_body
+
+    def block_tokens(word_count: int) -> int:
+        body = "a " * word_count
+        block = f"assistant: [read boundary.py]\n{_indent_body(body)}"
+        return _projected_tokens(block)
+
+    overhead = block_tokens(0)
+    at_budget_words = _READ_TOKEN_BUDGET - overhead
+    over_budget_words = at_budget_words + 1
+
+    def render_with(word_count: int) -> str:
+        body = "a " * word_count
+        messages = [
+            ChatMessage(role="user", content="fix boundary.py"),
+            ChatMessage(
+                role="assistant",
+                content=None,
+                tool_calls=(_read_call("c1", "boundary.py"),),
+            ),
+            ChatMessage(role="tool", tool_call_id="c1", content=body),
+        ]
+        return _render_context(messages)
+
+    at_budget = render_with(at_budget_words)
+    assert "[read boundary.py]" in at_budget
+    assert "(over-budget)" not in at_budget
+
+    over_budget = render_with(over_budget_words)
+    assert "[read boundary.py (over-budget)]" in over_budget
+
+
+def test_failed_read_costs_nothing_toward_the_token_budget() -> None:
+    # minor 2 (review round 1, B5 mutant): a `(failed)` block sitting
+    # between two held reads must contribute ZERO to the running budget
+    # total, and must stay `(failed)` unaffected. A(20,000) + a failed
+    # read + C(13,000) = 33,000 <= 34,000 fits ONLY if the failed read
+    # truly cost nothing — a mutant that let it count even a little would
+    # push C over budget.
+    a_body = "a " * 20000
+    c_body = "a " * 13000
+    messages = [
+        ChatMessage(role="user", content="fix a.py, gone.py, and c.py"),
+        ChatMessage(
+            role="assistant", content=None, tool_calls=(_read_call("c1", "a.py"),)
+        ),
+        ChatMessage(role="tool", tool_call_id="c1", content=a_body),
+        ChatMessage(
+            role="assistant", content=None, tool_calls=(_read_call("c2", "gone.py"),)
+        ),
+        ChatMessage(role="tool", tool_call_id="c2", content=""),  # empty -> failed
+        ChatMessage(
+            role="assistant", content=None, tool_calls=(_read_call("c3", "c.py"),)
+        ),
+        ChatMessage(role="tool", tool_call_id="c3", content=c_body),
+    ]
+
+    rendered = _render_context(messages)
+
+    assert "[read a.py]" in rendered
+    assert "[read gone.py (failed)]" in rendered
+    assert "[read c.py]" in rendered
+    assert "[read c.py (over-budget)]" not in rendered
+
+
+def test_budget_order_dependence_first_read_wins() -> None:
+    # minor 5 (review round 1): DECIDED — first-read-wins stands (never-
+    # evict is the rule). Two files that each fit ALONE (20,000 tokens)
+    # but not TOGETHER (40,000 > 34,000): whichever is read first is the
+    # one that's held; swapping the read order flips which one refuses.
+    # The refusal reason also names the remedy plainly.
+    body = "a " * 20000
+
+    def render_order(first: str, second: str) -> str:
+        messages = [
+            ChatMessage(role="user", content=f"fix {first} and {second}"),
+            ChatMessage(
+                role="assistant", content=None, tool_calls=(_read_call("c1", first),)
+            ),
+            ChatMessage(role="tool", tool_call_id="c1", content=body),
+            ChatMessage(
+                role="assistant", content=None, tool_calls=(_read_call("c2", second),)
+            ),
+            ChatMessage(role="tool", tool_call_id="c2", content=body),
+        ]
+        return _render_context(messages)
+
+    a_first = render_order("a.py", "b.py")
+    assert "[read a.py]" in a_first
+    assert "[read b.py (over-budget)]" in a_first
+
+    b_first = render_order("b.py", "a.py")
+    assert "[read b.py]" in b_first
+    assert "[read a.py (over-budget)]" in b_first
 
 
 def test_line_number_gutter_is_stripped_from_read_content() -> None:

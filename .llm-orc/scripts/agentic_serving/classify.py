@@ -252,11 +252,14 @@ _READ_ATTEMPT_RE = re.compile(
     re.MULTILINE,
 )
 _READ_CAP_KB = 96
-# C1 (#145): mirrors the caller's _READ_TOTAL_BUDGET (131,072 bytes) —
-# classify.py runs standalone with no cross-boundary import (the same
-# reason _READ_CAP_KB above duplicates its caller's per-file cap), so the
-# number is repeated here for the over-budget refusal's wording.
-_READ_TOTAL_BUDGET_KB = 128
+# C1 (#145; re-denominated in tokens, BLOCKER 1 review round 1): mirrors
+# the caller's _READ_TOKEN_BUDGET exactly (same name, same unit — no KB
+# conversion needed this time) — classify.py runs standalone with no
+# cross-boundary import (the same reason _READ_CAP_KB above duplicates its
+# caller's per-file cap), so the number is repeated here for the
+# over-budget refusal's wording. The corpus pins the mirror with a drift
+# assert (MAJOR 2, review round 1).
+_READ_TOKEN_BUDGET = 34000
 # issue #83 run half: an imperative run verb with a tests object later in
 # the same sentence fragment ("run the unit tests", "rerun pytest", "run
 # every single one of the unit tests"). A named test_*.py file with a run
@@ -412,14 +415,16 @@ def _visibility(context: str) -> tuple[set[str], dict[str, str]]:
             attempted[basename] = "client read failed"
         elif variant == "over-budget":
             # C1 (#145): the caller already refused to render this read's
-            # body (it would have pushed the total held rendered-read bytes
-            # over budget) — name the budget and the files already holding
-            # it so the refusal is actionable, not just honest.
+            # body (it would have pushed the total held projected-token
+            # count over budget) — name the budget and the files already
+            # holding it, and state the remedy as its own plain sentence
+            # (minor 5, review round 1) so the refusal is actionable, not
+            # just honest.
             held = ", ".join(sorted(visible)) if visible else "other files"
             attempted[basename] = (
-                f"the {_READ_TOTAL_BUDGET_KB} KB total read budget is "
-                f"already held by {held} — start a fresh session or ask "
-                "about one file at a time"
+                f"the {_READ_TOKEN_BUDGET} projected-token read budget is "
+                f"already held by {held}. Start a fresh session, or ask "
+                "about one file at a time."
             )
     return visible, attempted
 
