@@ -160,3 +160,56 @@ recommending the action that just failed; the greedy single-wrapper
 precondition is pinned against the 81/81 wire evidence; and budget
 order-dependence is DECIDED: first-read-wins stands (never-evict is the
 rule), pinned and named in the refusal remedy.
+
+## Review round 2 (2026-08-13): BLOCKER 1 still open — v1 self-confirmed
+
+Round 1's conservativeness test validated `_projected_tokens` only
+against the round-1 reality-check TABLE on synthetic fixtures the
+formula itself was tuned against — self-confirming, not independent
+evidence. Round 2 measured against qwen3:8b's real tokenizer (fresh
+fixtures the round-1 formula never saw) and found v1 under-counts on 8
+of 10 classes: base64/PEM/hex as low as 7-12% of real. Root cause: v1
+counts a whole ASCII word-run as ONE token regardless of length, but
+BPE splits long high-entropy runs (base64, digests, long identifiers)
+into many subword tokens. A 94KB PEM cert passed both guards at "21%
+utilization" while its real prompt_eval_count showed the window had
+silently overflowed (the same discard signature: ~half the window,
+HTTP 200).
+
+Estimator v2 (adjudicated term list): ASCII word-runs <=30 chars cost 1
+unit, >30 chars scale as `ceil(len/1.3)` (measured high-entropy
+density), non-space punctuation and non-ASCII word characters cost 1
+unit each, newlines cost 1 unit each, runs of >=2 spaces (indentation)
+cost 1 unit each — total times a safety factor derived from measurement,
+not asserted.
+
+Ground truth (rig-measured, qwen3:8b, `/api/chat`, `think:false`,
+`num_predict:1`, minus a verified 17-token chat-template overhead):
+the reviewer's ten round-2 fixture classes plus five real repo files
+(classify.py, subagent_adapter.py, serving_ensemble_caller.py, emit.py,
+accept_gather.py). Frozen table, dated, generation command documented:
+`tests/unit/web/serving/test_token_estimate_ground_truth.py`. Worst
+v2-before-factor ratio: PEM certificate at 0.6630 (the base64 alphabet's
+`+`/`/`/`=` chop an otherwise-long entropy run into pieces <=30 chars
+each, so the length-scaling rule rarely engages). Smallest factor
+clearing every fixture with >=5% margin: **1.5837, rounds to 1.59**.
+
+**Open fork (not resolved here — reported per instruction, not silently
+decided):** at factor 1.59, classify.py's own projected count is 34,341
+> `_READ_TOKEN_BUDGET` (34,000) — a real repo file failing to admit is
+the exact regression #145 exists to prevent. The max factor keeping
+classify.py under budget is ~1.574; PEM's 5% margin needs ~1.584 — about
+a 1% gap. `src/llm_orc/web/serving/token_estimate.py` implements and
+validates v2 as a standalone module (green, tested, dated ground truth)
+but it is **not wired into the live budget** — `serving_ensemble_caller.py`
+still runs v1. `test_classify_py_sanity_constraint_conflict_is_open` pins
+the conflict as a known, open fact so it fails loudly (not silently) the
+moment either number changes. Options for the lead: raise the budget
+past 34,341 (eats into the generation-margin reasoning the 34,000 figure
+was itself derived from); accept less than 5% margin specifically for
+the least-repo-realistic fixture class (PEM/high-entropy binary-ish
+content); or refine the v2 formula's entropy-run detection to not be
+defeated by base64's punctuation characters. Runtime backstop (Part 2 of
+the round-2 ask, implementing #151's core) is deferred alongside this —
+its 0.5 detection threshold's safety margin is derived assuming factor
+<=1.5, so it depends on this fork's resolution too.
