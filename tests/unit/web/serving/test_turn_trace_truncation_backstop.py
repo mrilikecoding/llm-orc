@@ -13,6 +13,7 @@ actually dispatched, and flag the turn when either trigger fires.
 from __future__ import annotations
 
 import json
+import math
 from typing import Any
 
 from llm_orc.web.serving.turn_trace import (
@@ -24,8 +25,8 @@ from llm_orc.web.serving.turn_trace import (
 
 
 def test_deep_truncation_ratio_trigger_fires() -> None:
-    # trigger 1: prompt_eval_count far below the projected prompt size —
-    # catches deep overflow directly, independent of window arithmetic.
+    # trigger 1: prompt_eval_count far below the projected prompt size,
+    # on a near-window-sized dispatch — catches deep overflow directly.
     assert _truncation_detected(prompt_eval_count=5000, projected_prompt_tokens=47700)
 
 
@@ -33,35 +34,55 @@ def test_discard_signature_trigger_fires() -> None:
     # trigger 2: the measured discard SIGNATURE — both real captured
     # over-window prompts returned exactly prompt_eval_count == WINDOW//2
     # + 2, regardless of ratio. 20,482 vs a 41,000-token projected prompt
-    # gives ratio ~0.4996 (ABOVE the 0.42 ratio floor — trigger 1 alone
-    # would miss this), but it lands within the signature band and the
-    # prompt is plausibly near-window sized, so trigger 2 catches it.
+    # gives ratio ~0.4996 (ABOVE trigger 1's 0.35 ratio floor — trigger 1
+    # alone would miss this), but it lands within the signature band and
+    # the prompt is plausibly near-window sized, so trigger 2 catches it.
     assert _truncation_detected(prompt_eval_count=20482, projected_prompt_tokens=41000)
 
 
 def test_in_window_cjk_shaped_ratio_does_not_fire() -> None:
-    # estimator v2's most over-projected measured density class (CJK+code,
-    # ~2.15x real — test_token_estimate_ground_truth.py) puts a legitimate
-    # in-window call's ratio as low as ~0.465. This fixture sits just
-    # above the 0.42 floor and well under the near-window gate for trigger
-    # 2 (10,000 << WINDOW * 0.8) — neither trigger may fire.
+    # review round 3 minor 1: the measured in-window floor for estimator
+    # v2's most over-projected density class (CJK+code) came in at 0.438
+    # (superseding the earlier ~0.465 estimate). This fixture sits at
+    # that exact floor on a NEAR-WINDOW-sized dispatch (projected >
+    # WINDOW * 0.8, so trigger 1's gate is satisfied and this genuinely
+    # exercises the ratio comparison, not just the gate) — 0.35 leaves
+    # ~25% headroom below it, comfortably clear.
+    projected = int(WINDOW * 0.85)
+    prompt_eval_count = int(projected * 0.438)
     assert not _truncation_detected(
-        prompt_eval_count=4650, projected_prompt_tokens=10000
+        prompt_eval_count=prompt_eval_count, projected_prompt_tokens=projected
     )
 
 
 def test_in_window_normal_ratio_does_not_fire() -> None:
+    projected = int(WINDOW * 0.85)
+    prompt_eval_count = int(projected * 0.9)
     assert not _truncation_detected(
-        prompt_eval_count=9000, projected_prompt_tokens=10000
+        prompt_eval_count=prompt_eval_count, projected_prompt_tokens=projected
     )
 
 
 def test_ratio_at_ceiling_of_the_deep_trigger_does_not_fire() -> None:
-    # boundary: exactly at the 0.42 floor is NOT "less than" it — the
-    # trigger is a strict `<`, so equality must not fire (paired with the
-    # deep-overflow test above, which fires comfortably below it).
+    # boundary: the SMALLEST integer prompt_eval_count that does not fall
+    # strictly below the 0.35 floor (ceil, not int-truncation, so this is
+    # genuinely at-or-just-above the boundary rather than accidentally
+    # under it) — paired with the deep-overflow test above, which fires
+    # comfortably below it. Kept on a near-window-sized dispatch so the
+    # gate doesn't mask the ratio boundary itself.
+    projected = int(WINDOW * 0.85)
+    prompt_eval_count = math.ceil(projected * 0.35)
     assert not _truncation_detected(
-        prompt_eval_count=4200, projected_prompt_tokens=10000
+        prompt_eval_count=prompt_eval_count, projected_prompt_tokens=projected
+    )
+
+
+def test_just_below_the_deep_trigger_ceiling_fires() -> None:
+    # the pin's other half: one token below the boundary above DOES fire.
+    projected = int(WINDOW * 0.85)
+    prompt_eval_count = math.ceil(projected * 0.35) - 1
+    assert _truncation_detected(
+        prompt_eval_count=prompt_eval_count, projected_prompt_tokens=projected
     )
 
 
@@ -83,11 +104,11 @@ def test_signature_band_edge_fires_inclusive() -> None:
 
 
 def test_signature_band_edge_plus_one_does_not_fire_on_trigger_2_alone() -> None:
-    # one past the band, and the ratio (>> 0.42 for this projected size)
-    # doesn't trip trigger 1 either.
+    # one past the band, and the ratio (far above 0.35 for this projected
+    # size) doesn't trip trigger 1 either.
     projected = int(WINDOW * 0.9)
     prompt_eval_count = WINDOW // 2 + 65
-    assert prompt_eval_count >= projected * 0.42  # trigger 1 does not fire
+    assert prompt_eval_count >= projected * 0.35  # trigger 1 does not fire
     assert not _truncation_detected(
         prompt_eval_count=prompt_eval_count, projected_prompt_tokens=projected
     )
@@ -97,6 +118,29 @@ def test_zero_projected_never_flags() -> None:
     # no dispatch_input to project from -> nothing to compare against;
     # must never divide by zero or produce a spurious flag.
     assert not _truncation_detected(prompt_eval_count=0, projected_prompt_tokens=0)
+
+
+# --- review round 3 blocker C: trigger 1 gated on near-window sizing,
+# same as trigger 2 — three real false-positive shapes the ungated
+# version wrongly flagged (small, legitimate deferred-decide/verdict
+# calls whose ratio happens to dip low purely from small-N overhead, not
+# truncation). All three have projected << WINDOW * 0.8, so the gate
+# alone protects them regardless of ratio. ---
+
+
+def test_deferred_decide_child_shape_does_not_fire() -> None:
+    # ~40 projected tokens, a ratio that would have tripped the old
+    # ungated 0.42 (and would still trip the new 0.35) threshold on its
+    # own — the near-window gate is the only thing that saves it.
+    assert not _truncation_detected(prompt_eval_count=12, projected_prompt_tokens=40)
+
+
+def test_verdict_child_shape_does_not_fire() -> None:
+    assert not _truncation_detected(prompt_eval_count=80, projected_prompt_tokens=260)
+
+
+def test_tiny_deferred_shape_does_not_fire() -> None:
+    assert not _truncation_detected(prompt_eval_count=4, projected_prompt_tokens=15)
 
 
 def test_truncation_check_flags_a_turn_with_deep_overflow() -> None:
