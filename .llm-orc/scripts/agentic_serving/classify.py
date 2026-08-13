@@ -252,14 +252,17 @@ _READ_ATTEMPT_RE = re.compile(
     re.MULTILINE,
 )
 _READ_CAP_KB = 96
-# C1 (#145; re-denominated in tokens, BLOCKER 1 review round 1): mirrors
+# C1 (#145; re-denominated in tokens, BLOCKER 1 review rounds 1-2): mirrors
 # the caller's _READ_TOKEN_BUDGET exactly (same name, same unit — no KB
 # conversion needed this time) — classify.py runs standalone with no
 # cross-boundary import (the same reason _READ_CAP_KB above duplicates its
-# caller's per-file cap), so the number is repeated here for the
-# over-budget refusal's wording. The corpus pins the mirror with a drift
-# assert (MAJOR 2, review round 1).
-_READ_TOKEN_BUDGET = 34000
+# caller's per-file cap). 35,000 (review round 2 fork resolution): the
+# caller-side constant is the derivation's home (see
+# serving_ensemble_caller.py's own comment); the number here exists only
+# to keep the drift assert (MAJOR 2, review round 1) meaningful — the
+# over-budget refusal's wording (below) speaks in plain terms and does
+# not display the raw figure.
+_READ_TOKEN_BUDGET = 35000
 # issue #83 run half: an imperative run verb with a tests object later in
 # the same sentence fragment ("run the unit tests", "rerun pytest", "run
 # every single one of the unit tests"). A named test_*.py file with a run
@@ -419,12 +422,15 @@ def _visibility(context: str) -> tuple[set[str], dict[str, str]]:
             # count over budget) — name the budget and the files already
             # holding it, and state the remedy as its own plain sentence
             # (minor 5, review round 1) so the refusal is actionable, not
-            # just honest.
+            # just honest. Plain terms (review round 2): "the session read
+            # budget", not the raw projected-token figure — the number
+            # isn't actionable to a user, only the remedy is. _READ_TOKEN_
+            # BUDGET stays mirrored (drift-asserted) even though it no
+            # longer appears in this string.
             held = ", ".join(sorted(visible)) if visible else "other files"
             attempted[basename] = (
-                f"the {_READ_TOKEN_BUDGET} projected-token read budget is "
-                f"already held by {held}. Start a fresh session, or ask "
-                "about one file at a time."
+                f"the session read budget is already held by {held}. "
+                "Start a fresh session, or ask about one file at a time."
             )
     return visible, attempted
 
