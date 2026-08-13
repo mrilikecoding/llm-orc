@@ -66,7 +66,7 @@ buy-back ledger tracks hosted seats.
 | Arm 0 pre-fix (v0.18.14) | 2/3/4 | 25/39 | 3 (one per run) | `docs/plans/2026-07-1{4,5}-arm0-runs/` |
 | Arm 0 post-fix (main 2026-08-12) | 5 | 11/13 | 0 | `docs/plans/2026-08-12-arm0-run5/` |
 | Arm 2a Haiku 4.5 | 1, 2, 3 | 13/13, 11/13, 11/13 | 0, 2, 2 | `docs/plans/2026-07-15-arm2-runs/`, `2026-08-12-arm2-runs/` |
-| Arm 2b Sonnet | 1, 2 | 13/13, 13/13 | 0, 0 | `docs/plans/2026-07-15-arm2-runs/`, `2026-08-12-arm2-runs/` |
+| Arm 2b Sonnet | 1, 2, 3 | 13/13 x3 | 0 | `docs/plans/2026-07-15-arm2-runs/`, `2026-08-12-arm2-runs/` |
 | Arm 1 (paid) | 0 | — | — | go/no-go pending |
 
 Versions differ across rows; do not pool. Caveats: parity table v1
@@ -91,7 +91,7 @@ Done:
 
 Remaining, in order:
 
-- [ ] #131 — Arm-2 runs to n=3 per model (Haiku run 3; Sonnet runs 2–3), each independently J-scored
+- [x] #131 — Arm-2 runs at n=3 per model, all independently J-scored (Haiku 35/39, 4 dishonest; Sonnet 39/39, 0)
 - [ ] #131 — Arm-1 go/no-go (one turn's tokens), then ≥3 paid runs per model
 - [ ] #146 — release v0.18.15
 - [ ] #143 #145 #121 #144 — meta-task rungs (recall recovery, repo-scale reads, content-grep, dot-dir)
