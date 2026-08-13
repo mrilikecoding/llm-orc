@@ -93,7 +93,7 @@ _CTX_TOKEN_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]{2,}")
 # Client-read file blocks (issue #83): whole-file-or-refuse — a truncated
 # module fails imports in the sandbox, so an over-cap read refuses honestly
 # instead of materializing a corrupted file.
-_READ_FILE_CAP = 24576
+_READ_FILE_CAP = 98304
 _READ_FAIL_REASON_CAP = 200
 # Client-run output blocks (issue #83, run half): the TAIL is kept on
 # overflow — pytest prints its summary last, and the deterministic verdict

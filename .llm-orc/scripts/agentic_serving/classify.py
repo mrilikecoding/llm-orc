@@ -249,7 +249,7 @@ _VISIBLE_HEADER_RE = re.compile(
 _READ_ATTEMPT_RE = re.compile(
     r"^assistant: \[read ([^\]]+?)( \((failed|oversize)\))?\]", re.MULTILINE
 )
-_READ_CAP_KB = 24
+_READ_CAP_KB = 96
 # issue #83 run half: an imperative run verb with a tests object later in
 # the same sentence fragment ("run the unit tests", "rerun pytest", "run
 # every single one of the unit tests"). A named test_*.py file with a run
