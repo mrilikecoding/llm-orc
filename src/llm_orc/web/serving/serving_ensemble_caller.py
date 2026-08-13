@@ -95,6 +95,27 @@ _CTX_TOKEN_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]{2,}")
 # instead of materializing a corrupted file.
 _READ_FILE_CAP = 98304
 _READ_FAIL_REASON_CAP = 200
+# C1 (#145 pre-flight, blocking): the read accumulator re-renders EVERY
+# held read every turn, unbounded — at the 96KB/file cap above, 2-3 held
+# reads cross the model's context window (measured: three real files
+# ~58,100 projected tokens returned prompt_eval_count 20,482, a silent
+# third of what was sent, reproduced with a cache-busting nonce). A total
+# rendered-read-bytes budget bounds it: keep the whole dispatch_input
+# under ~36K projected tokens with generation margin.
+#
+# Held blocks are NEVER evicted (the anti-read-loop exemption stands — see
+# _select_read_blocks) — a NEW read that would push the running total over
+# budget renders as a bodyless "(over-budget)" refusal instead, so it
+# never enters the accumulator. classify's _visibility treats that variant
+# exactly like a failed/oversize read: refused honestly, never re-
+# requested, naming the held files and the budget.
+#
+# SEAM CHOICE: the check lives HERE, at render time, not as a request-time
+# check in classify. classify only knows a path is unread — it never
+# learns the file's SIZE until the client's read result comes back, so a
+# request-time budget check has nothing to compare against. The budget can
+# only be enforced once the size is known, which is here.
+_READ_TOTAL_BUDGET = 131072
 # Client-run output blocks (issue #83, run half): the TAIL is kept on
 # overflow — pytest prints its summary last, and the deterministic verdict
 # parser reads exactly that summary.
@@ -259,13 +280,46 @@ def _select_read_blocks(
 ) -> list[str]:
     """Latest read block per path (issue #83), joined from the FULL history —
     exempt from the selected-block cap: dropping one would make classify
-    re-request it (a read loop). A later write of the same path supersedes."""
+    re-request it (a read loop). A later write of the same path supersedes.
+    The total-bytes budget (C1, #145) still applies — see
+    ``_budget_read_blocks``."""
     written_paths = {path for path, _ in _select_written_files(list(messages), task)}
-    latest_reads: dict[str, str] = {}
-    for path, block in _read_blocks(messages):
+    latest_reads: dict[str, tuple[str, bool]] = {}
+    for path, block, is_full in _read_blocks(messages):
         if path not in written_paths and path not in tail_paths:
-            latest_reads[path] = block
-    return list(latest_reads.values())
+            latest_reads[path] = (block, is_full)
+    return _budget_read_blocks(latest_reads)
+
+
+def _budget_read_blocks(latest_reads: dict[str, tuple[str, bool]]) -> list[str]:
+    """Cap the TOTAL bytes of held (whole-body) read blocks at
+    ``_READ_TOTAL_BUDGET`` (C1). Blocks accumulate in the dict's insertion
+    order — each distinct path's chronological first-occurrence order, set
+    by ``_select_read_blocks`` — which is deterministic across turns:
+    replaying the same read history always produces the same accept/refuse
+    split, so a block that fit on an earlier turn still fits now (never
+    evicted) and a block that didn't fit stays refused rather than
+    flapping turn to turn.
+
+    A block that is already a refused/oversize/failed variant (``is_full``
+    False, no body) costs nothing against the budget and passes through
+    untouched. A whole-body block whose addition would cross the budget
+    renders instead as a bodyless "(over-budget)" refusal — never a
+    truncated body, never silently dropped from the accumulator.
+    """
+    kept: list[str] = []
+    total = 0
+    for path, (block, is_full) in latest_reads.items():
+        if not is_full:
+            kept.append(block)
+            continue
+        cost = len(block)
+        if total + cost > _READ_TOTAL_BUDGET:
+            kept.append(f"assistant: [read {path} (over-budget)]")
+            continue
+        kept.append(block)
+        total += cost
+    return kept
 
 
 def _whole_blocks_within_cap(blocks: list[str]) -> list[str]:
@@ -644,10 +698,12 @@ def _normalize_read(content: str) -> str:
     return "\n".join(lines).strip()
 
 
-def _render_read_block(path: str, raw: str) -> str:
-    """A read result as a context block (issue #83 grammar). Failure and
-    oversize variants are single header lines so gather never materializes
-    them and classify can refuse instead of re-requesting (one-round bound).
+def _render_read_block(path: str, raw: str) -> tuple[str, bool]:
+    """(block, is_full) for a read result rendered as a context block (issue
+    #83 grammar). Failure and oversize variants are single header lines so
+    gather never materializes them and classify can refuse instead of
+    re-requesting (one-round bound); ``is_full`` is False for these so C1's
+    total-bytes budget (``_budget_read_blocks``) never counts them.
 
     OpenCode's <content>-wrapped success form (captured wire, 2026-07-09) is
     checked BEFORE the failure-prefix heuristic — a structural check, so a
@@ -656,31 +712,32 @@ def _render_read_block(path: str, raw: str) -> str:
     """
     flat = " ".join((raw or "").strip().split())
     if not flat:
-        return f"assistant: [read {path} (failed)] empty read result"
+        return f"assistant: [read {path} (failed)] empty read result", False
     if "<content>" not in raw:
         lowered = flat.lower()
         if lowered.startswith("file not found") or lowered.startswith("error"):
             reason = flat[:_READ_FAIL_REASON_CAP]
-            return f"assistant: [read {path} (failed)] {reason}"
+            return f"assistant: [read {path} (failed)] {reason}", False
     normalized = _normalize_read(raw)
     if len(normalized) > _READ_FILE_CAP:
-        return f"assistant: [read {path} (oversize)]"
-    return f"assistant: [read {path}]\n{_indent_body(normalized)}"
+        return f"assistant: [read {path} (oversize)]", False
+    return f"assistant: [read {path}]\n{_indent_body(normalized)}", True
 
 
-def _read_blocks(messages: Sequence[Any]) -> list[tuple[str, str]]:
-    """(path, block) for every tool result answering a read-shaped call,
-    in wire order. Selected from the FULL history: on the resume pass the
-    read result sits after the last user message."""
+def _read_blocks(messages: Sequence[Any]) -> list[tuple[str, str, bool]]:
+    """(path, block, is_full) for every tool result answering a read-shaped
+    call, in wire order. Selected from the FULL history: on the resume pass
+    the read result sits after the last user message."""
     call_paths = _call_field_map(messages, _is_read_shaped, "filePath")
-    blocks: list[tuple[str, str]] = []
+    blocks: list[tuple[str, str, bool]] = []
     for message in messages:
         if getattr(message, "role", None) != "tool":
             continue
         path = call_paths.get(getattr(message, "tool_call_id", None) or "")
         if path:
             content = getattr(message, "content", None)
-            blocks.append((path, _render_read_block(path, content or "")))
+            block, is_full = _render_read_block(path, content or "")
+            blocks.append((path, block, is_full))
     return blocks
 
 

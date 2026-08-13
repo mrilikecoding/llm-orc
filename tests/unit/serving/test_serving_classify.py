@@ -291,6 +291,28 @@ def test_read_cap_mirror_stays_in_sync() -> None:
     assert _READ_FILE_CAP == _READ_CAP_KB * 1024
 
 
+def test_over_budget_read_attempt_refuses_naming_the_budget_and_held_files() -> None:
+    # C1 (#145): the caller marks a read that would cross the total-bytes
+    # budget with an "(over-budget)" variant (never re-rendering its body,
+    # never entering the accumulator) — classify treats it exactly like a
+    # failed/oversize read: refuse instead of re-requesting, naming the
+    # budget and the files already held so the user can act (start a fresh
+    # session or ask about one file at a time).
+    context = (
+        "assistant: [read big1.py]\ndef a(): pass\n"
+        "assistant: [read big2.py]\ndef b(): pass\n"
+        "assistant: [read big3.py (over-budget)]"
+    )
+    decision = _classify(
+        {"task": "write tests for existing big3.py", "context": context}
+    )
+    assert decision["needs_files"] == []
+    assert "could not read big3.py" in decision["read_failed"]
+    assert "128" in decision["read_failed"]
+    assert "big1.py" in decision["read_failed"]
+    assert "big2.py" in decision["read_failed"]
+
+
 def test_explain_turn_never_requests_a_read() -> None:
     # storage.py is not visible on the wire: the grounded-explain gate
     # routes to the honest not-grounded refusal (never the read seam —

@@ -471,6 +471,69 @@ def test_a_file_between_the_old_and_new_read_cap_now_renders_whole() -> None:
     assert "(oversize)" not in rendered
 
 
+def test_multi_file_read_accumulation_refuses_the_crossing_read() -> None:
+    # C1 (#145 pre-flight, blocking): the accumulator's TOTAL rendered-read
+    # bytes are bounded, not just each file's own cap — two large held
+    # reads (60,000 bytes each, well under the 96KB per-file cap) render
+    # whole; a third read of the same size would push the running total
+    # (120,000 + 60,030) past _READ_TOTAL_BUDGET (131,072), so it refuses
+    # instead of silently blowing the window (measured: three real ~58,100-
+    # token reads returned prompt_eval_count 20,482, a third of what was
+    # sent).
+    body = "x" * 60000
+    messages = [
+        ChatMessage(role="user", content="fix big1.py, big2.py, and big3.py"),
+        ChatMessage(
+            role="assistant", content=None, tool_calls=(_read_call("c1", "big1.py"),)
+        ),
+        ChatMessage(role="tool", tool_call_id="c1", content=body),
+        ChatMessage(
+            role="assistant", content=None, tool_calls=(_read_call("c2", "big2.py"),)
+        ),
+        ChatMessage(role="tool", tool_call_id="c2", content=body),
+        ChatMessage(
+            role="assistant", content=None, tool_calls=(_read_call("c3", "big3.py"),)
+        ),
+        ChatMessage(role="tool", tool_call_id="c3", content=body),
+    ]
+
+    rendered = _render_context(messages)
+
+    assert "[read big1.py]" in rendered
+    assert "[read big2.py]" in rendered
+    assert "[read big3.py (over-budget)]" in rendered
+    assert rendered.count(body) == 2
+
+
+def test_budget_refusal_never_drops_an_already_held_block() -> None:
+    # C1 pin: the earlier-held reads' bodies stay COMPLETE — the budget
+    # refusal only ever affects the new crossing read, never truncates or
+    # evicts an already-fitting one (the anti-read-loop exemption: dropping
+    # a held read would make classify re-request it).
+    body = "x" * 60000
+    messages = [
+        ChatMessage(role="user", content="fix big1.py, big2.py, and big3.py"),
+        ChatMessage(
+            role="assistant", content=None, tool_calls=(_read_call("c1", "big1.py"),)
+        ),
+        ChatMessage(role="tool", tool_call_id="c1", content=body),
+        ChatMessage(
+            role="assistant", content=None, tool_calls=(_read_call("c2", "big2.py"),)
+        ),
+        ChatMessage(role="tool", tool_call_id="c2", content=body),
+        ChatMessage(
+            role="assistant", content=None, tool_calls=(_read_call("c3", "big3.py"),)
+        ),
+        ChatMessage(role="tool", tool_call_id="c3", content=body),
+    ]
+
+    rendered = _render_context(messages)
+
+    assert "[read big1.py (over-budget)]" not in rendered
+    assert "[read big2.py (over-budget)]" not in rendered
+    assert body in rendered  # at least one full body survives intact
+
+
 def test_line_number_gutter_is_stripped_from_read_content() -> None:
     body = "00001| def divide(a, b):\n00002|     return a / b"
     messages = [
