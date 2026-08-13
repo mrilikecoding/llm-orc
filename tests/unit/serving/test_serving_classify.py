@@ -25,8 +25,13 @@ CLASSIFY = SCRIPTS / "classify.py"
 sys.path.insert(0, str(SCRIPTS))
 from classify import (  # type: ignore  # noqa: E402
     _explain_stems,
+    _latest_glob_listing,
     _ledger_recap,
     _valid_recall_answer,
+)
+
+from llm_orc.web.serving.serving_ensemble_caller import (  # noqa: E402
+    _render_glob_block,
 )
 
 
@@ -681,6 +686,218 @@ def test_multiple_glob_candidates_refuse_naming_them() -> None:
     assert decision["needs_glob"] == ""
     assert "/a/storage.py" in decision["glob_failed"]
     assert "/b/storage_utils.py" in decision["glob_failed"]
+
+
+def test_truncated_single_stem_listing_refuses_with_the_truncation_reason() -> None:
+    # #148 BLOCKER 1: the listing DOES contain a stem-matching path that
+    # survived the 50-path cap (mtime-ordered, so which 50 survive is
+    # nondeterministic) — classify still must not ground on it, a coin-flip
+    # subset. But the refusal reason changed: the old "no file matching"
+    # wording is a claim the wire itself contradicts (/work/storage.py IS
+    # right there in the block) — truncation gets its own truthful,
+    # actionable reason instead. M3's no-re-glob pin: needs_glob stays
+    # empty too, so this never re-issues a doomed second glob round.
+    context = "assistant: [globbed storage (truncated)]\n  /work/storage.py"
+    decision = _classify(
+        {"task": "write tests for the storage module", "context": context}
+    )
+    assert decision["target"] == "need-glob"
+    assert decision["needs_glob"] == ""
+    assert "no file matching" not in decision["glob_failed"]
+    assert "storage" in decision["glob_failed"]
+    assert "cut at 50 paths" in decision["glob_failed"]
+    assert "name the file" in decision["glob_failed"]
+
+
+def test_truncated_listing_still_grounds_via_a_prior_visible_read() -> None:
+    # #148 M3: truncation disables LISTING-based grounding only —
+    # visibility-based grounding (a prior [read ...] already on the wire)
+    # stays available. The reviewer's demonstrating pair, part 1: the same
+    # turn as the refusal above, except storage.py is ALSO visible from an
+    # earlier read — classify grounds on it via visibility even though this
+    # round's glob listing is truncated.
+    context = (
+        "assistant: [read /work/storage.py]\n"
+        "  def put(k, v): pass\n"
+        "assistant: [globbed storage (truncated)]\n"
+        "  /work/storage.py"
+    )
+    decision = _classify(
+        {"task": "write tests for the storage module", "context": context}
+    )
+    assert decision["target"] == "tests-seat"
+    assert decision["needs_glob"] == ""
+    assert decision["glob_failed"] == ""
+
+
+# --- round 2 review MAJOR A: the visibility fallback counted DISTINCT
+# basenames, not distinct PATHS. /srv/app/telemetry.py and
+# /vendor/telemetry.py are two different files that both look like
+# "telemetry.py" to a basename-only check, so a stem with exactly one
+# qualifying BASENAME but two qualifying PATHS silently grounded on one of
+# two ambiguous candidates — the complete-listing MATCH step would have
+# refused, naming both. ---
+
+
+def test_truncated_listing_refuses_when_two_distinct_paths_share_a_basename() -> None:
+    context = (
+        "assistant: [read /srv/app/telemetry.py]\n"
+        "  def emit(): pass\n"
+        "assistant: [read /vendor/telemetry.py]\n"
+        "  def emit(): pass\n"
+        "assistant: [globbed telemetry (truncated)]\n"
+        "  /srv/app/telemetry.py"
+    )
+    decision = _classify(
+        {"task": "write tests for the telemetry module", "context": context}
+    )
+    assert decision["target"] == "need-glob"
+    assert "multiple visible files match 'telemetry'" in decision["glob_failed"]
+    assert "/srv/app/telemetry.py" in decision["glob_failed"]
+    assert "/vendor/telemetry.py" in decision["glob_failed"]
+
+
+def test_truncated_listing_still_grounds_when_only_one_distinct_path_visible() -> None:
+    # the reviewer's demonstrating pair, part 2: same shape as above, minus
+    # the second directory — a single distinct visible path still grounds.
+    context = (
+        "assistant: [read /srv/app/telemetry.py]\n"
+        "  def emit(): pass\n"
+        "assistant: [globbed telemetry (truncated)]\n"
+        "  /srv/app/telemetry.py"
+    )
+    decision = _classify(
+        {"task": "write tests for the telemetry module", "context": context}
+    )
+    assert decision["target"] == "tests-seat"
+    assert decision["needs_glob"] == ""
+    assert decision["glob_failed"] == ""
+
+
+def test_truncated_listing_refuses_on_a_case_variant_basename_collision() -> None:
+    # minor 3 falls out of MAJOR A: distinct-path counting makes the ">1"
+    # refusal arm live for the realistic different-directory collision
+    # above; confirm the pre-existing case-variant collision (same
+    # directory, different case) still refuses too.
+    context = (
+        "assistant: [read /work/Telemetry.py]\n"
+        "  def emit(): pass\n"
+        "assistant: [read /work/telemetry.py]\n"
+        "  def emit(): pass\n"
+        "assistant: [globbed telemetry (truncated)]\n"
+        "  /work/telemetry.py"
+    )
+    decision = _classify(
+        {"task": "write tests for the telemetry module", "context": context}
+    )
+    assert decision["target"] == "need-glob"
+    assert "multiple visible files match 'telemetry'" in decision["glob_failed"]
+
+
+# --- M1 (adversarial review round on #148): mutation-testing net. Four
+# guard mutants survived the first pass — a substring check instead of the
+# exact suffix, a hardcoded lines[0] instead of the LATEST header, the
+# literal missing its leading space, and an rstrip variant tolerating
+# trailing whitespace — because nothing rendered through the REAL
+# _render_glob_block, and every test put the header on line 0. ---
+
+
+def test_render_through_51_paths_is_marked_truncated() -> None:
+    # Fed through the real caller-side renderer (src/llm_orc/web/serving/
+    # serving_ensemble_caller.py), not typed as an independent literal on
+    # this side of the src/.llm-orc boundary.
+    raw = "\n".join(f"/w/mod{i}.py" for i in range(51))
+    block = _render_glob_block("**/*mod*", raw)
+    listing = _latest_glob_listing(block)
+    assert listing is not None
+    assert listing.truncated is True
+    assert len(listing.paths) == 50
+
+
+def test_render_through_50_paths_is_not_marked_truncated() -> None:
+    raw = "\n".join(f"/w/mod{i}.py" for i in range(50))
+    block = _render_glob_block("**/*mod*", raw)
+    listing = _latest_glob_listing(block)
+    assert listing is not None
+    assert listing.truncated is False
+    assert len(listing.paths) == 50
+
+
+def test_stacked_glob_blocks_complete_then_truncated_refuses_on_the_latest() -> None:
+    # Two glob rounds stacked in one context — the ephemeral per-turn render
+    # normally emits at most one, but the scan itself must not silently
+    # trust an earlier block just because it sits at line 0. Complete
+    # first, truncated second: the LATEST (truncated) block governs, so
+    # this refuses even though the earlier complete block named the same
+    # file.
+    context = (
+        "assistant: [globbed storage]\n"
+        "  /work/storage.py\n"
+        "assistant: [globbed storage (truncated)]\n"
+        "  /work/storage.py"
+    )
+    decision = _classify(
+        {"task": "write tests for the storage module", "context": context}
+    )
+    assert decision["target"] == "need-glob"
+    assert "cut at 50 paths" in decision["glob_failed"]
+
+
+def test_stacked_glob_blocks_truncated_then_complete_grounds_on_the_latest() -> None:
+    # The mirror: truncated first, complete second — the LATEST (complete)
+    # block governs, so this grounds normally.
+    context = (
+        "assistant: [globbed storage (truncated)]\n"
+        "  /work/storage.py\n"
+        "assistant: [globbed storage]\n"
+        "  /work/storage.py"
+    )
+    decision = _classify(
+        {"task": "write tests for the storage module", "context": context}
+    )
+    assert decision["target"] == "need-files"
+    assert decision["needs_files"] == ["/work/storage.py"]
+
+
+def test_truncation_marker_requires_the_exact_rendered_suffix() -> None:
+    # A header containing the substring "(truncated)" WITHOUT the real
+    # render's exact shape (a leading space before the parenthesis) must
+    # not be recognized as truncated — _render_glob_block always emits the
+    # space. Kills both the substring-check mutant ("(truncated)" in
+    # lines[start]) and the missing-leading-space literal mutant: either
+    # one would misclassify this header as truncated and refuse instead of
+    # grounding.
+    context = "assistant: [globbed storage(truncated)]\n  /work/storage.py"
+    decision = _classify(
+        {"task": "write tests for the storage module", "context": context}
+    )
+    assert decision["target"] == "need-files"
+    assert decision["needs_files"] == ["/work/storage.py"]
+
+
+def test_truncation_marker_does_not_tolerate_trailing_whitespace() -> None:
+    # The real render never emits trailing whitespace after the header's
+    # closing bracket, so a header with it does not match the exact suffix
+    # either — an rstrip-the-line-first variant would wrongly recognize
+    # this as truncated.
+    context = "assistant: [globbed storage (truncated)]  \n  /work/storage.py"
+    decision = _classify(
+        {"task": "write tests for the storage module", "context": context}
+    )
+    assert decision["target"] == "need-files"
+    assert decision["needs_files"] == ["/work/storage.py"]
+
+
+def test_untruncated_single_stem_listing_still_grounds() -> None:
+    # regression: #148 refuses on the "(truncated)" marker only, never on
+    # listing length — an untruncated listing with one qualifying candidate
+    # must still ground exactly as before.
+    context = "assistant: [globbed storage]\n  /work/storage.py"
+    decision = _classify(
+        {"task": "write tests for the storage module", "context": context}
+    )
+    assert decision["target"] == "need-files"
+    assert decision["needs_files"] == ["/work/storage.py"]
 
 
 def test_matched_candidate_already_read_routes_to_the_tests_seat() -> None:
@@ -2138,6 +2355,151 @@ def test_bare_symbol_explain_zero_candidates_falls_through_to_the_explainer() ->
     assert decision["needs_glob"] == ""
     assert decision["glob_failed"] == ""
     assert decision["needs_files"] == []
+    # #148 BLOCKER 2 regression: a COMPLETE listing (a genuine no-match, not
+    # a truncation) is left in dispatch_input exactly as before — the strip
+    # fires only on the "(truncated)" marker.
+    assert "[globbed classify,decide,routing]" in decision["dispatch_input"]
+    assert "/work/notes.md" in decision["dispatch_input"]
+
+
+def test_bare_symbol_explain_truncated_listing_falls_through_to_the_explainer() -> None:
+    # #148: the multi-stem sibling of the truncated single-stem case above —
+    # a "(truncated)" header means the listing is not the complete candidate
+    # set (real stem families bust the 50-path cap, mtime-ordered so which
+    # 50 survive is nondeterministic). The one candidate that does survive
+    # the cap here fully names classify.py, but classify must not ground on
+    # it — it falls through to the conceptual explainer, same routing as the
+    # zero-candidate case above.
+    #
+    # BLOCKER 2: routing alone isn't the whole invariant — explainer.yaml
+    # carries no grounding instruction, so if the truncated block's raw text
+    # (often containing the fully-named file, as it does here) rode along in
+    # dispatch_input, the seat most likely to guess-ground on it would have
+    # the listing sitting right there. classify strips the truncated block
+    # out of the conversation before composing dispatch_input, so this really
+    # is the conceptual (general-knowledge) fall-through, not a grounded
+    # answer hiding behind an ungrounded seat.
+    context = (
+        "assistant: [globbed classify,decide,routing (truncated)]\n  /work/classify.py"
+    )
+    decision = _classify(
+        {"task": "how does classify decide routing?", "context": context}
+    )
+    assert decision["target"] == "explainer"
+    assert decision["build"] is False
+    assert decision["needs_glob"] == ""
+    assert decision["glob_failed"] == ""
+    assert decision["needs_files"] == []
+    assert (
+        "[globbed classify,decide,routing (truncated)]"
+        not in decision["dispatch_input"]
+    )
+    assert "/work/classify.py" not in decision["dispatch_input"]
+
+
+def test_strip_removes_every_truncated_block_not_only_the_latest() -> None:
+    # minor 1 (round 2 review): the strip removed only the LATEST truncated
+    # block — an EARLIER truncated block (stale, but still sitting in the
+    # conversation text) survived untouched whenever the LATEST block
+    # happened to be complete. Both truncated blocks must go; the latest
+    # complete block is untouched.
+    context = (
+        "assistant: [globbed telemetry (truncated)]\n"
+        "  /work/telemetry_internal.py\n"
+        "assistant: [globbed classify,decide,routing]\n"
+        "  /work/notes.md\n"
+        "  /work/README.md"
+    )
+    decision = _classify(
+        {"task": "how does classify decide routing?", "context": context}
+    )
+    assert decision["target"] == "explainer"
+    assert "[globbed telemetry (truncated)]" not in decision["dispatch_input"]
+    assert "/work/telemetry_internal.py" not in decision["dispatch_input"]
+    assert "[globbed classify,decide,routing]" in decision["dispatch_input"]
+    assert "/work/notes.md" in decision["dispatch_input"]
+
+
+# --- MAJOR B (round 2 review): _strip_truncated_glob_block's own
+# mutation-testing net — the same five context shapes that killed the
+# routing guard's mutants (M1 above), now run through the EXPLAIN seam
+# and asserted on dispatch_input CONTENT, not on target. Every context
+# below opens with a non-glob line before the first "[globbed ...]"
+# header — a real conversation always opens with the user's own line, a
+# glob block is never at line 0 (S3's point). ---
+
+
+def test_strip_render_through_51_paths_removes_the_block_from_dispatch_input() -> None:
+    # Fed through the real caller-side renderer, not typed as an
+    # independent literal on this side of the src/.llm-orc boundary.
+    raw = "\n".join(f"/w/mod{i}.py" for i in range(51))
+    block = _render_glob_block("**/*mod*", raw)
+    context = f"user: previous turn\n{block}"
+    decision = _classify({"task": "how does the mod system work?", "context": context})
+    assert decision["target"] == "explainer"
+    assert "[globbed mod (truncated)]" not in decision["dispatch_input"]
+    assert "/w/mod0.py" not in decision["dispatch_input"]
+
+
+def test_strip_requires_the_exact_rendered_suffix_or_leaves_the_block_alone() -> None:
+    # A header containing "(truncated)" WITHOUT the real render's exact
+    # shape (leading space before the parenthesis) is not truncated as far
+    # as the strip is concerned — the block stays in dispatch_input, same
+    # discipline as the routing guard.
+    context = "user: previous turn\nassistant: [globbed mod(truncated)]\n  /w/other.py"
+    decision = _classify({"task": "how does the mod system work?", "context": context})
+    assert decision["target"] == "explainer"
+    assert "[globbed mod(truncated)]" in decision["dispatch_input"]
+    assert "/w/other.py" in decision["dispatch_input"]
+
+
+def test_strip_does_not_tolerate_trailing_whitespace_after_the_header() -> None:
+    # The real render never emits trailing whitespace after the header's
+    # closing bracket, so a header with it is not recognized as truncated
+    # either — the block stays.
+    context = (
+        "user: previous turn\nassistant: [globbed mod (truncated)]  \n  /w/other.py"
+    )
+    decision = _classify({"task": "how does the mod system work?", "context": context})
+    assert decision["target"] == "explainer"
+    assert "[globbed mod (truncated)]" in decision["dispatch_input"]
+    assert "/w/other.py" in decision["dispatch_input"]
+
+
+def test_strip_stacked_complete_then_truncated_removes_only_the_truncated_one() -> None:
+    context = (
+        "user: previous turn\n"
+        "assistant: [globbed system]\n"
+        "  /w/other.py\n"
+        "assistant: [globbed mod (truncated)]\n"
+        "  /w/mod0.py"
+    )
+    decision = _classify({"task": "how does the mod system work?", "context": context})
+    assert decision["target"] == "explainer"
+    assert "[globbed mod (truncated)]" not in decision["dispatch_input"]
+    assert "/w/mod0.py" not in decision["dispatch_input"]
+    assert "[globbed system]" in decision["dispatch_input"]
+    assert "/w/other.py" in decision["dispatch_input"]
+
+
+def test_strip_stacked_truncated_then_complete_removes_the_earlier_one() -> None:
+    # The mirror of the case above, and the same shape minor 1's own test
+    # pins — repeated here (different filenames) as MAJOR B's fifth
+    # instrument shape, opening on a non-glob line for full production-real
+    # fidelity.
+    context = (
+        "user: previous turn\n"
+        "assistant: [globbed mod (truncated)]\n"
+        "  /w/mod0.py\n"
+        "assistant: [globbed system]\n"
+        "  /w/other.py"
+    )
+    decision = _classify({"task": "how does the mod system work?", "context": context})
+    assert decision["target"] == "explainer"
+    assert "[globbed mod (truncated)]" not in decision["dispatch_input"]
+    assert "/w/mod0.py" not in decision["dispatch_input"]
+    assert "[globbed system]" in decision["dispatch_input"]
+    assert "/w/other.py" in decision["dispatch_input"]
 
 
 def test_bare_symbol_explain_multiple_candidates_refuses_naming_them() -> None:
