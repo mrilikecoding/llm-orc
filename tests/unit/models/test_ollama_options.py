@@ -106,6 +106,43 @@ class TestOllamaUsageMetrics:
         # No timing breakdown keys when absent
         assert "eval_duration_ns" not in usage
 
+    @pytest.mark.asyncio
+    async def test_raw_prompt_eval_and_eval_counts_recorded(self) -> None:
+        """C2 (#145): the RAW prompt_eval_count/eval_count survive in usage
+        alongside input_tokens/output_tokens — those fall back to a text-
+        length estimate when Ollama omits the real counts, so a truncation
+        detector needs the un-conflated raw fields (the only direct signal
+        a truncated prompt was actually sent)."""
+        model = OllamaModel(model_name="qwen3:14b")
+        model.client = AsyncMock()
+        model.client.chat = AsyncMock(
+            return_value=_ollama_response(prompt_eval_count=20482, eval_count=134)
+        )
+
+        await model.generate_response("hello", "system prompt")
+
+        usage = model.get_last_usage()
+        assert usage is not None
+        assert usage["prompt_eval_count"] == 20482
+        assert usage["eval_count"] == 134
+
+    @pytest.mark.asyncio
+    async def test_raw_counts_absent_when_ollama_omits_them(self) -> None:
+        """No raw counts recorded when Ollama's response doesn't carry
+        them — the estimate fallback in input_tokens/output_tokens stays,
+        but the raw fields must never be synthesized (an estimate is not a
+        truncation signal)."""
+        model = OllamaModel(model_name="qwen3:14b")
+        model.client = AsyncMock()
+        model.client.chat = AsyncMock(return_value={"message": {"content": "test"}})
+
+        await model.generate_response("hello world", "be helpful")
+
+        usage = model.get_last_usage()
+        assert usage is not None
+        assert "prompt_eval_count" not in usage
+        assert "eval_count" not in usage
+
 
 class TestOllamaOptionsPassThrough:
     """Scenario: provider options forwarded to Ollama API."""
