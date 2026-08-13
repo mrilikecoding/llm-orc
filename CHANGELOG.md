@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.18.15] - 2026-08-12
+
+### Added
+- Recap grounding (roadmap WS-2, #133 #134,
+  `docs/plans/2026-07-17-recap-grounding-design.md`): the recall ledger
+  becomes an ask-outcome ledger. Refused builds are recognized and scoped to
+  turns that carried a build ask, so "what did the first thing I asked you
+  to build do?" discloses a rejected first build with kind-specific wording
+  instead of silently substituting the first shipped artifact, and
+  "did you see my previous query?" answers from the deterministic ledger
+  template. Live-validated at zero dishonest outcomes under independent
+  scoring (Arm-0 run 5, `docs/plans/2026-08-12-arm0-run5/`).
+- Brace-alternation glob patterns for multi-stem discovery (meta-task
+  slice 1): a grounded explain can resolve `{foo,bar}`-shaped stems in one
+  discovery pass.
+- WS-8 parity instrument, benchmarks-side (#131): arm-parameterized ladder
+  battery with shared per-turn truth capture (hashed manifests, hidden
+  oracles, throwaway-copy pytest), the Arm-2 subagent transcript adapter,
+  and automatic mechanical scoring (`score_run`) with the honesty
+  classifier and cache-aware cost metrics. Parity columns recorded at n=3
+  for Arms 1 and 2 alongside Arm 0 (`docs/plans/2026-08-12-arm{1,2}-runs/`).
+
+### Fixed
+- Battery precondition guards: unseeded fixtures and dirty output
+  directories are refused by construction instead of quietly invalidating
+  a run.
+- Security pins: `cryptography>=50.0.0` (PYSEC-2026-3552),
+  `pyasn1>=0.6.4` (PYSEC-2026-3455); release metadata 2.5 published via an
+  isolated twine in CI.
+
 ## [0.18.14] - 2026-07-13
 
 ### Added
