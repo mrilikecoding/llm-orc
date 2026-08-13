@@ -55,6 +55,42 @@ def _child_results(response: Any) -> dict[str, Any] | None:
     return results if isinstance(results, dict) else None
 
 
+def _child_usage(response: Any) -> dict[str, Any]:
+    """Per-agent usage dicts (``metadata.usage.agents``) from a dispatched
+    seat's serialized child result — the same parse ``_child_results`` does,
+    read again for the usage side (C2, #145): the raw ``prompt_eval_count``
+    Ollama returns is the only direct signal a truncated prompt was
+    actually sent (no seat sets ``num_ctx``, so runtime truncation is
+    otherwise unobservable). ``{}`` when the response is absent,
+    unparseable, or carries no usage."""
+    if not isinstance(response, str):
+        return {}
+    try:
+        child = json.loads(response)
+    except json.JSONDecodeError:
+        return {}
+    metadata = child.get("metadata") if isinstance(child, dict) else None
+    usage = metadata.get("usage") if isinstance(metadata, dict) else None
+    agents = usage.get("agents") if isinstance(usage, dict) else None
+    return agents if isinstance(agents, dict) else {}
+
+
+def _usage_counts(usage: Any) -> dict[str, int]:
+    """``{"prompt_eval_count": N, "eval_count": N}`` from one agent's raw
+    usage dict (ollama.py's ``_record_usage`` idiom) — only the keys Ollama
+    actually returned survive, so a call that fell back to the text-length
+    estimate contributes nothing (the honest absence of a truncation
+    signal, not a fabricated one)."""
+    if not isinstance(usage, dict):
+        return {}
+    counts: dict[str, int] = {}
+    for key in ("prompt_eval_count", "eval_count"):
+        value = usage.get(key)
+        if isinstance(value, int):
+            counts[key] = value
+    return counts
+
+
 def _diagnostics(response: Any) -> dict[str, Any] | None:
     """The envelope's structured ``diagnostics`` dict when ``response`` is a
     (possibly output-wrapped) envelope JSON. The small typed verdict fields —
@@ -100,14 +136,17 @@ def _chain_plan(response: Any) -> dict[str, Any] | None:
     return {key: data[key] for key in _CHAIN_PLAN_KEYS}
 
 
-def _seat_entry(name: str, node: Any) -> dict[str, Any]:
+def _seat_entry(name: str, node: Any, usage: Any = None) -> dict[str, Any]:
     """One child-node trace entry: snippeted response plus the structured
-    envelope diagnostics when the node carries them."""
+    envelope diagnostics when the node carries them, plus (C2, #145) the
+    raw prompt_eval_count/eval_count when the caller found usage for this
+    agent in the child ensemble's own metadata."""
     response = node.get("response") if isinstance(node, dict) else node
     entry: dict[str, Any] = {"node": name, "response": _snippet(response)}
     diagnostics = _diagnostics(response)
     if diagnostics is not None:
         entry["diagnostics"] = diagnostics
+    entry.update(_usage_counts(usage))
     return entry
 
 
@@ -119,27 +158,47 @@ def _classify_response(results: dict[str, Any]) -> Any:
     return classify_node.get("response") if isinstance(classify_node, dict) else None
 
 
+def _top_level_usage(result_dict: dict[str, Any]) -> dict[str, Any]:
+    """``metadata.usage.agents`` from the execution result, or ``{}`` when
+    absent (C2, #145) — the parent ensemble's OWN agents' usage, distinct
+    from a dispatched seat's nested child usage (``_child_usage``)."""
+    metadata = result_dict.get("metadata")
+    usage = metadata.get("usage") if isinstance(metadata, dict) else None
+    agents = usage.get("agents") if isinstance(usage, dict) else None
+    return agents if isinstance(agents, dict) else {}
+
+
+def _node_entry(name: str, node: Any, top_usage: dict[str, Any]) -> dict[str, Any]:
+    """One top-level node's trace entry, plus (C2, #145) its own
+    prompt_eval_count/eval_count from ``top_usage`` and — when the node is
+    a dispatched seat — its nested seat entries with the child ensemble's
+    own per-agent usage."""
+    response = node.get("response") if isinstance(node, dict) else None
+    entry: dict[str, Any] = {
+        "node": name,
+        "status": node.get("status", "ok") if isinstance(node, dict) else "?",
+        "response": _snippet(response),
+    }
+    entry.update(_usage_counts(top_usage.get(name)))
+    child = _child_results(response)
+    if child is not None:
+        child_usage = _child_usage(response)
+        entry["seat"] = [
+            _seat_entry(child_name, child_node, child_usage.get(child_name))
+            for child_name, child_node in child.items()
+        ]
+    return entry
+
+
 def build_turn_trace(ensemble_name: str, result_dict: dict[str, Any]) -> dict[str, Any]:
     """Per-node introspection from the engine's execution result."""
     results = result_dict.get("results", {})
+    top_usage = _top_level_usage(result_dict)
     nodes: list[dict[str, Any]] = []
     classify_response: Any = None
     if isinstance(results, dict):
         classify_response = _classify_response(results)
-        for name, node in results.items():
-            response = node.get("response") if isinstance(node, dict) else None
-            entry: dict[str, Any] = {
-                "node": name,
-                "status": node.get("status", "ok") if isinstance(node, dict) else "?",
-                "response": _snippet(response),
-            }
-            child = _child_results(response)
-            if child is not None:
-                entry["seat"] = [
-                    _seat_entry(child_name, child_node)
-                    for child_name, child_node in child.items()
-                ]
-            nodes.append(entry)
+        nodes = [_node_entry(name, node, top_usage) for name, node in results.items()]
     trace: dict[str, Any] = {
         "ensemble": ensemble_name,
         "execution_order": result_dict.get("execution_order", []),
