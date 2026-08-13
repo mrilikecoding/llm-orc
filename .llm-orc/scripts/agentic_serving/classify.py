@@ -876,41 +876,53 @@ def _explain_discover(
     return "", "", "", refusal, [], ""
 
 
-def _visible_stem_matches(context: str, stem: str) -> list[str]:
-    """Visible (already read/written) ``.py`` files whose stem exactly
-    matches ``stem``, not ``test_*``-named, sorted for determinism (the same
-    candidate discipline as the globbed MATCH step — review blocker
-    2026-07-10: any-extension + set-order pick shipped a
-    test_storage.json deliverable). Shared by ``_discovery``'s "no listing
-    yet" and "truncated listing" (issue #148 M3) fallback branches — a
-    truncated glob listing disables LISTING-based grounding only, so a file
-    already visible from a prior read/write still grounds either way.
+def _visible_stem_paths(context: str, stem: str) -> list[str]:
+    """DISTINCT visible (already read/written) full paths whose basename's
+    stem exactly matches ``stem``, ``.py``, not ``test_*``-named, sorted
+    for determinism (the same candidate discipline as the globbed MATCH
+    step — review blocker 2026-07-10: any-extension + set-order pick
+    shipped a test_storage.json deliverable). Scans full paths directly off
+    ``_VISIBLE_HEADER_RE`` rather than reusing ``_visibility``'s basename-
+    collapsed set (issue #148 round 2 MAJOR A): two DISTINCT paths can
+    share one basename (``/srv/app/telemetry.py`` and
+    ``/vendor/telemetry.py`` both look like "telemetry.py" to a
+    basename-only check) — a basename-only scan collapses them into
+    "exactly one match" and grounds ambiguously, where the complete-listing
+    MATCH step would have refused, naming both. Shared by ``_discovery``'s
+    "no listing yet" and "truncated listing" (issue #148 M3) fallback
+    branches — a truncated glob listing disables LISTING-based grounding
+    only, so a file already visible from a prior read/write still grounds
+    either way.
     """
-    visible, _ = _visibility(context)
+    paths = {
+        path for path, variant in _VISIBLE_HEADER_RE.findall(context) if not variant
+    }
     return sorted(
-        name
-        for name in visible
-        if name.rsplit(".", 1)[0].lower() == stem
-        and name.endswith(".py")
-        and not name.startswith("test_")
+        path
+        for path in paths
+        if path.rsplit("/", 1)[-1].rsplit(".", 1)[0].lower() == stem
+        and path.endswith(".py")
+        and not path.rsplit("/", 1)[-1].startswith("test_")
     )
 
 
 def _visible_stem_result(context: str, stem: str) -> tuple[str, str, str] | None:
     """The visible-file fallback shared by ``_discovery``'s "no listing yet"
-    and "truncated listing" (issue #148 M3) branches: exactly one visible
-    match names the file (nothing left to discover), several refuse rather
-    than guess, and no match at all returns ``None`` so the caller supplies
-    its own next step (issue a glob request, or the truncation-specific
-    refusal)."""
-    matches = _visible_stem_matches(context, stem)
-    if len(matches) == 1:
+    and "truncated listing" (issue #148 M3) branches: exactly one DISTINCT
+    visible path names the file (nothing left to discover), several refuse
+    rather than guess — counted over paths, not basenames (round 2 MAJOR
+    A) — and no match at all returns ``None`` so the caller supplies its
+    own next step (issue a glob request, or the truncation-specific
+    refusal). The multi-match refusal mirrors the glob-listing MATCH
+    step's own wording, naming the distinct paths."""
+    paths = _visible_stem_paths(context, stem)
+    if len(paths) == 1:
         # the stem IS a visible file — nothing to discover, but it is
         # still the turn's named file (live finding 2026-07-10: without
         # this a retried module turn shipped to test_solution.py)
-        return "", matches[0], ""
-    if len(matches) > 1:
-        listed = ", ".join(matches)
+        return "", paths[0].rsplit("/", 1)[-1], ""
+    if len(paths) > 1:
+        listed = ", ".join(paths)
         return (
             "",
             "",
