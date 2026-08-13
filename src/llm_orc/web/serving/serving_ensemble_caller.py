@@ -160,7 +160,16 @@ _LINE_NUM_GUTTER_RE = re.compile(r"^\s*\d+\| ?")
 # and an "(End of file - total N lines)" trailer sits inside <content>
 # after a blank line. A failed read is a bare "File not found: ..." string —
 # no tags, no "Error" prefix.
-_CONTENT_TAG_RE = re.compile(r"<content>(.*?)</content>", re.DOTALL)
+#
+# Issue #150: the wrapper is a SINGLE outer pair — checked against 85 real
+# captured reads across the corpus (docs/plans/**/*.jsonl), zero of which
+# carried more than one <content>/</content> occurrence. GREEDY to the
+# LAST </content> is therefore correct: a file whose own text contains the
+# literal "</content>" (a regex, a docstring example) no longer truncates
+# at that first occurrence — the match still starts at the wrapper's real
+# opening tag (nothing can precede it but <path>/<type>) and now extends
+# to the wrapper's real closing tag, wherever in the body it falls.
+_CONTENT_TAG_RE = re.compile(r"<content>(.*)</content>", re.DOTALL)
 _END_OF_FILE_TRAILER_RE = re.compile(r"^\(End of file - total \d+ lines?\)$")
 _OPENCODE_GUTTER_RE = re.compile(r"^\d+: ?")
 
