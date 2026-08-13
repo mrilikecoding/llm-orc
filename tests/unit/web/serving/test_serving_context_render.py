@@ -428,6 +428,49 @@ def test_oversize_read_result_renders_header_only() -> None:
     assert "xxxx" not in rendered
 
 
+def test_read_result_at_the_cap_renders_whole() -> None:
+    # C5 (#145): the boundary render-through pair's whole-file side — a
+    # body of EXACTLY the cap renders complete (pairs with the oversize
+    # test above, which pins cap+1).
+    from llm_orc.web.serving.serving_ensemble_caller import _READ_FILE_CAP
+
+    messages = [
+        ChatMessage(role="user", content="fix calc.py"),
+        ChatMessage(
+            role="assistant", content=None, tool_calls=(_read_call("c1", "calc.py"),)
+        ),
+        ChatMessage(role="tool", tool_call_id="c1", content="x" * _READ_FILE_CAP),
+    ]
+
+    rendered = _render_context(messages)
+
+    assert "[read calc.py]" in rendered
+    assert "(oversize)" not in rendered
+    assert "x" * _READ_FILE_CAP in rendered
+
+
+def test_a_file_between_the_old_and_new_read_cap_now_renders_whole() -> None:
+    # #145: real repo files (subagent_adapter.py 25.8KB, classify.py ~80KB)
+    # routinely exceeded the old 24KB cap and now sit under the raised
+    # 96KB (98,304 byte) cap — a concrete 50,000-byte body pins that the
+    # raise actually widened the whole-file-or-refuse boundary, not just
+    # that the boundary comparison itself is correct.
+    messages = [
+        ChatMessage(role="user", content="fix repo_scale.py"),
+        ChatMessage(
+            role="assistant",
+            content=None,
+            tool_calls=(_read_call("c1", "repo_scale.py"),),
+        ),
+        ChatMessage(role="tool", tool_call_id="c1", content="x" * 50000),
+    ]
+
+    rendered = _render_context(messages)
+
+    assert "[read repo_scale.py]" in rendered
+    assert "(oversize)" not in rendered
+
+
 def test_line_number_gutter_is_stripped_from_read_content() -> None:
     body = "00001| def divide(a, b):\n00002|     return a / b"
     messages = [

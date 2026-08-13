@@ -24,6 +24,7 @@ CLASSIFY = SCRIPTS / "classify.py"
 
 sys.path.insert(0, str(SCRIPTS))
 from classify import (  # type: ignore  # noqa: E402
+    _READ_CAP_KB,
     _explain_stems,
     _latest_glob_listing,
     _ledger_recap,
@@ -31,6 +32,7 @@ from classify import (  # type: ignore  # noqa: E402
 )
 
 from llm_orc.web.serving.serving_ensemble_caller import (  # noqa: E402
+    _READ_FILE_CAP,
     _render_glob_block,
 )
 
@@ -279,7 +281,14 @@ def test_oversize_read_attempt_refuses_with_cap_reason() -> None:
     )
     assert decision["needs_files"] == []
     assert "could not read storage.py" in decision["read_failed"]
-    assert "24" in decision["read_failed"]
+    assert str(_READ_CAP_KB) in decision["read_failed"]
+
+
+def test_read_cap_mirror_stays_in_sync() -> None:
+    # C5 (#145): the two mirrored constants (classify.py's own copy of the
+    # caller's read cap, kept in sync because classify runs standalone with
+    # no cross-boundary import) can never silently drift apart.
+    assert _READ_FILE_CAP == _READ_CAP_KB * 1024
 
 
 def test_explain_turn_never_requests_a_read() -> None:
