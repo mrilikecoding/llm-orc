@@ -283,19 +283,38 @@ whatever let grid "end"-placement calls go warm) — mean/median/range:
 | 8,000 | 6 | 17.08s | 17.11s | 16.85s | 17.23s |
 | 16,000 | 6 | 48.91s | 40.73s | 39.66s | 66.51s |
 
-**Working hypothesis for the split** (plausible, not confirmed by server-
-side instrumentation): `llama-server` is running with `--context-shift`,
-which can reuse a previous request's cached KV state when a new request's
-prefix matches it. "end"-placement grid calls share an (almost) identical
-long filler prefix across all 12 needles at a given level — only the small
-trailing needle+question differs — so after the first (cold) call
-establishes the cache, the remaining 11 hit it. "start"-placement calls put
-the (per-needle differing) needle block at the very front, breaking prefix
-match — consistent with L32000/start being uniformly cold across all 12
-calls. This hypothesis does **not** explain two anomalously fast
-L16000/start calls (`tax_rate` 2.5s, `db_pool` 1.1s, immediately followed by
-ten ~67s calls in the same placement) — flagged honestly as an unexplained
-exception rather than smoothed over.
+**Working hypothesis for the split**: `llama-server` is running with
+`--context-shift`, which can reuse a previous request's cached KV state
+when a new request's prefix matches it. "end"-placement grid calls share
+an (almost) identical long filler prefix across all 12 needles at a given
+level — only the small trailing needle+question differs — so after the
+first (cold) call establishes the cache, the remaining 11 hit it.
+"start"-placement calls put the (per-needle differing) needle block at the
+very front, breaking prefix match — consistent with L32000/start being
+uniformly cold across all 12 calls.
+
+**Closure on the two fast L16000/start calls** (`tax_rate` 2.5s, `db_pool`
+1.1s, immediately followed by ten ~67s calls in the same placement,
+originally flagged above as an unexplained exception to that hypothesis).
+Re-checked against the raw per-call log: the same `(16000, start, tax_rate)`
+cell has **two** entries — 64.8s and 2.5s — because the crash-recovery
+JSONL, as already noted, retained one stale row from the first launch
+attempt that was killed by the tool's 120s foreground timeout before that
+attempt's own stdout ever flushed. That killed attempt had already
+completed (or the server had already finished processing, independent of
+the client disconnecting) real requests for `tax_rate` and `db_pool` at
+this exact cell before dying. Critically, **both** the 64.8s and the 2.5s
+`tax_rate` entries report the identical `prompt_tokens` (14,868) — not a
+lower, clipped count — and `db_pool`'s fast 1.1s entry reports 14,863
+tokens, matching its slow sibling `retry_backoff`'s 14,863 almost exactly.
+Identical full token counts on both the fast and slow calls rule out
+truncation as an explanation (a truncating server would report fewer
+tokens on the fast calls, not the same count). The fast pair is a
+**prefix-cache hit inherited from the killed first attempt's already-
+processed requests for those exact two prompts**, not a data artifact and
+not truncation — the same invalidation class (silent context clipping)
+this whole spike exists to rule out, now explicitly checked and closed
+rather than left open.
 
 **#145 spot-check on real files** (measured directly, standalone cold
 calls, not part of the pre-registered grid — a verification of specific
@@ -305,24 +324,56 @@ file sizes referenced below): `benchmarks/agentic_serving/subagent_adapter.py`
 40,960-token window, both cold (fresh standalone calls, no shared-prefix
 warm-up).
 
-### #145 implication (extension)
+### Synthesis extension: 20K / 24K two-fact, plus three-fact at 20K
 
-Accuracy never argues against big chunks in-window: 100% holds flat through
-32,000 tokens for single-fact recall and through 16,000 tokens for two-fact
-synthesis, with zero drift and zero evidence synthesis degrades ahead of
-recall. So #145's chunk-size ceiling, in the range actually tested here, is
-not a correctness question — it's a **latency policy decision**. The cold
-path (a genuinely new prompt with no reusable prefix — the realistic case
-for reading a repo file the serve hasn't seen before) costs roughly 17s at
-8K tokens, 67s at 16K, and 171s at 32K; a warm path (a request whose prefix
-matches what's already cached from the immediately preceding call) costs
-~1-3s regardless of size. Concretely: a single real file at either end of
-a plausible size range — `subagent_adapter.py` (~6.3K tokens, 24.7s cold)
-or `classify.py` (~19.5K tokens, 92.9s cold) — is feasible to read in one
-shot, accuracy-wise, at any chunk size #145 is likely to consider. The
-design lever isn't "can the model hold this much" (yes, at least to 32K)
-but "how many cold reads can this session's latency budget absorb, and can
-the read pattern be structured (e.g. append-only, stable shared prefixes
-across sequential reads) to land more of them on the warm path" — that's
-an implementation question for #145 to design toward, not something this
-accuracy-only spike can promise for free.
+Second, ~10-minute follow-up, decided by the #145 pre-flight: the first
+synthesis smoke topped out at ~14,870 actual tokens, 31% short of #145's
+flagship target (`classify.py`, 19,452 measured tokens). Script:
+`docs/plans/2026-08-13-context-curve-synth-ext2-spike.py` — a second
+sibling importing `SYNTHESIS_PAIRS`/`build_synthesis_input`/`both_score`/
+`call_ollama`/`NUM_CTX` from the first extension script, not duplicated.
+Pre-registered: the same 5% drift rule against the synthesis baseline
+(100% at 4K); at this budget's n=6 (two-fact) one miss is already 16.7%
+drift, and at n=3 (three-fact) one miss is 33.3% — noted as the accepted
+coarse-resolution tradeoff for a 10-minute follow-up, not smoothed over.
+
+| level (target tok) | facts required | n | accuracy | mean elapsed | min | max |
+|---:|---:|---:|---:|---:|---:|---:|
+| 20,000 | 2 | 6 | 100.0% | 90.60s | 88.91s | 93.24s |
+| 24,000 | 2 | 6 | 100.0% | 117.52s | 115.06s | 121.20s |
+| 20,000 | 3 | 3 | 100.0% | 94.24s | 92.55s | 97.49s |
+
+18/18 correct, 0 errors. Every call in this batch was cold (each plants a
+distinct fact at the very front, same reason the first synthesis smoke
+never showed a warm cluster) — actual measured tokens ran ~18,660-18,712
+at the 20K level and ~22,470-22,498 at the 24K level (chars/4 slightly
+overestimates at this range, consistent with the original calibration
+table). Three-fact accuracy matches two-fact accuracy at the same 20K
+level — no sign that combining a third fact costs anything beyond the
+extra ~100-150 tokens of prompt and answer length.
+
+### #145 implication (extension, updated)
+
+Synthesis now measured clean through 24,000 tokens (two-fact) and through
+three-fact combination at 20,000 tokens — accuracy still never argues
+against big chunks in-window (100% at every level tested, 500 through
+32,000 for recall, 4,000 through 24,000 for synthesis, zero drift, zero
+evidence synthesis degrades ahead of recall, zero evidence a third fact
+costs anything). Concretely for #145's stated 96KB cap band (24,000 tokens
+× 4 chars/token): **that band is now synthesis-covered, not just
+recall-covered** — `classify.py` (19,452 measured tokens), #145's flagship
+repo-scale-read target, sits inside the now-verified range with headroom
+to the 24K ceiling actually tested (and further headroom to the 32K
+recall-only ceiling and the model's 40,960-token architectural max, both
+untested for synthesis). So #145's chunk-size ceiling remains what the
+first extension found: not a correctness question in this range, a
+**latency policy decision** — now with the cold-cost curve extended
+further out. Cold cost by level: ~17s at 8K, ~67s at 16K, ~91s at 20K
+(two-fact) / ~94s (three-fact), ~118s at 24K, ~171s at 32K (recall only,
+unmeasured for synthesis past 24K); warm cost (a request whose prefix
+matches what's already cached from the immediately preceding call) stays
+~1-3s regardless of size, whenever the read pattern can land on it. The
+design lever is still latency budget and read-pattern structure, not model
+capacity — #145 can now plan chunk sizes up to and including a full
+`classify.py`-sized single-file read, and a multi-fact synthesis question
+over it, on the strength of a measured (not extrapolated) result.
