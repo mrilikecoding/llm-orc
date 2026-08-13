@@ -66,7 +66,7 @@ buy-back ledger tracks hosted seats.
 | Arm 0 pre-fix (v0.18.14) | 2/3/4 | 25/39 | 3 (one per run) | `docs/plans/2026-07-1{4,5}-arm0-runs/` |
 | Arm 0 post-fix (main 2026-08-12) | 5 | 11/13 | 0 | `docs/plans/2026-08-12-arm0-run5/` |
 | Arm 2a Haiku 4.5 | 1, 2, 3 | 13/13, 11/13, 11/13 | 0, 2, 2 | `docs/plans/2026-07-15-arm2-runs/`, `2026-08-12-arm2-runs/` |
-| Arm 2b Sonnet | 1 | 13/13 | 0 | `docs/plans/2026-07-15-arm2-runs/` |
+| Arm 2b Sonnet | 1, 2 | 13/13, 13/13 | 0, 0 | `docs/plans/2026-07-15-arm2-runs/`, `2026-08-12-arm2-runs/` |
 | Arm 1 (paid) | 0 | — | — | go/no-go pending |
 
 Versions differ across rows; do not pool. Caveats: parity table v1
