@@ -21,6 +21,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from llm_orc.web.serving.token_estimate import projected_tokens_v2
+
 _SNIPPET = 280
 
 
@@ -190,6 +192,125 @@ def _node_entry(name: str, node: Any, top_usage: dict[str, Any]) -> dict[str, An
     return entry
 
 
+# Runtime truncation backstop (#151's core; review round 2 Part 2, #145).
+# token_estimate.projected_tokens_v2 is a PRE-FLIGHT guard on the read
+# accumulator — a held read's projected size can still admit while the
+# ACTUAL dispatched prompt (system/role wrapping, conversation history the
+# accumulator doesn't project over) crosses the real model window. This is
+# the general backstop no pre-flight estimator can evade: compare Ollama's
+# own recorded prompt_eval_count (C2) against the projected size of what
+# classify actually dispatched, and flag the turn when either trigger
+# fires.
+#
+# WINDOW = 40,960: the model's context window. Hardcoded rather than
+# server-queried — no seat sets num_ctx today, so 40,960 is qwen3:8b's own
+# default (measured, not configured). #151's remainder: this stays open
+# for a server-queried window and threshold re-measurement whenever the
+# model or window changes.
+WINDOW = 40960
+
+# Trigger 1 (deep overflow, caught directly on ratio): estimator v2's
+# safety factor (1.59) means a legitimate IN-WINDOW call's
+# prompt_eval_count/projected ratio can be as low as ~0.465 on the most
+# over-projected measured density class (CJK+code, v2/real ~2.15x — see
+# test_token_estimate_ground_truth.py). 0.42 sits safely below that floor
+# while still catching real truncation: the measured discard signature
+# (prompt_eval_count landing at almost exactly half the window) against
+# any projected prompt at or past the window already gives a ratio
+# <= 0.50, and for a projected prompt >= 48K it's already <= 0.43 —
+# comfortably past 0.42 on its own, before trigger 2 is even needed.
+_DEEP_TRUNCATION_RATIO = 0.42
+
+# Trigger 2 (the measured discard SIGNATURE, caught directly): both real
+# captured over-window prompts returned EXACTLY 20,482 = 40,960 // 2 + 2,
+# regardless of how far over the window the real prompt was — Ollama's
+# truncation halves the window, not a proportional cut, so ratio alone
+# (trigger 1) undersells how confidently identifiable this shape is. The
+# +/-64 band absorbs template/rounding variation across model versions.
+# Gating on "the dispatched prompt was plausibly near-window sized" (the
+# second clause) keeps a SMALL legitimate call — whose prompt_eval_count
+# could coincidentally land near half of some unrelated small window —
+# from ever tripping this on the signature alone.
+_DISCARD_SIGNATURE_BAND = 64
+_NEAR_WINDOW_FRACTION = 0.8
+
+# RESIDUAL (documented, not eliminated): a false positive requires BOTH
+# prompt_eval_count landing within the signature band of half-window AND
+# the estimator over-projecting the real prompt by more than 1/0.42 ~=
+# 2.38x simultaneously — on the single most over-projected measured
+# density class (CJK+code, ~2.15x), the real token count would ALSO have
+# to land within the 128-wide band purely by chance, on the order of
+# ~0.3% of plausible real-token sizes for that class. This fails SAFE: a
+# false positive is a loud, retryable refusal — never a silently
+# corrupted answer.
+
+
+def _dispatch_input(classify_response: Any) -> str:
+    """classify's own composed ``dispatch_input`` — the closest available
+    proxy for what the seat actually dispatched. The seat's own
+    role_prompt/system wrapping is a roughly-fixed per-agent overhead this
+    doesn't capture, but dispatch_input carries the UNBOUNDED, variable
+    component (conversation history, held read bodies) that is the actual
+    truncation risk."""
+    if not isinstance(classify_response, str):
+        return ""
+    try:
+        data = json.loads(classify_response)
+    except json.JSONDecodeError:
+        return ""
+    return str(data.get("dispatch_input", "")) if isinstance(data, dict) else ""
+
+
+def _truncation_detected(prompt_eval_count: int, projected_prompt_tokens: int) -> bool:
+    """Dual trigger (review round 2 Part 2, #151's core) — refuse when
+    EITHER fires. See the module-level constants above for the derivation
+    of each threshold and the documented residual. ``projected_prompt_
+    tokens <= 0`` (nothing to compare against) never flags."""
+    if projected_prompt_tokens <= 0:
+        return False
+    if prompt_eval_count < projected_prompt_tokens * _DEEP_TRUNCATION_RATIO:
+        return True
+    return (
+        abs(prompt_eval_count - WINDOW // 2) <= _DISCARD_SIGNATURE_BAND
+        and projected_prompt_tokens > WINDOW * _NEAR_WINDOW_FRACTION
+    )
+
+
+def _prompt_eval_counts(nodes: list[dict[str, Any]]) -> list[int]:
+    """Every recorded prompt_eval_count in this turn's trace — top-level
+    agent calls and nested seat-child calls alike (C2's recording seam)."""
+    counts: list[int] = []
+    for node in nodes:
+        value = node.get("prompt_eval_count")
+        if isinstance(value, int):
+            counts.append(value)
+        for seat_entry in node.get("seat", ()) or ():
+            seat_value = (
+                seat_entry.get("prompt_eval_count")
+                if isinstance(seat_entry, dict)
+                else None
+            )
+            if isinstance(seat_value, int):
+                counts.append(seat_value)
+    return counts
+
+
+def _truncation_check(
+    nodes: list[dict[str, Any]], classify_response: Any
+) -> dict[str, Any] | None:
+    """The turn's truncation verdict, or ``None`` when nothing indicates
+    truncation — including when there is no dispatch_input or no recorded
+    usage to check at all (never a false positive on absent data)."""
+    dispatch_input = _dispatch_input(classify_response)
+    if not dispatch_input:
+        return None
+    projected = projected_tokens_v2(dispatch_input)
+    counts = _prompt_eval_counts(nodes)
+    if not any(_truncation_detected(count, projected) for count in counts):
+        return None
+    return {"projected_prompt_tokens": projected, "prompt_eval_counts": counts}
+
+
 def build_turn_trace(ensemble_name: str, result_dict: dict[str, Any]) -> dict[str, Any]:
     """Per-node introspection from the engine's execution result."""
     results = result_dict.get("results", {})
@@ -207,6 +328,10 @@ def build_turn_trace(ensemble_name: str, result_dict: dict[str, Any]) -> dict[st
     chain_plan = _chain_plan(classify_response)
     if chain_plan is not None:
         trace["chain_plan"] = chain_plan
+    truncation = _truncation_check(nodes, classify_response)
+    if truncation is not None:
+        trace["truncation_detected"] = True
+        trace["truncation_detail"] = truncation
     return trace
 
 
