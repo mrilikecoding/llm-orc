@@ -59,72 +59,49 @@ layer is the insulation that keeps an eventual hardening cheap, and
 "frozen component" status is the trigger, tracked informally the way the
 buy-back ledger tracks hosted seats.
 
-## State as of 2026-08-12 (end of day; rewritten per protocol — history in git)
-
-**Headline: the honesty arc is closed, and the comparison story flipped.**
-The serve's two measured dishonesty classes (#133 recall substitution, #134
-recap fabrication) shipped their structural fix and validated live at zero
-dishonest under independent scoring. The same day, the frontier arm's
-zero-dishonest reading proved to be an n=1 artifact: Haiku's second run
-produced TWO dishonest turns. At current n, the post-fix serve leads the
-honesty column against a frontier model behind Claude Code.
-
-**Measured position, all arms** (versions differ across rows — never pool
-pre-fix and post-fix Arm-0 rows, or cross-version arms):
+## State (2026-08-12)
 
 | arm / serve version | runs | strict | dishonest | record |
 |---|---|---|---|---|
-| Arm 0, pre-fix (v0.18.14) | 2/3/4 | 25/39 (~64%) | 3 — one per run, never zero | `docs/plans/2026-07-1{4,5}-arm0-runs/` |
-| Arm 0, post-fix (main, 2026-08-12) | 5 | 11/13 | **0** — turn 10 disclosed, turn 5 grounded | `docs/plans/2026-08-12-arm0-run5/` |
-| Arm 2a: Claude Code subagent, Haiku 4.5 | 1 | 13/13 | 0 | `docs/plans/2026-07-15-arm2-runs/` |
-| Arm 2a, run 2 | 2 | 11/13 | **2** — scoped-green "all tests pass" over a red suite; first-build recall quoted turn 2's code as turn 1's | `docs/plans/2026-08-12-arm2-runs/haiku-run2/` |
-| Arm 2b: Sonnet | 1 | 13/13 | 0 | `docs/plans/2026-07-15-arm2-runs/` |
-| Arm 1 (paid, same models behind OpenCode) | 0 | — | — | go/no-go pending |
+| Arm 0 pre-fix (v0.18.14) | 2/3/4 | 25/39 | 3 (one per run) | `docs/plans/2026-07-1{4,5}-arm0-runs/` |
+| Arm 0 post-fix (main 2026-08-12) | 5 | 11/13 | 0 | `docs/plans/2026-08-12-arm0-run5/` |
+| Arm 2a Haiku 4.5 | 1, 2 | 13/13, 11/13 | 0, 2 | `docs/plans/2026-07-15-arm2-runs/`, `2026-08-12-arm2-runs/` |
+| Arm 2b Sonnet | 1 | 13/13 | 0 | `docs/plans/2026-07-15-arm2-runs/` |
+| Arm 1 (paid) | 0 | — | — | go/no-go pending |
 
-Parity table v1 and its 2026-08-12 addendum:
-`docs/plans/2026-07-15-first-parity-table.md` (its seven caveats bind; the
-saturation conclusion stands — the toy ladder does not discriminate at the
-top, EXCEPT on the honesty column, where run 2 shows it still can).
+Versions differ across rows; do not pool. Caveats: parity table v1
+(`docs/plans/2026-07-15-first-parity-table.md`). Merged-unreleased set
+tracked by #146. Operating rules: `docs/loop-protocol.md`.
 
-**Shipped 2026-08-12** (all merged to main; merged-unreleased pending a
-release decision): the recap-grounding arc (#133/#134 CLOSED — ask-outcome
-ledger, deterministic memory-interrogative/recap answers, disclosure clause,
-emit terminal registry, 72-row routing-corpus regression test; five
-adversarial review rounds), the Arm-2 transcript adapter + score_run wiring
-(#131 — automatic tally reproduces the hand-composed 2x2; cache-aware cost,
-real Arm-2 cost ~5x the naive figure; boundary_rule declared on every
-published object; four review rounds), battery precondition guards (seeded
-fixture + clean out dir), and the dogfood channel (`docs/dogfood-log.md`,
-practitioner-directed: discrete lead-session checks route through the serve;
-entry 1 = honest refusal at the 24KB read cap on a real repo file).
+## Timeline
 
-**Shipped capability (through v0.18.14 + merged-unreleased):** build
-(accept-gated, bounded TDD retry), write-tests, grounded explain (named-file
-+ bare-symbol glob→read), edit-existing, client-delegated reads/runs/
-discovery, chained fix-execution with convergent re-fix, within-session
-lossless memory with deep recall, deterministic recall/recap/memory-
-interrogative answers over the ask-outcome ledger, declarative chain
-executor, deterministic accept gate. All-local (qwen3:8b) by default.
+Done:
 
-**Arm-2 driver procedure (proven on run 2):** one continuing subagent
-conversation per run (Haiku/Sonnet model override), the run-1 coordinator
-framing verbatim, 13 sequential prompts, `capture_truth.sh` caller-side
-after every turn, transcript copied to the run dir, automatic tally via
-`score_run.tally_oracles(run, adapter=subagent_adapter)`, then an
-independent J-scorer per the frozen rubric. Full recipe in
-`docs/plans/2026-08-12-arm2-runs/README.md`.
+- [x] v0.18.0 — agentic serving backend (declarative ensemble behind OpenCode)
+- [x] v0.18.1–0.18.7 — session record #99, TDD retry #100, write-tests #98, client reads (#83), per-test gate isolation
+- [x] v0.18.8–0.18.12 — run delegation (#83), fenced block grammar, gate repairs, discovery glob (#83), fix-execution (#115), #107
+- [x] v0.18.13 — convergent fix (#117 rungs 1.5+2), grounded explain (#118)
+- [x] v0.18.14 — chain executor (#120), deep recall (#82 core)
+- [x] Meta-task slice 1 — bare-symbol glob→read grounded explain
+- [x] WS-8 instrument (#131 Arcs A–D) — battery, hidden oracles, frozen rubric, hashed manifests; 5-round review gate
+- [x] Arm-0 column n=3; first parity table published
+- [x] #133 #134 — honesty classes closed, live-validated at 0 dishonest (run 5)
+- [x] Arm-2 adapter + automatic scoring (#131); Haiku run 2 scored (2 dishonest — frontier n=1 ceiling broken)
+- [x] Battery precondition guards; CI fixes (twine metadata, pyasn1); dogfood channel (`docs/dogfood-log.md`)
 
-**Next actions, in order:**
-1. **Arm-2 remaining runs** — Haiku run 3, Sonnet runs 2-3, each
-   independently J-scored; firms both columns and retires table caveat 1.
-2. **Arm-1 go/no-go** (one turn's token count, paid ~$12/hr pre-authorized),
-   then ≥3 runs per model — retires caveat 4 (harness vs model separation).
-3. **Meta-task realism rung** (recall recovery, content-grep, dot-dir
-   discovery, the 24KB read bound) — the WS-8 path and the capability path;
-   parity table v2's discriminating rows come from here, and the dogfood
-   log feeds it real-work cases.
-4. **Release decision** (v0.18.15 for the merged-unreleased set) — the
-   practitioner's call.
+Remaining, in order:
+
+- [ ] #131 — Arm-2 runs to n=3 per model (Haiku run 3; Sonnet runs 2–3), each independently J-scored
+- [ ] #131 — Arm-1 go/no-go (one turn's tokens), then ≥3 paid runs per model
+- [ ] #146 — release v0.18.15
+- [ ] #143 #145 #121 #144 — meta-task rungs (recall recovery, repo-scale reads, content-grep, dot-dir)
+- [ ] #141 #138 #63 — parity v2 inputs (CLAUDE.md confound, volume scaling, statistics), then parity table v2 with realism rows
+- [ ] #126 — long-horizon 30-turn battery (#136 #137 feed the design)
+- [ ] #139 #140 — memory spikes; #127 plexus substrate; #82 remainder (cross-session)
+- [ ] #128 #129 #130 — task shapes toward compose-at-runtime
+- [ ] #125 — Rust gate; #119 #135 — seat ladder on-signal
+- [ ] #85 #84 #90 #93 #95 #106 #110 #114 #132 #142 — platform hardening as gates demand
+- [ ] North star: parity on real work, honesty column held at zero
 
 ## Doctrine (what we learned, made binding)
 
@@ -188,213 +165,47 @@ measurement; provenance in the archive.
   independent J-scoring and reviews (a fresh remote session is naturally
   author-independent).
 
-## Task cards
+## Epics
 
-Format: **#issue Title** [env | class] — entry pointers → exit gate.
-Class: design (Opus-class lead), impl (Sonnet-class TDD), mech
-(Haiku-class). Every card follows §Delegation contract.
+Issue lists live in GitHub: `gh issue list --label epic:<name>`. One line
+per epic here; detail on the issues.
 
-### WS-2: Honesty (CLOSED 2026-08-12 — now hold the property)
+### epic:ws2-honesty — CLOSED 2026-08-12; hold the property
+Zero dishonest under independent scoring, validated live. Watch: #140
+(staleness cascades). Reopen only on a new independently-confirmed
+dishonest outcome.
 
-Both measured classes closed and live-validated at zero dishonest under
-independent scoring (#133/#134; §State). Standing work: every future run's
-J-turns stay independently scored; the documented residuals stay watched
-(decider false-negative on uncovered fuzzy recap phrasings; #140 probes
-staleness cascades; #142 is the reject-template UX leak). Reopen this card
-only on a new independently-confirmed dishonest outcome.
+### epic:ws8-parity — the comparison IS the product claim
+- [x] Instrument + Arm-0 column + parity table v1 + Arm-2 auto-scoring (#131)
+- [ ] #131 Arm-2 n=3; Arm-1 go/no-go + runs
+- [ ] #141 CLAUDE.md confound · #138 volume scaling · #63 statistics
+- [ ] Parity table v2 (realism rows; interval estimates)
 
-The reopened exit gate: **one full ladder run with ZERO dishonest
-outcomes, scored by the independent J-scorer** (author scoring does not
-count, per doctrine 1); then variance over three same-seed runs.
+### epic:ws3-client-surface — the serve upgrades any client
+- [x] read/run/discovery delegation, fix-execution, chain executor, meta-task slice 1
+- [ ] #143 recall recovery · #145 repo-scale reads · #121 grep · #144 dot-dir
+- [ ] #122 edit delegation · #123 multi-file · #124 command registry · #117 fix-completion tail
 
-- **#133 Recall must disclose a rejected first ask** [ANY impl; RIG
-  validate] — selection is correct (first SHIPPED write, spoof-safe); the
-  fix is disclosure when first-ask ≠ first-shipped. Records:
-  `arm0-run{2,3}-jscore.md`. → turn-10 class dishonest count 0 under
-  independent re-score.
-- **#134 Recap grounding** [ANY design+impl; RIG validate] — recap claims
-  about built artifacts checked deterministically against the shipped-write
-  ledger; rejected turns disclosed as rejected; fail closed to a templated
-  honest recap. `honesty.py` cannot catch this class; the gate must be
-  serve-side. → turn-5 class dishonest count 0 under independent re-score.
-- **#110 Accepted-artifact quality gate** [ANY impl; RIG validate] —
-  deterministic AST reject/repair for duplicate defs and shadowed/dead
-  code. Live corroboration: Arc-D run 2 turn 7 shipped a self-recursing
-  shadowed import. → the run-2-turn-7 artifact class rejects hermetically;
-  no ladder regression.
-- **#117 Fix-execution tail** [ANY impl] — negation-tightening ("Expected
-  TypeError not raised" currently refuses;
-  `docs/plans/2026-07-10-test-repair-round-2-design.md`), injector
-  scope-blind binding, cross-turn repair. → named fixtures convert
-  hermetically; cross-turn repair proven on a two-turn probe.
-- **#119 Seat-capability ladder** [RIG] — post-repairs A/B at ≥3 runs per
-  seat (8b / 14b think-off / coder-30B-A3B / one cheap hosted), one seat
-  varied. Entry evidence so far: 14b not a clean win. → doctrine 3
-  re-measured with n≥3; escalation-on-signal wired only if a class
-  converts. Buy-back ledger rules in §Seat-capability ladder (archive
-  carries the full section).
-- **#114 Trace truncation remainder** [ANY impl, small] — prose-cap config
-  knob so held-round internals are diagnosable post-hoc. → a rejected
-  round's failure report is fully recoverable from the trace.
+### epic:ws5-long-horizon
+- [ ] #126 30-turn battery + plan substrate (#136 #137 feed design)
 
-### WS-8: Parity table (#131 — the comparison IS the product claim)
+### epic:ws6-memory
+- [ ] #139 context curve · #127 plexus integration · #82 remainder (cross-session record)
 
-- **Arm-2 transcript capture + adapter** [REMOTE impl] — capture DONE
-  (2026-07-17, `docs/plans/2026-07-17-arm2-subagent-captures/`: schema,
-  tool names Write/Bash/Read, usage dedup by `message.id`, the
-  serialize-captures-between-turns rule the instrument itself enforced).
-  Remaining: the driver script + `subagent_adapter.py` beside
-  `opencode_adapter.py`. → adapter maps the captured real run;
-  unmapped-tool streams fail loudly, not as zero-shipped.
-- **Arm-2 battery, ≥3 runs** [REMOTE] — construct requirements in §State.
-  → 3 runs with truth/oracle capture, J-turns scored independently, cells
-  including deaths/unscored published.
-- **Arm-1 go/no-go, then ≥3 runs** [RIG, paid] — one turn's token count
-  first; `LADDER_MODEL=anthropic/...`. → 3 runs per model within budget.
-- **Parity table** — v1 DONE 2026-07-15
-  (`docs/plans/2026-07-15-first-parity-table.md`, n=1 per Arm-2 model,
-  seven binding caveats; summarized in §State). v2 [ANY mech after more
-  runs exist] strengthens it per §2-as-amended: interval-worthy n, Arm-1
-  column, cost/solved-turn, deaths/unscored/legacy columns; and its
-  discriminating rows come from the meta-task realism axis, since v1
-  showed the toy ladder saturates at the top.
-- **Adversarial honesty probes as a shared sub-battery** [RIG] — spoofed
-  "999 passed" read, seeded-red, phantom asks, run against every arm. →
-  per-arm probe outcomes beside the table.
-- **#63 statistics framework** [ANY design] — becomes live as run count
-  grows; per-doctrine-6 the table needs interval estimates before strong
-  claims. → agreed test/interval procedure recorded in the rubric.
-- **Named possibility, not an arm:** hybrid (frontier harness + llm-orc as
-  MCP tools) — composition-as-tool vs composition-as-backend.
+### epic:ws7-task-shapes
+- [ ] #128 elicit-then-build · #129 refactor shape · #130 compose-at-runtime primitive
 
-### WS-3: Client execution surface (single rounds → budgeted chains)
+### epic:ws4-language
+- [ ] #125 Rust gate (cargo runner, sandboxed executor, adequacy)
 
-Capability-map principle (archive §WS-3 carries the full statement): the
-serve upgrades any client — workspace-touching actions ride the client
-seam; serve-native capabilities (gate, memory) never need the client;
-per-client adapters normalize formats; honest refusal at the bottom.
+### epic:seat-ladder
+- [ ] #119 escalation framework · #135 ori/eval A/B harness spike
 
-- **#121 grep delegation** [ANY impl; RIG validate] — glob discipline
-  generalized: template-built patterns from charset-checked stems,
-  deterministic candidate rule, refuse-with-candidates or bounded read
-  fan. **Build the deferred round-budget backstop here**
-  (`max_rounds`/`rounds_consumed`; the read fan is the first chain not
-  bounded by per-step idempotency). → meta-task exit: "how does classify
-  decide routing?" answered through the serve via grep→read, grounded.
-- **Meta-task rungs** [ANY impl; RIG validate] — (1) recall recovery:
-  partial names ("the dispatcher") ground via distinctive-component
-  matching (the spike's file-rarity signal); (2) content-grep for
-  non-filename symbols (model-proposed pattern + charset-sanitize + grep
-  find-or-refuse backstop); (3) `.llm-orc/` dot-dir discovery limitation —
-  deferred to the self-hosting apex. Spike evidence:
-  `docs/plans/2026-07-14-grep-read-spikes/` (naive content-grep REFUTED;
-  filename stem is the clean deterministic signal).
-- **#122 edit delegation** [ANY impl; RIG validate] — chain: read-current
-  → apply → gate post-edit state → emit edit tool_call. → surgical edit
-  ships gated on a real file.
-- **#123 multi-file deliverables** [ANY impl; RIG validate] — N writes per
-  turn; deliverable contract + form_gate go per-file. Battery turn 7's
-  persist-integration shape is the standing miss this converts. → turn 7
-  ships both files gated.
-- **#124 command-template registry** [ANY impl] — closed builders keyed by
-  intent (pytest today, `cargo test` with WS-4). Free-text bash never
-  ships without #85. → second registry entry behind the same seam.
-- **Client-agnosticism probe** [RIG, cheap] — one battery slice through a
-  second OpenAI-compatible client (Aider or Cline), format differences
-  absorbed by adapters. → guards against OpenCode overfit.
+### epic:ws9-platform
+- [ ] #146 release · #85 sandbox hardening · #84 gate adversarial harness · #90 llama.cpp · #93 hot path · #95 dead surface · #106 shape home · #110 artifact quality · #114 trace cap · #132 BitNet · #142 reject templates
 
-### WS-4: Language generalization (Rust first, for plexus)
-
-- **#125 Rust gate** [ANY impl for builder/parser; RIG for plexus
-  validation] — `cargo test` command builder + verdict parser (the only
-  pytest-aware seams are named in the run-delegation design), then
-  sandboxed Rust executor + adequacy checker (`#[test]` + `assert_eq!`
-  discipline, extended from fixtures as Python's was). → one Rust
-  fix-execution probe against plexus: locate, edit, `cargo test`, honest
-  verdict.
-
-### WS-5: Long-horizon operation
-
-- **#126 Plan substrate spike + plan-shaped intent** [ANY design+impl; RIG
-  battery] — spike (a) server-side plan artifact vs (b) `todowrite`
-  mirror in one session; capability-map tilt says burden of proof is on
-  the mirror. Then: oversized ask → decompose shape → plan in substrate →
-  each wire round advances one step via the chain executor → honest
-  progress reporting. Latency budget discipline per chain step (the 780s
-  battery cap vs 720s seat budget is the standing datum). → 30+ turn
-  battery on a real repo; turn 30 still advancing turn 1's plan with
-  honest state.
-- **Compaction observation** [RIG, passive] — #82's divergence-classifier
-  entry gate; `LLM_ORC_SERVE_WIRE_LOG` watches for the first observed
-  OpenCode compaction (the wire has stayed append-only through 30+
-  messages).
-
-### WS-6: Memory beyond parity
-
-- **#127 Plexus consumer integration** [RIG design-first] — topology
-  decision (spawn `plexus mcp` stdio vs shared SQLite + cursors; design
-  around the mutual-subprocess circularity), session-record ingestion with
-  tag-at-ingest from classify's routing facts (zero model calls), lens
-  queries with `evidence_trail` receipts. Survey facts in the archive
-  §WS-6. → cross-session recall probe: a fact from session A answered in
-  session B with an evidence trail.
-- **#82 remainder** [RIG] — divergence classifier, entry-gated on WS-5's
-  compaction observation; prose retrieval beyond the recency tail.
-
-### WS-7: Task-shape generality (the ADR-047 ladder)
-
-- **#128 Elicit-then-build** [ANY impl; RIG validate] — clarifying
-  questions on underspecified asks; the honest alternative to guessing
-  spec-freedom (the dominant hard-turn failure). → an underspecified
-  battery probe elicits, then builds against the answers.
-- **#129 Refactor shape** [ANY impl; RIG validate] — behavior-preserving
-  by contract: existing tests stay green on post-change state; composes
-  read + build + run seams. → a rename/extract probe ships gated.
-- **#130 Compose-at-runtime primitive** [ANY impl, evidence-gated] — the
-  four named engine gaps; built when a flow demonstrably needs a shape the
-  catalog lacks (AS-11). → a task that refuses today runs on a
-  runtime-composed shape and passes its gate.
-- **Composer ensembles** [design, after #130] — compose from validated
-  registry parts, AS-2 validates before registration; the
-  capable-model-composed baseline is the benchmark (ADR-047 pillar c). →
-  a registered shape survives AS-2 + review with no operator edits.
-
-### WS-9: Platform, hardening, hygiene
-
-In dependency order: **#85** sandbox hardening [ANY impl] (container/
-seccomp/rlimits; gates #124's bash widening and untrusted deployment) ·
-**#84 remainder** [ANY impl] (adversarial harness vs a live
-non-cooperative builder; ADR-048) · **#93** hot-path caching + I/O off the
-event loop [ANY impl] (prerequisite for multi-session and WS-5 length) ·
-**#90** llama.cpp backend [ANY impl; RIG validate] (drop the Ollama
-process dependency; #64 folded in) · **#132** BitNet/bitnet.cpp
-investigation [ANY research] (CPU seat; related to #90 — mainline
-llama.cpp does not reliably load the 2B4T GGUF) · **#106** single home for
-serving shapes [ANY impl] (regression pin holds meanwhile) · **#95**
-dead-surface sweep [ANY mech, Haiku-grade].
-
-Off-path backlog: #80 (meta-workflow viz) · #65 (artifact relocation) ·
-#30/#66 (research). Closed 2026-07-11: #31 #78 #79 #64.
-
-## Sequencing
-
-- **Now (parallel, different environments):**
-  - ANY/REMOTE: #133 and #134 (the dishonest classes — highest leverage,
-    small, environment-agnostic), then #110.
-  - REMOTE: Arm-2 capture → adapter → 3 runs.
-  - RIG (next rig session): re-validate #133/#134 live with independent
-    re-scoring; Arm-1 go/no-go; then the first parity table.
-- **Next:** WS-3 #121 grep + meta-task rungs → meta-task exit gate
-  (llm-orc half) → WS-4 #125 in parallel → plexus half → #122/#123/#124.
-- **Then:** WS-5 and WS-6 as parallel arcs (WS-5's compaction observation
-  feeds WS-6's divergence classifier; WS-6 ingestion needs nothing from
-  WS-5).
-- **Throughout:** WS-7 entries land inside WS-2/WS-3 arcs; #130 waits for
-  demonstrated need; WS-9 items slot in where named as prerequisites;
-  #119 when a rig session has battery budget.
-- **Apex (self-hosting: the serve improving its own repo):** enter when
-  the meta-task rung holds; judged by shadow comparison (an agent driving
-  the serve through OpenCode judges its decisions against its own).
+### epic:off-path
+#80 #65 #30 #66 — parked, not on the north-star path.
 
 ## Delegation contract (updated for non-Fable sessions)
 
@@ -432,8 +243,6 @@ Session roles:
 
 ## Issue index
 
-**WS-2:** #133 #134 #110 #117 #119 #114 · **WS-8:** #131 #63 · **WS-3:**
-#121 #122 #123 #124 · **WS-4:** #125 · **WS-5:** #126 · **WS-6:** #127 +
-#82 remainder · **WS-7:** #128 #129 #130 · **WS-9:** #85 #84 #93 #90 #132
-#106 #95. Off-path: #80 #65 #30 #66. The shipped-issue ledger and release
-mapping live in the archive.
+Superseded by epic labels: `gh issue list --label epic:<name>`. Closed
+2026-07-11: #31 #78 #79 #64. Closed since: #83 #98 #99 #100 #104 #105
+#107–#109 #111–#113 #115 #116 #118 #120 #133 #134.
