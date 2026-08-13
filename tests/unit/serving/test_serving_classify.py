@@ -24,14 +24,20 @@ CLASSIFY = SCRIPTS / "classify.py"
 
 sys.path.insert(0, str(SCRIPTS))
 from classify import (  # type: ignore  # noqa: E402
+    _READ_CAP_KB,
     _explain_stems,
     _latest_glob_listing,
     _ledger_recap,
     _valid_recall_answer,
 )
+from classify import _READ_TOKEN_BUDGET as _CLASSIFY_READ_TOKEN_BUDGET  # noqa: E402
 
 from llm_orc.web.serving.serving_ensemble_caller import (  # noqa: E402
+    _READ_FILE_CAP,
     _render_glob_block,
+)
+from llm_orc.web.serving.serving_ensemble_caller import (  # noqa: E402
+    _READ_TOKEN_BUDGET as _CALLER_READ_TOKEN_BUDGET,
 )
 
 
@@ -279,7 +285,52 @@ def test_oversize_read_attempt_refuses_with_cap_reason() -> None:
     )
     assert decision["needs_files"] == []
     assert "could not read storage.py" in decision["read_failed"]
-    assert "24" in decision["read_failed"]
+    assert str(_READ_CAP_KB) in decision["read_failed"]
+
+
+def test_read_cap_mirror_stays_in_sync() -> None:
+    # C5 (#145): the two mirrored constants (classify.py's own copy of the
+    # caller's read cap, kept in sync because classify runs standalone with
+    # no cross-boundary import) can never silently drift apart.
+    assert _READ_FILE_CAP == _READ_CAP_KB * 1024
+
+
+def test_read_token_budget_mirror_stays_in_sync() -> None:
+    # MAJOR 2 (review round 1): every mirrored constant pair gets a drift
+    # assert, not just the first — the accumulator's token budget (C1,
+    # re-denominated BLOCKER 1) is a second mirror pair between classify.py
+    # and its caller, same unit on both sides (no KB conversion), so the
+    # assert is a direct equality.
+    assert _CALLER_READ_TOKEN_BUDGET == _CLASSIFY_READ_TOKEN_BUDGET
+
+
+def test_over_budget_read_attempt_refuses_naming_the_budget_and_held_files() -> None:
+    # C1 (#145): the caller marks a read that would cross the total
+    # projected-token budget with an "(over-budget)" variant (never
+    # re-rendering its body, never entering the accumulator) — classify
+    # treats it exactly like a failed/oversize read: refuse instead of
+    # re-requesting, naming the budget and the files already held so the
+    # user can act. minor 5 (review round 1): the remedy is stated as its
+    # own plain sentence. Plain terms (review round 2): "the session read
+    # budget", not the raw projected-token figure — the figure isn't
+    # actionable to a user.
+    context = (
+        "assistant: [read big1.py]\ndef a(): pass\n"
+        "assistant: [read big2.py]\ndef b(): pass\n"
+        "assistant: [read big3.py (over-budget)]"
+    )
+    decision = _classify(
+        {"task": "write tests for existing big3.py", "context": context}
+    )
+    assert decision["needs_files"] == []
+    assert "could not read big3.py" in decision["read_failed"]
+    assert "the session read budget" in decision["read_failed"]
+    assert "big1.py" in decision["read_failed"]
+    assert "big2.py" in decision["read_failed"]
+    assert (
+        "Start a fresh session, or ask about one file at a time."
+        in (decision["read_failed"])
+    )
 
 
 def test_explain_turn_never_requests_a_read() -> None:
@@ -1349,6 +1400,39 @@ def test_truncated_wrote_block_does_not_ground_the_explain() -> None:
         {"task": "explain how todo.py stores its state", "context": context}
     )
     assert decision["target"] == "not-grounded"
+
+
+def test_not_grounded_reflects_a_recorded_oversize_attempt() -> None:
+    # minor 3 (review round 1): when the asked file already has a recorded
+    # attempt reason (a prior turn's build read that refused), the
+    # not-grounded routing carries that reason so emit can compose an
+    # honest message instead of suggesting the exact action that just
+    # failed ("ask me to read it").
+    context = "assistant: [read big.py (oversize)]"
+    decision = _classify({"task": "explain big.py", "context": context})
+    assert decision["target"] == "not-grounded"
+    assert decision["not_grounded"] == "big.py"
+    assert str(_READ_CAP_KB) in decision["not_grounded_reason"]
+
+
+def test_not_grounded_reflects_a_recorded_failed_attempt() -> None:
+    context = "assistant: [read gone.py (failed)] Error: ENOENT"
+    decision = _classify({"task": "explain gone.py", "context": context})
+    assert decision["target"] == "not-grounded"
+    assert decision["not_grounded_reason"] == "client read failed"
+
+
+def test_not_grounded_reflects_a_recorded_over_budget_attempt() -> None:
+    context = "assistant: [read big3.py (over-budget)]"
+    decision = _classify({"task": "explain big3.py", "context": context})
+    assert decision["target"] == "not-grounded"
+    assert "the session read budget" in decision["not_grounded_reason"]
+
+
+def test_not_grounded_reason_is_empty_when_never_attempted() -> None:
+    decision = _classify({"task": "explain how todo.py stores its state"})
+    assert decision["target"] == "not-grounded"
+    assert decision["not_grounded_reason"] == ""
 
 
 def test_recall_selects_the_first_shipped_build_never_a_later_file() -> None:

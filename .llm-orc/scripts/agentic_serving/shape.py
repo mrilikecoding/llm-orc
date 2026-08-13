@@ -130,6 +130,7 @@ def main() -> None:
                 "needs_glob": str(decision.get("needs_glob", "")),
                 "glob_failed": str(decision.get("glob_failed", "")),
                 "not_grounded": str(decision.get("not_grounded", "")),
+                "not_grounded_reason": str(decision.get("not_grounded_reason", "")),
                 "recall_answer": str(decision.get("recall_answer", "")),
                 # Review round 2 new blocker 2: pass through unchanged.
                 "is_build_ask": bool(decision.get("is_build_ask", False)),

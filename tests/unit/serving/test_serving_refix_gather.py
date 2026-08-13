@@ -140,6 +140,18 @@ def test_visible_test_is_empty_when_rung_one_point_five_did_not_fire() -> None:
     assert decision["visible_test"] == ""
 
 
+def test_over_budget_test_read_never_becomes_the_visible_test() -> None:
+    # MAJOR 1 (review round 1): _FILE_HEADER_RE didn't know the
+    # "(over-budget)" variant (C1, #145) either here — mirrors the
+    # accept_gather.py fix so both grammar consumers agree with the
+    # caller's render grammar.
+    conversation = f"{_PINNABLE_FAILURE}\nassistant: [read test_scale.py (over-budget)]"
+    decision = _gather(
+        _dispatch_input(conversation=conversation, prior_code=_PRIOR_CODE)
+    )
+    assert decision["visible_test"] == ""
+
+
 def test_target_file_is_extracted_from_the_task() -> None:
     decision = _gather(
         _dispatch_input(

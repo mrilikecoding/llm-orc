@@ -69,10 +69,18 @@ _FILE_RE = re.compile(
 
 # A file block in the rendered context: conversation-written ([wrote ...])
 # or client-read ([read ...], issue #83). '(truncated)' / '(failed)' /
-# '(oversize)' variants are never materialized; a failed read line carries
-# trailing reason text after ']' and so never matches the anchored $.
+# '(oversize)' / '(over-budget)' (C1, #145) variants are never
+# materialized; a failed read line carries trailing reason text after ']'
+# and so never matches the anchored $. MAJOR 1 (review round 1): a variant
+# missing from this alternation isn't rejected — the non-greedy name-group
+# absorbs " (variant)" into the "path" instead, and the header still
+# matches as if unvariant, materializing a corrupted phantom file (this
+# grammar now has four consumers across the codebase — classify.py,
+# refix_gather.py, and the caller that produces it; a shared vocabulary
+# constant is noted as follow-up, not built here).
 _FILE_HEADER_RE = re.compile(
-    r"^assistant: \[(?:wrote|read) ([^\]]+?)( \((?:truncated|failed|oversize)\))?\]$"
+    r"^assistant: \[(?:wrote|read) ([^\]]+?)"
+    r"( \((?:truncated|failed|oversize|over-budget)\))?\]$"
 )
 
 

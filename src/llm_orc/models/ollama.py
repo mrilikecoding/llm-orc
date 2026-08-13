@@ -32,6 +32,33 @@ class OllamaModel(ModelInterface):
     def name(self) -> str:
         return f"ollama-{self.model_name}"
 
+    @staticmethod
+    def _attach_raw_counts(usage: dict[str, Any], response: dict[str, Any]) -> None:
+        """C2 (#145): the RAW prompt_eval_count/eval_count survive alongside
+        ``usage``'s input_tokens/output_tokens — those fall back to a text-
+        length estimate when Ollama omits the real counts, so a truncation
+        detector needs the un-conflated raw fields (present only when
+        Ollama actually returned them, never synthesized)."""
+        for key in ("prompt_eval_count", "eval_count"):
+            value = response.get(key)
+            if value is not None:
+                usage[key] = value
+
+    @staticmethod
+    def _attach_timing_breakdown(
+        usage: dict[str, Any], response: dict[str, Any], total_duration_ns: Any
+    ) -> None:
+        """Ollama's detailed timing breakdown, attached only when the
+        response carried a total_duration (unchanged pre-existing
+        behavior, extracted alongside ``_attach_raw_counts`` to keep
+        ``generate_response`` under the complexity budget)."""
+        if total_duration_ns is None:
+            return
+        for key in ("eval_duration", "prompt_eval_duration", "load_duration"):
+            value = response.get(key)
+            if value is not None:
+                usage[f"{key}_ns"] = value
+
     async def generate_response(self, message: str, role_prompt: str) -> str:
         """Generate response using Ollama API."""
         start_time = time.time()
@@ -91,11 +118,9 @@ class OllamaModel(ModelInterface):
             model_name=self.model_name,
         )
 
-        # Attach Ollama timing breakdown when available
-        if self._last_usage is not None and total_duration_ns is not None:
-            for key in ("eval_duration", "prompt_eval_duration", "load_duration"):
-                value = response.get(key)
-                if value is not None:
-                    self._last_usage[f"{key}_ns"] = value
+        # Attach Ollama timing breakdown and raw usage counts when available
+        if self._last_usage is not None:
+            self._attach_timing_breakdown(self._last_usage, response, total_duration_ns)
+            self._attach_raw_counts(self._last_usage, response)
 
         return str(content)

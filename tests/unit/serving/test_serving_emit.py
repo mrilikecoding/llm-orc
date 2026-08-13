@@ -314,6 +314,68 @@ def test_not_grounded_emits_the_honest_message_without_a_seat_call() -> None:
     }
 
 
+def test_not_grounded_reason_states_it_not_the_failed_action() -> None:
+    # minor 3 (review round 1): a target with a RECORDED attempt reason
+    # (classify's not_grounded_reason, threaded from _visibility's
+    # attempted dict) must not be told to do the exact thing that just
+    # failed — the message states the reason instead.
+    outcome = _emit(
+        {
+            "build": False,
+            "file": "solution.py",
+            "content": "Not grounded in this session.",
+            "valid": True,
+            "reason": "ok",
+            "needs_files": [],
+            "read_failed": "",
+            "needs_run": "",
+            "needs_glob": "",
+            "glob_failed": "",
+            "not_grounded": "big.py",
+            "not_grounded_reason": "file exceeds the 96 KB read cap",
+            "accept": None,
+            "accept_reason": "",
+            "seat_admitted": None,
+            "seat_contract_reason": "",
+        }
+    )
+    assert outcome == {
+        "finish": True,
+        "content": (
+            "No `big.py` in this session: file exceeds the 96 KB read cap, "
+            "so I can't explain its internals without guessing."
+        ),
+    }
+    assert "ask me to read it" not in outcome["content"]
+
+
+def test_not_grounded_without_a_reason_keeps_the_original_message() -> None:
+    # backward compatibility: a gated payload that never sets
+    # not_grounded_reason (the field defaults to "") keeps today's message
+    # byte for byte.
+    outcome = _emit(
+        {
+            "build": False,
+            "file": "solution.py",
+            "content": "Not grounded in this session.",
+            "valid": True,
+            "reason": "ok",
+            "needs_files": [],
+            "read_failed": "",
+            "needs_run": "",
+            "needs_glob": "",
+            "glob_failed": "",
+            "not_grounded": "todo.py",
+            "not_grounded_reason": "",
+            "accept": None,
+            "accept_reason": "",
+            "seat_admitted": None,
+            "seat_contract_reason": "",
+        }
+    )
+    assert outcome["content"].endswith("ask me to read it.")
+
+
 def test_normal_decisions_carry_empty_not_grounded() -> None:
     outcome = _emit(
         {

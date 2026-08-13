@@ -12,8 +12,11 @@ import json
 from llm_orc.core.session.messages import ChatMessage
 from llm_orc.web.serving.chunks import ClientToolCall
 from llm_orc.web.serving.serving_ensemble_caller import (
+    _READ_TOKEN_BUDGET,
     _glob_pattern,
+    _normalize_read,
     _outcome_chunks,
+    _projected_tokens,
     _render_context,
     _tool_result_ack,
 )
@@ -428,6 +431,461 @@ def test_oversize_read_result_renders_header_only() -> None:
     assert "xxxx" not in rendered
 
 
+def test_read_result_at_the_cap_renders_whole() -> None:
+    # C5 (#145): the boundary render-through pair's whole-file side — a
+    # body of EXACTLY the cap renders complete (pairs with the oversize
+    # test above, which pins cap+1).
+    #
+    # Tests _render_read_block DIRECTLY, not through _render_context
+    # (review round 2): once C1's accumulator budget (_budget_read_blocks)
+    # is ALSO token-denominated, a 96KB body of one repeated character
+    # trips the token-scaling rule for long ASCII word-runs and gets
+    # marked "(over-budget)" downstream of the byte-cap check this test
+    # means to isolate — a repeated-character run is exactly the
+    # pathological case that rule exists to catch (BLOCKER 1), so testing
+    # the byte-cap boundary specifically means calling the function that
+    # OWNS that boundary, not the full multi-stage pipeline.
+    from llm_orc.web.serving.serving_ensemble_caller import (
+        _READ_FILE_CAP,
+        _render_read_block,
+    )
+
+    block, is_full = _render_read_block("calc.py", "x" * _READ_FILE_CAP)
+
+    assert is_full is True
+    assert "(oversize)" not in block
+    assert "x" * _READ_FILE_CAP in block
+
+
+def test_a_file_between_the_old_and_new_read_cap_now_renders_whole() -> None:
+    # #145: real repo files (subagent_adapter.py 25.8KB, classify.py ~80KB)
+    # routinely exceeded the old 24KB cap and now sit under the raised
+    # 96KB (98,304 byte) cap — a concrete 50,000-byte body pins that the
+    # raise actually widened the whole-file-or-refuse boundary, not just
+    # that the boundary comparison itself is correct. Tests
+    # _render_read_block directly — see the comment above.
+    from llm_orc.web.serving.serving_ensemble_caller import _render_read_block
+
+    block, is_full = _render_read_block("repo_scale.py", "x" * 50000)
+
+    assert is_full is True
+    assert "(oversize)" not in block
+
+
+def test_multi_file_read_accumulation_refuses_the_crossing_read() -> None:
+    # C1 (#145 pre-flight, blocking) + BLOCKER 1 (review rounds 1-2): the
+    # accumulator's TOTAL PROJECTED-TOKEN cost is bounded, not just each
+    # file's own byte cap — two large held reads (8,795 words -> 14,000
+    # projected tokens each at estimator v2's safety factor, well under
+    # the 96KB per-file cap) render whole; a third read of the same size
+    # would push the running total to 42,000, past _READ_TOKEN_BUDGET
+    # (35,000), so it refuses instead of silently blowing the window
+    # (measured: three real ~58,100-token reads returned prompt_eval_count
+    # 20,482, a third of what was sent). 8,795 is derived (binary search
+    # against the live _projected_tokens/_READ_TOKEN_BUDGET, not hand
+    # computed) because v2's safety factor multiplies the WHOLE block
+    # total, so cost is not simply "words + a constant".
+    #
+    # A word-dense body (space-separated single-char "words") is required
+    # here: each word is its own ASCII word-char run, so the estimator
+    # counts it as exactly one unit before the factor. A repeated-character
+    # body like "x" * N would NOT exercise this the same way — a run over
+    # 30 chars scales by length instead (v2's high-entropy rule), which is
+    # a DIFFERENT accumulator-tripping mechanism, not the multi-file
+    # accumulation this test targets.
+    body = "a " * 8795
+    messages = [
+        ChatMessage(role="user", content="fix big1.py, big2.py, and big3.py"),
+        ChatMessage(
+            role="assistant", content=None, tool_calls=(_read_call("c1", "big1.py"),)
+        ),
+        ChatMessage(role="tool", tool_call_id="c1", content=body),
+        ChatMessage(
+            role="assistant", content=None, tool_calls=(_read_call("c2", "big2.py"),)
+        ),
+        ChatMessage(role="tool", tool_call_id="c2", content=body),
+        ChatMessage(
+            role="assistant", content=None, tool_calls=(_read_call("c3", "big3.py"),)
+        ),
+        ChatMessage(role="tool", tool_call_id="c3", content=body),
+    ]
+
+    rendered = _render_context(messages)
+
+    assert "[read big1.py]" in rendered
+    assert "[read big2.py]" in rendered
+    assert "[read big3.py (over-budget)]" in rendered
+
+
+def test_budget_refusal_never_drops_an_already_held_block() -> None:
+    # C1 pin: the earlier-held reads' bodies stay COMPLETE — the budget
+    # refusal only ever affects the new crossing read, never truncates or
+    # evicts an already-fitting one (the anti-read-loop exemption: dropping
+    # a held read would make classify re-request it). Word-dense bodies,
+    # see the comment above (BLOCKER 1: char-length does not exercise the
+    # token budget).
+    body = "a " * 8795
+    messages = [
+        ChatMessage(role="user", content="fix big1.py, big2.py, and big3.py"),
+        ChatMessage(
+            role="assistant", content=None, tool_calls=(_read_call("c1", "big1.py"),)
+        ),
+        ChatMessage(role="tool", tool_call_id="c1", content=body),
+        ChatMessage(
+            role="assistant", content=None, tool_calls=(_read_call("c2", "big2.py"),)
+        ),
+        ChatMessage(role="tool", tool_call_id="c2", content=body),
+        ChatMessage(
+            role="assistant", content=None, tool_calls=(_read_call("c3", "big3.py"),)
+        ),
+        ChatMessage(role="tool", tool_call_id="c3", content=body),
+    ]
+
+    rendered = _render_context(messages)
+
+    assert "[read big1.py (over-budget)]" not in rendered
+    assert "[read big2.py (over-budget)]" not in rendered
+    assert body.strip() in rendered  # at least one full body survives intact
+
+
+def test_projected_tokens_is_conservative_across_density_classes() -> None:
+    """BLOCKER 1 (review round 1): the estimator must never UNDER-count —
+    for each density class, projected tokens implied by the review's
+    measured real chars/token ratio must not exceed what the estimator
+    reports, so the budget check never admits more real tokens than it
+    thinks it does. A 10% tolerance absorbs this fixture being one sample,
+    not the review's full corpus.
+
+    Reality-check table (review round 1, real chars/token): ASCII Python
+    4.0, JSON 2.07, CJK 1.99, emoji 1.0.
+    """
+    ascii_fixture = (
+        "def divide(a, b):\n"
+        "    if b == 0:\n"
+        '        raise ValueError("cannot divide by zero")\n'
+        "    return a / b\n\n\n"
+        "def percent(part, whole):\n"
+        "    return divide(part, whole) * 100\n"
+    ) * 20
+    json_fixture = (
+        '{"name": "test", "values": [1, 2, 3, 4, 5], '
+        '"nested": {"a": true, "b": null, "c": 3.14159}, '
+        '"list_of_objs": [{"id": 1, "tag": "x"}, {"id": 2, "tag": "y"}]}'
+    ) * 20
+    cjk_fixture = (
+        "这是一个测试文件用于验证读取上限的计算方式是否正确并且能够处理中文字符"
+    ) * 20
+    emoji_fixture = "🎉🚀🔥💯😀😃😄😁😆😅😂🤣☺️😊😇🙂🙃😉😌😍🥰😘" * 20
+
+    density_classes = (
+        ("ascii", ascii_fixture, 4.0),
+        ("json", json_fixture, 2.07),
+        ("cjk", cjk_fixture, 1.99),
+        ("emoji", emoji_fixture, 1.0),
+    )
+    for name, text, real_chars_per_token in density_classes:
+        implied_real_tokens = len(text) / real_chars_per_token
+        estimated = _projected_tokens(text)
+        assert estimated >= implied_real_tokens * 0.90, (
+            f"{name}: estimated {estimated} tokens is not conservative "
+            f"against the implied real {implied_real_tokens:.0f}"
+        )
+
+
+def test_low_token_density_json_file_refuses_despite_fitting_the_byte_cap() -> None:
+    # BLOCKER 1's demonstrating case: a ~90KB JSON file (under the 96KB
+    # per-file byte cap, so the coarse whole-file-or-refuse gate admits it)
+    # but its low real chars/token density (JSON ~2.07) means its
+    # projected token count alone crosses _READ_TOKEN_BUDGET (35,000) —
+    # refused at the FIRST read, before any other file is held. This is
+    # exactly what the char-denominated budget missed: a same-size file
+    # passed both old caps and silently overflowed the window.
+    json_unit = (
+        '{"id": 1, "name": "item", "values": [1, 2, 3, 4, 5], '
+        '"active": true, "meta": {"a": 1, "b": null}}, '
+    )
+    json_blob = "[" + json_unit * 909 + "]"
+    assert len(json_blob) < 98304  # under the per-file byte cap
+
+    messages = [
+        ChatMessage(role="user", content="fix data.json"),
+        ChatMessage(
+            role="assistant", content=None, tool_calls=(_read_call("c1", "data.json"),)
+        ),
+        ChatMessage(role="tool", tool_call_id="c1", content=json_blob),
+    ]
+
+    rendered = _render_context(messages)
+
+    assert "[read data.json (over-budget)]" in rendered
+    assert "[read data.json]" not in rendered
+
+
+def test_high_char_low_density_ascii_source_still_admits() -> None:
+    # The companion case: an ASCII source file has HIGH real chars/token
+    # density, so its projected token count stays under
+    # _READ_TOKEN_BUDGET (35,000) — admitted. 550 repetitions here (a
+    # dense, comment-free code fixture, not any real repo file's own
+    # size) keeps comfortable headroom rather than hugging the boundary;
+    # see test_real_repo_files_admit_or_refuse_at_current_size below for
+    # what actual repo files project through the real render pipeline.
+    py_unit = (
+        "def compute_value(a, b, c):\n"
+        "    if a > b:\n"
+        "        return a - b + c\n"
+        "    return b - a + c\n\n"
+    )
+    py_blob = py_unit * 550
+    assert len(py_blob) < 98304  # under the per-file byte cap
+
+    messages = [
+        ChatMessage(role="user", content="fix source.py"),
+        ChatMessage(
+            role="assistant", content=None, tool_calls=(_read_call("c1", "source.py"),)
+        ),
+        ChatMessage(role="tool", tool_call_id="c1", content=py_blob),
+    ]
+
+    rendered = _render_context(messages)
+
+    assert "[read source.py]" in rendered
+    assert "(over-budget)" not in rendered
+
+
+def _wire_wrap_file(source_path: object) -> str:
+    """A real file's content wrapped in the captured OpenCode wire shape
+    (``<path>/<type>/<content>`` with a per-line ``N: `` gutter) — the
+    shape ``_render_read_block`` actually receives in production. Review
+    round 3 blocker B: testing admission against BARE raw file content
+    (skipping this wrapping) understates the guard's real charge — every
+    line gains a 2-space indent in the rendered block (v2's rule (f)
+    counts each as its own token-unit), and for
+    serving_ensemble_caller.py specifically, bare content also
+    mis-triggers the #150 <content>-tag extraction on the file's OWN
+    literal mentions of that tag, corrupting the measurement entirely."""
+    from pathlib import Path
+
+    path = Path(str(source_path))
+    lines = path.read_text().splitlines()
+    gutter_body = "\n".join(f"{i + 1}: {line}" for i, line in enumerate(lines))
+    return (
+        f"<path>{path}</path>\n"
+        "<type>file</type>\n"
+        "<content>\n"
+        f"{gutter_body}\n"
+        "\n"
+        f"(End of file - total {len(lines)} lines)\n"
+        "</content>"
+    )
+
+
+def test_real_repo_files_admit_or_refuse_at_current_size() -> None:
+    """Review round 3 blockers A+B: admission tests must measure the
+    quantity the guard actually charges — ``_render_read_block``'s
+    rendered block (header + wire-wrapped, gutter-stripped, 2-space-
+    indented body) through ``_projected_tokens`` — not raw source text.
+
+    The RESOLVED pinned fact (not another budget chase): classify.py, at
+    its current size, REFUSES over budget — the designed failure mode,
+    verified here as the honest ``(over-budget)`` shape, not a crash or
+    a silent truncation. subagent_adapter.py and serving_ensemble_
+    caller.py (the #145 exit gate's own grounding targets) still ADMIT
+    with real margin. Deliberately live-computed (not a hardcoded token
+    count) so this test tracks the actual repo files as they evolve,
+    while staying an honest signal — a future edit that pushes
+    subagent_adapter.py or serving_ensemble_caller.py over budget, or
+    that somehow shrinks classify.py back under it, should surface here
+    for a conscious decision, not silently.
+    """
+    from pathlib import Path
+
+    repo = Path(__file__).resolve().parents[4]
+    expected_refuses = {"classify.py": ".llm-orc/scripts/agentic_serving/classify.py"}
+    expected_admits = {
+        "subagent_adapter.py": "benchmarks/agentic_serving/subagent_adapter.py",
+        "serving_ensemble_caller.py": (
+            "src/llm_orc/web/serving/serving_ensemble_caller.py"
+        ),
+        "emit.py": ".llm-orc/scripts/agentic_serving/emit.py",
+        "accept_gather.py": ".llm-orc/scripts/agentic_serving/accept_gather.py",
+    }
+
+    def render_read(name: str, rel_path: str) -> str:
+        raw = _wire_wrap_file(repo / rel_path)
+        messages = [
+            ChatMessage(role="user", content=f"fix {name}"),
+            ChatMessage(
+                role="assistant", content=None, tool_calls=(_read_call("c1", name),)
+            ),
+            ChatMessage(role="tool", tool_call_id="c1", content=raw),
+        ]
+        return _render_context(messages)
+
+    for name, rel_path in expected_refuses.items():
+        rendered = render_read(name, rel_path)
+        assert f"[read {name} (over-budget)]" in rendered, (
+            f"{name} was expected to REFUSE over-budget (the pinned bound "
+            "this test documents) but rendered whole instead — either the "
+            "file shrank below the budget or the budget/estimator moved; "
+            "either way this needs the design-fork treatment, not a "
+            "silent update."
+        )
+        assert f"[read {name}]" not in rendered
+
+    for name, rel_path in expected_admits.items():
+        rendered = render_read(name, rel_path)
+        assert f"[read {name}]" in rendered, (
+            f"{name} was expected to ADMIT (it grounds the #145 exit gate "
+            "or is otherwise pinned as comfortably under budget) but "
+            "refused instead — a real repo file failing to admit is the "
+            "exact regression #145 exists to prevent."
+        )
+        assert f"[read {name} (over-budget)]" not in rendered
+
+
+def test_budget_boundary_pin_exact_admits_plus_one_refuses() -> None:
+    # minor 1 (review round 1, B2 mutant): the exact boundary of the `>`
+    # comparison — the LARGEST word count whose block still fits the
+    # budget is admitted; one word more refuses. Word count is found by
+    # binary search against the live _projected_tokens/_READ_TOKEN_BUDGET
+    # (not hand-computed): estimator v2's safety factor multiplies the
+    # WHOLE block total, so cost is not simply "words + a constant
+    # overhead" the way a linear formula could invert directly.
+    from llm_orc.web.serving.serving_ensemble_caller import _indent_body
+
+    def block_tokens(word_count: int) -> int:
+        body = "a " * word_count
+        block = f"assistant: [read boundary.py]\n{_indent_body(body)}"
+        return _projected_tokens(block)
+
+    lo, hi = 0, _READ_TOKEN_BUDGET
+    while lo < hi:
+        mid = (lo + hi + 1) // 2
+        if block_tokens(mid) <= _READ_TOKEN_BUDGET:
+            lo = mid
+        else:
+            hi = mid - 1
+    at_budget_words = lo
+    over_budget_words = at_budget_words + 1
+
+    def render_with(word_count: int) -> str:
+        body = "a " * word_count
+        messages = [
+            ChatMessage(role="user", content="fix boundary.py"),
+            ChatMessage(
+                role="assistant",
+                content=None,
+                tool_calls=(_read_call("c1", "boundary.py"),),
+            ),
+            ChatMessage(role="tool", tool_call_id="c1", content=body),
+        ]
+        return _render_context(messages)
+
+    at_budget = render_with(at_budget_words)
+    assert "[read boundary.py]" in at_budget
+    assert "(over-budget)" not in at_budget
+
+    over_budget = render_with(over_budget_words)
+    assert "[read boundary.py (over-budget)]" in over_budget
+
+
+def test_failed_read_costs_nothing_toward_the_token_budget() -> None:
+    # minor 2 (review round 1, B5 mutant) + B5 slack fix (review round 2,
+    # minor 3): a `(failed)` block sitting between two held reads must
+    # contribute ZERO to the running budget total. The prior version left
+    # ~1,000 tokens of slack between A+C and the budget ceiling —
+    # comfortably more than a mutant that (wrongly) counted the failed
+    # block's own header cost could ever leak, so the mutant survived. C
+    # is now the LARGEST word count that still fits the REMAINING budget
+    # after A (found by binary search against the live
+    # _projected_tokens/_READ_TOKEN_BUDGET — estimator v2's safety factor
+    # multiplies the whole block total, so this can't be hand-derived
+    # linearly): the natural tightest boundary has less slack than a
+    # single held word can add, which is itself far less than the failed
+    # block's own header cost, so even a 1-token leak from a "count it
+    # anyway" mutant tips C over budget.
+    from llm_orc.web.serving.serving_ensemble_caller import _indent_body
+
+    def block_tokens(path: str, word_count: int) -> int:
+        body = "a " * word_count
+        block = f"assistant: [read {path}]\n{_indent_body(body)}"
+        return _projected_tokens(block)
+
+    a_words = 15000
+    a_body = "a " * a_words
+    a_cost = block_tokens("a.py", a_words)
+
+    failed_block_cost = _projected_tokens(
+        "assistant: [read gone.py (failed)] empty read result"
+    )
+    remaining = _READ_TOKEN_BUDGET - a_cost
+    lo, hi = 0, remaining
+    while lo < hi:
+        mid = (lo + hi + 1) // 2
+        if block_tokens("c.py", mid) <= remaining:
+            lo = mid
+        else:
+            hi = mid - 1
+    c_words = lo
+    c_body = "a " * c_words
+    slack = _READ_TOKEN_BUDGET - (a_cost + block_tokens("c.py", c_words))
+    assert slack < failed_block_cost  # the property the mutant kill depends on
+    messages = [
+        ChatMessage(role="user", content="fix a.py, gone.py, and c.py"),
+        ChatMessage(
+            role="assistant", content=None, tool_calls=(_read_call("c1", "a.py"),)
+        ),
+        ChatMessage(role="tool", tool_call_id="c1", content=a_body),
+        ChatMessage(
+            role="assistant", content=None, tool_calls=(_read_call("c2", "gone.py"),)
+        ),
+        ChatMessage(role="tool", tool_call_id="c2", content=""),  # empty -> failed
+        ChatMessage(
+            role="assistant", content=None, tool_calls=(_read_call("c3", "c.py"),)
+        ),
+        ChatMessage(role="tool", tool_call_id="c3", content=c_body),
+    ]
+
+    rendered = _render_context(messages)
+
+    assert "[read a.py]" in rendered
+    assert "[read gone.py (failed)]" in rendered
+    assert "[read c.py]" in rendered
+    assert "[read c.py (over-budget)]" not in rendered
+
+
+def test_budget_order_dependence_first_read_wins() -> None:
+    # minor 5 (review round 1): DECIDED — first-read-wins stands (never-
+    # evict is the rule). Two files that each fit ALONE (20,000 words ->
+    # ~31,814 projected tokens at estimator v2's safety factor) but not
+    # TOGETHER (~63,628 > 35,000): whichever is read first is the one
+    # that's held; swapping the read order flips which one refuses. The
+    # refusal reason also names the remedy plainly.
+    body = "a " * 20000
+
+    def render_order(first: str, second: str) -> str:
+        messages = [
+            ChatMessage(role="user", content=f"fix {first} and {second}"),
+            ChatMessage(
+                role="assistant", content=None, tool_calls=(_read_call("c1", first),)
+            ),
+            ChatMessage(role="tool", tool_call_id="c1", content=body),
+            ChatMessage(
+                role="assistant", content=None, tool_calls=(_read_call("c2", second),)
+            ),
+            ChatMessage(role="tool", tool_call_id="c2", content=body),
+        ]
+        return _render_context(messages)
+
+    a_first = render_order("a.py", "b.py")
+    assert "[read a.py]" in a_first
+    assert "[read b.py (over-budget)]" in a_first
+
+    b_first = render_order("b.py", "a.py")
+    assert "[read b.py]" in b_first
+    assert "[read a.py (over-budget)]" in b_first
+
+
 def test_line_number_gutter_is_stripped_from_read_content() -> None:
     body = "00001| def divide(a, b):\n00002|     return a / b"
     messages = [
@@ -536,6 +994,147 @@ def test_opencode_wrapped_read_result_normalizes_to_plain_source() -> None:
     assert "<content>" not in rendered
     assert "End of file" not in rendered
     assert "1: class Store:" not in rendered
+
+
+def test_content_closing_tag_inside_body_does_not_truncate_the_read() -> None:
+    """Issue #150: ``_normalize_read``'s ``<content>...</content>`` extraction
+    was non-greedy, so any file whose own text contains the literal
+    ``</content>`` string got cut at the FIRST occurrence — silently, no
+    variant marker. A source file whose body legitimately contains that
+    substring (a regex literal, a docstring example) must still render its
+    ENTIRE body, including everything after the embedded ``</content>``."""
+    raw = (
+        "<path>/abs/path/to/tags.py</path>\n"
+        "<type>file</type>\n"
+        "<content>\n"
+        '1: PATTERN = "<content>(.*?)</content>"\n'
+        "2: \n"
+        "3: def after_the_tag():\n"
+        "4:     return 'still here'\n"
+        "\n"
+        "(End of file - total 4 lines)\n"
+        "</content>"
+    )
+    messages = [
+        ChatMessage(role="user", content="fix tags.py"),
+        ChatMessage(
+            role="assistant", content=None, tool_calls=(_read_call("c1", "tags.py"),)
+        ),
+        ChatMessage(role="tool", tool_call_id="c1", content=raw),
+    ]
+
+    rendered = _render_context(messages)
+
+    assert "[read tags.py]" in rendered
+    assert 'PATTERN = "<content>(.*?)</content>"' in rendered
+    assert "def after_the_tag():" in rendered
+    assert "return 'still here'" in rendered
+
+
+def test_the_regex_literal_demonstrating_file_round_trips_whole() -> None:
+    """Issue #150's demonstrating capture: serving_ensemble_caller.py's own
+    source contains the literal ``</content>`` (inside its own
+    ``_CONTENT_TAG_RE`` regex), far from the file's end — the pre-fix bug
+    rendered a small fragment (12% of the real 54,138-byte file) cut right
+    there. The fix carries the WHOLE file through, including content past
+    that point."""
+    from pathlib import Path
+
+    source_path = (
+        Path(__file__).resolve().parents[4]
+        / "src"
+        / "llm_orc"
+        / "web"
+        / "serving"
+        / "serving_ensemble_caller.py"
+    )
+    lines = source_path.read_text().splitlines()
+    gutter_body = "\n".join(f"{i + 1}: {line}" for i, line in enumerate(lines))
+    raw = (
+        f"<path>{source_path}</path>\n"
+        "<type>file</type>\n"
+        "<content>\n"
+        f"{gutter_body}\n"
+        "\n"
+        f"(End of file - total {len(lines)} lines)\n"
+        "</content>"
+    )
+    messages = [
+        ChatMessage(role="user", content="fix serving_ensemble_caller.py"),
+        ChatMessage(
+            role="assistant",
+            content=None,
+            tool_calls=(_read_call("c1", "serving_ensemble_caller.py"),),
+        ),
+        ChatMessage(role="tool", tool_call_id="c1", content=raw),
+    ]
+
+    rendered = _render_context(messages)
+
+    # the read itself must render whole, not oversize — the file's own
+    # source legitimately contains the substring "(oversize)" as code, so
+    # the header form (not a bare substring check) is what actually pins
+    # this read's outcome
+    assert "[read serving_ensemble_caller.py]" in rendered
+    assert "[read serving_ensemble_caller.py (oversize)]" not in rendered
+    # a marker near the very END of the file — absent under the pre-fix
+    # non-greedy cut, which stopped right after the regex literal
+    assert "class ServingEnsembleCaller:" in rendered
+
+
+def test_trailing_content_markup_after_the_real_close_tag_is_absorbed() -> None:
+    # minor 4 (review round 1): DOCUMENTED-BOUND test, not a correctness
+    # claim — the greedy #150 fix (round-1 commit) is safe under the wire
+    # precondition that the wrapper is a SINGLE outer pair, verified
+    # against 85 real captured reads across docs/plans/**/*.jsonl, zero of
+    # which carried more than one <content>/</content> occurrence. This
+    # fixture constructs the INVERSE (trailing junk containing its own
+    # <content>/</content> markup after the real wrapper's close tag) to
+    # pin what the greedy extraction actually does in that case, so a
+    # future change to the wire shape (or the regex) shows up as an
+    # intentional diff here, not a silent behavior change: it absorbs the
+    # trailing markup into the body rather than stopping at the real
+    # wrapper's own close tag.
+    raw = (
+        "<path>/abs/path/to/doc.py</path>\n"
+        "<type>file</type>\n"
+        "<content>\n"
+        "1: # See the </content> tag docs below\n"
+        "\n"
+        "(End of file - total 1 lines)\n"
+        "</content>\n"
+        "<content>trailing markup also using </content> tags</content>"
+    )
+
+    normalized = _normalize_read(raw)
+
+    assert normalized == (
+        "1: # See the </content> tag docs below\n\n"
+        "</content>\n<content>trailing markup also using </content> tags"
+    )
+
+
+def test_two_wrapped_reads_concatenated_merge_into_one_body() -> None:
+    # minor 4 (review round 1): the second documented-bound inverse
+    # fixture — two genuinely separate <path>/<type>/<content> wrapped
+    # sections concatenated (never observed on the real wire; the 85/85
+    # single-wrapper evidence above is exactly why this shape is treated
+    # as out of scope rather than defended against) merge into a single
+    # body spanning both, rather than extracting only the first. Pinned so
+    # this accepted tradeoff stays a deliberate, visible choice.
+    raw = (
+        "<path>/abs/a.py</path>\n<type>file</type>\n<content>\n"
+        "1: FIRST\n\n(End of file - total 1 lines)\n</content>\n"
+        "<path>/abs/b.py</path>\n<type>file</type>\n<content>\n"
+        "1: SECOND\n\n(End of file - total 1 lines)\n</content>"
+    )
+
+    normalized = _normalize_read(raw)
+
+    assert normalized == (
+        "1: FIRST\n\n</content>\n<path>/abs/b.py</path>\n"
+        "<type>file</type>\n<content>\n1: SECOND"
+    )
 
 
 def test_opencode_file_not_found_renders_as_failed() -> None:
