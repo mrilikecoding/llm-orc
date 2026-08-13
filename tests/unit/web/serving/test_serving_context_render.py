@@ -14,6 +14,7 @@ from llm_orc.web.serving.chunks import ClientToolCall
 from llm_orc.web.serving.serving_ensemble_caller import (
     _READ_TOKEN_BUDGET,
     _glob_pattern,
+    _normalize_read,
     _outcome_chunks,
     _projected_tokens,
     _render_context,
@@ -942,6 +943,61 @@ def test_the_regex_literal_demonstrating_file_round_trips_whole() -> None:
     # a marker near the very END of the file — absent under the pre-fix
     # non-greedy cut, which stopped right after the regex literal
     assert "class ServingEnsembleCaller:" in rendered
+
+
+def test_trailing_content_markup_after_the_real_close_tag_is_absorbed() -> None:
+    # minor 4 (review round 1): DOCUMENTED-BOUND test, not a correctness
+    # claim — the greedy #150 fix (round-1 commit) is safe under the wire
+    # precondition that the wrapper is a SINGLE outer pair, verified
+    # against 85 real captured reads across docs/plans/**/*.jsonl, zero of
+    # which carried more than one <content>/</content> occurrence. This
+    # fixture constructs the INVERSE (trailing junk containing its own
+    # <content>/</content> markup after the real wrapper's close tag) to
+    # pin what the greedy extraction actually does in that case, so a
+    # future change to the wire shape (or the regex) shows up as an
+    # intentional diff here, not a silent behavior change: it absorbs the
+    # trailing markup into the body rather than stopping at the real
+    # wrapper's own close tag.
+    raw = (
+        "<path>/abs/path/to/doc.py</path>\n"
+        "<type>file</type>\n"
+        "<content>\n"
+        "1: # See the </content> tag docs below\n"
+        "\n"
+        "(End of file - total 1 lines)\n"
+        "</content>\n"
+        "<content>trailing markup also using </content> tags</content>"
+    )
+
+    normalized = _normalize_read(raw)
+
+    assert normalized == (
+        "1: # See the </content> tag docs below\n\n"
+        "</content>\n<content>trailing markup also using </content> tags"
+    )
+
+
+def test_two_wrapped_reads_concatenated_merge_into_one_body() -> None:
+    # minor 4 (review round 1): the second documented-bound inverse
+    # fixture — two genuinely separate <path>/<type>/<content> wrapped
+    # sections concatenated (never observed on the real wire; the 85/85
+    # single-wrapper evidence above is exactly why this shape is treated
+    # as out of scope rather than defended against) merge into a single
+    # body spanning both, rather than extracting only the first. Pinned so
+    # this accepted tradeoff stays a deliberate, visible choice.
+    raw = (
+        "<path>/abs/a.py</path>\n<type>file</type>\n<content>\n"
+        "1: FIRST\n\n(End of file - total 1 lines)\n</content>\n"
+        "<path>/abs/b.py</path>\n<type>file</type>\n<content>\n"
+        "1: SECOND\n\n(End of file - total 1 lines)\n</content>"
+    )
+
+    normalized = _normalize_read(raw)
+
+    assert normalized == (
+        "1: FIRST\n\n</content>\n<path>/abs/b.py</path>\n"
+        "<type>file</type>\n<content>\n1: SECOND"
+    )
 
 
 def test_opencode_file_not_found_renders_as_failed() -> None:
