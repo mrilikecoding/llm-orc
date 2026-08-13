@@ -240,16 +240,29 @@ _FIX_VERB_RE = re.compile(
 )
 # Context-block headers (the caller's render grammar). Visible = untruncated
 # wrote block or successful read block; attempted = any read header. The
-# optional variant group keeps a "(truncated)" suffix out of the path.
+# optional variant group keeps a "(truncated)"/"(over-budget)" suffix out
+# of the path.
 _VISIBLE_HEADER_RE = re.compile(
     r"^assistant: \[(?:wrote|read) ([^\]]+?)"
-    r"( \((?:truncated|failed|oversize)\))?\]$",
+    r"( \((?:truncated|failed|oversize|over-budget)\))?\]$",
     re.MULTILINE,
 )
 _READ_ATTEMPT_RE = re.compile(
-    r"^assistant: \[read ([^\]]+?)( \((failed|oversize)\))?\]", re.MULTILINE
+    r"^assistant: \[read ([^\]]+?)( \((failed|oversize|over-budget)\))?\]",
+    re.MULTILINE,
 )
-_READ_CAP_KB = 24
+_READ_CAP_KB = 96
+# C1 (#145; re-denominated in tokens, BLOCKER 1 review rounds 1-2): mirrors
+# the caller's _READ_TOKEN_BUDGET exactly (same name, same unit — no KB
+# conversion needed this time) — classify.py runs standalone with no
+# cross-boundary import (the same reason _READ_CAP_KB above duplicates its
+# caller's per-file cap). 35,000 (review round 2 fork resolution): the
+# caller-side constant is the derivation's home (see
+# serving_ensemble_caller.py's own comment); the number here exists only
+# to keep the drift assert (MAJOR 2, review round 1) meaningful — the
+# over-budget refusal's wording (below) speaks in plain terms and does
+# not display the raw figure.
+_READ_TOKEN_BUDGET = 35000
 # issue #83 run half: an imperative run verb with a tests object later in
 # the same sentence fragment ("run the unit tests", "rerun pytest", "run
 # every single one of the unit tests"). A named test_*.py file with a run
@@ -403,6 +416,22 @@ def _visibility(context: str) -> tuple[set[str], dict[str, str]]:
             attempted[basename] = f"file exceeds the {_READ_CAP_KB} KB read cap"
         elif variant == "failed":
             attempted[basename] = "client read failed"
+        elif variant == "over-budget":
+            # C1 (#145): the caller already refused to render this read's
+            # body (it would have pushed the total held projected-token
+            # count over budget) — name the budget and the files already
+            # holding it, and state the remedy as its own plain sentence
+            # (minor 5, review round 1) so the refusal is actionable, not
+            # just honest. Plain terms (review round 2): "the session read
+            # budget", not the raw projected-token figure — the number
+            # isn't actionable to a user, only the remedy is. _READ_TOKEN_
+            # BUDGET stays mirrored (drift-asserted) even though it no
+            # longer appears in this string.
+            held = ", ".join(sorted(visible)) if visible else "other files"
+            attempted[basename] = (
+                f"the session read budget is already held by {held}. "
+                "Start a fresh session, or ask about one file at a time."
+            )
     return visible, attempted
 
 
@@ -1588,8 +1617,9 @@ def main() -> None:
     # ...] line in the user's own task prose cannot flip the gate (spoof-
     # probe requirement). Conceptual explains (no named_file) never gate.
     explain_ungrounded = False
+    explain_attempted: dict[str, str] = {}
     if is_explain and named_file:
-        explain_visible, _ = _visibility(conversation_raw)
+        explain_visible, explain_attempted = _visibility(conversation_raw)
         explain_ungrounded = named_basename not in explain_visible
 
     # Chained fix-execution: a fix-intent turn whose gated build already
@@ -1698,6 +1728,14 @@ def main() -> None:
     # visible build or read on the wire — emit.py composes the honest
     # message from it; empty for every other routing decision.
     not_grounded = named_file if target == "not-grounded" else ""
+    # minor 3 (review round 1): when a PRIOR turn already attempted (and
+    # failed) to read this exact target — recorded in explain_attempted
+    # from the SAME _visibility scan the gate above used — emit composes a
+    # message that states the recorded reason instead of suggesting the
+    # exact action that just failed ("ask me to read it").
+    not_grounded_reason = (
+        explain_attempted.get(named_basename, "") if target == "not-grounded" else ""
+    )
 
     if target == _TESTS_SEAT:
         if named_basename.startswith("test_"):
@@ -1781,6 +1819,7 @@ def main() -> None:
                 "needs_glob": needs_glob,
                 "glob_failed": glob_failed,
                 "not_grounded": not_grounded,
+                "not_grounded_reason": not_grounded_reason,
                 "recall_answer": recall_answer,
                 "is_build_ask": is_build_ask,
                 "chain": chain,

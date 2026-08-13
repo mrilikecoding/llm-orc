@@ -158,6 +158,65 @@ def test_chain_plan_omitted_when_classify_response_is_missing_a_key() -> None:
     assert "chain_plan" not in trace
 
 
+def test_top_level_node_records_prompt_eval_count_from_usage() -> None:
+    """C2 (#145): the raw prompt_eval_count Ollama returned is the only
+    direct signal a truncated prompt was actually sent (design doc finding
+    3: no seat sets num_ctx, so silent runtime truncation is otherwise
+    unobservable) — surfaced onto the node's own trace entry from the
+    execution result's metadata.usage.agents."""
+    result = {
+        "results": {"node": {"status": "success", "response": "ok"}},
+        "metadata": {
+            "usage": {
+                "agents": {
+                    "node": {"prompt_eval_count": 20482, "eval_count": 134},
+                }
+            }
+        },
+    }
+
+    trace = build_turn_trace("serving", result)
+
+    assert trace["nodes"][0]["prompt_eval_count"] == 20482
+    assert trace["nodes"][0]["eval_count"] == 134
+
+
+def test_top_level_node_omits_usage_counts_when_absent() -> None:
+    result = {"results": {"node": {"status": "success", "response": "ok"}}}
+
+    trace = build_turn_trace("serving", result)
+
+    assert "prompt_eval_count" not in trace["nodes"][0]
+    assert "eval_count" not in trace["nodes"][0]
+
+
+def test_seat_entry_records_prompt_eval_count_from_child_usage() -> None:
+    """The nested seat's own agent usage (echo/explainer/etc.) surfaces the
+    same way — that dispatched child ensemble is where the real Ollama call
+    happens for a serving turn."""
+    import json
+
+    child_result = {
+        "results": {"explainer": {"response": "some answer", "status": "success"}},
+        "metadata": {
+            "usage": {
+                "agents": {
+                    "explainer": {"prompt_eval_count": 6262, "eval_count": 58},
+                }
+            }
+        },
+    }
+    result = {
+        "results": {"seat": {"status": "success", "response": json.dumps(child_result)}}
+    }
+
+    trace = build_turn_trace("serving", result)
+
+    seat_nodes = trace["nodes"][0]["seat"]
+    assert seat_nodes[0]["prompt_eval_count"] == 6262
+    assert seat_nodes[0]["eval_count"] == 58
+
+
 def test_emit_never_propagates_a_trace_build_failure(tmp_path: Path) -> None:
     """PR #116 review: 'tracing must never break the serve' — a hostile
     child response (pathologically nested JSON raises RecursionError at

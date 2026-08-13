@@ -33,6 +33,7 @@ from llm_orc.web.serving.chunks import (
     OrchestratorChunk,
     ToolCallInvocation,
 )
+from llm_orc.web.serving.token_estimate import projected_tokens_v2
 from llm_orc.web.serving.turn_trace import emit_turn_trace
 
 if TYPE_CHECKING:
@@ -93,8 +94,84 @@ _CTX_TOKEN_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]{2,}")
 # Client-read file blocks (issue #83): whole-file-or-refuse — a truncated
 # module fails imports in the sandbox, so an over-cap read refuses honestly
 # instead of materializing a corrupted file.
-_READ_FILE_CAP = 24576
+_READ_FILE_CAP = 98304
 _READ_FAIL_REASON_CAP = 200
+# C1 (#145 pre-flight, blocking): the read accumulator re-renders EVERY
+# held read every turn, unbounded — at the 96KB/file cap above, 2-3 held
+# reads cross the model's context window (measured: three real files
+# ~58,100 projected tokens returned prompt_eval_count 20,482, a silent
+# third of what was sent, reproduced with a cache-busting nonce).
+#
+# BLOCKER 1 (review rounds 1-2): a byte/char-denominated budget is
+# charset-density-blind. A 97KB JSON file (2.07 real chars/token — JSON's
+# density comes from punctuation structure, not word length) passed a
+# char budget AND the per-file byte cap, then silently overflowed the
+# 40,960-token window (the runtime's discard signature: prompt_eval_count
+# exactly half the window on every over-window prompt, HTTP 200, no
+# error). Round 1's estimator (char-run counting) was ITSELF found to
+# under-count on 8 of 10 fresh fixture classes when measured against a
+# real tokenizer (base64/PEM/hex as low as 7-12% of real — BPE splits
+# long high-entropy runs into many subword tokens, but the round-1
+# estimator counted a whole ASCII word-run as one token regardless of
+# length). The budget below is denominated in PROJECTED TOKENS via
+# ``token_estimate.projected_tokens_v2`` (imported as ``_projected_tokens``
+# below) — a density-aware estimator whose conservativeness (projected >=
+# real, with >=5% margin on every measured class, worst case the PEM
+# certificate fixture) is validated against real, independently measured
+# tokenizer output (qwen3:8b), not against the estimator's own outputs —
+# see ``token_estimate.py`` and
+# ``tests/unit/web/serving/test_token_estimate_ground_truth.py`` for the
+# full derivation and the frozen, dated ground-truth table.
+#
+# Held blocks are NEVER evicted (the anti-read-loop exemption stands — see
+# _select_read_blocks) — a NEW read whose projected tokens would push the
+# running total over budget renders as a bodyless "(over-budget)" refusal
+# instead, so it never enters the accumulator. classify's _visibility
+# treats that variant exactly like a failed/oversize read: refused
+# honestly, never re-requested, naming the held files and the budget.
+#
+# SEAM CHOICE (unchanged from C1): the check lives HERE, at render time,
+# not as a request-time check in classify. classify only knows a path is
+# unread — it never learns the file's size (or its charset density) until
+# the client's read result comes back, so a request-time budget check has
+# nothing to compare against.
+#
+# This estimator is a pre-flight guard, not a guarantee against every
+# possible adversarial input — the general backstop no estimator can
+# evade (refusing any answer whose RECORDED prompt_eval_count, C2's turn
+# trace, shows the runtime actually truncated) is #151's remainder: this
+# arc implements #151's core (turn_trace._truncation_check, consulted in
+# ``_serve`` below via ``trace.get("truncation_detected")``), but the
+# window itself is still a hardcoded constant rather than server-queried
+# — #151 stays open for that plus threshold re-measurement per model era.
+#
+# _READ_TOKEN_BUDGET = 35,000 (review round 2 fork resolution; window
+# arithmetic UNCHANGED by round 3): the 40,960-token window minus a
+# 5,960-token reserve for ancillary render (conversation history,
+# instructions, glob/run blocks — measured ~1,800) plus explain-
+# generation headroom (measured ~1,000-2,000) plus margin, without
+# sacrificing the PEM certificate fixture's conservativeness (it still
+# clears its full >=5% margin at the safety factor, 1.59 — see
+# token_estimate.py).
+#
+# Review round 3 blockers A+B: admission is decided by the RENDERED
+# BLOCK this constant is actually compared against in
+# _budget_read_blocks below (header + wire-wrapped, 2-space-indented
+# body) — NOT raw source text, which understates the real charge (every
+# line gains its own indent token-unit under v2's rule (f)). Measured
+# that way, classify.py (2026-08-13 size) projects to ~35,030 and
+# REFUSES over budget by a narrow margin — the pinned, DOCUMENTED bound
+# (test_serving_context_render.test_real_repo_files_admit_or_refuse_at_
+# current_size), not another budget chase: the file's own size crossed
+# this exact line mid-review, and raising the budget again would just
+# make this a permanent treadmill. classify.py's own explain-ability
+# moves to the deferred chunked-reads rung (see the design doc's "not
+# built here" section). subagent_adapter.py (~10,900) and
+# serving_ensemble_caller.py (~26,750) — the #145 exit gate's own
+# grounding targets — admit with real margin, unaffected.
+_READ_TOKEN_BUDGET = 35000
+_projected_tokens = projected_tokens_v2
+
 # Client-run output blocks (issue #83, run half): the TAIL is kept on
 # overflow — pytest prints its summary last, and the deterministic verdict
 # parser reads exactly that summary.
@@ -139,7 +216,16 @@ _LINE_NUM_GUTTER_RE = re.compile(r"^\s*\d+\| ?")
 # and an "(End of file - total N lines)" trailer sits inside <content>
 # after a blank line. A failed read is a bare "File not found: ..." string —
 # no tags, no "Error" prefix.
-_CONTENT_TAG_RE = re.compile(r"<content>(.*?)</content>", re.DOTALL)
+#
+# Issue #150: the wrapper is a SINGLE outer pair — checked against 85 real
+# captured reads across the corpus (docs/plans/**/*.jsonl), zero of which
+# carried more than one <content>/</content> occurrence. GREEDY to the
+# LAST </content> is therefore correct: a file whose own text contains the
+# literal "</content>" (a regex, a docstring example) no longer truncates
+# at that first occurrence — the match still starts at the wrapper's real
+# opening tag (nothing can precede it but <path>/<type>) and now extends
+# to the wrapper's real closing tag, wherever in the body it falls.
+_CONTENT_TAG_RE = re.compile(r"<content>(.*)</content>", re.DOTALL)
 _END_OF_FILE_TRAILER_RE = re.compile(r"^\(End of file - total \d+ lines?\)$")
 _OPENCODE_GUTTER_RE = re.compile(r"^\d+: ?")
 
@@ -259,13 +345,47 @@ def _select_read_blocks(
 ) -> list[str]:
     """Latest read block per path (issue #83), joined from the FULL history —
     exempt from the selected-block cap: dropping one would make classify
-    re-request it (a read loop). A later write of the same path supersedes."""
+    re-request it (a read loop). A later write of the same path supersedes.
+    The total-projected-tokens budget (C1, #145) still applies — see
+    ``_budget_read_blocks``."""
     written_paths = {path for path, _ in _select_written_files(list(messages), task)}
-    latest_reads: dict[str, str] = {}
-    for path, block in _read_blocks(messages):
+    latest_reads: dict[str, tuple[str, bool]] = {}
+    for path, block, is_full in _read_blocks(messages):
         if path not in written_paths and path not in tail_paths:
-            latest_reads[path] = block
-    return list(latest_reads.values())
+            latest_reads[path] = (block, is_full)
+    return _budget_read_blocks(latest_reads)
+
+
+def _budget_read_blocks(latest_reads: dict[str, tuple[str, bool]]) -> list[str]:
+    """Cap the TOTAL projected tokens of held (whole-body) read blocks at
+    ``_READ_TOKEN_BUDGET`` (C1; re-denominated in tokens, BLOCKER 1 review
+    round 1). Blocks accumulate in the dict's insertion order — each
+    distinct path's chronological first-occurrence order, set by
+    ``_select_read_blocks`` — which is deterministic across turns:
+    replaying the same read history always produces the same accept/refuse
+    split, so a block that fit on an earlier turn still fits now (never
+    evicted, first-read-wins) and a block that didn't fit stays refused
+    rather than flapping turn to turn.
+
+    A block that is already a refused/oversize/failed variant (``is_full``
+    False, no body) costs nothing against the budget and passes through
+    untouched. A whole-body block whose addition would cross the budget
+    renders instead as a bodyless "(over-budget)" refusal — never a
+    truncated body, never silently dropped from the accumulator.
+    """
+    kept: list[str] = []
+    total = 0
+    for path, (block, is_full) in latest_reads.items():
+        if not is_full:
+            kept.append(block)
+            continue
+        cost = _projected_tokens(block)
+        if total + cost > _READ_TOKEN_BUDGET:
+            kept.append(f"assistant: [read {path} (over-budget)]")
+            continue
+        kept.append(block)
+        total += cost
+    return kept
 
 
 def _whole_blocks_within_cap(blocks: list[str]) -> list[str]:
@@ -644,10 +764,13 @@ def _normalize_read(content: str) -> str:
     return "\n".join(lines).strip()
 
 
-def _render_read_block(path: str, raw: str) -> str:
-    """A read result as a context block (issue #83 grammar). Failure and
-    oversize variants are single header lines so gather never materializes
-    them and classify can refuse instead of re-requesting (one-round bound).
+def _render_read_block(path: str, raw: str) -> tuple[str, bool]:
+    """(block, is_full) for a read result rendered as a context block (issue
+    #83 grammar). Failure and oversize variants are single header lines so
+    gather never materializes them and classify can refuse instead of
+    re-requesting (one-round bound); ``is_full`` is False for these so C1's
+    total-projected-tokens budget (``_budget_read_blocks``) never counts
+    them.
 
     OpenCode's <content>-wrapped success form (captured wire, 2026-07-09) is
     checked BEFORE the failure-prefix heuristic — a structural check, so a
@@ -656,31 +779,32 @@ def _render_read_block(path: str, raw: str) -> str:
     """
     flat = " ".join((raw or "").strip().split())
     if not flat:
-        return f"assistant: [read {path} (failed)] empty read result"
+        return f"assistant: [read {path} (failed)] empty read result", False
     if "<content>" not in raw:
         lowered = flat.lower()
         if lowered.startswith("file not found") or lowered.startswith("error"):
             reason = flat[:_READ_FAIL_REASON_CAP]
-            return f"assistant: [read {path} (failed)] {reason}"
+            return f"assistant: [read {path} (failed)] {reason}", False
     normalized = _normalize_read(raw)
     if len(normalized) > _READ_FILE_CAP:
-        return f"assistant: [read {path} (oversize)]"
-    return f"assistant: [read {path}]\n{_indent_body(normalized)}"
+        return f"assistant: [read {path} (oversize)]", False
+    return f"assistant: [read {path}]\n{_indent_body(normalized)}", True
 
 
-def _read_blocks(messages: Sequence[Any]) -> list[tuple[str, str]]:
-    """(path, block) for every tool result answering a read-shaped call,
-    in wire order. Selected from the FULL history: on the resume pass the
-    read result sits after the last user message."""
+def _read_blocks(messages: Sequence[Any]) -> list[tuple[str, str, bool]]:
+    """(path, block, is_full) for every tool result answering a read-shaped
+    call, in wire order. Selected from the FULL history: on the resume pass
+    the read result sits after the last user message."""
     call_paths = _call_field_map(messages, _is_read_shaped, "filePath")
-    blocks: list[tuple[str, str]] = []
+    blocks: list[tuple[str, str, bool]] = []
     for message in messages:
         if getattr(message, "role", None) != "tool":
             continue
         path = call_paths.get(getattr(message, "tool_call_id", None) or "")
         if path:
             content = getattr(message, "content", None)
-            blocks.append((path, _render_read_block(path, content or "")))
+            block, is_full = _render_read_block(path, content or "")
+            blocks.append((path, block, is_full))
     return blocks
 
 
@@ -1024,6 +1148,26 @@ def _load_emit_reject_prefixes(path: Path) -> _RejectPrefixes:
     return tuple(recognized)
 
 
+# #151's core (review round 2 Part 2): the same "Refused: " idiom emit.py's
+# own terminals use, constructed here because this refusal fires OUTSIDE
+# the ensemble — it overrides whatever _serve_outcome(result) would have
+# read from emit, so it can never itself be composed from emit's TERMINALS
+# registry.
+_TRUNCATION_REFUSAL_MESSAGE = (
+    "Refused: context window overflow detected while answering; the "
+    "response was generated from a fraction of the context and has been "
+    "withheld. Start a fresh session, or ask about fewer files at a time."
+)
+
+
+def _truncation_refusal_outcome() -> dict[str, Any]:
+    """The serve outcome when turn_trace's dual-trigger truncation check
+    shows the runtime actually processed less than the dispatched prompt
+    — discards whatever answer the pipeline produced (it was generated
+    from a partial context) and refuses loudly instead."""
+    return {"finish": True, "content": _TRUNCATION_REFUSAL_MESSAGE}
+
+
 def _serve_outcome(result: dict[str, Any]) -> dict[str, Any]:
     """The terminal ``emit`` node's serve outcome (shape -> form-gate -> emit)."""
     results = result.get("results", {}) if isinstance(result, dict) else {}
@@ -1216,5 +1360,15 @@ class ServingEnsembleCaller:
         )
         # blocking file I/O off the event loop so concurrent SSE streams
         # never stall on the trace flush (issue #93)
-        await asyncio.to_thread(emit_turn_trace, config.name, result, self._trace_root)
+        trace = await asyncio.to_thread(
+            emit_turn_trace, config.name, result, self._trace_root
+        )
+        if trace.get("truncation_detected"):
+            # #151's core (review round 2 Part 2): the trace's own dual-
+            # trigger check (turn_trace._truncation_check) found Ollama's
+            # recorded prompt_eval_count far below what was actually
+            # dispatched — the answer the pipeline produced was generated
+            # from a partial context. Discard it; never ship an answer
+            # silently grounded in less than the user thinks it saw.
+            return _truncation_refusal_outcome()
         return _serve_outcome(result)
