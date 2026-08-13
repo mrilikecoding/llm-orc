@@ -739,6 +739,16 @@ def _normalize_glob(raw: str) -> list[str]:
     the opencode -c bootstrap wedge); the defensive non-path-line drop
     ("Found N files" headers, truncation footers, prose) stays until one
     lands.
+
+    Known bound (issue #148 M2, tracked separately as issue #149):
+    CLIENT-side truncation is invisible here by construction — dropping
+    "Found N files" headers and truncation footers means a listing the
+    client itself already cut renders with a complete-looking
+    ``[globbed <stem>]`` header (no ``(truncated)`` marker), so
+    ``_render_glob_block``'s own cap below is the only truncation this
+    module can detect. #149 covers detecting the client's cut too (the
+    dropped-count-vs-kept-count mismatch, or the wire's
+    ``metadata.truncated`` field).
     """
     paths: list[str] = []
     for line in (raw or "").splitlines():
