@@ -203,30 +203,36 @@ def test_safety_factor_is_the_derived_value() -> None:
     assert SAFETY_FACTOR < minimal_factor + 0.02  # the smallest 2dp value, not padded
 
 
-def test_classify_py_sanity_constraint_conflict_is_open() -> None:
-    """SANITY CONSTRAINT (review round 2): classify.py must project under
-    _READ_TOKEN_BUDGET at the shipped safety factor for v2 to be wireable
-    without regressing the #145 exit gate (a real repo-scale file refusing
-    to read is the exact failure the feature exists to fix). It does NOT
-    at the factor the 5%-margin requirement derives (SAFETY_FACTOR): the
-    max factor keeping classify.py under budget is ~1.574, PEM's margin
-    needs >= ~1.584 — a ~1% gap. This is an OPEN DESIGN FORK for the lead
-    (raise the budget, accept a smaller margin for the least-realistic
-    fixture class, or refine the v2 formula), not resolved here.
+def test_classify_py_projects_under_budget_with_real_margin() -> None:
+    """SANITY CONSTRAINT, RESOLVED (review round 2 fork resolution):
+    classify.py — the repo's own largest routinely-read file, and the
+    feature's own admission bar — must project under _READ_TOKEN_BUDGET
+    for v2 to be wireable without regressing the #145 exit gate (a real
+    repo-scale file refusing to read is the exact failure the feature
+    exists to fix).
 
-    This test PINS the conflict as a known, open fact rather than hiding
-    it — it fails loudly (telling you to update it) the moment either
-    number changes enough to resolve or worsen the conflict, instead of
-    drifting silently. Once the lead resolves it: delete this test, wire
-    projected_tokens_v2 into serving_ensemble_caller._budget_read_blocks,
-    and replace _READ_TOKEN_BUDGET's v1-authored value if it changed.
+    At SAFETY_FACTOR (1.59), classify.py projected to 34,341 against the
+    round-1 budget of 34,000 — a narrow miss reported as an open design
+    fork rather than resolved silently. The lead resolved it with
+    numbers: _READ_TOKEN_BUDGET raised to 35,000 (honest window
+    arithmetic — 40,960 - 35,000 = 5,960 reserve, documented at the
+    constant — not a quiet bump to clear this one file), which admits
+    classify.py with real margin while PEM keeps its own full >=5%
+    conservativeness margin (both pinned in
+    test_v2_estimator_is_conservative_against_real_tokenizer_counts
+    above) — no class sacrificed.
+
+    This test pins the RESOLVED fact so it fails loudly (not silently) if
+    either number regresses.
     """
     classify_source = _real_repo_files()["classify.py"]
     projected = projected_tokens_v2(classify_source)
-    assert projected > _READ_TOKEN_BUDGET, (
+    assert projected < _READ_TOKEN_BUDGET, (
         f"classify.py now projects to {projected} at SAFETY_FACTOR="
-        f"{SAFETY_FACTOR}, budget is {_READ_TOKEN_BUDGET} — the conflict "
-        "this test pins may now be resolved: verify, then replace this "
-        "test with a real admission assertion and wire v2 into the live "
-        "budget check."
+        f"{SAFETY_FACTOR}, budget is {_READ_TOKEN_BUDGET} — a real repo "
+        "file no longer admits under the read budget, regressing the "
+        "#145 exit gate. This needs the same design-fork treatment the "
+        "round-2 review gave this exact conflict, not a silent fix."
     )
+    margin = (_READ_TOKEN_BUDGET / projected - 1) * 100
+    assert margin > 1.0  # "real margin", not a hairline pass

@@ -1,14 +1,13 @@
 """Projected-token estimation for read-body budgeting (#145 BLOCKER 1).
 
 STATUS (review round 2, 2026-08-13): this is v2 of the estimator —
-validated against a real tokenizer (qwen3:8b) and NOT YET WIRED into the
-live read-accumulator budget. ``serving_ensemble_caller.py`` still runs its
-own v1 estimator (``_projected_tokens``) for ``_budget_read_blocks``. Wiring
-v2 in is BLOCKED on a design fork the lead needs to resolve — see the
-"Sanity constraint" section below and the round-2 note in
-``docs/plans/2026-08-13-repo-scale-reads-design.md``. Do not delete v1 or
-swap this in without that resolution; doing either silently would be
-exactly the "silent scope change" the review explicitly ruled out.
+validated against a real tokenizer (qwen3:8b) and WIRED IN as
+``serving_ensemble_caller._projected_tokens`` (the round-1 v1 estimator is
+retired). The wiring depended on resolving a design fork — see "Sanity
+constraint" below and the round-2 note in
+``docs/plans/2026-08-13-repo-scale-reads-design.md`` — reported rather
+than resolved silently, then closed by the lead with explicit numbers
+(``_READ_TOKEN_BUDGET`` raised to 35,000, documented at that constant).
 
 v1's failure (round 2 review): v1 counted a WHOLE ASCII word-run as one
 token regardless of length. Real BPE tokenizers split long, high-entropy
@@ -56,17 +55,20 @@ high-entropy content). Solving for the smallest factor F such that
 ``v2(text) * F >= real(text) * 1.05`` (5% margin) for every measured
 fixture gives F = 1.5837, which rounds up to 1.59.
 
-SANITY CONSTRAINT (review round 2): classify.py must still project under
-``_READ_TOKEN_BUDGET`` (34,000) at the shipped factor. It does NOT at
-1.59: classify.py's v2-before-factor count is 21,598, so
-``ceil(21598 * 1.59) == 34,341 > 34,000`` — a narrow miss (the max factor
-that keeps classify.py under budget is 1.5742; PEM's 5% margin needs at
-least 1.5837 — a gap of about 1%). This is the exact conflict the review
-anticipated and explicitly said must go back to the lead rather than be
-resolved silently (e.g. by quietly raising the budget or quietly
-accepting less than 5% margin for the worst fixture). ``SAFETY_FACTOR``
-below is set to the mathematically-derived value (1.59); it is deliberately
-NOT yet imported anywhere live.
+SANITY CONSTRAINT, RESOLVED (review round 2): classify.py must project
+under ``_READ_TOKEN_BUDGET`` at the shipped factor — a real repo-scale
+file failing to admit is the exact regression #145 exists to prevent. At
+factor 1.59 against the round-1 budget of 34,000, classify.py's
+projected count (``ceil(21598 * 1.59) == 34,341``) narrowly exceeded it
+(the max factor keeping classify.py under 34,000 is 1.5742; PEM's 5%
+margin needs at least 1.5837 — a gap of about 1%). Reported rather than
+resolved silently (no quiet budget bump, no quiet margin cut). The lead
+resolved it with numbers: ``_READ_TOKEN_BUDGET`` raised to 35,000 (see
+that constant in ``serving_ensemble_caller.py`` for the window
+arithmetic) — classify.py now projects to 34,341 < 35,000 with real
+margin, and PEM keeps its full >=5% conservativeness margin unchanged
+(the safety factor itself, 1.59, did not move). No fixture class was
+sacrificed to admit classify.py.
 """
 
 from __future__ import annotations

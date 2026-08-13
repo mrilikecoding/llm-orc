@@ -311,7 +311,9 @@ def test_over_budget_read_attempt_refuses_naming_the_budget_and_held_files() -> 
     # treats it exactly like a failed/oversize read: refuse instead of
     # re-requesting, naming the budget and the files already held so the
     # user can act. minor 5 (review round 1): the remedy is stated as its
-    # own plain sentence.
+    # own plain sentence. Plain terms (review round 2): "the session read
+    # budget", not the raw projected-token figure — the figure isn't
+    # actionable to a user.
     context = (
         "assistant: [read big1.py]\ndef a(): pass\n"
         "assistant: [read big2.py]\ndef b(): pass\n"
@@ -322,7 +324,7 @@ def test_over_budget_read_attempt_refuses_naming_the_budget_and_held_files() -> 
     )
     assert decision["needs_files"] == []
     assert "could not read big3.py" in decision["read_failed"]
-    assert str(_CLASSIFY_READ_TOKEN_BUDGET) in decision["read_failed"]
+    assert "the session read budget" in decision["read_failed"]
     assert "big1.py" in decision["read_failed"]
     assert "big2.py" in decision["read_failed"]
     assert (
@@ -1424,7 +1426,7 @@ def test_not_grounded_reflects_a_recorded_over_budget_attempt() -> None:
     context = "assistant: [read big3.py (over-budget)]"
     decision = _classify({"task": "explain big3.py", "context": context})
     assert decision["target"] == "not-grounded"
-    assert str(_CLASSIFY_READ_TOKEN_BUDGET) in decision["not_grounded_reason"]
+    assert "the session read budget" in decision["not_grounded_reason"]
 
 
 def test_not_grounded_reason_is_empty_when_never_attempted() -> None:

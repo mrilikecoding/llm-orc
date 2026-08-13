@@ -33,6 +33,7 @@ from llm_orc.web.serving.chunks import (
     OrchestratorChunk,
     ToolCallInvocation,
 )
+from llm_orc.web.serving.token_estimate import projected_tokens_v2
 from llm_orc.web.serving.turn_trace import emit_turn_trace
 
 if TYPE_CHECKING:
@@ -101,19 +102,26 @@ _READ_FAIL_REASON_CAP = 200
 # ~58,100 projected tokens returned prompt_eval_count 20,482, a silent
 # third of what was sent, reproduced with a cache-busting nonce).
 #
-# BLOCKER 1 (review round 1): a byte/char-denominated budget is charset-
-# density-blind. A 97KB JSON file (2.07 real chars/token — JSON's density
-# comes from punctuation structure, not word length) passed a char budget
-# AND the per-file byte cap, then silently overflowed the 40,960-token
-# window (the runtime's discard signature: prompt_eval_count exactly half
-# the window on every over-window prompt, HTTP 200, no error). The budget
-# below is denominated in PROJECTED TOKENS via ``_projected_tokens``, a
-# deterministic, uniformly conservative estimator applied at this same
-# render seam — never fewer projected tokens than a real tokenizer would
-# report, so the budget never admits more real tokens than it thinks it
-# does (measured against real chars/token: ASCII source ~3.1-3.7 estimated
-# vs 4.0 real, JSON ~1.7-1.8 vs 2.07, CJK ~1.0 vs 1.99, emoji ~1.0 vs 1.0 —
-# the estimator's own ratio never exceeds the real one).
+# BLOCKER 1 (review rounds 1-2): a byte/char-denominated budget is
+# charset-density-blind. A 97KB JSON file (2.07 real chars/token — JSON's
+# density comes from punctuation structure, not word length) passed a
+# char budget AND the per-file byte cap, then silently overflowed the
+# 40,960-token window (the runtime's discard signature: prompt_eval_count
+# exactly half the window on every over-window prompt, HTTP 200, no
+# error). Round 1's estimator (char-run counting) was ITSELF found to
+# under-count on 8 of 10 fresh fixture classes when measured against a
+# real tokenizer (base64/PEM/hex as low as 7-12% of real — BPE splits
+# long high-entropy runs into many subword tokens, but the round-1
+# estimator counted a whole ASCII word-run as one token regardless of
+# length). The budget below is denominated in PROJECTED TOKENS via
+# ``token_estimate.projected_tokens_v2`` (imported as ``_projected_tokens``
+# below) — a density-aware estimator whose conservativeness (projected >=
+# real, with >=5% margin on every measured class, worst case the PEM
+# certificate fixture) is validated against real, independently measured
+# tokenizer output (qwen3:8b), not against the estimator's own outputs —
+# see ``token_estimate.py`` and
+# ``tests/unit/web/serving/test_token_estimate_ground_truth.py`` for the
+# full derivation and the frozen, dated ground-truth table.
 #
 # Held blocks are NEVER evicted (the anti-read-loop exemption stands — see
 # _select_read_blocks) — a NEW read whose projected tokens would push the
@@ -131,27 +139,26 @@ _READ_FAIL_REASON_CAP = 200
 # This estimator is a pre-flight guard, not a guarantee against every
 # possible adversarial input — the general backstop no estimator can
 # evade (refusing any answer whose RECORDED prompt_eval_count, C2's turn
-# trace, shows the runtime actually truncated) is filed separately as
-# #151, not built here.
+# trace, shows the runtime actually truncated) is #151's remainder: this
+# arc implements #151's core (see _detect_prompt_truncation below), but
+# the window itself is still a hardcoded constant rather than server-
+# queried — #151 stays open for that plus threshold re-measurement per
+# model era.
 #
-# _READ_TOKEN_BUDGET = 34,000: the 40,960-token window minus ancillary
-# render (conversation history, instructions, glob/run blocks) and a
-# generation margin, reserved for held read bodies specifically.
-_ASCII_OR_NONBLANK_RE = re.compile(r"[A-Za-z0-9_]+|\S")
+# _READ_TOKEN_BUDGET = 35,000 (review round 2 fork resolution): the
+# 40,960-token window minus a 5,960-token reserve for ancillary render
+# (conversation history, instructions, glob/run blocks — measured
+# ~1,800) plus explain-generation headroom (measured ~1,000-2,000) plus
+# margin. This is deliberately looser than round 1's 34,000: at the
+# ground-truth-derived safety factor (1.59), classify.py — the repo's
+# own largest routinely-read file, and the feature's own admission bar —
+# projects to 21,598 * 1.59 = 34,341, which needs the extra headroom to
+# stay admitted with real margin (34,341 < 35,000, ~1.9% margin) without
+# sacrificing the PEM certificate fixture's conservativeness (it still
+# clears its full >=5% margin at 1.59 — see token_estimate.py).
+_READ_TOKEN_BUDGET = 35000
+_projected_tokens = projected_tokens_v2
 
-
-def _projected_tokens(text: str) -> int:
-    """A conservative (over-counting) projected token count: one unit per
-    maximal ASCII word-char run (identifiers, keywords — real tokenizers
-    rarely split these further) plus one unit per remaining non-whitespace
-    character (punctuation and symbols, ASCII or not, plus non-ASCII word
-    characters like CJK — each of those genuinely costs close to a full
-    token on its own in real tokenizers, so counting them individually
-    never under-counts). Whitespace costs nothing."""
-    return len(_ASCII_OR_NONBLANK_RE.findall(text))
-
-
-_READ_TOKEN_BUDGET = 34000
 # Client-run output blocks (issue #83, run half): the TAIL is kept on
 # overflow — pytest prints its summary last, and the deterministic verdict
 # parser reads exactly that summary.
