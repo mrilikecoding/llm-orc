@@ -140,10 +140,10 @@ _READ_FAIL_REASON_CAP = 200
 # possible adversarial input — the general backstop no estimator can
 # evade (refusing any answer whose RECORDED prompt_eval_count, C2's turn
 # trace, shows the runtime actually truncated) is #151's remainder: this
-# arc implements #151's core (see _detect_prompt_truncation below), but
-# the window itself is still a hardcoded constant rather than server-
-# queried — #151 stays open for that plus threshold re-measurement per
-# model era.
+# arc implements #151's core (turn_trace._truncation_check, consulted in
+# ``_serve`` below via ``trace.get("truncation_detected")``), but the
+# window itself is still a hardcoded constant rather than server-queried
+# — #151 stays open for that plus threshold re-measurement per model era.
 #
 # _READ_TOKEN_BUDGET = 35,000 (review round 2 fork resolution): the
 # 40,960-token window minus a 5,960-token reserve for ancillary render
@@ -1135,6 +1135,26 @@ def _load_emit_reject_prefixes(path: Path) -> _RejectPrefixes:
     return tuple(recognized)
 
 
+# #151's core (review round 2 Part 2): the same "Refused: " idiom emit.py's
+# own terminals use, constructed here because this refusal fires OUTSIDE
+# the ensemble — it overrides whatever _serve_outcome(result) would have
+# read from emit, so it can never itself be composed from emit's TERMINALS
+# registry.
+_TRUNCATION_REFUSAL_MESSAGE = (
+    "Refused: context window overflow detected while answering; the "
+    "response was generated from a fraction of the context and has been "
+    "withheld. Start a fresh session, or ask about fewer files at a time."
+)
+
+
+def _truncation_refusal_outcome() -> dict[str, Any]:
+    """The serve outcome when turn_trace's dual-trigger truncation check
+    shows the runtime actually processed less than the dispatched prompt
+    — discards whatever answer the pipeline produced (it was generated
+    from a partial context) and refuses loudly instead."""
+    return {"finish": True, "content": _TRUNCATION_REFUSAL_MESSAGE}
+
+
 def _serve_outcome(result: dict[str, Any]) -> dict[str, Any]:
     """The terminal ``emit`` node's serve outcome (shape -> form-gate -> emit)."""
     results = result.get("results", {}) if isinstance(result, dict) else {}
@@ -1327,5 +1347,15 @@ class ServingEnsembleCaller:
         )
         # blocking file I/O off the event loop so concurrent SSE streams
         # never stall on the trace flush (issue #93)
-        await asyncio.to_thread(emit_turn_trace, config.name, result, self._trace_root)
+        trace = await asyncio.to_thread(
+            emit_turn_trace, config.name, result, self._trace_root
+        )
+        if trace.get("truncation_detected"):
+            # #151's core (review round 2 Part 2): the trace's own dual-
+            # trigger check (turn_trace._truncation_check) found Ollama's
+            # recorded prompt_eval_count far below what was actually
+            # dispatched — the answer the pipeline produced was generated
+            # from a partial context. Discard it; never ship an answer
+            # silently grounded in less than the user thinks it saw.
+            return _truncation_refusal_outcome()
         return _serve_outcome(result)
