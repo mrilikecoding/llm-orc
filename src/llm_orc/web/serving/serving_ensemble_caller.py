@@ -1243,18 +1243,31 @@ def _outcome_chunks(
             arguments=json.dumps({"pattern": pattern}),
         )
         return [ClientToolCall(tool_calls=(invocation,))]
-    arguments = json.dumps(
-        {
-            "filePath": outcome.get("file", "solution.py"),
-            "content": outcome.get("content", ""),
-        }
-    )
-    invocation = ToolCallInvocation(
-        id=f"call_{uuid.uuid4().hex[:8]}",
-        name=_client_tool(tools, _WRITE_TOOL_CANDIDATES, _WRITE_TOOL),
-        arguments=arguments,
-    )
-    return [ClientToolCall(tool_calls=(invocation,))]
+    if "file" in outcome and "content" in outcome:
+        arguments = json.dumps(
+            {
+                "filePath": outcome.get("file", "solution.py"),
+                "content": outcome.get("content", ""),
+            }
+        )
+        invocation = ToolCallInvocation(
+            id=f"call_{uuid.uuid4().hex[:8]}",
+            name=_client_tool(tools, _WRITE_TOOL_CANDIDATES, _WRITE_TOOL),
+            arguments=arguments,
+        )
+        return [ClientToolCall(tool_calls=(invocation,))]
+    # Version-skew guard (#144 pre-flight finding 7): project scripts are
+    # per-project config and rev independently of this installed caller, so
+    # an outcome vocabulary this caller does not recognize must refuse
+    # honestly — the old fall-through minted a junk empty "solution.py"
+    # write from whatever the newer scripts actually meant.
+    return [
+        ContentDelta(
+            content="Refused: the serve produced an outcome this server "
+            "version does not recognize."
+        ),
+        Completion(finish_reason="stop"),
+    ]
 
 
 class ServingEnsembleCaller:
