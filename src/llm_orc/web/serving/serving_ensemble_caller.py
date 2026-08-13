@@ -99,23 +99,59 @@ _READ_FAIL_REASON_CAP = 200
 # held read every turn, unbounded — at the 96KB/file cap above, 2-3 held
 # reads cross the model's context window (measured: three real files
 # ~58,100 projected tokens returned prompt_eval_count 20,482, a silent
-# third of what was sent, reproduced with a cache-busting nonce). A total
-# rendered-read-bytes budget bounds it: keep the whole dispatch_input
-# under ~36K projected tokens with generation margin.
+# third of what was sent, reproduced with a cache-busting nonce).
+#
+# BLOCKER 1 (review round 1): a byte/char-denominated budget is charset-
+# density-blind. A 97KB JSON file (2.07 real chars/token — JSON's density
+# comes from punctuation structure, not word length) passed a char budget
+# AND the per-file byte cap, then silently overflowed the 40,960-token
+# window (the runtime's discard signature: prompt_eval_count exactly half
+# the window on every over-window prompt, HTTP 200, no error). The budget
+# below is denominated in PROJECTED TOKENS via ``_projected_tokens``, a
+# deterministic, uniformly conservative estimator applied at this same
+# render seam — never fewer projected tokens than a real tokenizer would
+# report, so the budget never admits more real tokens than it thinks it
+# does (measured against real chars/token: ASCII source ~3.1-3.7 estimated
+# vs 4.0 real, JSON ~1.7-1.8 vs 2.07, CJK ~1.0 vs 1.99, emoji ~1.0 vs 1.0 —
+# the estimator's own ratio never exceeds the real one).
 #
 # Held blocks are NEVER evicted (the anti-read-loop exemption stands — see
-# _select_read_blocks) — a NEW read that would push the running total over
-# budget renders as a bodyless "(over-budget)" refusal instead, so it
-# never enters the accumulator. classify's _visibility treats that variant
-# exactly like a failed/oversize read: refused honestly, never re-
-# requested, naming the held files and the budget.
+# _select_read_blocks) — a NEW read whose projected tokens would push the
+# running total over budget renders as a bodyless "(over-budget)" refusal
+# instead, so it never enters the accumulator. classify's _visibility
+# treats that variant exactly like a failed/oversize read: refused
+# honestly, never re-requested, naming the held files and the budget.
 #
-# SEAM CHOICE: the check lives HERE, at render time, not as a request-time
-# check in classify. classify only knows a path is unread — it never
-# learns the file's SIZE until the client's read result comes back, so a
-# request-time budget check has nothing to compare against. The budget can
-# only be enforced once the size is known, which is here.
-_READ_TOTAL_BUDGET = 131072
+# SEAM CHOICE (unchanged from C1): the check lives HERE, at render time,
+# not as a request-time check in classify. classify only knows a path is
+# unread — it never learns the file's size (or its charset density) until
+# the client's read result comes back, so a request-time budget check has
+# nothing to compare against.
+#
+# This estimator is a pre-flight guard, not a guarantee against every
+# possible adversarial input — the general backstop no estimator can
+# evade (refusing any answer whose RECORDED prompt_eval_count, C2's turn
+# trace, shows the runtime actually truncated) is filed separately as
+# #151, not built here.
+#
+# _READ_TOKEN_BUDGET = 34,000: the 40,960-token window minus ancillary
+# render (conversation history, instructions, glob/run blocks) and a
+# generation margin, reserved for held read bodies specifically.
+_ASCII_OR_NONBLANK_RE = re.compile(r"[A-Za-z0-9_]+|\S")
+
+
+def _projected_tokens(text: str) -> int:
+    """A conservative (over-counting) projected token count: one unit per
+    maximal ASCII word-char run (identifiers, keywords — real tokenizers
+    rarely split these further) plus one unit per remaining non-whitespace
+    character (punctuation and symbols, ASCII or not, plus non-ASCII word
+    characters like CJK — each of those genuinely costs close to a full
+    token on its own in real tokenizers, so counting them individually
+    never under-counts). Whitespace costs nothing."""
+    return len(_ASCII_OR_NONBLANK_RE.findall(text))
+
+
+_READ_TOKEN_BUDGET = 34000
 # Client-run output blocks (issue #83, run half): the TAIL is kept on
 # overflow — pytest prints its summary last, and the deterministic verdict
 # parser reads exactly that summary.
@@ -290,7 +326,7 @@ def _select_read_blocks(
     """Latest read block per path (issue #83), joined from the FULL history —
     exempt from the selected-block cap: dropping one would make classify
     re-request it (a read loop). A later write of the same path supersedes.
-    The total-bytes budget (C1, #145) still applies — see
+    The total-projected-tokens budget (C1, #145) still applies — see
     ``_budget_read_blocks``."""
     written_paths = {path for path, _ in _select_written_files(list(messages), task)}
     latest_reads: dict[str, tuple[str, bool]] = {}
@@ -301,14 +337,15 @@ def _select_read_blocks(
 
 
 def _budget_read_blocks(latest_reads: dict[str, tuple[str, bool]]) -> list[str]:
-    """Cap the TOTAL bytes of held (whole-body) read blocks at
-    ``_READ_TOTAL_BUDGET`` (C1). Blocks accumulate in the dict's insertion
-    order — each distinct path's chronological first-occurrence order, set
-    by ``_select_read_blocks`` — which is deterministic across turns:
+    """Cap the TOTAL projected tokens of held (whole-body) read blocks at
+    ``_READ_TOKEN_BUDGET`` (C1; re-denominated in tokens, BLOCKER 1 review
+    round 1). Blocks accumulate in the dict's insertion order — each
+    distinct path's chronological first-occurrence order, set by
+    ``_select_read_blocks`` — which is deterministic across turns:
     replaying the same read history always produces the same accept/refuse
     split, so a block that fit on an earlier turn still fits now (never
-    evicted) and a block that didn't fit stays refused rather than
-    flapping turn to turn.
+    evicted, first-read-wins) and a block that didn't fit stays refused
+    rather than flapping turn to turn.
 
     A block that is already a refused/oversize/failed variant (``is_full``
     False, no body) costs nothing against the budget and passes through
@@ -322,8 +359,8 @@ def _budget_read_blocks(latest_reads: dict[str, tuple[str, bool]]) -> list[str]:
         if not is_full:
             kept.append(block)
             continue
-        cost = len(block)
-        if total + cost > _READ_TOTAL_BUDGET:
+        cost = _projected_tokens(block)
+        if total + cost > _READ_TOKEN_BUDGET:
             kept.append(f"assistant: [read {path} (over-budget)]")
             continue
         kept.append(block)
@@ -712,7 +749,8 @@ def _render_read_block(path: str, raw: str) -> tuple[str, bool]:
     #83 grammar). Failure and oversize variants are single header lines so
     gather never materializes them and classify can refuse instead of
     re-requesting (one-round bound); ``is_full`` is False for these so C1's
-    total-bytes budget (``_budget_read_blocks``) never counts them.
+    total-projected-tokens budget (``_budget_read_blocks``) never counts
+    them.
 
     OpenCode's <content>-wrapped success form (captured wire, 2026-07-09) is
     checked BEFORE the failure-prefix heuristic — a structural check, so a
