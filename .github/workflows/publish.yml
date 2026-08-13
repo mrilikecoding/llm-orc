@@ -42,8 +42,10 @@ jobs:
     - name: Check build artifacts
       run: |
         ls -la dist/
-        uv add twine
-        uv run python -m twine check dist/*
+        # uvx runs twine isolated at its latest release; `uv add` resolved it
+        # against the project lock, which held twine at 6.2.0 — too old for
+        # the Metadata-Version 2.5 that current hatchling emits.
+        uvx twine check dist/*
     
     - name: Upload build artifacts
       uses: actions/upload-artifact@v4
