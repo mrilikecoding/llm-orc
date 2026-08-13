@@ -240,16 +240,23 @@ _FIX_VERB_RE = re.compile(
 )
 # Context-block headers (the caller's render grammar). Visible = untruncated
 # wrote block or successful read block; attempted = any read header. The
-# optional variant group keeps a "(truncated)" suffix out of the path.
+# optional variant group keeps a "(truncated)"/"(over-budget)" suffix out
+# of the path.
 _VISIBLE_HEADER_RE = re.compile(
     r"^assistant: \[(?:wrote|read) ([^\]]+?)"
-    r"( \((?:truncated|failed|oversize)\))?\]$",
+    r"( \((?:truncated|failed|oversize|over-budget)\))?\]$",
     re.MULTILINE,
 )
 _READ_ATTEMPT_RE = re.compile(
-    r"^assistant: \[read ([^\]]+?)( \((failed|oversize)\))?\]", re.MULTILINE
+    r"^assistant: \[read ([^\]]+?)( \((failed|oversize|over-budget)\))?\]",
+    re.MULTILINE,
 )
 _READ_CAP_KB = 96
+# C1 (#145): mirrors the caller's _READ_TOTAL_BUDGET (131,072 bytes) —
+# classify.py runs standalone with no cross-boundary import (the same
+# reason _READ_CAP_KB above duplicates its caller's per-file cap), so the
+# number is repeated here for the over-budget refusal's wording.
+_READ_TOTAL_BUDGET_KB = 128
 # issue #83 run half: an imperative run verb with a tests object later in
 # the same sentence fragment ("run the unit tests", "rerun pytest", "run
 # every single one of the unit tests"). A named test_*.py file with a run
@@ -403,6 +410,17 @@ def _visibility(context: str) -> tuple[set[str], dict[str, str]]:
             attempted[basename] = f"file exceeds the {_READ_CAP_KB} KB read cap"
         elif variant == "failed":
             attempted[basename] = "client read failed"
+        elif variant == "over-budget":
+            # C1 (#145): the caller already refused to render this read's
+            # body (it would have pushed the total held rendered-read bytes
+            # over budget) — name the budget and the files already holding
+            # it so the refusal is actionable, not just honest.
+            held = ", ".join(sorted(visible)) if visible else "other files"
+            attempted[basename] = (
+                f"the {_READ_TOTAL_BUDGET_KB} KB total read budget is "
+                f"already held by {held} — start a fresh session or ask "
+                "about one file at a time"
+            )
     return visible, attempted
 
 
