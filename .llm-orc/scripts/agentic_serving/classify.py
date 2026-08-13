@@ -1433,6 +1433,40 @@ def _discover_and_read(
     )
 
 
+def _strip_truncated_glob_block(conversation: str) -> str:
+    """Remove the LATEST truncated ``[globbed ...]`` block from the
+    conversation text before dispatch_input composes it into a seat prompt
+    (issue #148 BLOCKER 2).
+
+    ``_discovery``/``_explain_discover`` already refuse to GROUND a routing
+    decision on a truncated listing (via ``_latest_glob_listing``), but on
+    the bare-symbol explain-discovery fall-through (zero candidates, target
+    ``explainer``, no named file) the raw block was still riding along in
+    dispatch_input's generic conversation composition. ``explainer.yaml``
+    carries no grounding instruction, so handing it a truncated listing —
+    often containing the fully-named file — is exactly the coin-flip ground
+    the routing refusal exists to prevent; the invariant has to hold at the
+    seat's actual prompt, not just at the router.
+
+    Mirrors ``_latest_glob_listing``'s own scan exactly (column-0
+    ``"assistant: [globbed "`` header, last-wins, two-space-indented body)
+    so the strip is deterministic and header-anchored, never a text-search
+    heuristic. A complete (non-truncated) listing — a genuine no-match — is
+    left untouched; only the truncated marker triggers the strip.
+    """
+    lines = conversation.splitlines()
+    start = -1
+    for index, line in enumerate(lines):
+        if line.startswith("assistant: [globbed "):
+            start = index
+    if start < 0 or not lines[start].endswith(" (truncated)]"):
+        return conversation
+    end = start + 1
+    while end < len(lines) and lines[end].startswith("  "):
+        end += 1
+    return "\n".join(lines[:start] + lines[end:])
+
+
 def main() -> None:
     turn = _turn(sys.stdin.read().strip())
     task = str(turn.get("task", "")).strip()
@@ -1662,6 +1696,19 @@ def main() -> None:
     # the task ALONE — a past build request must not re-trigger a build.
     dispatch_input = task or str(turn.get("dispatch_input", ""))
     conversation = str(turn.get("context", "")).strip()
+    if target == _EXPLAIN_SEAT and not named_file:
+        # issue #148 BLOCKER 2: the bare-symbol explain-discovery fall-
+        # through (candidates == [], often because the listing was
+        # truncated) dispatches to explainer.yaml, a cheap seat with no
+        # grounding instruction — strip a truncated glob block out of the
+        # conversation before it becomes that seat's prompt. A complete
+        # listing (a genuine no-match) is left exactly as before. The
+        # grounded case (named_file set) is untouched — it already carries
+        # its own explicit "do not guess" instruction, and its own glob
+        # round can never itself be truncated (a truncated listing never
+        # yields a single named-after candidate, see
+        # _explain_glob_candidates).
+        conversation = _strip_truncated_glob_block(conversation)
     if conversation:
         dispatch_input = (
             f"Conversation so far:\n{conversation}\n\nCurrent request: {dispatch_input}"
