@@ -622,15 +622,13 @@ def test_low_token_density_json_file_refuses_despite_fitting_the_byte_cap() -> N
 
 
 def test_high_char_low_density_ascii_source_still_admits() -> None:
-    # The companion case: an ASCII source file (classify.py's real shape)
-    # has HIGH real chars/token density, so its projected token count
-    # stays under _READ_TOKEN_BUDGET (35,000) — admitted, matching the
-    # design doc's own classify.py measurement (21,598 raw v2 tokens *
-    # 1.59 safety factor = 34,341, admitted with real margin under
-    # 35,000). 550 repetitions here (not classify.py's own real size —
-    # this fixture is denser code-only text with no comments/docstrings,
-    # so it needs fewer repetitions to approach the ceiling) keeps
-    # comfortable headroom rather than hugging the boundary.
+    # The companion case: an ASCII source file has HIGH real chars/token
+    # density, so its projected token count stays under
+    # _READ_TOKEN_BUDGET (35,000) — admitted. 550 repetitions here (a
+    # dense, comment-free code fixture, not any real repo file's own
+    # size) keeps comfortable headroom rather than hugging the boundary;
+    # see test_real_repo_files_admit_or_refuse_at_current_size below for
+    # what actual repo files project through the real render pipeline.
     py_unit = (
         "def compute_value(a, b, c):\n"
         "    if a > b:\n"
@@ -652,6 +650,97 @@ def test_high_char_low_density_ascii_source_still_admits() -> None:
 
     assert "[read source.py]" in rendered
     assert "(over-budget)" not in rendered
+
+
+def _wire_wrap_file(source_path: object) -> str:
+    """A real file's content wrapped in the captured OpenCode wire shape
+    (``<path>/<type>/<content>`` with a per-line ``N: `` gutter) — the
+    shape ``_render_read_block`` actually receives in production. Review
+    round 3 blocker B: testing admission against BARE raw file content
+    (skipping this wrapping) understates the guard's real charge — every
+    line gains a 2-space indent in the rendered block (v2's rule (f)
+    counts each as its own token-unit), and for
+    serving_ensemble_caller.py specifically, bare content also
+    mis-triggers the #150 <content>-tag extraction on the file's OWN
+    literal mentions of that tag, corrupting the measurement entirely."""
+    from pathlib import Path
+
+    path = Path(str(source_path))
+    lines = path.read_text().splitlines()
+    gutter_body = "\n".join(f"{i + 1}: {line}" for i, line in enumerate(lines))
+    return (
+        f"<path>{path}</path>\n"
+        "<type>file</type>\n"
+        "<content>\n"
+        f"{gutter_body}\n"
+        "\n"
+        f"(End of file - total {len(lines)} lines)\n"
+        "</content>"
+    )
+
+
+def test_real_repo_files_admit_or_refuse_at_current_size() -> None:
+    """Review round 3 blockers A+B: admission tests must measure the
+    quantity the guard actually charges — ``_render_read_block``'s
+    rendered block (header + wire-wrapped, gutter-stripped, 2-space-
+    indented body) through ``_projected_tokens`` — not raw source text.
+
+    The RESOLVED pinned fact (not another budget chase): classify.py, at
+    its current size, REFUSES over budget — the designed failure mode,
+    verified here as the honest ``(over-budget)`` shape, not a crash or
+    a silent truncation. subagent_adapter.py and serving_ensemble_
+    caller.py (the #145 exit gate's own grounding targets) still ADMIT
+    with real margin. Deliberately live-computed (not a hardcoded token
+    count) so this test tracks the actual repo files as they evolve,
+    while staying an honest signal — a future edit that pushes
+    subagent_adapter.py or serving_ensemble_caller.py over budget, or
+    that somehow shrinks classify.py back under it, should surface here
+    for a conscious decision, not silently.
+    """
+    from pathlib import Path
+
+    repo = Path(__file__).resolve().parents[4]
+    expected_refuses = {"classify.py": ".llm-orc/scripts/agentic_serving/classify.py"}
+    expected_admits = {
+        "subagent_adapter.py": "benchmarks/agentic_serving/subagent_adapter.py",
+        "serving_ensemble_caller.py": (
+            "src/llm_orc/web/serving/serving_ensemble_caller.py"
+        ),
+        "emit.py": ".llm-orc/scripts/agentic_serving/emit.py",
+        "accept_gather.py": ".llm-orc/scripts/agentic_serving/accept_gather.py",
+    }
+
+    def render_read(name: str, rel_path: str) -> str:
+        raw = _wire_wrap_file(repo / rel_path)
+        messages = [
+            ChatMessage(role="user", content=f"fix {name}"),
+            ChatMessage(
+                role="assistant", content=None, tool_calls=(_read_call("c1", name),)
+            ),
+            ChatMessage(role="tool", tool_call_id="c1", content=raw),
+        ]
+        return _render_context(messages)
+
+    for name, rel_path in expected_refuses.items():
+        rendered = render_read(name, rel_path)
+        assert f"[read {name} (over-budget)]" in rendered, (
+            f"{name} was expected to REFUSE over-budget (the pinned bound "
+            "this test documents) but rendered whole instead — either the "
+            "file shrank below the budget or the budget/estimator moved; "
+            "either way this needs the design-fork treatment, not a "
+            "silent update."
+        )
+        assert f"[read {name}]" not in rendered
+
+    for name, rel_path in expected_admits.items():
+        rendered = render_read(name, rel_path)
+        assert f"[read {name}]" in rendered, (
+            f"{name} was expected to ADMIT (it grounds the #145 exit gate "
+            "or is otherwise pinned as comfortably under budget) but "
+            "refused instead — a real repo file failing to admit is the "
+            "exact regression #145 exists to prevent."
+        )
+        assert f"[read {name} (over-budget)]" not in rendered
 
 
 def test_budget_boundary_pin_exact_admits_plus_one_refuses() -> None:

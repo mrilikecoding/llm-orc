@@ -44,7 +44,6 @@ import hashlib
 import random
 from pathlib import Path
 
-from llm_orc.web.serving.serving_ensemble_caller import _READ_TOKEN_BUDGET
 from llm_orc.web.serving.token_estimate import SAFETY_FACTOR, projected_tokens_v2
 
 REPO = Path(__file__).resolve().parents[4]
@@ -203,36 +202,18 @@ def test_safety_factor_is_the_derived_value() -> None:
     assert SAFETY_FACTOR < minimal_factor + 0.02  # the smallest 2dp value, not padded
 
 
-def test_classify_py_projects_under_budget_with_real_margin() -> None:
-    """SANITY CONSTRAINT, RESOLVED (review round 2 fork resolution):
-    classify.py — the repo's own largest routinely-read file, and the
-    feature's own admission bar — must project under _READ_TOKEN_BUDGET
-    for v2 to be wireable without regressing the #145 exit gate (a real
-    repo-scale file refusing to read is the exact failure the feature
-    exists to fix).
-
-    At SAFETY_FACTOR (1.59), classify.py projected to 34,341 against the
-    round-1 budget of 34,000 — a narrow miss reported as an open design
-    fork rather than resolved silently. The lead resolved it with
-    numbers: _READ_TOKEN_BUDGET raised to 35,000 (honest window
-    arithmetic — 40,960 - 35,000 = 5,960 reserve, documented at the
-    constant — not a quiet bump to clear this one file), which admits
-    classify.py with real margin while PEM keeps its own full >=5%
-    conservativeness margin (both pinned in
-    test_v2_estimator_is_conservative_against_real_tokenizer_counts
-    above) — no class sacrificed.
-
-    This test pins the RESOLVED fact so it fails loudly (not silently) if
-    either number regresses.
-    """
-    classify_source = _real_repo_files()["classify.py"]
-    projected = projected_tokens_v2(classify_source)
-    assert projected < _READ_TOKEN_BUDGET, (
-        f"classify.py now projects to {projected} at SAFETY_FACTOR="
-        f"{SAFETY_FACTOR}, budget is {_READ_TOKEN_BUDGET} — a real repo "
-        "file no longer admits under the read budget, regressing the "
-        "#145 exit gate. This needs the same design-fork treatment the "
-        "round-2 review gave this exact conflict, not a silent fix."
-    )
-    margin = (_READ_TOKEN_BUDGET / projected - 1) * 100
-    assert margin > 1.0  # "real margin", not a hairline pass
+# NOTE (review round 3 blockers A+B): a prior version of this module
+# pinned classify.py's admission here using RAW SOURCE TEXT through
+# projected_tokens_v2 directly. That is not what the live budget guard
+# charges — _budget_read_blocks costs the RENDERED BLOCK
+# (_render_read_block's header + wire-wrapped, 2-space-indented body),
+# which is substantially larger (every line gains its own indent
+# token-unit under v2's rule (f)). Measured against raw source,
+# classify.py APPEARED to admit with margin; measured correctly against
+# the rendered block, it REFUSES over budget by a small margin. That
+# admission/refusal pin now lives in
+# test_serving_context_render.test_real_repo_files_admit_or_refuse_at_
+# current_size, driven through the real render pipeline (the actual
+# guard, not a proxy for it) — see that test and the design doc's round-3
+# resolution for the current pinned facts and the "classify.py's
+# explain-ability moves to the deferred chunked-reads rung" decision.

@@ -55,20 +55,32 @@ high-entropy content). Solving for the smallest factor F such that
 ``v2(text) * F >= real(text) * 1.05`` (5% margin) for every measured
 fixture gives F = 1.5837, which rounds up to 1.59.
 
-SANITY CONSTRAINT, RESOLVED (review round 2): classify.py must project
-under ``_READ_TOKEN_BUDGET`` at the shipped factor — a real repo-scale
-file failing to admit is the exact regression #145 exists to prevent. At
-factor 1.59 against the round-1 budget of 34,000, classify.py's
-projected count (``ceil(21598 * 1.59) == 34,341``) narrowly exceeded it
-(the max factor keeping classify.py under 34,000 is 1.5742; PEM's 5%
-margin needs at least 1.5837 — a gap of about 1%). Reported rather than
-resolved silently (no quiet budget bump, no quiet margin cut). The lead
-resolved it with numbers: ``_READ_TOKEN_BUDGET`` raised to 35,000 (see
-that constant in ``serving_ensemble_caller.py`` for the window
-arithmetic) — classify.py now projects to 34,341 < 35,000 with real
-margin, and PEM keeps its full >=5% conservativeness margin unchanged
-(the safety factor itself, 1.59, did not move). No fixture class was
-sacrificed to admit classify.py.
+SANITY CONSTRAINT (review rounds 2-3): a real repo-scale file failing to
+admit is the exact regression #145 exists to prevent, so classify.py's
+admission under ``_READ_TOKEN_BUDGET`` was checked at every step. Round
+2: at factor 1.59 against the round-1 budget of 34,000, classify.py's
+RAW-SOURCE projected count (``ceil(21598 * 1.59) == 34,341``) narrowly
+exceeded it (max factor keeping it under 34,000: 1.5742; PEM's 5% margin
+needs at least 1.5837 — a gap of about 1%). Reported rather than resolved
+silently. The lead resolved it with numbers: ``_READ_TOKEN_BUDGET``
+raised to 35,000 (see that constant in ``serving_ensemble_caller.py`` for
+the window arithmetic), admitting classify.py's raw-source count with
+margin while PEM kept its full >=5% conservativeness margin unchanged
+(the safety factor, 1.59, never moved).
+
+Round 3 found the round-2 admission check itself measured the WRONG
+quantity: raw source text, not the RENDERED BLOCK the live budget guard
+actually charges (header + wire-wrapped, 2-space-indented body — every
+line gains its own indent token-unit under rule (f), which raw source
+never sees). Measured correctly, classify.py refuses over the 35,000
+budget by a narrow margin. Resolution: the budget stays 35,000 (the
+window arithmetic was clean and unrelated to this bug); classify.py's
+refusal at its current size is now the PINNED, DOCUMENTED bound — not
+another budget chase — see ``serving_ensemble_caller._READ_TOKEN_BUDGET``
+and ``test_serving_context_render.test_real_repo_files_admit_or_refuse_
+at_current_size`` for the current figures and the admitted files
+(subagent_adapter.py, serving_ensemble_caller.py) that ground the #145
+exit gate, unaffected.
 """
 
 from __future__ import annotations

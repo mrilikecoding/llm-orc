@@ -145,17 +145,30 @@ _READ_FAIL_REASON_CAP = 200
 # window itself is still a hardcoded constant rather than server-queried
 # — #151 stays open for that plus threshold re-measurement per model era.
 #
-# _READ_TOKEN_BUDGET = 35,000 (review round 2 fork resolution): the
-# 40,960-token window minus a 5,960-token reserve for ancillary render
-# (conversation history, instructions, glob/run blocks — measured
-# ~1,800) plus explain-generation headroom (measured ~1,000-2,000) plus
-# margin. This is deliberately looser than round 1's 34,000: at the
-# ground-truth-derived safety factor (1.59), classify.py — the repo's
-# own largest routinely-read file, and the feature's own admission bar —
-# projects to 21,598 * 1.59 = 34,341, which needs the extra headroom to
-# stay admitted with real margin (34,341 < 35,000, ~1.9% margin) without
+# _READ_TOKEN_BUDGET = 35,000 (review round 2 fork resolution; window
+# arithmetic UNCHANGED by round 3): the 40,960-token window minus a
+# 5,960-token reserve for ancillary render (conversation history,
+# instructions, glob/run blocks — measured ~1,800) plus explain-
+# generation headroom (measured ~1,000-2,000) plus margin, without
 # sacrificing the PEM certificate fixture's conservativeness (it still
-# clears its full >=5% margin at 1.59 — see token_estimate.py).
+# clears its full >=5% margin at the safety factor, 1.59 — see
+# token_estimate.py).
+#
+# Review round 3 blockers A+B: admission is decided by the RENDERED
+# BLOCK this constant is actually compared against in
+# _budget_read_blocks below (header + wire-wrapped, 2-space-indented
+# body) — NOT raw source text, which understates the real charge (every
+# line gains its own indent token-unit under v2's rule (f)). Measured
+# that way, classify.py (2026-08-13 size) projects to ~35,030 and
+# REFUSES over budget by a narrow margin — the pinned, DOCUMENTED bound
+# (test_serving_context_render.test_real_repo_files_admit_or_refuse_at_
+# current_size), not another budget chase: the file's own size crossed
+# this exact line mid-review, and raising the budget again would just
+# make this a permanent treadmill. classify.py's own explain-ability
+# moves to the deferred chunked-reads rung (see the design doc's "not
+# built here" section). subagent_adapter.py (~10,900) and
+# serving_ensemble_caller.py (~26,750) — the #145 exit gate's own
+# grounding targets — admit with real margin, unaffected.
 _READ_TOKEN_BUDGET = 35000
 _projected_tokens = projected_tokens_v2
 
