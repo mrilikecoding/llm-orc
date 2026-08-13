@@ -1446,9 +1446,9 @@ def _discover_and_read(
 
 
 def _strip_truncated_glob_block(conversation: str) -> str:
-    """Remove the LATEST truncated ``[globbed ...]`` block from the
-    conversation text before dispatch_input composes it into a seat prompt
-    (issue #148 BLOCKER 2).
+    """Remove EVERY truncated ``[globbed ...]`` block from the conversation
+    text before dispatch_input composes it into a seat prompt (issue #148
+    BLOCKER 2; round 2 review minor 1: every block, not only the latest).
 
     ``_discovery``/``_explain_discover`` already refuse to GROUND a routing
     decision on a truncated listing (via ``_latest_glob_listing``), but on
@@ -1458,25 +1458,32 @@ def _strip_truncated_glob_block(conversation: str) -> str:
     carries no grounding instruction, so handing it a truncated listing —
     often containing the fully-named file — is exactly the coin-flip ground
     the routing refusal exists to prevent; the invariant has to hold at the
-    seat's actual prompt, not just at the router.
+    seat's actual prompt, not just at the router. A stale EARLIER truncated
+    block (round 2 review minor 1) is the same hazard even when the LATEST
+    block happens to be complete — routing only ever reads the latest
+    block, but dispatch_input still carries the whole conversation, so
+    every truncated block gets stripped, not just the one routing looked
+    at.
 
     Mirrors ``_latest_glob_listing``'s own scan exactly (column-0
-    ``"assistant: [globbed "`` header, last-wins, two-space-indented body)
-    so the strip is deterministic and header-anchored, never a text-search
+    ``"assistant: [globbed "`` header, two-space-indented body) so the
+    strip is deterministic and header-anchored, never a text-search
     heuristic. A complete (non-truncated) listing — a genuine no-match — is
-    left untouched; only the truncated marker triggers the strip.
+    left untouched; only the truncated marker triggers a strip.
     """
     lines = conversation.splitlines()
-    start = -1
-    for index, line in enumerate(lines):
-        if line.startswith("assistant: [globbed "):
-            start = index
-    if start < 0 or not lines[start].endswith(" (truncated)]"):
-        return conversation
-    end = start + 1
-    while end < len(lines) and lines[end].startswith("  "):
-        end += 1
-    return "\n".join(lines[:start] + lines[end:])
+    index = 0
+    while index < len(lines):
+        if not lines[index].startswith("assistant: [globbed ") or not lines[
+            index
+        ].endswith(" (truncated)]"):
+            index += 1
+            continue
+        end = index + 1
+        while end < len(lines) and lines[end].startswith("  "):
+            end += 1
+        del lines[index:end]
+    return "\n".join(lines)
 
 
 def main() -> None:
