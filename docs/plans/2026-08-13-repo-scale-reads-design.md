@@ -130,3 +130,33 @@ never a silent fragment, never a silent drop from context (C1's budget
 refusal is the visible form). Exit gate gains: the accumulation case
 (two large reads then a third ask → budget refusal, wire-visible) and
 `prompt_eval_count` tracking on the grounded-explain turn.
+
+## Review round 1 (2026-08-13): BLOCKER — the budget's unit was wrong
+
+The adversarial review found the char-denominated budget open to charset
+density: a 97KB JSON file (measured 2.07 chars/token; JSON is ASCII —
+density comes from punctuation structure) passes BOTH caps and silently
+overflows the window (the runtime's discard signature: prompt_eval_count
+exactly 20,482 = window/2 on every over-window prompt, HTTP 200).
+Measured density table: ASCII Python 4.0 chars/tok, JSON 2.07, CJK 1.99,
+emoji 1.0.
+
+Adjudicated fix: the budget re-denominates in **projected tokens** via a
+deterministic uniformly-conservative estimator at the same render seam —
+`ASCII word-runs + non-space punctuation chars + non-ASCII word chars`
+(over-counts every measured class; still admits classify.py at ~25K
+projected vs 24.6K real) — `_READ_TOKEN_BUDGET = 34000` (window 40,960
+− ancillary − generation margin), mirrored with a drift assert. The
+96KB per-file byte cap remains as the coarse whole-file-or-refuse gate.
+The general backstop no estimator can evade — refusing any answer whose
+recorded prompt_eval_count shows runtime truncation — is **#151**.
+
+Also from the round: the `(over-budget)` variant joins the grammar in
+FOUR consumers (accept_gather and refix_gather were missed — the
+recurring grammar-coupling class; a shared variant vocabulary is noted
+as follow-up); every mirrored constant pair now carries a drift assert;
+`_not_grounded` reflects a recorded attempt reason instead of
+recommending the action that just failed; the greedy single-wrapper
+precondition is pinned against the 81/81 wire evidence; and budget
+order-dependence is DECIDED: first-read-wins stands (never-evict is the
+rule), pinned and named in the refusal remedy.
