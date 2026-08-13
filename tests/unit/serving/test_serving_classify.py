@@ -683,6 +683,36 @@ def test_multiple_glob_candidates_refuse_naming_them() -> None:
     assert "/b/storage_utils.py" in decision["glob_failed"]
 
 
+def test_truncated_single_stem_listing_refuses_to_ground() -> None:
+    # #148: the rendered listing caps at _GLOB_MAX_PATHS and is mtime-ordered
+    # (nondeterministic) once a stem family busts the cap, so a "(truncated)"
+    # header means this is NOT the complete candidate set. Exactly one
+    # qualifying candidate survives the cap here — classify must still
+    # refuse rather than confidently ground on a coin-flip subset. Falls
+    # through to the same "no file matching" refusal the zero-candidate
+    # case already produces (no new behavior, just the truncated listing
+    # never contributing a candidate).
+    context = "assistant: [globbed storage (truncated)]\n  /work/storage.py"
+    decision = _classify(
+        {"task": "write tests for the storage module", "context": context}
+    )
+    assert decision["target"] == "need-glob"
+    assert decision["needs_glob"] == ""
+    assert "no file matching 'storage'" in decision["glob_failed"]
+
+
+def test_untruncated_single_stem_listing_still_grounds() -> None:
+    # regression: #148 refuses on the "(truncated)" marker only, never on
+    # listing length — an untruncated listing with one qualifying candidate
+    # must still ground exactly as before.
+    context = "assistant: [globbed storage]\n  /work/storage.py"
+    decision = _classify(
+        {"task": "write tests for the storage module", "context": context}
+    )
+    assert decision["target"] == "need-files"
+    assert decision["needs_files"] == ["/work/storage.py"]
+
+
 def test_matched_candidate_already_read_routes_to_the_tests_seat() -> None:
     """Pass 4 of the chain: the glob-matched file has been read — the match
     step still names it, the read seam sees it visible, the tests seat gets
@@ -2129,6 +2159,27 @@ def test_bare_symbol_explain_zero_candidates_falls_through_to_the_explainer() ->
         "assistant: [globbed classify,decide,routing]\n"
         "  /work/notes.md\n"
         "  /work/README.md"
+    )
+    decision = _classify(
+        {"task": "how does classify decide routing?", "context": context}
+    )
+    assert decision["target"] == "explainer"
+    assert decision["build"] is False
+    assert decision["needs_glob"] == ""
+    assert decision["glob_failed"] == ""
+    assert decision["needs_files"] == []
+
+
+def test_bare_symbol_explain_truncated_listing_falls_through_to_the_explainer() -> None:
+    # #148: the multi-stem sibling of the truncated single-stem case above —
+    # a "(truncated)" header means the listing is not the complete candidate
+    # set (real stem families bust the 50-path cap, mtime-ordered so which
+    # 50 survive is nondeterministic). The one candidate that does survive
+    # the cap here fully names classify.py, but classify must not ground on
+    # it — it falls through to the same conceptual explainer the zero-
+    # candidate case above already produces.
+    context = (
+        "assistant: [globbed classify,decide,routing (truncated)]\n  /work/classify.py"
     )
     decision = _classify(
         {"task": "how does classify decide routing?", "context": context}
