@@ -87,8 +87,9 @@ _ASCII_WORD_RUN_RE = re.compile(r"[A-Za-z0-9_]+")
 _TOKEN_UNIT_RE = re.compile(r"[A-Za-z0-9_]+" r"|\n" r"| {2,}" r"|\S")
 
 # Derived from measured ground truth — see module docstring and
-# tests/unit/web/serving/test_token_estimate_ground_truth.py. NOT YET
-# WIRED into the live budget (see STATUS above).
+# tests/unit/web/serving/test_token_estimate_ground_truth.py. WIRED into
+# the live budget as serving_ensemble_caller._projected_tokens (see
+# STATUS above).
 SAFETY_FACTOR = 1.59
 
 # The length above which an ASCII word-run is treated as high-entropy and
