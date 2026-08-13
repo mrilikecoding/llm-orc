@@ -103,6 +103,7 @@ def main() -> None:
     needs_glob = str(classify.get("needs_glob", ""))
     glob_failed = str(classify.get("glob_failed", ""))
     not_grounded = str(classify.get("not_grounded", ""))
+    not_grounded_reason = str(classify.get("not_grounded_reason", ""))
     recall_answer = str(classify.get("recall_answer", ""))
     # Review round 2 new blocker 2: pass through unchanged — emit selects
     # the build-scoped vs plain refused prefix from this.
@@ -156,6 +157,7 @@ def main() -> None:
                 "needs_glob": needs_glob,
                 "glob_failed": glob_failed,
                 "not_grounded": not_grounded,
+                "not_grounded_reason": not_grounded_reason,
                 "recall_answer": recall_answer,
                 "is_build_ask": is_build_ask,
             }

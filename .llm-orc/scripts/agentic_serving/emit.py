@@ -52,6 +52,16 @@ _NOT_GROUNDED_MESSAGE = (
     "I can't explain its internals without guessing. If it's in your "
     "workspace, ask me to read it."
 )
+# minor 3 (review round 1, #145): when classify recorded an ATTEMPT reason
+# for this exact target (``not_grounded_reason``, threaded from
+# _visibility's ``attempted`` dict — a prior turn's build read that
+# refused as oversize/failed/over-budget), the honest message must not
+# suggest the very action that just failed. States the recorded reason
+# instead of the generic "ask me to read it" invitation.
+_NOT_GROUNDED_WITH_REASON_MESSAGE = (
+    "No `{target}` in this session: {reason}, so I can't explain its "
+    "internals without guessing."
+)
 
 
 class Terminal(NamedTuple):
@@ -164,7 +174,13 @@ def _seam_outcome(gated: dict) -> dict | None:
         # grounded-explain design: the target named in an explain turn has
         # no visible build or read on the wire — the explainer seat was
         # never called, so there is no speculation path to guard here.
-        message = _NOT_GROUNDED_MESSAGE.format(target=not_grounded)
+        not_grounded_reason = str(gated.get("not_grounded_reason", ""))
+        if not_grounded_reason:
+            message = _NOT_GROUNDED_WITH_REASON_MESSAGE.format(
+                target=not_grounded, reason=not_grounded_reason
+            )
+        else:
+            message = _NOT_GROUNDED_MESSAGE.format(target=not_grounded)
         return {"finish": True, "content": message}
     recall_answer = str(gated.get("recall_answer", ""))
     if recall_answer:
