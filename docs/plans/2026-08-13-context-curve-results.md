@@ -181,3 +181,148 @@ tasks (and #145's actual repo-read use case, which may need to reason over
 *several* chunked facts at once, not just recall one) — that's a
 qualitatively harder task shape this spike didn't measure and shouldn't be
 assumed to inherit the same zero-drift result.
+
+## Extension results (16K/32K + synthesis)
+
+Follow-up to the #139 record above (closed, unmodified), run for #145
+design grounding. Script: `docs/plans/2026-08-13-context-curve-ext-spike.py`
+— a sibling that imports `NEEDLES`/`FILLER_TEXT`/`build_grid_input`/`score`
+from the original #139 script rather than duplicating it. 66/66 calls
+correct (48 grid + 18 synthesis), 0 errors.
+
+### num_ctx precondition check (run first, per instruction)
+
+Concern: qwen3:8b's Ollama-served context window might default to
+something smaller than the probe (commonly 4096/8192), which would mean
+the original #139 grid (max 8,000 target tokens) silently truncated and its
+flat curve would be invalid. Checked two ways:
+
+- **`ollama show qwen3:8b`**: architectural max context length = **40,960**
+  tokens.
+- **Empirical probe** (reproducible — the script's own first step): a
+  ~20,018-estimated-token filler-only prompt sent with **no** `num_ctx`
+  override, exactly how the original #139 script called the API. Server-
+  reported `prompt_eval_count`: **18,635** actual tokens — a +6.9% shortfall
+  vs. the chars/4 estimate, consistent with the same estimation noise
+  already documented in #139's own calibration table, not truncation. A
+  truncating server would have clipped `prompt_eval_count` to some fixed
+  ceiling (e.g. ~4,096 or ~8,192) regardless of what was sent; it didn't.
+
+One red herring worth recording so it doesn't get re-tripped later: the
+agent's own interactive shell reported `OLLAMA_CONTEXT_LENGTH=8192` in
+`env`. That variable belongs to the shell, not to the actual serving
+process — `ps eww` on the real `Ollama.app`/`ollama serve` process (pid
+4525/4962) showed `OLLAMA_CONTEXT_LENGTH=262144`, and the live
+`llama-server` instance was independently observed running with `-c 40960`
+(the model's own architectural ceiling, min'd against the much larger env
+default). Checking the shell's own env would have given a false-positive
+truncation scare.
+
+**VERDICT: NO TRUNCATION.** The original #139 grid (max 8,000 target
+tokens, ~7,449 actual) sat well inside the model's real 40,960-token
+window — its flat, zero-drift curve stands unmodified. Every call in this
+extension additionally pins `options.num_ctx=40960` explicitly anyway, as
+belt-and-suspenders rather than a correction.
+
+### Extended grid: 16K / 32K tokens, start/end placement
+
+Middle placement dropped per the coordinator's explicit call to keep the
+count down — a pre-registered deviation from #139's 3-placement design,
+noted here rather than silently applied.
+
+| level (target tok) | n | accuracy | start | end |
+|---:|---:|---:|---:|---:|
+| 16,000 | 24 | 100.0% | 100.0% | 100.0% |
+| 32,000 | 24 | 100.0% | 100.0% | 100.0% |
+
+All 12 needles correct at both new levels and both placements — the flat
+curve from #139 (500-8,000) extends cleanly through 32,000 tokens, double
+the model's demonstrated-safe range from the original record.
+
+### Synthesis smoke: 4K / 8K / 16K, both-facts-required
+
+6 paired questions (from the original 12 needles, recombined), each scored
+correct only if the answer contains **both** literals.
+
+| level (target tok) | n | both-correct |
+|---:|---:|---:|
+| 4,000 | 6 | 100.0% |
+| 8,000 | 6 | 100.0% |
+| 16,000 | 6 | 100.0% |
+
+**No evidence synthesis degrades ahead of recall** within the tested range:
+both facts, planted at opposite ends of the context (one near the start,
+one near the end — the maximally-hard placement for combination), were
+correctly combined in every trial at every level tested. This directly
+answers the multi-fact caveat the original results doc flagged as
+untested.
+
+### Wall-clock: a bimodal cold/warm pattern, not a smooth curve
+
+The mean/median hide a real bimodal split — worth reporting split, not
+averaged. (One data-hygiene note: the crash-recovery JSONL had one stale
+duplicate row from a first launch attempt that hit the tool's default 120s
+foreground timeout and was killed before any output flushed — caught by an
+inline dedup check, last-write-wins by `(level, placement, needle)`, before
+computing these stats; it did not change the accuracy verdict, only
+cleaned up one wall-clock cell.)
+
+| level | cold n | cold mean (range) | warm n | warm mean (range) |
+|---:|---:|---:|---:|---:|
+| 16,000 | 11 | 66.9s (66.3-68.0s) | 13 | 1.55s (0.99-2.50s) |
+| 32,000 | 13 | 170.8s (169.4-173.9s) | 11 | 2.10s (1.75-2.54s) |
+
+("cold" / "warm" split at a 10s threshold — a clean bimodal separation, no
+values fall near the boundary.) Synthesis calls showed no warm cluster at
+any level (every call plants a distinct fact at the very front, breaking
+whatever let grid "end"-placement calls go warm) — mean/median/range:
+
+| level | n | mean | median | min | max |
+|---:|---:|---:|---:|---:|---:|
+| 4,000 | 6 | 14.05s | 13.53s | 13.37s | 16.38s |
+| 8,000 | 6 | 17.08s | 17.11s | 16.85s | 17.23s |
+| 16,000 | 6 | 48.91s | 40.73s | 39.66s | 66.51s |
+
+**Working hypothesis for the split** (plausible, not confirmed by server-
+side instrumentation): `llama-server` is running with `--context-shift`,
+which can reuse a previous request's cached KV state when a new request's
+prefix matches it. "end"-placement grid calls share an (almost) identical
+long filler prefix across all 12 needles at a given level — only the small
+trailing needle+question differs — so after the first (cold) call
+establishes the cache, the remaining 11 hit it. "start"-placement calls put
+the (per-needle differing) needle block at the very front, breaking prefix
+match — consistent with L32000/start being uniformly cold across all 12
+calls. This hypothesis does **not** explain two anomalously fast
+L16000/start calls (`tax_rate` 2.5s, `db_pool` 1.1s, immediately followed by
+ten ~67s calls in the same placement) — flagged honestly as an unexplained
+exception rather than smoothed over.
+
+**#145 spot-check on real files** (measured directly, standalone cold
+calls, not part of the pre-registered grid — a verification of specific
+file sizes referenced below): `benchmarks/agentic_serving/subagent_adapter.py`
+— 6,262 actual tokens, 24.7s. `.llm-orc/scripts/agentic_serving/classify.py`
+— 19,452 actual tokens, 92.9s. Both single-shot, well inside the model's
+40,960-token window, both cold (fresh standalone calls, no shared-prefix
+warm-up).
+
+### #145 implication (extension)
+
+Accuracy never argues against big chunks in-window: 100% holds flat through
+32,000 tokens for single-fact recall and through 16,000 tokens for two-fact
+synthesis, with zero drift and zero evidence synthesis degrades ahead of
+recall. So #145's chunk-size ceiling, in the range actually tested here, is
+not a correctness question — it's a **latency policy decision**. The cold
+path (a genuinely new prompt with no reusable prefix — the realistic case
+for reading a repo file the serve hasn't seen before) costs roughly 17s at
+8K tokens, 67s at 16K, and 171s at 32K; a warm path (a request whose prefix
+matches what's already cached from the immediately preceding call) costs
+~1-3s regardless of size. Concretely: a single real file at either end of
+a plausible size range — `subagent_adapter.py` (~6.3K tokens, 24.7s cold)
+or `classify.py` (~19.5K tokens, 92.9s cold) — is feasible to read in one
+shot, accuracy-wise, at any chunk size #145 is likely to consider. The
+design lever isn't "can the model hold this much" (yes, at least to 32K)
+but "how many cold reads can this session's latency budget absorb, and can
+the read pattern be structured (e.g. append-only, stable shared prefixes
+across sequential reads) to land more of them on the warm path" — that's
+an implementation question for #145 to design toward, not something this
+accuracy-only spike can promise for free.
