@@ -427,11 +427,21 @@ def _visibility(context: str) -> tuple[set[str], dict[str, str]]:
             # isn't actionable to a user, only the remedy is. _READ_TOKEN_
             # BUDGET stays mirrored (drift-asserted) even though it no
             # longer appears in this string.
-            held = ", ".join(sorted(visible)) if visible else "other files"
-            attempted[basename] = (
-                f"the session read budget is already held by {held}. "
-                "Start a fresh session, or ask about one file at a time."
-            )
+            if visible:
+                held = ", ".join(sorted(visible))
+                attempted[basename] = (
+                    f"the session read budget is already held by {held}. "
+                    "Start a fresh session, or ask about one file at a time."
+                )
+            else:
+                # #144 pre-flight finding 5: a lone whale — nothing else
+                # holds the budget, so "held by other files" and "start a
+                # fresh session" would both be false claims. The honest
+                # reason is that the file's own content exceeds the budget.
+                attempted[basename] = (
+                    "its content alone exceeds the session read budget. "
+                    "The file is too large to ground an answer in one read."
+                )
     return visible, attempted
 
 
