@@ -104,10 +104,11 @@ Remaining, in order:
 - [ ] #146 — release v0.18.15
 - [x] #148 — truncated-listing refuse merged + live-validated (3 review
   rounds; run-6 validation row); #149 filed (client-side flank)
-- [ ] #143 #145 #121 #144 — meta-task rungs; #143's component-subset
-  mechanism REFUTED at class level by spike + pre-flight (2026-08-13
-  design doc) — fork awaiting practitioner: phrasing-specific blocker
-  invariant vs re-scope to the #82 bounded-gate pattern
+- [x] #143 — CLOSED as an honest miss: component-subset refuted at
+  class level; model gate refuted empirically (pre-registered bar,
+  8b+14b, all variants); reopen rides #119 with the committed spike
+- [ ] #145 #121 #144 — remaining meta-task rungs (#145 wants a #139
+  context-curve decision first)
 - [ ] #141 #138 #63 — parity v2 inputs (CLAUDE.md confound, volume scaling, statistics), then parity table v2 with realism rows
 - [ ] #126 — long-horizon 30-turn battery (#136 #137 feed the design)
 - [ ] #139 #140 — memory spikes; #127 plexus substrate; #82 remainder (cross-session)
