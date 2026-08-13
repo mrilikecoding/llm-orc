@@ -730,6 +730,70 @@ def test_truncated_listing_still_grounds_via_a_prior_visible_read() -> None:
     assert decision["glob_failed"] == ""
 
 
+# --- round 2 review MAJOR A: the visibility fallback counted DISTINCT
+# basenames, not distinct PATHS. /srv/app/telemetry.py and
+# /vendor/telemetry.py are two different files that both look like
+# "telemetry.py" to a basename-only check, so a stem with exactly one
+# qualifying BASENAME but two qualifying PATHS silently grounded on one of
+# two ambiguous candidates — the complete-listing MATCH step would have
+# refused, naming both. ---
+
+
+def test_truncated_listing_refuses_when_two_distinct_paths_share_a_basename() -> None:
+    context = (
+        "assistant: [read /srv/app/telemetry.py]\n"
+        "  def emit(): pass\n"
+        "assistant: [read /vendor/telemetry.py]\n"
+        "  def emit(): pass\n"
+        "assistant: [globbed telemetry (truncated)]\n"
+        "  /srv/app/telemetry.py"
+    )
+    decision = _classify(
+        {"task": "write tests for the telemetry module", "context": context}
+    )
+    assert decision["target"] == "need-glob"
+    assert "multiple visible files match 'telemetry'" in decision["glob_failed"]
+    assert "/srv/app/telemetry.py" in decision["glob_failed"]
+    assert "/vendor/telemetry.py" in decision["glob_failed"]
+
+
+def test_truncated_listing_still_grounds_when_only_one_distinct_path_visible() -> None:
+    # the reviewer's demonstrating pair, part 2: same shape as above, minus
+    # the second directory — a single distinct visible path still grounds.
+    context = (
+        "assistant: [read /srv/app/telemetry.py]\n"
+        "  def emit(): pass\n"
+        "assistant: [globbed telemetry (truncated)]\n"
+        "  /srv/app/telemetry.py"
+    )
+    decision = _classify(
+        {"task": "write tests for the telemetry module", "context": context}
+    )
+    assert decision["target"] == "tests-seat"
+    assert decision["needs_glob"] == ""
+    assert decision["glob_failed"] == ""
+
+
+def test_truncated_listing_refuses_on_a_case_variant_basename_collision() -> None:
+    # minor 3 falls out of MAJOR A: distinct-path counting makes the ">1"
+    # refusal arm live for the realistic different-directory collision
+    # above; confirm the pre-existing case-variant collision (same
+    # directory, different case) still refuses too.
+    context = (
+        "assistant: [read /work/Telemetry.py]\n"
+        "  def emit(): pass\n"
+        "assistant: [read /work/telemetry.py]\n"
+        "  def emit(): pass\n"
+        "assistant: [globbed telemetry (truncated)]\n"
+        "  /work/telemetry.py"
+    )
+    decision = _classify(
+        {"task": "write tests for the telemetry module", "context": context}
+    )
+    assert decision["target"] == "need-glob"
+    assert "multiple visible files match 'telemetry'" in decision["glob_failed"]
+
+
 # --- M1 (adversarial review round on #148): mutation-testing net. Four
 # guard mutants survived the first pass — a substring check instead of the
 # exact suffix, a hardcoded lines[0] instead of the LATEST header, the
