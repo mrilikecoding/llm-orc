@@ -686,14 +686,33 @@ def test_budget_boundary_pin_exact_admits_plus_one_refuses() -> None:
 
 
 def test_failed_read_costs_nothing_toward_the_token_budget() -> None:
-    # minor 2 (review round 1, B5 mutant): a `(failed)` block sitting
-    # between two held reads must contribute ZERO to the running budget
-    # total, and must stay `(failed)` unaffected. A(20,000) + a failed
-    # read + C(13,000) = 33,000 <= 34,000 fits ONLY if the failed read
-    # truly cost nothing — a mutant that let it count even a little would
-    # push C over budget.
-    a_body = "a " * 20000
-    c_body = "a " * 13000
+    # minor 2 (review round 1, B5 mutant) + B5 slack fix (review round 2,
+    # minor 3): a `(failed)` block sitting between two held reads must
+    # contribute ZERO to the running budget total. The prior version left
+    # ~1,000 tokens of slack between A+C and the budget ceiling —
+    # comfortably more than a mutant that (wrongly) counted the failed
+    # block's own header cost could ever leak, so the mutant survived. C
+    # is now DERIVED so the total lands within ~12 projected tokens of the
+    # ceiling: tighter than the failed block's own token cost, so even a
+    # 1-token leak from a "count it anyway" mutant tips C over budget.
+    from llm_orc.web.serving.serving_ensemble_caller import _indent_body
+
+    def block_tokens(path: str, word_count: int) -> int:
+        body = "a " * word_count
+        block = f"assistant: [read {path}]\n{_indent_body(body)}"
+        return _projected_tokens(block)
+
+    a_words = 20000
+    a_body = "a " * a_words
+    a_cost = block_tokens("a.py", a_words)
+
+    failed_block_cost = _projected_tokens(
+        "assistant: [read gone.py (failed)] empty read result"
+    )
+    slack = failed_block_cost - 2  # < the mutant's leak, so it tips the budget
+    c_cost_target = _READ_TOKEN_BUDGET - slack - a_cost
+    c_words = c_cost_target - block_tokens("c.py", 0)
+    c_body = "a " * c_words
     messages = [
         ChatMessage(role="user", content="fix a.py, gone.py, and c.py"),
         ChatMessage(
