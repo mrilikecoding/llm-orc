@@ -2397,6 +2397,29 @@ def test_bare_symbol_explain_truncated_listing_falls_through_to_the_explainer() 
     assert "/work/classify.py" not in decision["dispatch_input"]
 
 
+def test_strip_removes_every_truncated_block_not_only_the_latest() -> None:
+    # minor 1 (round 2 review): the strip removed only the LATEST truncated
+    # block — an EARLIER truncated block (stale, but still sitting in the
+    # conversation text) survived untouched whenever the LATEST block
+    # happened to be complete. Both truncated blocks must go; the latest
+    # complete block is untouched.
+    context = (
+        "assistant: [globbed telemetry (truncated)]\n"
+        "  /work/telemetry_internal.py\n"
+        "assistant: [globbed classify,decide,routing]\n"
+        "  /work/notes.md\n"
+        "  /work/README.md"
+    )
+    decision = _classify(
+        {"task": "how does classify decide routing?", "context": context}
+    )
+    assert decision["target"] == "explainer"
+    assert "[globbed telemetry (truncated)]" not in decision["dispatch_input"]
+    assert "/work/telemetry_internal.py" not in decision["dispatch_input"]
+    assert "[globbed classify,decide,routing]" in decision["dispatch_input"]
+    assert "/work/notes.md" in decision["dispatch_input"]
+
+
 def test_bare_symbol_explain_multiple_candidates_refuses_naming_them() -> None:
     context = (
         "assistant: [globbed classify,decide,routing]\n"
