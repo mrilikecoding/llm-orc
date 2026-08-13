@@ -213,3 +213,39 @@ defeated by base64's punctuation characters. Runtime backstop (Part 2 of
 the round-2 ask, implementing #151's core) is deferred alongside this —
 its 0.5 detection threshold's safety margin is derived assuming factor
 <=1.5, so it depends on this fork's resolution too.
+
+## Review round 2 resolution (2026-08-13): fork closed, v2 wired, backstop shipped
+
+The lead resolved the fork with numbers, not preference: safety factor
+stays **1.59** (no fixture class sacrificed — PEM keeps its full >=5%
+conservativeness margin); `_READ_TOKEN_BUDGET` raised **34,000 -> 35,000**.
+Honest window arithmetic, documented at the constant: 40,960 − 35,000 =
+5,960 reserve >= measured ancillary render (~1,800) + explain-generation
+headroom (~1,000-2,000) + margin. classify.py now projects to 34,341 at
+measurement time (34,515 against the file's current, slightly larger
+size) — admitted with real (>1%) margin, not a hairline pass.
+`token_estimate.projected_tokens_v2` is wired in as
+`serving_ensemble_caller._projected_tokens` (v1 retired); classify.py's
+mirror constant follows to 35,000, drift-asserted; the over-budget
+refusal now speaks in plain terms ("the session read budget") instead of
+surfacing the raw figure. `test_classify_py_sanity_constraint_conflict_is_open`
+is re-pointed to `test_classify_py_projects_under_budget_with_real_margin`,
+asserting the RESOLVED fact so it fails loudly if either number regresses.
+
+**Part 2 — the runtime backstop (#151's core) shipped**, with corrected
+dual thresholds (a single 0.5 ratio would false-positive on estimator
+v2's most over-projected density class — CJK+code projects ~2.15x real
+at factor 1.59, putting a legitimate in-window call's ratio as low as
+~0.465). `turn_trace._truncation_check` computes projected tokens over
+classify's own `dispatch_input` and flags the turn when EITHER fires:
+trigger 1 (`prompt_eval_count < projected * 0.42`, catching deep
+overflow directly) or trigger 2 (`prompt_eval_count` within 64 of
+`WINDOW // 2`, gated on `projected > WINDOW * 0.8` so a small legitimate
+call can never trip the signature alone — both real captured over-window
+prompts returned exactly `WINDOW // 2 + 2`). `WINDOW = 40960` is a
+documented, hardcoded constant; #151 stays open for a server-queried
+window and threshold re-measurement per model era.
+`ServingEnsembleCaller._serve()` discards the pipeline's answer and
+returns a hardcoded refusal when the trace flags it — pinned end-to-end
+with a mocked executor (the withheld answer text never leaks into the
+refusal).
