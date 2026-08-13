@@ -683,22 +683,46 @@ def test_multiple_glob_candidates_refuse_naming_them() -> None:
     assert "/b/storage_utils.py" in decision["glob_failed"]
 
 
-def test_truncated_single_stem_listing_refuses_to_ground() -> None:
-    # #148: the rendered listing caps at _GLOB_MAX_PATHS and is mtime-ordered
-    # (nondeterministic) once a stem family busts the cap, so a "(truncated)"
-    # header means this is NOT the complete candidate set. Exactly one
-    # qualifying candidate survives the cap here — classify must still
-    # refuse rather than confidently ground on a coin-flip subset. Falls
-    # through to the same "no file matching" refusal the zero-candidate
-    # case already produces (no new behavior, just the truncated listing
-    # never contributing a candidate).
+def test_truncated_single_stem_listing_refuses_with_the_truncation_reason() -> None:
+    # #148 BLOCKER 1: the listing DOES contain a stem-matching path that
+    # survived the 50-path cap (mtime-ordered, so which 50 survive is
+    # nondeterministic) — classify still must not ground on it, a coin-flip
+    # subset. But the refusal reason changed: the old "no file matching"
+    # wording is a claim the wire itself contradicts (/work/storage.py IS
+    # right there in the block) — truncation gets its own truthful,
+    # actionable reason instead. M3's no-re-glob pin: needs_glob stays
+    # empty too, so this never re-issues a doomed second glob round.
     context = "assistant: [globbed storage (truncated)]\n  /work/storage.py"
     decision = _classify(
         {"task": "write tests for the storage module", "context": context}
     )
     assert decision["target"] == "need-glob"
     assert decision["needs_glob"] == ""
-    assert "no file matching 'storage'" in decision["glob_failed"]
+    assert "no file matching" not in decision["glob_failed"]
+    assert "storage" in decision["glob_failed"]
+    assert "cut at 50 paths" in decision["glob_failed"]
+    assert "name the file" in decision["glob_failed"]
+
+
+def test_truncated_listing_still_grounds_via_a_prior_visible_read() -> None:
+    # #148 M3: truncation disables LISTING-based grounding only —
+    # visibility-based grounding (a prior [read ...] already on the wire)
+    # stays available. The reviewer's demonstrating pair, part 1: the same
+    # turn as the refusal above, except storage.py is ALSO visible from an
+    # earlier read — classify grounds on it via visibility even though this
+    # round's glob listing is truncated.
+    context = (
+        "assistant: [read /work/storage.py]\n"
+        "  def put(k, v): pass\n"
+        "assistant: [globbed storage (truncated)]\n"
+        "  /work/storage.py"
+    )
+    decision = _classify(
+        {"task": "write tests for the storage module", "context": context}
+    )
+    assert decision["target"] == "tests-seat"
+    assert decision["needs_glob"] == ""
+    assert decision["glob_failed"] == ""
 
 
 def test_untruncated_single_stem_listing_still_grounds() -> None:
