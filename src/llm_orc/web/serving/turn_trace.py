@@ -209,17 +209,31 @@ def _node_entry(name: str, node: Any, top_usage: dict[str, Any]) -> dict[str, An
 # model or window changes.
 WINDOW = 40960
 
-# Trigger 1 (deep overflow, caught directly on ratio): estimator v2's
-# safety factor (1.59) means a legitimate IN-WINDOW call's
-# prompt_eval_count/projected ratio can be as low as ~0.465 on the most
-# over-projected measured density class (CJK+code, v2/real ~2.15x — see
-# test_token_estimate_ground_truth.py). 0.42 sits safely below that floor
-# while still catching real truncation: the measured discard signature
-# (prompt_eval_count landing at almost exactly half the window) against
-# any projected prompt at or past the window already gives a ratio
-# <= 0.50, and for a projected prompt >= 48K it's already <= 0.43 —
-# comfortably past 0.42 on its own, before trigger 2 is even needed.
-_DEEP_TRUNCATION_RATIO = 0.42
+# DIVISION OF LABOR (review round 3 blocker C): trigger 1 catches deep
+# overflow on LARGE (near-window) projections; trigger 2 catches the
+# measured discard SIGNATURE, also gated to large projections. Both
+# triggers now share the SAME near-window gate — round 2's ungated
+# trigger 1 false-positived on small, legitimate calls (a deferred
+# decide-child ~40 tokens, a run-verdict child ~260 tokens, other tiny
+# deferred calls) whose ratio dips low purely from small-N overhead
+# (header/template tokens dominating a tiny real prompt), never from
+# truncation. Gating both on "the dispatched prompt was plausibly
+# near-window sized" (projected > WINDOW * 0.8) means NEITHER trigger can
+# ever fire for a small call, regardless of its ratio.
+_NEAR_WINDOW_FRACTION = 0.8
+
+# Trigger 1 (deep overflow, caught directly on ratio, near-window only):
+# review round 3 minor 1 — the measured in-window floor for estimator
+# v2's most over-projected density class (CJK+code) came in at 0.438,
+# leaving only ~4% headroom at the round-2 threshold of 0.42. Lowered to
+# 0.35 (~25% headroom below the measured floor). Coverage of the
+# borderline ratio band [0.35, 0.438) that trigger 1 alone no longer
+# reaches is NOT lost: the measured discard signature (prompt_eval_count
+# landing at almost exactly half the window) still lands there via
+# trigger 2, independent of ratio — a projected prompt >= 48K already has
+# a discard-signature ratio <= 0.43, and trigger 2 fires the SAME instant
+# regardless of which side of 0.35 it lands on.
+_DEEP_TRUNCATION_RATIO = 0.35
 
 # Trigger 2 (the measured discard SIGNATURE, caught directly): both real
 # captured over-window prompts returned EXACTLY 20,482 = 40,960 // 2 + 2,
@@ -227,22 +241,17 @@ _DEEP_TRUNCATION_RATIO = 0.42
 # truncation halves the window, not a proportional cut, so ratio alone
 # (trigger 1) undersells how confidently identifiable this shape is. The
 # +/-64 band absorbs template/rounding variation across model versions.
-# Gating on "the dispatched prompt was plausibly near-window sized" (the
-# second clause) keeps a SMALL legitimate call — whose prompt_eval_count
-# could coincidentally land near half of some unrelated small window —
-# from ever tripping this on the signature alone.
 _DISCARD_SIGNATURE_BAND = 64
-_NEAR_WINDOW_FRACTION = 0.8
 
 # RESIDUAL (documented, not eliminated): a false positive requires BOTH
 # prompt_eval_count landing within the signature band of half-window AND
-# the estimator over-projecting the real prompt by more than 1/0.42 ~=
-# 2.38x simultaneously — on the single most over-projected measured
-# density class (CJK+code, ~2.15x), the real token count would ALSO have
-# to land within the 128-wide band purely by chance, on the order of
-# ~0.3% of plausible real-token sizes for that class. This fails SAFE: a
-# false positive is a loud, retryable refusal — never a silently
-# corrupted answer.
+# the estimator over-projecting the real prompt by more than 1/0.35 = 2.86x
+# simultaneously — on the single most over-projected measured density
+# class (CJK+code, ~2.15x), the real token count would ALSO have to land
+# within the 128-wide band purely by chance, on the order of ~0.3% of
+# plausible real-token sizes for that class. This fails SAFE: a false
+# positive is a loud, retryable refusal — never a silently corrupted
+# answer.
 
 
 def _dispatch_input(classify_response: Any) -> str:
@@ -262,18 +271,16 @@ def _dispatch_input(classify_response: Any) -> str:
 
 
 def _truncation_detected(prompt_eval_count: int, projected_prompt_tokens: int) -> bool:
-    """Dual trigger (review round 2 Part 2, #151's core) — refuse when
-    EITHER fires. See the module-level constants above for the derivation
-    of each threshold and the documented residual. ``projected_prompt_
-    tokens <= 0`` (nothing to compare against) never flags."""
-    if projected_prompt_tokens <= 0:
+    """Dual trigger (review rounds 2-3 Part 2/blocker C, #151's core) —
+    refuse when EITHER fires. Both share the near-window gate (review
+    round 3 blocker C: an ungated trigger 1 false-positived on small,
+    legitimate calls). See the module-level constants above for the
+    derivation of each threshold and the documented residual."""
+    if projected_prompt_tokens <= WINDOW * _NEAR_WINDOW_FRACTION:
         return False
     if prompt_eval_count < projected_prompt_tokens * _DEEP_TRUNCATION_RATIO:
         return True
-    return (
-        abs(prompt_eval_count - WINDOW // 2) <= _DISCARD_SIGNATURE_BAND
-        and projected_prompt_tokens > WINDOW * _NEAR_WINDOW_FRACTION
-    )
+    return abs(prompt_eval_count - WINDOW // 2) <= _DISCARD_SIGNATURE_BAND
 
 
 def _prompt_eval_counts(nodes: list[dict[str, Any]]) -> list[int]:
