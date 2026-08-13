@@ -2192,6 +2192,11 @@ def test_bare_symbol_explain_zero_candidates_falls_through_to_the_explainer() ->
     assert decision["needs_glob"] == ""
     assert decision["glob_failed"] == ""
     assert decision["needs_files"] == []
+    # #148 BLOCKER 2 regression: a COMPLETE listing (a genuine no-match, not
+    # a truncation) is left in dispatch_input exactly as before — the strip
+    # fires only on the "(truncated)" marker.
+    assert "[globbed classify,decide,routing]" in decision["dispatch_input"]
+    assert "/work/notes.md" in decision["dispatch_input"]
 
 
 def test_bare_symbol_explain_truncated_listing_falls_through_to_the_explainer() -> None:
@@ -2200,8 +2205,17 @@ def test_bare_symbol_explain_truncated_listing_falls_through_to_the_explainer() 
     # set (real stem families bust the 50-path cap, mtime-ordered so which
     # 50 survive is nondeterministic). The one candidate that does survive
     # the cap here fully names classify.py, but classify must not ground on
-    # it — it falls through to the same conceptual explainer the zero-
-    # candidate case above already produces.
+    # it — it falls through to the conceptual explainer, same routing as the
+    # zero-candidate case above.
+    #
+    # BLOCKER 2: routing alone isn't the whole invariant — explainer.yaml
+    # carries no grounding instruction, so if the truncated block's raw text
+    # (often containing the fully-named file, as it does here) rode along in
+    # dispatch_input, the seat most likely to guess-ground on it would have
+    # the listing sitting right there. classify strips the truncated block
+    # out of the conversation before composing dispatch_input, so this really
+    # is the conceptual (general-knowledge) fall-through, not a grounded
+    # answer hiding behind an ungrounded seat.
     context = (
         "assistant: [globbed classify,decide,routing (truncated)]\n  /work/classify.py"
     )
@@ -2213,6 +2227,11 @@ def test_bare_symbol_explain_truncated_listing_falls_through_to_the_explainer() 
     assert decision["needs_glob"] == ""
     assert decision["glob_failed"] == ""
     assert decision["needs_files"] == []
+    assert (
+        "[globbed classify,decide,routing (truncated)]"
+        not in decision["dispatch_input"]
+    )
+    assert "/work/classify.py" not in decision["dispatch_input"]
 
 
 def test_bare_symbol_explain_multiple_candidates_refuses_naming_them() -> None:
