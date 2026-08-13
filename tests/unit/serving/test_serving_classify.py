@@ -333,6 +333,22 @@ def test_over_budget_read_attempt_refuses_naming_the_budget_and_held_files() -> 
     )
 
 
+def test_over_budget_lone_read_refuses_naming_the_file_alone() -> None:
+    # #144 pre-flight finding 5: when NOTHING else holds the budget, the
+    # refusal must not claim other files hold it or suggest a fresh session
+    # (both false for a single whale file) — the honest reason is that the
+    # file's own content exceeds the budget.
+    context = "assistant: [read big3.py (over-budget)]"
+    decision = _classify(
+        {"task": "write tests for existing big3.py", "context": context}
+    )
+    assert decision["needs_files"] == []
+    assert "could not read big3.py" in decision["read_failed"]
+    assert "alone exceeds the session read budget" in decision["read_failed"]
+    assert "other files" not in decision["read_failed"]
+    assert "fresh session" not in decision["read_failed"]
+
+
 def test_explain_turn_never_requests_a_read() -> None:
     # storage.py is not visible on the wire: the grounded-explain gate
     # routes to the honest not-grounded refusal (never the read seam —
