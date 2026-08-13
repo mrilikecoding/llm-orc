@@ -644,6 +644,92 @@ def test_opencode_wrapped_read_result_normalizes_to_plain_source() -> None:
     assert "1: class Store:" not in rendered
 
 
+def test_content_closing_tag_inside_body_does_not_truncate_the_read() -> None:
+    """Issue #150: ``_normalize_read``'s ``<content>...</content>`` extraction
+    was non-greedy, so any file whose own text contains the literal
+    ``</content>`` string got cut at the FIRST occurrence — silently, no
+    variant marker. A source file whose body legitimately contains that
+    substring (a regex literal, a docstring example) must still render its
+    ENTIRE body, including everything after the embedded ``</content>``."""
+    raw = (
+        "<path>/abs/path/to/tags.py</path>\n"
+        "<type>file</type>\n"
+        "<content>\n"
+        '1: PATTERN = "<content>(.*?)</content>"\n'
+        "2: \n"
+        "3: def after_the_tag():\n"
+        "4:     return 'still here'\n"
+        "\n"
+        "(End of file - total 4 lines)\n"
+        "</content>"
+    )
+    messages = [
+        ChatMessage(role="user", content="fix tags.py"),
+        ChatMessage(
+            role="assistant", content=None, tool_calls=(_read_call("c1", "tags.py"),)
+        ),
+        ChatMessage(role="tool", tool_call_id="c1", content=raw),
+    ]
+
+    rendered = _render_context(messages)
+
+    assert "[read tags.py]" in rendered
+    assert 'PATTERN = "<content>(.*?)</content>"' in rendered
+    assert "def after_the_tag():" in rendered
+    assert "return 'still here'" in rendered
+
+
+def test_the_regex_literal_demonstrating_file_round_trips_whole() -> None:
+    """Issue #150's demonstrating capture: serving_ensemble_caller.py's own
+    source contains the literal ``</content>`` (inside its own
+    ``_CONTENT_TAG_RE`` regex), far from the file's end — the pre-fix bug
+    rendered a small fragment (12% of the real 54,138-byte file) cut right
+    there. The fix carries the WHOLE file through, including content past
+    that point."""
+    from pathlib import Path
+
+    source_path = (
+        Path(__file__).resolve().parents[4]
+        / "src"
+        / "llm_orc"
+        / "web"
+        / "serving"
+        / "serving_ensemble_caller.py"
+    )
+    lines = source_path.read_text().splitlines()
+    gutter_body = "\n".join(f"{i + 1}: {line}" for i, line in enumerate(lines))
+    raw = (
+        f"<path>{source_path}</path>\n"
+        "<type>file</type>\n"
+        "<content>\n"
+        f"{gutter_body}\n"
+        "\n"
+        f"(End of file - total {len(lines)} lines)\n"
+        "</content>"
+    )
+    messages = [
+        ChatMessage(role="user", content="fix serving_ensemble_caller.py"),
+        ChatMessage(
+            role="assistant",
+            content=None,
+            tool_calls=(_read_call("c1", "serving_ensemble_caller.py"),),
+        ),
+        ChatMessage(role="tool", tool_call_id="c1", content=raw),
+    ]
+
+    rendered = _render_context(messages)
+
+    # the read itself must render whole, not oversize — the file's own
+    # source legitimately contains the substring "(oversize)" as code, so
+    # the header form (not a bare substring check) is what actually pins
+    # this read's outcome
+    assert "[read serving_ensemble_caller.py]" in rendered
+    assert "[read serving_ensemble_caller.py (oversize)]" not in rendered
+    # a marker near the very END of the file — absent under the pre-fix
+    # non-greedy cut, which stopped right after the regex literal
+    assert "class ServingEnsembleCaller:" in rendered
+
+
 def test_opencode_file_not_found_renders_as_failed() -> None:
     """Captured wire (opencode 1.17.15, 2026-07-09): a failed read is a bare
     string, no tags, no 'Error' prefix."""
