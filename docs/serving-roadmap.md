@@ -59,12 +59,12 @@ layer is the insulation that keeps an eventual hardening cheap, and
 "frozen component" status is the trigger, tracked informally the way the
 buy-back ledger tracks hosted seats.
 
-## State (2026-08-12, post-Arm-1)
+## State (2026-08-13)
 
 | arm / serve version | runs | strict | dishonest | record |
 |---|---|---|---|---|
 | Arm 0 pre-fix (v0.18.14) | 2/3/4 | 25/39 | 3 (one per run) | `docs/plans/2026-07-1{4,5}-arm0-runs/` |
-| Arm 0 post-fix (main 2026-08-12) | 5 | 11/13 | 0 | `docs/plans/2026-08-12-arm0-run5/` |
+| Arm 0 post-fix (v0.18.15) | 5 | 11/13 | 0 | `docs/plans/2026-08-12-arm0-run5/` |
 | Arm 1a Haiku 4.5 (paid, OpenCode Go) | 1, 2, 3 | 38/39 | 0 | `docs/plans/2026-08-12-arm1-runs/` |
 | Arm 1b Sonnet (paid, OpenCode Go) | 1, 2, 3 | 39/39 | 0 | `docs/plans/2026-08-12-arm1-runs/` |
 | Arm 2a Haiku 4.5 | 1, 2, 3 | 35/39 | 4 | `docs/plans/2026-07-15-arm2-runs/`, `2026-08-12-arm2-runs/` |
@@ -78,8 +78,17 @@ cost ≈ $2.75 total; 3 instrument flags all REFUTED as one classifier
 false-positive family (#147). Versions differ across rows; do not pool.
 Caveats: parity table v1 (`docs/plans/2026-07-15-first-parity-table.md`)
 plus host-CLAUDE.md leakage observed on Arm-1 Sonnet runs (#141).
-Merged-unreleased set tracked by #146. Operating rules:
-`docs/loop-protocol.md`.
+
+**v0.18.15 released 2026-08-13** (#146 closed; PyPI + Homebrew green).
+Merged-unreleased on main since the tag: #148 (truncated-listing
+refuse, run-6 validation row) and #145+#150 (repo-scale reads: 96KB
+cap, token-denominated read budget, runtime truncation backstop —
+five review rounds, live gate passed, dogfood entry 1 converted).
+#143 CLOSED as an honest miss (mechanism refuted at class level +
+gate refuted empirically; reopen rides #119). Open follow-ups filed
+today: #147 (classifier false-positive family), #149 (client-side
+truncation flank), #151 (server-queried window + per-era thresholds).
+Operating rules: `docs/loop-protocol.md`.
 
 ## Timeline
 
@@ -101,7 +110,7 @@ Remaining, in order:
 
 - [x] #131 — Arm-2 runs at n=3 per model, all independently J-scored (Haiku 35/39, 4 dishonest; Sonnet 39/39, 0)
 - [x] #131 — Arm-1 GO'd + n=3 per model, independently J-scored (Haiku 38/39, 0 dishonest; Sonnet 39/39, 0); #147 filed
-- [ ] #146 — release v0.18.15
+- [x] #146 — v0.18.15 RELEASED 2026-08-13 (PyPI + Homebrew green)
 - [x] #148 — truncated-listing refuse merged + live-validated (3 review
   rounds; run-6 validation row); #149 filed (client-side flank)
 - [x] #143 — CLOSED as an honest miss: component-subset refuted at
@@ -203,14 +212,16 @@ dishonest outcome.
 
 ### epic:ws3-client-surface — the serve upgrades any client
 - [x] read/run/discovery delegation, fix-execution, chain executor, meta-task slice 1
-- [ ] #143 recall recovery · #145 repo-scale reads · #121 grep · #144 dot-dir
+- [x] #143 closed (honest miss; reopen rides #119) · #145 repo-scale reads merged+live · #148 #150 read-seam hardening
+- [ ] #121 grep · #144 dot-dir · #149 client-side truncation flank
 - [ ] #122 edit delegation · #123 multi-file · #124 command registry · #117 fix-completion tail
 
 ### epic:ws5-long-horizon
 - [ ] #126 30-turn battery + plan substrate (#136 #137 feed design)
 
 ### epic:ws6-memory
-- [ ] #139 context curve · #127 plexus integration · #82 remainder (cross-session record)
+- [x] #139 context curve (flat through 32K recall / 24K synthesis; latency binds)
+- [ ] #127 plexus integration · #82 remainder (cross-session record)
 
 ### epic:ws7-task-shapes
 - [ ] #128 elicit-then-build · #129 refactor shape · #130 compose-at-runtime primitive
@@ -222,7 +233,8 @@ dishonest outcome.
 - [ ] #119 escalation framework · #135 ori/eval A/B harness spike
 
 ### epic:ws9-platform
-- [ ] #146 release · #85 sandbox hardening · #84 gate adversarial harness · #90 llama.cpp · #93 hot path · #95 dead surface · #106 shape home · #110 artifact quality · #114 trace cap · #132 BitNet · #142 reject templates
+- [x] #146 v0.18.15 released
+- [ ] #151 runtime-window detector remainder · #85 sandbox hardening · #84 gate adversarial harness · #90 llama.cpp · #93 hot path · #95 dead surface · #106 shape home · #110 artifact quality · #114 trace cap · #132 BitNet · #142 reject templates
 
 ### epic:off-path
 #80 #65 #30 #66 — parked, not on the north-star path.
