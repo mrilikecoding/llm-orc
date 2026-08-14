@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.18.17] - 2026-08-14
+
+### Added
+- Content-grep meta-task rung, slice A (#121,
+  `docs/plans/2026-08-13-content-grep-design.md`): a self- or
+  code-referential explain that filename discovery cannot ground now runs
+  ONE def-anchored content-search round through the client's grep,
+  builds a deterministic menu of REAL identifiers with verified
+  definition-site files from the rendered result, lets the cheap seat
+  pick from that closed menu (abstention falls open to today's
+  conceptual answer), and grounds the explain in the picked file with
+  AST-verified attribution — the answer's file must actually define
+  every attributed identifier, so a forged def-line in a docstring can
+  neither ground nor mis-attribute. Grounding keys on a structural
+  this-turn read signal (never rendered-text order), truncated search
+  results carry a fixed honesty hedge, and every fall-through lands on
+  the pre-existing behavior. Live-validated end to end
+  (`docs/plans/2026-08-13-121-live-gate/`) with a 13/13 ladder
+  regression row at zero dishonest flags.
+
+### Fixed
+- Client-capped reads refuse honestly (#153, discovered live): OpenCode
+  caps read output at 50KB — inside the serve's 96KB whole-file window —
+  so 50–96KB files arrived half-shown behind a complete-looking result.
+  The cap trailer is now detected deterministically and such reads
+  render as a refusing truncated variant naming the client's cap.
+
 ## [0.18.16] - 2026-08-13
 
 ### Added
