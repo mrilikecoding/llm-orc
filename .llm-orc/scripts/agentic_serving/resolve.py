@@ -102,6 +102,11 @@ def main() -> None:
     needs_run = str(classify.get("needs_run", ""))
     needs_glob = str(classify.get("needs_glob", ""))
     glob_failed = str(classify.get("glob_failed", ""))
+    # #144 serve-native self-reference: rides the routing decision like
+    # every seam field.
+    needs_self_files = classify.get("needs_self_files", [])
+    if not isinstance(needs_self_files, list):
+        needs_self_files = []
     not_grounded = str(classify.get("not_grounded", ""))
     not_grounded_reason = str(classify.get("not_grounded_reason", ""))
     recall_answer = str(classify.get("recall_answer", ""))
@@ -156,6 +161,7 @@ def main() -> None:
                 "needs_run": needs_run,
                 "needs_glob": needs_glob,
                 "glob_failed": glob_failed,
+                "needs_self_files": needs_self_files,
                 "not_grounded": not_grounded,
                 "not_grounded_reason": not_grounded_reason,
                 "recall_answer": recall_answer,

@@ -156,6 +156,10 @@ def serving_project(tmp_path: Path) -> Path:
     shutil.copy(
         REAL_AGENTIC_SERVING / "recall-answer.yaml", ensembles / "recall-answer.yaml"
     )
+    shutil.copy(
+        REAL_AGENTIC_SERVING / "need-self-files.yaml",
+        ensembles / "need-self-files.yaml",
+    )
     return tmp_path
 
 
@@ -167,6 +171,23 @@ def serving_client(
     hermetic project dir, re-pointing the ``get_serving_ensemble_caller``
     factory the Cycle-8 endpoint resolves.
     """
+
+    def _caller() -> ServingEnsembleCaller:
+        return ServingEnsembleCaller(project_dir=serving_project, ensemble="serving")
+
+    monkeypatch.setattr(
+        v1_chat_completions, "get_serving_ensemble_caller", _caller, raising=False
+    )
+    return TestClient(create_app())
+
+
+@pytest.fixture
+def self_serving_client(
+    serving_project: Path, monkeypatch: pytest.MonkeyPatch
+) -> TestClient:
+    """The flag-on sibling of ``serving_client`` (#144): the hermetic project
+    opts into serve-native self-reference via its own config."""
+    (serving_project / "config.yaml").write_text("serving:\n  self_reference: true\n")
 
     def _caller() -> ServingEnsembleCaller:
         return ServingEnsembleCaller(project_dir=serving_project, ensemble="serving")
@@ -2190,3 +2211,131 @@ def test_recap_floor_ignores_a_non_build_explain_glob_refusal(
     content = resp.json()["choices"][0]["message"]["content"]
     assert "todo.py" in content
     assert "did not ship" not in content.lower()
+
+
+# --- #144 serve-native dot-dir self-reference -------------------------------
+# Design: docs/plans/2026-08-13-dot-dir-self-reference-design.md. The serve
+# reads its OWN scripts server-side; the client wire never carries a read
+# tool_call for them.
+
+
+def _self_glob_continuation(
+    question: str, pattern: str, listing: str
+) -> list[dict[str, object]]:
+    return [
+        {"role": "user", "content": question},
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [
+                {
+                    "id": "call_g1",
+                    "type": "function",
+                    "function": {
+                        "name": "glob",
+                        "arguments": json.dumps({"pattern": pattern}),
+                    },
+                }
+            ],
+        },
+        {"role": "tool", "tool_call_id": "call_g1", "content": listing},
+    ]
+
+
+def test_gate_question_self_reads_and_refuses_the_whale_over_budget(
+    self_serving_client: TestClient,
+) -> None:
+    """The #144 gate question end to end: discovery reaches the serve's own
+    classify.py without any client read tool_call, the native read runs the
+    SAME budget discipline, and the whale refuses honestly naming the file
+    (the #145 pin, single-whale wording)."""
+    resp = self_serving_client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "ensemble-agent",
+            "messages": _self_glob_continuation(
+                "how does classify decide routing?",
+                "**/*{classify,decide,routing}*",
+                "/work/tests/test_serving_classify.py",
+            ),
+            "tools": [_WRITE_TOOL, _READ_TOOL_DEF, _GLOB_TOOL_DEF],
+        },
+    )
+
+    assert resp.status_code == 200
+    choice = resp.json()["choices"][0]
+    assert choice["finish_reason"] == "stop"
+    assert not choice["message"].get("tool_calls")
+    content = choice["message"]["content"]
+    assert "Refused: could not read" in content
+    assert "classify.py" in content
+    assert "alone exceeds the session read budget" in content
+
+
+def test_self_question_grounds_from_the_serve_scripts_without_a_client_read(
+    self_serving_client: TestClient, serving_project: Path
+) -> None:
+    """A self-referential question whose script fits the budget answers in
+    one wire round: the serve reads resolve.py natively (trace-visible) and
+    the client never sees a read tool_call."""
+    resp = self_serving_client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "ensemble-agent",
+            "messages": _self_glob_continuation(
+                "how does resolve pick the seat?",
+                "**/*{resolve,pick,seat}*",
+                "/work/tests/test_serving_resolve.py",
+            ),
+            "tools": [_WRITE_TOOL, _READ_TOOL_DEF, _GLOB_TOOL_DEF],
+        },
+    )
+
+    assert resp.status_code == 200
+    choice = resp.json()["choices"][0]
+    assert choice["finish_reason"] == "stop"
+    assert not choice["message"].get("tool_calls")
+
+    traces = [
+        json.loads(line)
+        for line in (serving_project / ".serve-trace" / "turns.jsonl")
+        .read_text()
+        .splitlines()
+    ]
+    targets = [trace.get("chain_plan", {}).get("target") for trace in traces]
+    assert "need-self-files" in targets
+    assert any(trace.get("self_read_round") for trace in traces)
+
+
+def test_gate_question_stays_conceptual_with_the_flag_off(
+    serving_client: TestClient, serving_project: Path
+) -> None:
+    """Default-off invariant (#144 pre-flight finding 1): without the opt-in
+    the turn falls through to the conceptual explainer exactly as today —
+    no self reads anywhere in the trace."""
+    resp = serving_client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "ensemble-agent",
+            "messages": _self_glob_continuation(
+                "how does classify decide routing?",
+                "**/*{classify,decide,routing}*",
+                "/work/tests/test_serving_classify.py",
+            ),
+            "tools": [_WRITE_TOOL, _READ_TOOL_DEF, _GLOB_TOOL_DEF],
+        },
+    )
+
+    assert resp.status_code == 200
+    choice = resp.json()["choices"][0]
+    assert choice["finish_reason"] == "stop"
+    assert not choice["message"].get("tool_calls")
+
+    traces = [
+        json.loads(line)
+        for line in (serving_project / ".serve-trace" / "turns.jsonl")
+        .read_text()
+        .splitlines()
+    ]
+    targets = [trace.get("chain_plan", {}).get("target") for trace in traces]
+    assert "need-self-files" not in targets

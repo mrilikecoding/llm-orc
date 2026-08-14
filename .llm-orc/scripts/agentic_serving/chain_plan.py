@@ -25,7 +25,7 @@ extraction of its own.
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 # The canonical seat-target strings (moved from classify.py). Two of the
 # three — _EXPLAIN_SEAT and _TESTS_SEAT — are imported back into classify.py
@@ -75,6 +75,11 @@ class SignalBundle:
     # resolve structurally defers to the guarded decider (recall vs recap vs
     # explain) instead of the guessing explainer seat.
     defer_recap: bool = False
+    # #144 serve-native self-reference: the serve's own script(s) to read
+    # server-side — never a client tool call (dot-dirs are unreachable by
+    # the client's glob, and self-knowledge must not depend on client
+    # capability). Defaulted so existing bundles are unchanged.
+    needs_self_files: list[str] = field(default_factory=list)
 
 
 _Guard = Callable[[SignalBundle], bool]
@@ -202,6 +207,14 @@ def _explain_need_files(bundle: SignalBundle) -> bool:
     candidate's read — guarded on is_explain for the same isolation reason
     as ``_explain_need_glob``."""
     return bundle.is_explain and bool(bundle.needs_files or bundle.read_failed)
+
+
+def _explain_need_self_files(bundle: SignalBundle) -> bool:
+    """#144 serve-native self-reference: read the serve's own script
+    server-side (dot-dirs are unreachable by the client's glob) — guarded on
+    is_explain like the other explain-discovery rows, so a stray signal on
+    any other turn falls through to today's routing."""
+    return bundle.is_explain and bool(bundle.needs_self_files)
 
 
 def _explain_explainer(bundle: SignalBundle) -> bool:
@@ -337,6 +350,16 @@ CHAIN_EXPLAIN = Chain(
             kind="need_files",
             build=False,
             guard=_explain_need_files,
+        ),
+        # #144 serve-native self-reference: after the client seams (a turn
+        # never carries both by construction), before the explainer so the
+        # first-match scan cannot short-circuit the self read.
+        Step(
+            chain_label="explain",
+            target="need-self-files",
+            kind="need_self_files",
+            build=False,
+            guard=_explain_need_self_files,
         ),
         Step(
             chain_label="explain",

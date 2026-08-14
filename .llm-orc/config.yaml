@@ -1,3 +1,10 @@
+# #144 serve-native self-reference: THIS repo is the self-hosting
+# deployment (the serve-owned scripts under .llm-orc ARE the workspace's
+# own), so the opt-in is committed here. Default is OFF everywhere else —
+# see docs/plans/2026-08-13-dot-dir-self-reference-design.md.
+serving:
+  self_reference: true
+
 project:
   name: LLM Orchestra Test Project
   default_models:

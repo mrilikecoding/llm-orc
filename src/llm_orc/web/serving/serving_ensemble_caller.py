@@ -24,6 +24,8 @@ from collections.abc import AsyncIterator, Callable, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, NamedTuple
 
+import yaml
+
 from llm_orc.core.config.ensemble_config import EnsembleLoader
 from llm_orc.core.execution.executor_factory import ExecutorFactory
 from llm_orc.web.serving.chunks import (
@@ -172,6 +174,19 @@ _READ_FAIL_REASON_CAP = 200
 _READ_TOKEN_BUDGET = 35000
 _projected_tokens = projected_tokens_v2
 
+# #144 serve-native self-reference: the serve reads its OWN scripts
+# server-side (dot-dirs are unreachable by the client's glob). Bounded
+# in-process re-entry — the visible-or-attempted property already
+# terminates after one round; this is the deterministic backstop.
+_SELF_READ_MAX_ROUNDS = 3
+# The two label roots classify may emit (the real deployment carries a
+# .llm-orc path component; test fixtures root at the scripts tree). A label
+# must be one of these prefixes plus a bare basename — never a nested path.
+_SELF_READ_PREFIXES = (".llm-orc/scripts/agentic_serving/", "scripts/agentic_serving/")
+_SELF_READ_EXHAUSTED_MESSAGE = (
+    "Refused: the serve could not settle its own-script reads within the round bound."
+)
+
 # Client-run output blocks (issue #83, run half): the TAIL is kept on
 # overflow — pytest prints its summary last, and the deterministic verdict
 # parser reads exactly that summary.
@@ -278,7 +293,10 @@ def _aux_reply(messages: Sequence[Any]) -> str:
     return "Task"
 
 
-def _render_context(messages: Sequence[Any]) -> str:
+def _render_context(
+    messages: Sequence[Any],
+    self_reads: dict[str, tuple[str, bool]] | None = None,
+) -> str:
     """Prior turns as a deterministic, capped transcript (rung-1 memory).
 
     Everything before the latest user message renders as ``role: text``
@@ -286,6 +304,12 @@ def _render_context(messages: Sequence[Any]) -> str:
     the written body (that is what lets a later "add tests for it" see the
     code it refers to); tool-result rows are skipped. Bounded by the module
     caps so per-turn cost stays flat regardless of session length.
+
+    ``self_reads`` (#144): this turn's server-side own-script read blocks,
+    merged into the read accumulator AFTER client reads so the single token
+    budget (``_budget_read_blocks``) applies across both namespaces —
+    budget parity is the design invariant, and one seam is what keeps the
+    accept/refuse split deterministic.
     """
     items = list(messages)
     boundary = _latest_user_index(items)
@@ -330,7 +354,7 @@ def _render_context(messages: Sequence[Any]) -> str:
     }
     write_blocks = [block for path, block in selected if path not in tail_paths]
     kept = _whole_blocks_within_cap(write_blocks)
-    kept = _select_read_blocks(messages, task, tail_paths) + kept
+    kept = _select_read_blocks(messages, task, tail_paths, self_reads) + kept
     post_user = items[boundary + 1 :]
     kept = kept + _run_blocks(post_user) + _glob_blocks(post_user)
 
@@ -341,18 +365,25 @@ def _render_context(messages: Sequence[Any]) -> str:
 
 
 def _select_read_blocks(
-    messages: Sequence[Any], task: str, tail_paths: set[str]
+    messages: Sequence[Any],
+    task: str,
+    tail_paths: set[str],
+    self_reads: dict[str, tuple[str, bool]] | None = None,
 ) -> list[str]:
     """Latest read block per path (issue #83), joined from the FULL history —
     exempt from the selected-block cap: dropping one would make classify
     re-request it (a read loop). A later write of the same path supersedes.
     The total-projected-tokens budget (C1, #145) still applies — see
-    ``_budget_read_blocks``."""
+    ``_budget_read_blocks``. Self reads (#144) merge AFTER the client reads
+    (client-first insertion order keeps the accept/refuse split
+    deterministic) and share the same budget."""
     written_paths = {path for path, _ in _select_written_files(list(messages), task)}
     latest_reads: dict[str, tuple[str, bool]] = {}
     for path, block, is_full in _read_blocks(messages):
         if path not in written_paths and path not in tail_paths:
             latest_reads[path] = (block, is_full)
+    for path, (block, is_full) in (self_reads or {}).items():
+        latest_reads.setdefault(path, (block, is_full))
     return _budget_read_blocks(latest_reads)
 
 
@@ -1182,6 +1213,41 @@ def _serve_outcome(result: dict[str, Any]) -> dict[str, Any]:
     return {"finish": True, "content": str(outcome)}
 
 
+def _render_self_read_block(path: str, content: str) -> tuple[str, bool]:
+    """A serve-owned script rendered straight into the read-block grammar
+    (#144 review finding 1): trusted disk bytes take NO client-wire
+    normalizer heuristics — a script containing a literal ``<content>``
+    pair must render verbatim, never gutted to the span between the tags
+    (and never trailer- or gutter-stripped). Byte-identical to
+    ``_render_read_block`` for tag-free content, so the whale's pinned
+    over-budget projection is unchanged; the oversize cap and the failed
+    empty-read variant mirror the wire path exactly."""
+    normalized = content.strip()
+    if not normalized:
+        return f"assistant: [read {path} (failed)] empty read result", False
+    if len(normalized) > _READ_FILE_CAP:
+        return f"assistant: [read {path} (oversize)]", False
+    return f"assistant: [read {path}]\n{_indent_body(normalized)}", True
+
+
+def _self_read_requests(outcome: dict[str, Any]) -> list[str]:
+    """The #144 self-read labels an unfinished outcome requests, else []."""
+    if outcome.get("finish"):
+        return []
+    self_reads = outcome.get("self_reads")
+    if not isinstance(self_reads, list):
+        return []
+    return [str(path) for path in self_reads]
+
+
+def _self_read_exhausted_outcome() -> dict[str, Any]:
+    """The fail-closed outcome when the re-entry backstop trips (#144): the
+    pipeline kept requesting self reads past the deterministic bound, so
+    the turn refuses instead of looping or shipping a half-grounded
+    answer."""
+    return {"finish": True, "content": _SELF_READ_EXHAUSTED_MESSAGE}
+
+
 def _glob_pattern(glob_stem: str) -> str | None:
     """The closed glob pattern template for classify's ``glob`` outcome: a
     single stem stays ``**/*a*`` (unchanged); several comma-joined stems
@@ -1243,18 +1309,31 @@ def _outcome_chunks(
             arguments=json.dumps({"pattern": pattern}),
         )
         return [ClientToolCall(tool_calls=(invocation,))]
-    arguments = json.dumps(
-        {
-            "filePath": outcome.get("file", "solution.py"),
-            "content": outcome.get("content", ""),
-        }
-    )
-    invocation = ToolCallInvocation(
-        id=f"call_{uuid.uuid4().hex[:8]}",
-        name=_client_tool(tools, _WRITE_TOOL_CANDIDATES, _WRITE_TOOL),
-        arguments=arguments,
-    )
-    return [ClientToolCall(tool_calls=(invocation,))]
+    if "file" in outcome and "content" in outcome:
+        arguments = json.dumps(
+            {
+                "filePath": outcome.get("file", "solution.py"),
+                "content": outcome.get("content", ""),
+            }
+        )
+        invocation = ToolCallInvocation(
+            id=f"call_{uuid.uuid4().hex[:8]}",
+            name=_client_tool(tools, _WRITE_TOOL_CANDIDATES, _WRITE_TOOL),
+            arguments=arguments,
+        )
+        return [ClientToolCall(tool_calls=(invocation,))]
+    # Version-skew guard (#144 pre-flight finding 7): project scripts are
+    # per-project config and rev independently of this installed caller, so
+    # an outcome vocabulary this caller does not recognize must refuse
+    # honestly — the old fall-through minted a junk empty "solution.py"
+    # write from whatever the newer scripts actually meant.
+    return [
+        ContentDelta(
+            content="Refused: the serve produced an outcome this server "
+            "version does not recognize."
+        ),
+        Completion(finish_reason="stop"),
+    ]
 
 
 class ServingEnsembleCaller:
@@ -1278,6 +1357,9 @@ class ServingEnsembleCaller:
         # recap grounding (#133/#134) — reloads emit.py's constants only
         # when the file actually changes.
         self._emit_reject_cache: tuple[Path, float, _RejectPrefixes] | None = None
+        # (path, mtime) -> the #144 self-reference opt-in, read from the
+        # project's own config.yaml; mirrors the caches above.
+        self._self_reference_cache: tuple[Path, float, bool] | None = None
 
     def _load_config(self) -> Any:
         path = _find_ensemble(self._project_dir, self._ensemble)
@@ -1308,6 +1390,87 @@ class ServingEnsembleCaller:
         self._emit_reject_cache = (path, mtime, prefixes)
         return prefixes
 
+    def _self_reference_enabled(self) -> bool:
+        """The #144 opt-in, read from the project's own ``config.yaml``
+        (``serving.self_reference``), mtime-cached. Default OFF — any
+        failure (missing file, malformed YAML, wrong shape) reads as
+        disabled, never as a half-enabled state."""
+        path = self._project_dir / "config.yaml"
+        try:
+            mtime = path.stat().st_mtime
+        except OSError:
+            return False
+        if self._self_reference_cache is not None:
+            cached_path, cached_mtime, cached = self._self_reference_cache
+            if cached_path == path and cached_mtime == mtime:
+                return cached
+        enabled = False
+        try:
+            data = yaml.safe_load(path.read_text())
+            serving = data.get("serving") if isinstance(data, dict) else None
+            if isinstance(serving, dict):
+                enabled = serving.get("self_reference") is True
+        except Exception:  # noqa: BLE001 — a broken config must read as OFF
+            enabled = False
+        self._self_reference_cache = (path, mtime, enabled)
+        return enabled
+
+    def _execute_self_read(self, label: str) -> tuple[str, bool]:
+        """Read one serve-owned script server-side and render it through the
+        read-block grammar (#144).
+
+        Confinement invariant (pre-flight finding 8): a self read only ever
+        reads a file in the ENUMERATED serve-owned set — label shape
+        (a known prefix plus a bare basename), then resolved-path
+        containment in the scripts dir (chases a planted symlink), then
+        membership among the dir's own ``*.py`` entries (``test_*``
+        excluded, matching classify's label set — review finding 3). Set
+        membership, never a string prefix. Failures render the failed-read
+        variant so classify refuses on re-entry instead of re-requesting;
+        a malformed label refuses rather than raising (review finding 6).
+
+        Trusted bytes stay trusted (review finding 1): rendering goes
+        through ``_render_self_read_block``, never the client-wire
+        normalizer heuristics.
+        """
+        basename = ""
+        for prefix in _SELF_READ_PREFIXES:
+            if label.startswith(prefix):
+                basename = label[len(prefix) :]
+                break
+        if not basename or "/" in basename or basename in (".", ".."):
+            return (
+                f"assistant: [read {label} (failed)] not a serve-owned script",
+                False,
+            )
+        try:
+            scripts_dir = (self._project_dir / "scripts" / "agentic_serving").resolve()
+            candidate = (scripts_dir / basename).resolve()
+            enumerated = {
+                entry.resolve()
+                for entry in scripts_dir.glob("*.py")
+                if not entry.name.startswith("test_")
+                and entry.resolve().is_relative_to(scripts_dir)
+            }
+        except (OSError, ValueError):
+            return (
+                f"assistant: [read {label} (failed)] not a serve-owned script",
+                False,
+            )
+        if not candidate.is_relative_to(scripts_dir) or candidate not in enumerated:
+            return (
+                f"assistant: [read {label} (failed)] not a serve-owned script",
+                False,
+            )
+        try:
+            content = candidate.read_text()
+        except OSError:
+            return (
+                f"assistant: [read {label} (failed)] could not read the script",
+                False,
+            )
+        return _render_self_read_block(label, content)
+
     async def run(self, context: SessionContext) -> AsyncIterator[OrchestratorChunk]:
         if not context.tools:
             yield ContentDelta(content=_aux_reply(context.messages))
@@ -1319,15 +1482,33 @@ class ServingEnsembleCaller:
             yield Completion(finish_reason="stop")
             return
         reject_prefixes = self._emit_reject_prefixes()
-        outcome = await self._serve(
-            _task_from(context.messages),
-            _render_context(context.messages),
-            wrote_path=_wrote_path_this_turn(context.messages),
-            wrote_content=_wrote_content_this_turn(context.messages),
-            write_count=_write_count_this_turn(context.messages),
-            recall_ledger=_recall_ledger(context.messages, reject_prefixes),
-            previous_ask=_previous_ask(context.messages, reject_prefixes),
-        )
+        task = _task_from(context.messages)
+        # #144 self-read re-entry: a self-read outcome is satisfied
+        # server-side and the pipeline re-runs with the block in context —
+        # the client never sees a round. Termination is structural (a
+        # visible or attempted path is never re-requested); the range is
+        # the deterministic backstop, fail-closed on exhaustion.
+        self_reads: dict[str, tuple[str, bool]] = {}
+        outcome: dict[str, Any] = _self_read_exhausted_outcome()
+        for round_index in range(_SELF_READ_MAX_ROUNDS + 1):
+            outcome = await self._serve(
+                task,
+                _render_context(context.messages, self_reads=self_reads),
+                wrote_path=_wrote_path_this_turn(context.messages),
+                wrote_content=_wrote_content_this_turn(context.messages),
+                write_count=_write_count_this_turn(context.messages),
+                recall_ledger=_recall_ledger(context.messages, reject_prefixes),
+                previous_ask=_previous_ask(context.messages, reject_prefixes),
+                self_read_round=round_index,
+            )
+            requested = _self_read_requests(outcome)
+            if not requested:
+                break
+            for label in requested:
+                if label not in self_reads:
+                    self_reads[label] = self._execute_self_read(label)
+        else:
+            outcome = _self_read_exhausted_outcome()
         for chunk in _outcome_chunks(outcome, context.tools):
             yield chunk
 
@@ -1340,6 +1521,7 @@ class ServingEnsembleCaller:
         write_count: int = 0,
         recall_ledger: list[dict[str, Any]] | None = None,
         previous_ask: dict[str, str] | None = None,
+        self_read_round: int = 0,
     ) -> dict[str, Any]:
         config = self._load_config()
         executor = ExecutorFactory.create_root_executor(project_dir=self._project_dir)
@@ -1355,13 +1537,21 @@ class ServingEnsembleCaller:
                     "recall_ledger": recall_ledger or [],
                     "previous_ask": previous_ask
                     or {"ask": "", "outcome": "", "path": "", "reason": ""},
+                    # #144: the project's own opt-in, threaded per turn so
+                    # classify (a standalone script) can gate serve-owned
+                    # discovery without a cross-boundary import.
+                    "self_reference": self._self_reference_enabled(),
                 }
             ),
         )
         # blocking file I/O off the event loop so concurrent SSE streams
         # never stall on the trace flush (issue #93)
         trace = await asyncio.to_thread(
-            emit_turn_trace, config.name, result, self._trace_root
+            emit_turn_trace,
+            config.name,
+            result,
+            self._trace_root,
+            self_read_round,
         )
         if trace.get("truncation_detected"):
             # #151's core (review round 2 Part 2): the trace's own dual-

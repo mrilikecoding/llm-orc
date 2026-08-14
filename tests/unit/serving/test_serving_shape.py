@@ -203,3 +203,18 @@ def test_shape_defaults_is_build_ask_false_when_absent() -> None:
         {"status": "ok", "primary": "It adds two numbers."},
     )
     assert shaped["is_build_ask"] is False
+
+
+def test_needs_self_files_passes_through_shape() -> None:
+    # #144 serve-native self-reference: rides the routing decision.
+    shaped = _shape(
+        {
+            "target": "need-self-files",
+            "kind": "need_self_files",
+            "file": "solution.py",
+            "build": False,
+            "needs_self_files": [".llm-orc/scripts/agentic_serving/resolve.py"],
+        },
+        {"status": "ok", "primary": "Requesting self files."},
+    )
+    assert shaped["needs_self_files"] == [".llm-orc/scripts/agentic_serving/resolve.py"]
