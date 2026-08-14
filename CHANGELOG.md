@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.18.16] - 2026-08-13
+
+### Added
+- Serve-native dot-dir self-reference (#144 slice,
+  `docs/plans/2026-08-13-dot-dir-self-reference-design.md`): with the
+  per-project opt-in `serving.self_reference` (default off), a
+  self-referential explain discovers the serve's OWN scripts — invisible
+  to the client's glob — through a glob-first union with the workspace
+  listing, reads them server-side under the same 96KB cap and token
+  budget as client reads (confined to the enumerated scripts set, bounded
+  fail-closed re-entry, full-path namespace so workspace basename twins
+  can neither satisfy nor poison a self read), and answers grounded in
+  their real content. Live-validated: the first grounded self-referential
+  answer through the serve, plus a 13/13 ladder regression row with zero
+  dishonest flags (`docs/plans/2026-08-13-144-live-gate/`,
+  `docs/plans/2026-08-13-arm0-run7-144-validation/`).
+- Repo-scale reads (#145, #150): the per-file client-read cap raised to
+  96KB with a token-denominated session read budget
+  (`projected_tokens_v2`, validated against a real tokenizer) and a
+  runtime prompt-truncation backstop (#151 core) that withholds any
+  answer generated from a context the runtime demonstrably truncated.
+- Truncated-listing refuse (#148): a glob listing cut by the render cap
+  can no longer ground a discovery decision or leak into a seat prompt.
+
+### Fixed
+- An outcome vocabulary the server does not recognize now refuses
+  honestly instead of degrading to an empty default file write.
+- A lone over-budget read refuses with honest wording (the file alone
+  exceeds the budget) instead of falsely blaming other held files and
+  suggesting a fresh session.
+
 ## [0.18.15] - 2026-08-12
 
 ### Added

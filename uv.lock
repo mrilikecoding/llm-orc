@@ -1028,7 +1028,7 @@ wheels = [
 
 [[package]]
 name = "llm-orchestra"
-version = "0.18.15"
+version = "0.18.16"
 source = { editable = "." }
 dependencies = [
     { name = "anthropic" },
