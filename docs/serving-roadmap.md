@@ -81,14 +81,25 @@ plus host-CLAUDE.md leakage observed on Arm-1 Sonnet runs (#141).
 
 **v0.18.15 released 2026-08-13** (#146 closed; PyPI + Homebrew green).
 Merged-unreleased on main since the tag: #148 (truncated-listing
-refuse, run-6 validation row) and #145+#150 (repo-scale reads: 96KB
+refuse, run-6 validation row); #145+#150 (repo-scale reads: 96KB
 cap, token-denominated read budget, runtime truncation backstop —
-five review rounds, live gate passed, dogfood entry 1 converted).
-#143 CLOSED as an honest miss (mechanism refuted at class level +
-gate refuted empirically; reopen rides #119). Open follow-ups filed
-today: #147 (classifier false-positive family), #149 (client-side
-truncation flank), #151 (server-queried window + per-era thresholds).
-Operating rules: `docs/loop-protocol.md`.
+five review rounds, live gate passed, dogfood entry 1 converted);
+#144 slice (serve-native dot-dir self-reference: opt-in
+`serving.self_reference`, glob-first union discovery, full-path
+namespace, confined native reads under the shared budget — design
+pre-flight 3 blockers closed, adversarial review round 1 major fixed
+and round-2 APPROVED, live gate passed with the first grounded
+self-referential answer, arm-0 run 7 regression row 13/13 with the
+self path inert on the ladder). #144 stays OPEN for its literal
+"answers grounded" exit — blocked by classify.py itself (~39.9K
+projected tokens vs the 35K budget), unblockers #106/#151/chunked
+reads. #143 CLOSED as an honest miss (mechanism refuted at class
+level + gate refuted empirically; reopen rides #119). Open follow-ups
+filed today: #147 (classifier false-positive family), #149
+(client-side truncation flank), #151 (server-queried window +
+per-era thresholds), #152 (failed routing node cascades to a junk
+build write — surfaced by the #144 live-gate misfire). Operating
+rules: `docs/loop-protocol.md`.
 
 ## Timeline
 
@@ -122,7 +133,12 @@ Remaining, in order:
   token-denominated read budget, runtime truncation backstop, #150
   fixed; five review rounds; dogfood entry 1 converted). classify.py
   refuses over-budget by design → chunked reads deferred; #151 open
-- [ ] #121 #144 — remaining meta-task rungs
+- [x] #144 slice — serve-native dot-dir self-reference merged + live-
+  validated (grounded self-reference for budget-fitting scripts; the
+  literal classify-grounded exit stays open on the whale, riding
+  #106/#151/chunked reads); #152 filed (routing-crash cascade)
+- [ ] #121 — content-grep meta-task rung (Approach B; bare-token grep
+  re-refuted at serve-owned scope, spike 3)
 - [ ] #141 #138 #63 — parity v2 inputs (CLAUDE.md confound, volume scaling, statistics), then parity table v2 with realism rows
 - [ ] #126 — long-horizon 30-turn battery (#136 #137 feed the design)
 - [ ] #139 #140 — memory spikes; #127 plexus substrate; #82 remainder (cross-session)
@@ -213,7 +229,8 @@ dishonest outcome.
 ### epic:ws3-client-surface — the serve upgrades any client
 - [x] read/run/discovery delegation, fix-execution, chain executor, meta-task slice 1
 - [x] #143 closed (honest miss; reopen rides #119) · #145 repo-scale reads merged+live · #148 #150 read-seam hardening
-- [ ] #121 grep · #144 dot-dir · #149 client-side truncation flank
+- [x] #144 slice — serve-native dot-dir self-reference merged+live (grounded exit rides #106/#151/chunked reads)
+- [ ] #121 grep · #149 client-side truncation flank
 - [ ] #122 edit delegation · #123 multi-file · #124 command registry · #117 fix-completion tail
 
 ### epic:ws5-long-horizon
@@ -234,7 +251,7 @@ dishonest outcome.
 
 ### epic:ws9-platform
 - [x] #146 v0.18.15 released
-- [ ] #151 runtime-window detector remainder · #85 sandbox hardening · #84 gate adversarial harness · #90 llama.cpp · #93 hot path · #95 dead surface · #106 shape home · #110 artifact quality · #114 trace cap · #132 BitNet · #142 reject templates
+- [ ] #151 runtime-window detector remainder · #152 routing-crash cascade · #85 sandbox hardening · #84 gate adversarial harness · #90 llama.cpp · #93 hot path · #95 dead surface · #106 shape home · #110 artifact quality · #114 trace cap · #132 BitNet · #142 reject templates
 
 ### epic:off-path
 #80 #65 #30 #66 — parked, not on the north-star path.
