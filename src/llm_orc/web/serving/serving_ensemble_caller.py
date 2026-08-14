@@ -42,8 +42,18 @@ from llm_orc.web.serving.grep_render import (
     _grep_pattern,
     _render_grep_block,
 )
+from llm_orc.web.serving.read_stitch import (
+    _read_continuation,
+    _read_part_groups,
+    _render_stitched_read_block,
+    parse_cap_trailer,
+    stitch_parts,
+)
 from llm_orc.web.serving.token_estimate import projected_tokens_v2
-from llm_orc.web.serving.turn_trace import emit_turn_trace
+from llm_orc.web.serving.turn_trace import (
+    emit_read_continuation_trace,
+    emit_turn_trace,
+)
 
 if TYPE_CHECKING:
     # A surviving ADR-013 container that still lives under agentic/ during the
@@ -860,19 +870,51 @@ def _render_read_block(path: str, raw: str) -> tuple[str, bool]:
 
 
 def _read_blocks(messages: Sequence[Any]) -> list[tuple[str, str, bool]]:
-    """(path, block, is_full) for every tool result answering a read-shaped
-    call, in wire order. Selected from the FULL history: on the resume pass
-    the read result sits after the last user message."""
-    call_paths = _call_field_map(messages, _is_read_shaped, "filePath")
+    """(path, block, is_full) per path, from the FULL history. Multi-part
+    offset-continuation reads (#153) are grouped per TURN SEGMENT (the
+    span between consecutive user messages) and only the path's LATEST
+    segment renders — stale parts from an earlier turn can never stitch
+    with fresh ones after the file changed on disk (design v1.1,
+    pre-flight major 3). A single uncapped part keeps the existing
+    single-read render byte-identically; anything multi-part or
+    cap-trailed goes through the stitcher, whole-or-refuse."""
+    groups, order = _read_part_groups(messages)
+    latest_segment = {path: seg for (seg, path) in order}
+    # First-occurrence-of-PATH order (review round 1 finding 1): the
+    # budget accumulator's first-read-wins invariant keys on insertion
+    # order, so a re-read path must keep its ORIGINAL position — never
+    # jump to its latest segment's position and flap the accept/refuse
+    # split turn to turn.
+    path_order: list[str] = []
+    for _seg, path in order:
+        if path not in path_order:
+            path_order.append(path)
     blocks: list[tuple[str, str, bool]] = []
-    for message in messages:
-        if getattr(message, "role", None) != "tool":
-            continue
-        path = call_paths.get(getattr(message, "tool_call_id", None) or "")
-        if path:
-            content = getattr(message, "content", None)
-            block, is_full = _render_read_block(path, content or "")
+    for path in path_order:
+        seg = latest_segment[path]
+        parts = groups[(seg, path)]
+        # The fast path requires offset 1 (review round 1 finding 2): a
+        # LONE offset-part is a partial file and must go whole-or-refuse
+        # through the stitcher, never render as the whole.
+        if (
+            len(parts) == 1
+            and parts[0][0] <= 1
+            and parse_cap_trailer(parts[0][1]) is None
+        ):
+            block, is_full = _render_read_block(path, parts[0][1])
             blocks.append((path, block, is_full))
+            continue
+        stitched = stitch_parts(parts)
+        if stitched is None:
+            blocks.append(
+                (
+                    path,
+                    f"assistant: [read {path} (truncated)] client read cap",
+                    False,
+                )
+            )
+            continue
+        blocks.append((path, *_render_stitched_read_block(path, stitched)))
     return blocks
 
 
@@ -1574,6 +1616,26 @@ class ServingEnsembleCaller:
         if not context.tools:
             yield ContentDelta(content=_aux_reply(context.messages))
             yield Completion(finish_reason="stop")
+            return
+        continuation = _read_continuation(context.messages)
+        if continuation is not None:
+            # #153: a capped read continues deterministically — no
+            # pipeline pass, no model call; the emission is trace-
+            # accounted (design v1.1, pre-flight major 4).
+            path, offset = continuation
+            await asyncio.to_thread(
+                emit_read_continuation_trace,
+                self._trace_root,
+                path,
+                offset,
+                self._ensemble,
+            )
+            invocation = ToolCallInvocation(
+                id=f"call_{uuid.uuid4().hex[:8]}",
+                name=_client_tool(context.tools, _READ_TOOL_CANDIDATES, _READ_TOOL),
+                arguments=json.dumps({"filePath": path, "offset": offset}),
+            )
+            yield ClientToolCall(tool_calls=(invocation,))
             return
         ack = _tool_result_ack(context.messages)
         if ack is not None:
