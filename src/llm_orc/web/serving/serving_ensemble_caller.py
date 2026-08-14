@@ -1624,7 +1624,11 @@ class ServingEnsembleCaller:
             # accounted (design v1.1, pre-flight major 4).
             path, offset = continuation
             await asyncio.to_thread(
-                emit_read_continuation_trace, self._trace_root, path, offset
+                emit_read_continuation_trace,
+                self._trace_root,
+                path,
+                offset,
+                self._ensemble,
             )
             invocation = ToolCallInvocation(
                 id=f"call_{uuid.uuid4().hex[:8]}",
