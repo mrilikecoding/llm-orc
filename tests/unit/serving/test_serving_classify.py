@@ -2931,8 +2931,11 @@ def test_truncated_listing_disables_self_discovery(self_scripts: Path) -> None:
 
 
 def test_failed_glob_disables_self_discovery(self_scripts: Path) -> None:
-    # A (failed) block is zero workspace knowledge, not a complete listing
-    # — the union errs closed and the turn keeps today's fall-through.
+    # A (failed) block is zero workspace knowledge for the SELF union —
+    # it errs closed (the #144 reviewed semantics). The #121 grep round
+    # DOES fire on the exact empty-glob-result form (complete-zero
+    # knowledge, review round 1 finding 3) — the invariant this test pins
+    # is the self half staying off.
     listing = "assistant: [globbed classify,decide,routing (failed)] empty glob result"
     decision = _classify_at(
         self_scripts,
@@ -2942,7 +2945,7 @@ def test_failed_glob_disables_self_discovery(self_scripts: Path) -> None:
             "self_reference": True,
         },
     )
-    assert decision["target"] == "explainer"
+    assert decision["target"] == "need-grep"
     assert decision["needs_self_files"] == []
 
 
@@ -3322,3 +3325,110 @@ def test_client_truncated_read_refuses_with_the_cap_reason() -> None:
     assert "could not read src/app/ledger.py" in decision["read_failed"]
     assert "client" in decision["read_failed"]
     assert "truncated" in decision["read_failed"]
+
+
+def test_truncated_grep_block_is_stripped_from_ungrounded_dispatch() -> None:
+    # Review round 1 finding 1 (binding design resolution 8): a truncated
+    # grep block must never ride into the free explainer's prompt.
+    context = (
+        f"{_COMPLETE_LISTING}\n"
+        "assistant: [grepped recall,ledger,built (truncated)]\n"
+        "  src/app/secret_module.py: Line 1: def unrelated_thing():"
+    )
+    decision = _classify({"task": _GREP_QUESTION, "context": context})
+    assert decision["target"] == "explainer"
+    assert "[grepped" not in decision["dispatch_input"]
+    assert "secret_module" not in decision["dispatch_input"]
+
+
+def test_grounding_keys_on_the_latest_read_never_menu_order() -> None:
+    # Review round 1 finding 2: a stale prior read of a DIFFERENT menu
+    # file must not preempt the pick's own (latest) read.
+    context = (
+        f"{_COMPLETE_LISTING}\n"
+        "assistant: [read src/app/notes.py]\n"
+        "  def _ledger_notes():\n"
+        "      return 1\n"
+        "assistant: [grepped recall,ledger,built]\n"
+        "  src/app/notes.py: Line 1: def _ledger_notes():\n"
+        "  src/app/ledger.py: Line 10: def _recall_ledger(entries):\n"
+        "assistant: [read src/app/ledger.py]\n"
+        "  def _recall_ledger(entries):\n"
+        "      return list(entries)"
+    )
+    decision = _classify({"task": _GREP_QUESTION, "context": context})
+    assert decision["target"] == "explainer"
+    assert (
+        "The actual current content of src/app/ledger.py" in decision["dispatch_input"]
+    )
+    assert "_recall_ledger" in decision["dispatch_input"]
+
+
+def test_stale_failed_read_never_preempts_the_pick() -> None:
+    # Review round 1 finding 2c: a stale failed read of a menu file (not
+    # the latest read) must not turn the turn into a refusal — the pick
+    # defers as normal.
+    context = (
+        f"{_COMPLETE_LISTING}\n"
+        "assistant: [read src/app/notes.py (failed)] client read failed\n"
+        "assistant: [read src/app/other.py]\n"
+        "  x = 1\n"
+        "assistant: [grepped recall,ledger,built]\n"
+        "  src/app/notes.py: Line 1: def _ledger_notes():\n"
+        "  src/app/ledger.py: Line 10: def _recall_ledger(entries):"
+    )
+    decision = _classify({"task": _GREP_QUESTION, "context": context})
+    assert decision["read_failed"] == ""
+    assert decision["defer_pick"] is True
+
+
+def test_empty_glob_result_still_fires_the_grep_round() -> None:
+    # Review round 1 finding 3: a zero-match listing IS complete knowledge
+    # ("empty glob result" is the render's own exact wording) — the
+    # strongest case for content search must not go silently dead.
+    context = "assistant: [globbed recall,ledger,built (failed)] empty glob result"
+    decision = _classify({"task": _GREP_QUESTION, "context": context})
+    assert decision["target"] == "need-grep"
+    assert decision["needs_grep"] == "recall,ledger,built"
+
+
+def test_untruncated_grounding_never_carries_the_hedge() -> None:
+    # Review round 1 finding 6: the hedge fires ONLY on a truncated block.
+    context = (
+        f"{_COMPLETE_LISTING}\n"
+        "assistant: [grepped recall,ledger,built]\n"
+        "  src/app/ledger.py: Line 10: def _recall_ledger(entries):\n"
+        "assistant: [read src/app/ledger.py]\n"
+        "  def _recall_ledger(entries):\n"
+        "      return list(entries)"
+    )
+    decision = _classify({"task": _GREP_QUESTION, "context": context})
+    assert decision["target"] == "explainer"
+    assert "search was cut" not in decision["dispatch_input"]
+
+
+def test_grep_client_read_failure_keeps_the_client_wording() -> None:
+    # Review round 1 finding 4: a failed CLIENT read of a menu file keeps
+    # the client attribution (the self namespace drops it).
+    context = (
+        f"{_COMPLETE_LISTING}\n"
+        "assistant: [grepped recall,ledger,built]\n"
+        "  src/app/ledger.py: Line 10: def _recall_ledger(entries):\n"
+        "assistant: [read src/app/ledger.py (failed)] Error: ENOENT"
+    )
+    decision = _classify({"task": _GREP_QUESTION, "context": context})
+    assert "could not read src/app/ledger.py" in decision["read_failed"]
+    assert "client read failed" in decision["read_failed"]
+
+
+def test_hidden_basename_and_absolute_rows_never_enter_the_menu() -> None:
+    # Review round 1 finding 8: the surface filter's promise is a
+    # deterministic surface — hidden BASENAMES and absolute paths drop.
+    context = (
+        f"{_COMPLETE_LISTING}\n"
+        "assistant: [grepped recall,ledger,built]\n"
+        "  .hidden_recall.py: Line 1: def _recall_hidden():\n"
+        "  /etc/cron.d/ledger_recall.py: Line 1: def _recall_abs():"
+    )
+    decision = _classify({"task": _GREP_QUESTION, "context": context})
+    assert decision["pick_menu"] == {}
