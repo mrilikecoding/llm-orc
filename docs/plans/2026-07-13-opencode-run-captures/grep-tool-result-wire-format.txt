@@ -35,3 +35,24 @@ glob SUPPORTS brace expansion. Pattern `**/*{metrics,calc}*` returned calc.py,
 metrics.py, test_metrics.py (all files whose basename contains any listed stem).
 So a multi-stem explain question can search all candidate stems in ONE glob
 round: `**/*{stem1,stem2,...}*`, then filter .py / not test_ / one-or-refuse.
+
+---
+AMENDMENT (2026-08-13, #121 design pre-flight — binary extraction of
+opencode 1.17.15's Service.grep, verified via `opencode debug rg search`,
+which invokes the same code path):
+- REFUTED: "N may be 0". An empty result is the literal string
+  `No files found` — never "Found 0 matches".
+- The client caps at 100 matches and computes the header count FROM the
+  capped array, so header-count-vs-listed-lines arithmetic can never
+  detect a client-side cut. The real truncation signals: a
+  ` (more matches available)` header suffix, a trailing
+  `(Results truncated. Consider using a more specific path or pattern.)`
+  footer line, and `metadata.truncated`.
+- File groups are separated by BLANK LINES (the single-file capture
+  above never showed one).
+- The grep TRAVERSES HIDDEN DIRS (unlike the client's glob, which cannot
+  list them) — .llm-orc, .claude/worktrees etc. appear in results.
+- The first-100 cut is NONDETERMINISTIC (parallel traversal, no sort
+  before the limit): identical invocations return different sequences.
+- Measurement instrument for grep-shaped design work:
+  `opencode debug rg search <pattern> --glob '*.py' --limit 100`.

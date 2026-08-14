@@ -86,3 +86,29 @@ markers, blank-line file groups). New measurements for v2:
 v2 design: def-anchored pattern, wire grammar rebuilt from the binary,
 cut-tolerant menus with AST-verified read-time def confirmation carrying
 the honesty invariant, and the pick as its own guarded DAG node.
+
+## Ground-truth addendum (arms H/I, real Service.grep, 2026-08-13)
+
+The v2 re-review (PROCEED-WITH-CHANGES) found the v2 evidence line was
+still simulation: the real client grep TRAVERSES hidden dirs (not
+dot-blind), its first-100 cut is NONDETERMINISTIC, and stale
+.claude/worktrees copies were knocking the exit-gate identifier off its
+own menu via duplicate def-sites. The reviewer also surfaced the real
+measurement instrument: `opencode debug rg search` (the exact
+Service.grep code path). After worktree cleanup and with the
+deterministic serve-side surface filter (hidden-component paths dropped;
+`.llm-orc/**` kept iff serving.self_reference):
+
+- **Arm H (menu survival, 3 runs/question):** right file in the menu
+  29/30 runs across ALL 10 questions — including both dot-dir questions,
+  so slice B dissolves into the flag-gated surface rule. The one miss:
+  cut-variance on one at-cap question.
+- **Arm I (pick accuracy on the real 12–58-entry menus):** 27/30 right,
+  0 fabrication, 0 off-menu, 0 abstain; the only wrong class is the
+  defensible-alias grounding (`_projected_tokens` — the caller's own
+  computing alias — for the projected-estimate question). Bigger real
+  menus scored BETTER than the artificial 10-entry menus (19/30).
+
+Design v2.1 folds in the re-review's seven changes. Arm H/I scripts:
+scratchpad `arm_h.py`/`arm_i.py` (session artifacts; the battery, rules,
+and numbers are recorded here and in the design doc).

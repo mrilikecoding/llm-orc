@@ -1,25 +1,36 @@
 # Content-grep meta-task rung (#121) — design v2
 
-**Status:** v2 after reviewer pre-flight (verdict on v1: REDESIGN — three
-blockers, all adjudicated below with new measurements; the pre-flight
-record is on issue #121 and in the session transcript). The doctrine-9
-composition survives from v1; the mechanism is rebuilt.
+**Status:** v2.1. v1 pre-flight: REDESIGN (three measured blockers).
+v2 re-review: PROCEED-WITH-CHANGES — the mechanism verified against the
+engine and the client binary; the evidence line and search-surface
+definition were rebuilt with the REAL instrument (`opencode debug rg
+search`, the exact `Service.grep` code path the grep tool calls). All
+seven requested changes are folded in below. Records on issue #121.
 
-**Slice A** (this design): the client-grep workspace surface. **Slice B**
-(named, not built): the serve-native half of the two-surface union (grep
-over the serve's own scripts, the #144 pattern) — the two battery
-questions whose subjects live under `.llm-orc` cannot ground in slice A
-and fall through conceptually, exactly as today.
+**Slice B dissolves.** Ground truth: the client's grep TRAVERSES hidden
+dirs (it is not dot-blind like its glob), so `.llm-orc` definitions ride
+the ordinary client round. The search surface is instead defined
+deterministically serve-side (resolution 6): paths with a hidden
+component are dropped — except `.llm-orc/**`, kept iff
+`serving.self_reference` is on (the same opt-in and contamination logic
+as #144; flag-off projects never see serve scripts in content menus).
+With the flag on, both dot-dir battery questions ground through slice A
+(measured: arm H/I).
 
 **Evidence base:** `2026-08-13-content-grep-findings.md` (spike arms
 A–G). Validated: deterministic harvest → closed menu of REAL identifiers
 with definition-site files → cheap-seat pick with abstention →
 find-or-refuse ladder (arm F: 21/30, zero fabrication). Refuted: model
 proposes the pattern (0/30); mention-volume rendering (pre-flight F1:
-145–3,212 match lines per battery question). New measurements for v2:
-the def-anchored two-shape pattern keeps the right file in the
-post-client-cut menu **8/8** workspace battery questions (raw volumes
-60–286, client cap 100, rg walk order — measured 2026-08-13).
+145–3,212 match lines per battery question). Ground truth for v2.1, measured
+with the REAL instrument (`opencode debug rg search` — the exact
+`Service.grep` code path — 3 runs per question, post worktree-cleanup,
+surface-filtered): right file in the menu **29/30 runs across all 10
+battery questions** including both dot-dir questions (arm H); pick
+accuracy on the real 12–58-entry menus **27/30, zero fabrication, zero
+off-menu** (arm I) — the single wrong class is the defensible-alias
+grounding. The one survival miss was cut-variance on one at-cap question
+(the client's nondeterministic first-100).
 
 ## Pre-flight resolutions (bind the mechanism)
 
@@ -27,7 +38,8 @@ post-client-cut menu **8/8** workspace battery questions (raw volumes
    DEFINITION-shaped lines only, never mentions:
    `^\s*(def|class)\s+[A-Za-z0-9_]*(stem1|…)[A-Za-z0-9_]*` alternated
    with the module-level assignment shape
-   `^[A-Za-z_][A-Za-z0-9_]*(stem1|…)[A-Za-z0-9_]* *=`, case-insensitive,
+   `^[A-Za-z0-9_]*(stem1|…)[A-Za-z0-9_]* *=` (both sides optional on
+   BOTH shapes — re-review v2-F2), case-insensitive,
    `include: "*.py"`. Stems come from `_explain_stems` (charset-checked
    by construction); `[A-Za-z0-9_]*` on BOTH sides of the alternation so
    stem-initial identifiers match (F8), and the whole pattern is
@@ -48,12 +60,17 @@ post-client-cut menu **8/8** workspace battery questions (raw volumes
    refuses because filename discovery makes a UNIQUENESS claim over a
    complete set (#148). The menu pick claims no uniqueness — the answer
    says "here is <file>, which defines <identifier>" — so a client-cut
-   result may still seed the menu. Measured: the right file survives the
-   100-match cut 8/8. Honesty is carried by resolution 5's read-time
-   confirmation, and the render marks the block `(truncated)` (from the
-   wire's own suffix/footer/metadata signals or the serve's 50-line
-   post-filter cap) so classify can state incompleteness in the
-   dispatch instruction — the answer may note other definitions exist.
+   result may still seed the menu. Ground truth (re-review v2-F1): the
+   client's first-100 cut is NONDETERMINISTIC (parallel traversal, no
+   sort), so at-cap questions vary run to run; measured survival held
+   29/30 runs (arm H). Honesty is carried by resolution 5's read-time
+   confirmation plus a DETERMINISTIC truncation hedge: whenever the
+   block is truncation-marked (the wire's suffix/footer/metadata signals
+   or the serve's 50-line post-filter cap), the grounded dispatch
+   instruction appends a fixed sentence directing the answer to note
+   that the search was cut and other definitions may exist. The hedge is
+   composed classify-side, never left to seat discretion, and a corpus
+   test pins it (re-review v2-F3).
 4. **The pick is its own guarded node (closes F2).** `defer_pick` does
    NOT ride the needs_decider empty-target convention (that would fire
    the seat-routing decide node with a static prompt and a foreign
@@ -70,6 +87,11 @@ post-client-cut menu **8/8** workspace battery questions (raw volumes
    shape/form_gate (new pass-through field). Off-menu, abstain, or an
    unreadable pick response → conceptual fall-through (today's
    behavior). The decide node is untouched; `task` stays the clean turn.
+   The defer_pick CHAIN row carries the non-empty target `explainer`
+   (re-review v2-F4: an empty target would silently mint needs_decider
+   and fire the seat-routing decide node); resolve upgrades it to
+   `need-files` on a valid pick, so the fail-open default is the
+   conceptual explainer by construction.
 5. **Deterministic pass-4 re-grounding + AST def confirmation (closes
    F2's oscillation and F5's forged def-lines).** classify never learns
    the pick from the wire; on the read-continuation pass it re-derives
@@ -87,16 +109,22 @@ post-client-cut menu **8/8** workspace battery questions (raw volumes
    none survive the turn refuses honestly (not-grounded with the
    mismatch reason). Unparseable read content (a broken .py) refuses
    rather than grounds.
-6. **Menu build (deterministic, from the rendered block alone).** Parse
-   each rendered def-line: extract the defined identifier (the token
-   after `def `/`class `, or the assignment target), keep lines from
-   non-test non-docs `.py` files, require the identifier to CONTAIN a
-   question stem (case-insensitive, matching the wire pattern's
-   semantics — F9), and admit identifiers with exactly ONE def-site file
-   among the rendered lines. Cap 10, first-occurrence order (the rarity
-   ranking stays a named untuned lever). Path tokens never enter: the
-   identifier is parsed from the def-line's code span, not the
-   `path: Line N:` prefix (F11). Empty menu → conceptual fall-through.
+6. **Menu build (deterministic, from the rendered block alone).** The
+   SEARCH SURFACE is defined here, serve-side and deterministic
+   (re-review v2-F1): drop every result path containing a hidden
+   component (`.claude/` worktrees, `.venv`, any dot-dir) — except paths
+   rooted at `.llm-orc/`, kept iff `serving.self_reference` is on; then
+   keep non-test, non-docs `.py` only. From the surviving rendered
+   def-lines: extract the defined identifier (the token after
+   `def `/`class `, or the assignment target — the code span, never the
+   `path: Line N:` prefix, F11), require it to CONTAIN a question stem
+   (case-insensitive, matching the wire pattern — F9), and admit
+   identifiers with exactly ONE def-site file. The menu is bounded by
+   the block itself, NOT an artificial cap: ground-truth menus run
+   12–58 entries and the pick measured BETTER at that size (27/30, arm
+   I) than on the artificial 10-entry menus (19/30, arm F); the rarity
+   ranking stays a named untuned lever. Empty menu → conceptual
+   fall-through.
 7. **Grep/glob discrimination (closes F4).** The caller's grep tool
    calls always carry `include`, and `_is_grep_shaped` (pattern +
    include, no filePath/command) is checked BEFORE `_is_glob_shaped`
@@ -145,6 +173,19 @@ client rounds.
   (suffix-truncated, footer-truncated, `No files found`) normalize
   correctly; blank-line file groups survive. Instruments:
   crafted-result tests per variant.
+- **Surface determinism:** hidden-component paths never enter menus;
+  `.llm-orc` paths enter iff the flag is on. Instruments: crafted
+  results carrying `.claude/worktrees/...` and `.llm-orc/...` paths,
+  flag-on and flag-off.
+- **AST definition semantics:** FunctionDef, ClassDef, module-level
+  Assign AND AnnAssign targets count as definitions at confirmation
+  time (the wire pattern's assignment shape cannot match AnnAssign, so
+  such constants simply never enter menus — consistent, documented);
+  the read block body de-indents back to parseable source (round-trip
+  pin). Residual, documented: a forged def-line can still DENY a menu
+  entry (a liveness cost, never an honesty cost).
+- **Echo template:** accepts the `(?i)` prefix the case-insensitive
+  pattern carries.
 - **No re-pick:** the pick node runs at most once per turn.
   Instrument: corpus test asserting the read-continuation pass emits
   grounded/refusal, never defer_pick.
