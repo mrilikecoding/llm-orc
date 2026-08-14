@@ -3256,7 +3256,13 @@ def test_visible_menu_file_grounds_with_ast_confirmed_attribution() -> None:
         "  def _recall_ledger(entries):\n"
         "      return list(entries)"
     )
-    decision = _classify({"task": _GREP_QUESTION, "context": context})
+    decision = _classify(
+        {
+            "task": _GREP_QUESTION,
+            "context": context,
+            "read_paths": ["src/app/ledger.py"],
+        }
+    )
     assert decision["target"] == "explainer"
     assert decision["defer_pick"] is False
     assert (
@@ -3276,7 +3282,9 @@ def test_docstring_forged_def_line_refuses_instead_of_grounding() -> None:
         "  def _recall_ledger(entries):\n"
         '  """'
     )
-    decision = _classify({"task": _GREP_QUESTION, "context": context})
+    decision = _classify(
+        {"task": _GREP_QUESTION, "context": context, "read_paths": ["src/app/fake.py"]}
+    )
     assert decision["target"] == "not-grounded"
     assert "does not define" in decision["not_grounded_reason"]
 
@@ -3290,7 +3298,13 @@ def test_truncated_grep_block_appends_the_fixed_hedge() -> None:
         "  def _recall_ledger(entries):\n"
         "      return list(entries)"
     )
-    decision = _classify({"task": _GREP_QUESTION, "context": context})
+    decision = _classify(
+        {
+            "task": _GREP_QUESTION,
+            "context": context,
+            "read_paths": ["src/app/ledger.py"],
+        }
+    )
     assert decision["target"] == "explainer"
     assert "search was cut" in decision["dispatch_input"]
 
@@ -3302,7 +3316,13 @@ def test_attempted_menu_file_read_refuses_with_the_recorded_reason() -> None:
         "  src/app/ledger.py: Line 10: def _recall_ledger(entries):\n"
         "assistant: [read src/app/ledger.py (failed)] client read failed"
     )
-    decision = _classify({"task": _GREP_QUESTION, "context": context})
+    decision = _classify(
+        {
+            "task": _GREP_QUESTION,
+            "context": context,
+            "read_paths": ["src/app/ledger.py"],
+        }
+    )
     assert decision["needs_grep"] == ""
     assert decision["defer_pick"] is False
     assert "could not read src/app/ledger.py" in decision["read_failed"]
@@ -3319,7 +3339,11 @@ def test_client_truncated_read_refuses_with_the_cap_reason() -> None:
         "assistant: [read src/app/ledger.py (truncated)] client read cap"
     )
     decision = _classify(
-        {"task": "where is the recall ledger built?", "context": context}
+        {
+            "task": "where is the recall ledger built?",
+            "context": context,
+            "read_paths": ["src/app/ledger.py"],
+        }
     )
     assert decision["defer_pick"] is False
     assert "could not read src/app/ledger.py" in decision["read_failed"]
@@ -3341,22 +3365,34 @@ def test_truncated_grep_block_is_stripped_from_ungrounded_dispatch() -> None:
     assert "secret_module" not in decision["dispatch_input"]
 
 
-def test_grounding_keys_on_the_latest_read_never_menu_order() -> None:
-    # Review round 1 finding 2: a stale prior read of a DIFFERENT menu
-    # file must not preempt the pick's own (latest) read.
+def test_grounding_keys_on_this_turns_read_never_render_order() -> None:
+    # Review rounds 1-2 (finding 2 + blocker N1): grounding keys on the
+    # STRUCTURAL this-turn read signal (`read_paths`), never rendered-text
+    # order — a stale prior read of a different menu file must not
+    # preempt, and the render's first-occurrence order must not hide the
+    # pick's read.
     context = (
         f"{_COMPLETE_LISTING}\n"
+        "assistant: [read src/app/ledger.py]\n"
+        "  def _recall_ledger(entries):\n"
+        "      return list(entries)\n"
         "assistant: [read src/app/notes.py]\n"
         "  def _ledger_notes():\n"
         "      return 1\n"
         "assistant: [grepped recall,ledger,built]\n"
         "  src/app/notes.py: Line 1: def _ledger_notes():\n"
-        "  src/app/ledger.py: Line 10: def _recall_ledger(entries):\n"
-        "assistant: [read src/app/ledger.py]\n"
-        "  def _recall_ledger(entries):\n"
-        "      return list(entries)"
+        "  src/app/ledger.py: Line 10: def _recall_ledger(entries):"
     )
-    decision = _classify({"task": _GREP_QUESTION, "context": context})
+    # ledger.py renders FIRST (first-occurrence order) but is THIS turn's
+    # read; notes.py is a stale prior read rendering after it.
+    decision = _classify(
+        {
+            "task": _GREP_QUESTION,
+            "context": context,
+            "read_paths": ["src/app/ledger.py"],
+        }
+    )
+    assert decision["defer_pick"] is False
     assert decision["target"] == "explainer"
     assert (
         "The actual current content of src/app/ledger.py" in decision["dispatch_input"]
@@ -3364,10 +3400,35 @@ def test_grounding_keys_on_the_latest_read_never_menu_order() -> None:
     assert "_recall_ledger" in decision["dispatch_input"]
 
 
-def test_stale_failed_read_never_preempts_the_pick() -> None:
-    # Review round 1 finding 2c: a stale failed read of a menu file (not
-    # the latest read) must not turn the turn into a refusal — the pick
-    # defers as normal.
+def test_no_second_defer_pick_after_the_picks_read_lands() -> None:
+    # Round-2 blocker N1 pin (the F2-OSC shape): the picked file's read
+    # block renders EARLY (its first read predates another file's), yet
+    # the structural signal grounds it — never a second defer_pick.
+    context = (
+        f"{_COMPLETE_LISTING}\n"
+        "assistant: [read src/app/manifest.py]\n"
+        "  def _recall_manifest():\n"
+        "      return 1\n"
+        "assistant: [read src/app/notes.py]\n"
+        "  x = 1\n"
+        "assistant: [grepped recall,ledger,built]\n"
+        "  src/app/manifest.py: Line 1: def _recall_manifest():"
+    )
+    decision = _classify(
+        {
+            "task": _GREP_QUESTION,
+            "context": context,
+            "read_paths": ["src/app/manifest.py"],
+        }
+    )
+    assert decision["defer_pick"] is False
+    assert decision["target"] == "explainer"
+    assert "_recall_manifest" in decision["dispatch_input"]
+
+
+def test_stale_reads_never_preempt_or_bypass_the_pick() -> None:
+    # Rounds 1-2: stale visible AND stale failed reads of menu files are
+    # not this-turn reads — the pick defers as normal.
     context = (
         f"{_COMPLETE_LISTING}\n"
         "assistant: [read src/app/notes.py (failed)] client read failed\n"
@@ -3380,6 +3441,34 @@ def test_stale_failed_read_never_preempts_the_pick() -> None:
     decision = _classify({"task": _GREP_QUESTION, "context": context})
     assert decision["read_failed"] == ""
     assert decision["defer_pick"] is True
+
+
+def test_self_read_failure_keeps_the_self_wording_in_the_grep_phase(
+    self_scripts: Path,
+) -> None:
+    # Round-2 N2: a failed SERVER-side self read must not say "client".
+    context = (
+        f"{_COMPLETE_LISTING}\n"
+        "assistant: [grepped recall,ledger,built]\n"
+        "  .llm-orc/scripts/agentic_serving/ledger.py: Line 2:"
+        " def _ledger_of(e):\n"
+        "assistant: [read .llm-orc/scripts/agentic_serving/ledger.py (failed)]"
+        " not a serve-owned script"
+    )
+    decision = _classify_at(
+        self_scripts,
+        {
+            "task": _GREP_QUESTION,
+            "context": context,
+            "self_reference": True,
+            "read_paths": [".llm-orc/scripts/agentic_serving/ledger.py"],
+        },
+    )
+    assert (
+        "could not read .llm-orc/scripts/agentic_serving/ledger.py"
+        in (decision["read_failed"])
+    )
+    assert "client" not in decision["read_failed"]
 
 
 def test_empty_glob_result_still_fires_the_grep_round() -> None:
@@ -3402,7 +3491,13 @@ def test_untruncated_grounding_never_carries_the_hedge() -> None:
         "  def _recall_ledger(entries):\n"
         "      return list(entries)"
     )
-    decision = _classify({"task": _GREP_QUESTION, "context": context})
+    decision = _classify(
+        {
+            "task": _GREP_QUESTION,
+            "context": context,
+            "read_paths": ["src/app/ledger.py"],
+        }
+    )
     assert decision["target"] == "explainer"
     assert "search was cut" not in decision["dispatch_input"]
 
@@ -3416,7 +3511,13 @@ def test_grep_client_read_failure_keeps_the_client_wording() -> None:
         "  src/app/ledger.py: Line 10: def _recall_ledger(entries):\n"
         "assistant: [read src/app/ledger.py (failed)] Error: ENOENT"
     )
-    decision = _classify({"task": _GREP_QUESTION, "context": context})
+    decision = _classify(
+        {
+            "task": _GREP_QUESTION,
+            "context": context,
+            "read_paths": ["src/app/ledger.py"],
+        }
+    )
     assert "could not read src/app/ledger.py" in decision["read_failed"]
     assert "client read failed" in decision["read_failed"]
 
