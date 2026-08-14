@@ -190,3 +190,11 @@ def test_grep_blocks_map_this_turn_results() -> None:
     assert len(blocks) == 1
     assert blocks[0].startswith("assistant: [grepped recall]")
     assert "a.py: Line 3: def recall_x():" in blocks[0]
+
+
+def test_echo_suffix_smuggle_is_rejected() -> None:
+    # Review round 1 finding 5: the reconstruct-and-compare must reject a
+    # template-prefixed echo with a smuggled suffix.
+    issued = _wire("recall")
+    block = _render_grep_block(issued + "|.*", "Found 0", _ROOT)
+    assert block.startswith("assistant: [grepped untrusted-stem (failed)]")

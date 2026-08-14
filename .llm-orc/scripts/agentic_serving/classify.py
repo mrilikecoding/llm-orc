@@ -1100,9 +1100,15 @@ def _grep_surface_ok(path: str, self_reference: bool) -> bool:
     ``.llm-orc/scripts/agentic_serving/<basename>.py``, admitted iff the
     self-reference flag is on, so the flag-on surface and the native
     read seam admit the same set."""
+    if path.startswith("/") or "\\" in path:
+        # absolute or backslash rows are outside the deterministic
+        # relativized surface (review round 1 finding 8)
+        return False
     parts = path.split("/")
     name = parts[-1]
     if not name.endswith(".py") or name.startswith("test_"):
+        return False
+    if name.startswith("."):
         return False
     if parts[0] == "docs":
         return False
@@ -1187,18 +1193,45 @@ class _GrepPhase(NamedTuple):
     not_grounded_reason: str = ""
 
 
-def _grep_phase(context: str, task: str, stems: list[str], self_reference: bool) -> _GrepPhase:
+def _latest_read_path(context: str) -> tuple[str, str] | None:
+    """(path, variant) of the LATEST ``[read ...]`` header in the rendered
+    context, or ``None`` when no read has happened — the grep phase keys
+    its grounding on THIS (the pick's own, always latest) read, never on
+    menu-order iteration over every visible path (review round 1 finding
+    2: a stale prior read must neither bypass the pick nor preempt a
+    successful grounding with its old failure)."""
+    latest: tuple[str, str] | None = None
+    for match in _READ_ATTEMPT_RE.finditer(context):
+        latest = (match.group(1), match.group(3) or "")
+    return latest
+
+
+def _empty_glob_listing(context: str) -> bool:
+    """True when the turn's LATEST glob block is the render's exact
+    zero-match form — complete knowledge (nothing matched), not a client
+    error, so the grep round may fire (review round 1 finding 3)."""
+    last = ""
+    for line in context.splitlines():
+        if line.startswith("assistant: [globbed "):
+            last = line
+    return last.endswith("(failed)] empty glob result")
+
+
+def _grep_phase(
+    context: str, task: str, stems: list[str], self_reference: bool
+) -> _GrepPhase:
     """The #121 state machine over the rendered context: no grep block +
-    complete listing -> one grep round; block failed/empty menu ->
-    conceptual fall-through; menu + no read -> defer the pick; menu +
-    visible read -> AST-confirmed grounding; menu + failed read ->
-    honest refusal."""
+    complete (or complete-but-empty) listing -> one grep round; block
+    failed/empty menu -> conceptual fall-through; menu + latest read not
+    a menu file -> defer the pick; menu + latest read visible ->
+    AST-confirmed grounding; menu + latest read failed -> honest
+    refusal."""
     block = _latest_grep_block(context)
     if block is None:
         listing = _latest_glob_listing(context)
         complete = (
             listing is not None and not listing.truncated and bool(listing.paths)
-        )
+        ) or _empty_glob_listing(context)
         if complete:
             return _GrepPhase(needs_grep=",".join(stems))
         return _GrepPhase()
@@ -1207,9 +1240,10 @@ def _grep_phase(context: str, task: str, stems: list[str], self_reference: bool)
     menu = _grep_menu(block.rows, stems, self_reference)
     if not menu:
         return _GrepPhase()
-    visible, attempted = _visibility_paths(context)
-    for path in dict.fromkeys(menu.values()):
-        if path in visible:
+    latest = _latest_read_path(context)
+    if latest is not None and latest[0] in menu.values():
+        path, variant = latest
+        if not variant:
             body = _visible_path_body(context, path)
             names = _ast_defined_names(body) if body else None
             confirmed = [
@@ -1231,10 +1265,8 @@ def _grep_phase(context: str, task: str, stems: list[str], self_reference: bool)
                     f"{', '.join(attributed)}"
                 ),
             )
-        if path in attempted:
-            return _GrepPhase(
-                read_failed=f"could not read {path}: {attempted[path]}"
-            )
+        reason = _attempt_reason(variant, _visibility(context)[0])
+        return _GrepPhase(read_failed=f"could not read {path}: {reason}")
     lines = [f"- {identifier} ({menu[identifier]})" for identifier in menu]
     pick_input = (
         f"Question: {task}\n\n"
@@ -1938,9 +1970,15 @@ def _strip_truncated_glob_block(conversation: str) -> str:
     lines = conversation.splitlines()
     index = 0
     while index < len(lines):
-        if not lines[index].startswith("assistant: [globbed ") or not lines[
-            index
-        ].endswith(" (truncated)]"):
+        header = lines[index]
+        is_truncated_block = (
+            header.startswith("assistant: [globbed ")
+            # #121 (review round 1 finding 1, binding design resolution 8):
+            # a truncated grep block is the same coin-flip hazard in a
+            # free seat prompt as a truncated listing.
+            or header.startswith("assistant: [grepped ")
+        ) and header.endswith(" (truncated)]")
+        if not is_truncated_block:
             index += 1
             continue
         end = index + 1
