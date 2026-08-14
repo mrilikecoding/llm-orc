@@ -15,13 +15,15 @@ from pathlib import Path
 
 from llm_orc.core.session.messages import ChatMessage
 from llm_orc.web.serving.chunks import ClientToolCall
+from llm_orc.web.serving.grep_render import (
+    _grep_pattern,
+    _render_grep_block,
+)
 from llm_orc.web.serving.serving_ensemble_caller import (
     _grep_blocks,
-    _grep_pattern,
     _is_glob_shaped,
     _is_grep_shaped,
     _outcome_chunks,
-    _render_grep_block,
     _resumes_turn,
 )
 
