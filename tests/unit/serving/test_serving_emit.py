@@ -539,6 +539,11 @@ def test_routing_failed_refuses_with_the_plain_prefix_and_never_writes() -> None
             "accept_reason": "",
             "seat_admitted": None,
             "seat_contract_reason": "",
+            # Competing seam field (review finding 9): shape zeroes every
+            # seam field on the refusal path, so this state is only
+            # reachable through a drifted shape — the ordering pin makes
+            # "refuses FIRST" a tested property, not a comment.
+            "recall_answer": "a drifted shape left this behind",
             "routing_failed": reason,
         }
     )

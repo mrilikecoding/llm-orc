@@ -319,3 +319,22 @@ def test_needs_self_files_passes_through_shape() -> None:
         {"status": "ok", "primary": "Requesting self files."},
     )
     assert shaped["needs_self_files"] == [".llm-orc/scripts/agentic_serving/resolve.py"]
+
+
+def test_non_string_or_whitespace_target_refuses() -> None:
+    """Review finding 8: the gate demands a non-empty STRING target — a
+    drifted producer emitting a number, list, or whitespace target must
+    refuse, never ride the build default past the gate."""
+    for target in (5, ["code-seat"], "   "):
+        shaped = _shape_raw(
+            {
+                "resolve": {
+                    "response": json.dumps(
+                        {"target": target, "kind": "python_module", "build": True}
+                    )
+                },
+                "seat": {"response": "x = 1"},
+            }
+        )
+        assert shaped["build"] is False, f"target={target!r}"
+        assert shaped["routing_failed"], f"target={target!r}"
