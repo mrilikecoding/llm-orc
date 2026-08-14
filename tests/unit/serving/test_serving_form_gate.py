@@ -176,3 +176,19 @@ def test_needs_self_files_passes_through_form_gate() -> None:
         }
     )
     assert gated["needs_self_files"] == [".llm-orc/scripts/agentic_serving/resolve.py"]
+
+
+def test_routing_failed_passes_through_form_gate() -> None:
+    # #152 fail-closed routing: the refusal reason must survive to emit.
+    gated = _gate(
+        {
+            "build": False,
+            "file": "solution.py",
+            "content": "",
+            "routing_failed": "serving pipeline error: no readable routing decision",
+        }
+    )
+    assert gated["routing_failed"] == (
+        "serving pipeline error: no readable routing decision"
+    )
+    assert gated["valid"] is True
