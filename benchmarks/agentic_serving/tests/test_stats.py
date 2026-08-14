@@ -36,11 +36,11 @@ def test_wilson_at_zero_is_the_mirror_of_perfect() -> None:
 
 
 def test_wilson_rejects_impossible_counts() -> None:
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="impossible counts"):
         wilson_interval(14, 13)
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="impossible counts"):
         wilson_interval(-1, 13)
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="impossible counts"):
         wilson_interval(0, 0)
 
 
