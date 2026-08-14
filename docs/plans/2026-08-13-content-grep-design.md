@@ -82,9 +82,13 @@ grounding. The one survival miss was cut-variance on one at-cap question
    abstain". resolve validates the response by EXACT token membership in
    the menu (never `_decider_target`'s substring fallback — F10; the
    abstain sentinel is `none`, and a menu identifier literally named
-   `none` is excluded from menus at build time), then MINTS
-   `needs_files=[def_file]` and threads `picked: <identifier>` through
-   shape/form_gate (new pass-through field). Off-menu, abstain, or an
+   `none` is excluded from menus at build time), then MINTS the read for
+   the def-site file — `needs_self_files` when the path is
+   `.llm-orc/`-rooted (the #144 native seam: trusted disk bytes, no
+   wire-normalizer heuristics, so resolution 5's AST parse sees real
+   source — final-review change 1), `needs_files` otherwise — and
+   threads `picked: <identifier>` through shape/form_gate (new
+   pass-through field). Off-menu, abstain, or an
    unreadable pick response → conceptual fall-through (today's
    behavior). The decide node is untouched; `task` stays the clean turn.
    The defer_pick CHAIN row carries the non-empty target `explainer`
@@ -113,18 +117,26 @@ grounding. The one survival miss was cut-variance on one at-cap question
    SEARCH SURFACE is defined here, serve-side and deterministic
    (re-review v2-F1): drop every result path containing a hidden
    component (`.claude/` worktrees, `.venv`, any dot-dir) — except paths
-   rooted at `.llm-orc/`, kept iff `serving.self_reference` is on; then
-   keep non-test, non-docs `.py` only. From the surviving rendered
+   of the exact shape `.llm-orc/scripts/agentic_serving/<basename>.py`,
+   kept iff `serving.self_reference` is on (scoped to the #144
+   self-read label roots so the flag-on surface and the native read
+   seam admit the same set — final-review change 1); then keep
+   non-test, non-docs `.py` only. Result paths are RELATIVIZED against
+   the workspace root before rendering (the wire carries absolute
+   paths; relative lines halve the per-line charge and nearly double
+   the ceiling's line budget — final-review change 2). From the surviving rendered
    def-lines: extract the defined identifier (the token after
    `def `/`class `, or the assignment target — the code span, never the
    `path: Line N:` prefix, F11), require it to CONTAIN a question stem
    (case-insensitive, matching the wire pattern — F9), and admit
    identifiers with exactly ONE def-site file. The menu is bounded by
-   the block itself, NOT an artificial cap: ground-truth menus run
-   12–58 entries and the pick measured BETTER at that size (27/30, arm
-   I) than on the artificial 10-entry menus (19/30, arm F); the rarity
-   ranking stays a named untuned lever. Empty menu → conceptual
-   fall-through.
+   the block itself, NOT an artificial cap: under the strict production
+   render (relative paths, 50-line + 4,096-char caps) menus run 12–44
+   entries with right-file survival 28/30 runs (arm H-strict); the pick
+   measured 27/30 on menus of that size span (arm I, 12–58 pre-cap)
+   versus 19/30 on artificial 10-entry menus (arm D; arm F scored
+   21/30); the rarity ranking stays a named untuned lever. Empty menu →
+   conceptual fall-through.
 7. **Grep/glob discrimination (closes F4).** The caller's grep tool
    calls always carry `include`, and `_is_grep_shaped` (pattern +
    include, no filePath/command) is checked BEFORE `_is_glob_shaped`
@@ -198,7 +210,12 @@ TDD per the instruments; then live (RIG): "where is the recall ledger
 built?" through real OpenCode → glob (zero candidates) → grep → menu →
 pick → read `serving_ensemble_caller.py` → grounded answer attributing
 `_recall_ledger` (AST-confirmed); plus one abstain-shaped question and
-one truncated-result question. Ladder rerun + trajectory row +
+one truncated-result question. Rig-state note (final-review change 4):
+the gate question's under-cap determinism holds at the measured rig
+state — the client cut is pre-filter, so accumulated hidden-dir noise
+(future worktrees) can push it back over 100, where the nondeterministic
+cut and the truncation hedge take over honestly; the live record states
+the rig state it ran at. Ladder rerun + trajectory row +
 adversarial review with the wrong-accept hunt: does any turn ground a
 file that does not AST-define its attributed identifiers?
 
