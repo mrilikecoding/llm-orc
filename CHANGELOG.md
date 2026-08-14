@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.18.18] - 2026-08-14
+
+### Added
+- Offset-continuation reads (#153,
+  `docs/plans/2026-08-14-offset-reads-design.md`): a client-capped read
+  (OpenCode's 50KB/2000-line cap) now continues deterministically — the
+  serve emits the trailer-named offset read with no pipeline pass, and
+  the parts stitch back into the whole file under strict honesty rules:
+  a call-count termination bound with offset monotonicity, POSITIVE
+  completeness (the final part must carry the wire's own end-of-file
+  trailer and its total must equal the stitched line count — an
+  unrecognized cap variant refuses instead of rendering a corrupt
+  whole), and same-turn-segment parts only (stale parts from before an
+  on-disk edit can never mix in). 50–96KB files ground again;
+  live-validated by grounding the 80KB serving caller itself via a
+  2-part stitch — converting the #121 recorded coverage bound — with a
+  13/13 ladder regression row at zero dishonest flags.
+
 ## [0.18.17] - 2026-08-14
 
 ### Added
