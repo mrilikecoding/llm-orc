@@ -266,6 +266,14 @@ _LINE_NUM_GUTTER_RE = re.compile(r"^\s*\d+\| ?")
 # opening tag (nothing can precede it but <path>/<type>) and now extends
 # to the wrapper's real closing tag, wherever in the body it falls.
 _CONTENT_TAG_RE = re.compile(r"<content>(.*)</content>", re.DOTALL)
+# #121 live-gate discovery: OpenCode's read tool caps its output at 50KB
+# with this explicit trailer — INSIDE the serve's 96KB per-file cap, so a
+# 50-96KB file arrives complete-looking but half-shown. The trailer is
+# deterministic; a capped read renders as a refusing (truncated) variant,
+# never a whole-looking block (whole-file-or-refuse).
+_CLIENT_READ_CAP_RE = re.compile(
+    r"^\(Output capped at .+\. Showing lines \d+-\d+\..*\)$", re.MULTILINE
+)
 _END_OF_FILE_TRAILER_RE = re.compile(r"^\(End of file - total \d+ lines?\)$")
 _OPENCODE_GUTTER_RE = re.compile(r"^\d+: ?")
 
@@ -853,6 +861,11 @@ def _render_read_block(path: str, raw: str) -> tuple[str, bool]:
     flat = " ".join((raw or "").strip().split())
     if not flat:
         return f"assistant: [read {path} (failed)] empty read result", False
+    if _CLIENT_READ_CAP_RE.search(raw or ""):
+        return (
+            f"assistant: [read {path} (truncated)] client read cap",
+            False,
+        )
     if "<content>" not in raw:
         lowered = flat.lower()
         if lowered.startswith("file not found") or lowered.startswith("error"):

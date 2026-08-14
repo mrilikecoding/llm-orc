@@ -3303,3 +3303,22 @@ def test_attempted_menu_file_read_refuses_with_the_recorded_reason() -> None:
     assert decision["needs_grep"] == ""
     assert decision["defer_pick"] is False
     assert "could not read src/app/ledger.py" in decision["read_failed"]
+
+
+def test_client_truncated_read_refuses_with_the_cap_reason() -> None:
+    # #121 live-gate discovery: a client-capped read must refuse honestly
+    # (attempted, never visible, never re-requested) with the cap named.
+    context = (
+        f"{_GREP_QUESTION and ''}"
+        "assistant: [globbed recall,ledger,built]\n  /work/notes_util.py\n"
+        "assistant: [grepped recall,ledger,built]\n"
+        "  src/app/ledger.py: Line 10: def _recall_ledger(entries):\n"
+        "assistant: [read src/app/ledger.py (truncated)] client read cap"
+    )
+    decision = _classify(
+        {"task": "where is the recall ledger built?", "context": context}
+    )
+    assert decision["defer_pick"] is False
+    assert "could not read src/app/ledger.py" in decision["read_failed"]
+    assert "client" in decision["read_failed"]
+    assert "truncated" in decision["read_failed"]

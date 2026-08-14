@@ -299,3 +299,26 @@ def test_embedded_nul_label_refuses_instead_of_raising(project: Path) -> None:
     )
     assert not is_full
     assert "(failed)" in block
+
+
+# --- client read-cap truncation (#121 live-gate discovery) -------------------
+
+
+def test_client_capped_read_renders_the_truncated_variant() -> None:
+    # Live discovery (#121 gate 1 run 2): OpenCode's read tool caps output
+    # at 50KB with an explicit trailer, INSIDE the serve's 96KB window — a
+    # 50-96KB file arrived complete-looking but half-shown, and only the
+    # AST guard caught it. The trailer is deterministic: render the read
+    # as a refusing (truncated) variant, never a whole-looking block.
+    from llm_orc.web.serving.serving_ensemble_caller import _render_read_block
+
+    raw = (
+        "<path>/w/big.py</path>\n<type>file</type>\n<content>\n"
+        "1: def head(): pass\n"
+        "\n(Output capped at 50 KB. Showing lines 1-1104. "
+        "Use offset=1105 to continue.)\n</content>"
+    )
+    block, is_full = _render_read_block("/w/big.py", raw)
+    assert not is_full
+    assert block.startswith("assistant: [read /w/big.py (truncated)]")
+    assert "def head" not in block
