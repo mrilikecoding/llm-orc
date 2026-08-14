@@ -226,6 +226,8 @@ def test_chain_explain_row_order_is_recall_notgrounded_defer_glob_files_explaine
         "need-glob",
         "need-files",
         "need-self-files",  # #144: before the explainer, after the client seams
+        "need-grep",  # #121: the content-grep round for the fall-through
+        "explainer",  # #121 defer-pick row: fail-open target, resolve upgrades
         "explainer",
     ]
 
@@ -407,3 +409,33 @@ def test_advance_reports_the_decider_step_index() -> None:
     decision = _advance(_SignalBundle(**_DEFAULTS))
     assert decision.chain == "decider"
     assert decision.step_index == 0
+
+
+def test_explain_needs_grep_routes_to_the_grep_round() -> None:
+    # #121 content-grep: one def-anchored grep round for the explain
+    # fall-through residue.
+    assert _decide(is_explain=True, needs_grep="recall,ledger,built") == (
+        "need-grep",
+        "need_grep",
+        False,
+        False,
+    )
+
+
+def test_defer_pick_keeps_the_fail_open_explainer_target() -> None:
+    # #121 final-review change 5: defer_pick must NOT ride the empty-target
+    # needs_decider convention — its row carries the explainer target and
+    # resolve upgrades it on a valid pick.
+    assert _decide(is_explain=True, defer_pick=True) == (
+        "explainer",
+        "explanation",
+        False,
+        False,
+    )
+
+
+def test_grep_signals_never_fire_off_the_explain_chain() -> None:
+    decision = _advance(
+        _SignalBundle(**{**_DEFAULTS, "needs_grep": "recall", "defer_pick": True})
+    )
+    assert decision.needs_decider is True
