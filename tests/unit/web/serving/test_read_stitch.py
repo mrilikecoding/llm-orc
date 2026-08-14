@@ -339,3 +339,149 @@ def test_wire_regexes_never_drift_from_the_single_read_normalizer() -> None:
         read_stitch._END_OF_FILE_TRAILER_RE.pattern,
         read_stitch._END_OF_FILE_TRAILER_RE.pattern.replace("(\\d+)", "\\d+"),
     )
+
+
+# --- review round 1 pins ----------------------------------------------------
+
+
+def test_reread_path_keeps_its_first_occurrence_budget_position() -> None:
+    # Review finding 1: the budget accumulator's first-read-wins invariant
+    # keys on insertion order — a re-read path must keep its ORIGINAL
+    # position, never jump to its latest segment's slot.
+    from llm_orc.web.serving.serving_ensemble_caller import _read_blocks
+
+    read_a1 = _wire_part(["A1 = 1"], 1, "(End of file - total 1 lines)")
+    read_b = _wire_part(["B1 = 1"], 1, "(End of file - total 1 lines)")
+    read_a2 = _wire_part(["A2 = 2"], 1, "(End of file - total 1 lines)")
+    messages = [
+        ChatMessage(role="user", content="read /w/a.py"),
+        ChatMessage(
+            role="assistant", content=None, tool_calls=(_read_call("c1", "/w/a.py"),)
+        ),
+        ChatMessage(role="tool", tool_call_id="c1", content=read_a1),
+        ChatMessage(role="user", content="read /w/b.py"),
+        ChatMessage(
+            role="assistant", content=None, tool_calls=(_read_call("c2", "/w/b.py"),)
+        ),
+        ChatMessage(role="tool", tool_call_id="c2", content=read_b),
+        ChatMessage(role="user", content="read /w/a.py again"),
+        ChatMessage(
+            role="assistant", content=None, tool_calls=(_read_call("c3", "/w/a.py"),)
+        ),
+        ChatMessage(role="tool", tool_call_id="c3", content=read_a2),
+    ]
+    blocks = _read_blocks(messages)
+    paths = [path for path, _block, _full in blocks]
+    assert paths == ["/w/a.py", "/w/b.py"]
+    assert "A2 = 2" in blocks[0][1]  # latest content, original position
+
+
+def test_lone_offset_part_never_renders_as_the_whole() -> None:
+    # Review finding 2: a single part read at offset > 1 is a PARTIAL
+    # file — whole-or-refuse through the stitcher, never the fast path.
+    from llm_orc.web.serving.serving_ensemble_caller import _read_blocks
+
+    part2 = _wire_part(["l4 = 4", "l5 = 5"], 4, "(End of file - total 5 lines)")
+    messages = [
+        ChatMessage(role="user", content="continue reading /w/big.py"),
+        ChatMessage(
+            role="assistant",
+            content=None,
+            tool_calls=(_read_call("c1", "/w/big.py", offset=4),),
+        ),
+        ChatMessage(role="tool", tool_call_id="c1", content=part2),
+    ]
+    blocks = _read_blocks(messages)
+    assert len(blocks) == 1
+    _path, block, is_full = blocks[0]
+    assert not is_full
+    assert "(truncated)" in block
+    assert "l4 = 4" not in block
+
+
+def test_cross_segment_offset_parts_never_stitch_into_a_corrupt_whole() -> None:
+    # Review finding 3 (the mutation-killing pin): a turn-1 capped part 1
+    # of VERSION A and a later-turn offset part 2 of VERSION B must never
+    # stitch; the render refuses. Only dropping segment isolation would
+    # merge them (offsets 1 and 3 — the latest-per-offset dedup cannot
+    # rescue a mutant here).
+    part1_a = _wire_part(
+        ["A1 = 1", "A2 = 2"],
+        1,
+        "(Output capped at 50 KB. Showing lines 1-2. Use offset=3 to continue.)",
+    )
+    part2_b = _wire_part(["B3 = 3"], 3, "(End of file - total 3 lines)")
+    messages = [
+        ChatMessage(role="user", content="read /w/big.py"),
+        ChatMessage(
+            role="assistant", content=None, tool_calls=(_read_call("c1", "/w/big.py"),)
+        ),
+        ChatMessage(role="tool", tool_call_id="c1", content=part1_a),
+        ChatMessage(role="user", content="continue"),
+        ChatMessage(
+            role="assistant",
+            content=None,
+            tool_calls=(_read_call("c2", "/w/big.py", offset=3),),
+        ),
+        ChatMessage(role="tool", tool_call_id="c2", content=part2_b),
+    ]
+    rendered = _render_context(messages)
+    assert "A1 = 1" not in rendered
+    assert "B3 = 3" not in rendered
+    assert "assistant: [read /w/big.py (truncated)]" in rendered
+
+
+def test_monotonicity_refuses_an_honest_repeated_window() -> None:
+    # Review finding 4: the isolating fixture — showing-start MATCHES the
+    # requested offset, so only the monotonicity guard refuses.
+    messages = _capped_turn(
+        6,
+        "(Output capped at 50 KB. Showing lines 6-10. Use offset=6 to continue.)",
+    )
+    assert _read_continuation(messages) is None
+
+
+def test_stitched_render_is_byte_identical_to_the_single_render() -> None:
+    # Review finding 5: blank lines must follow _indent_body's rule
+    # (whitespace-only renders empty) so projection parity holds.
+    from llm_orc.web.serving.read_stitch import _render_stitched_read_block
+    from llm_orc.web.serving.serving_ensemble_caller import _render_read_block
+
+    lines = ["def f():", "", "    return 1", ""]
+    single = _wire_part(lines, 1, "(End of file - total 4 lines)")
+    single_block, single_full = _render_read_block("/w/f.py", single)
+    stitched_block, stitched_full = _render_stitched_read_block(
+        "/w/f.py", "\n".join(lines).rstrip("\n")
+    )
+    assert single_full
+    assert stitched_full
+    # normalize_read strips trailing blanks; compare up to that rule
+    assert stitched_block.rstrip() == single_block.rstrip()
+
+
+def test_duplicate_read_shape_agrees_with_the_caller() -> None:
+    # Review finding 6: the leaf duplicate must accept exactly what the
+    # caller's read shape accepts (filePath, no content — command is NOT
+    # excluded by the caller and must not be here either).
+    import json as _json
+
+    from llm_orc.web.serving.read_stitch import _parsed_read_arguments
+    from llm_orc.web.serving.serving_ensemble_caller import _is_read_shaped
+
+    shapes: list[dict[str, object]] = [
+        {"filePath": "a.py"},
+        {"filePath": "a.py", "offset": 5},
+        {"filePath": "a.py", "command": "cat"},
+        {"filePath": "a.py", "content": "x"},
+        {"filePath": ""},
+        {"pattern": "**/*x*"},
+    ]
+    for arguments in shapes:
+        call = {
+            "id": "c1",
+            "type": "function",
+            "function": {"name": "read", "arguments": _json.dumps(arguments)},
+        }
+        leaf_accepts = _parsed_read_arguments(call) is not None
+        caller_accepts = _is_read_shaped(dict(arguments))
+        assert leaf_accepts == caller_accepts, arguments

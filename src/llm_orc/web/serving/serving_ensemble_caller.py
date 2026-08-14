@@ -880,12 +880,27 @@ def _read_blocks(messages: Sequence[Any]) -> list[tuple[str, str, bool]]:
     cap-trailed goes through the stitcher, whole-or-refuse."""
     groups, order = _read_part_groups(messages)
     latest_segment = {path: seg for (seg, path) in order}
+    # First-occurrence-of-PATH order (review round 1 finding 1): the
+    # budget accumulator's first-read-wins invariant keys on insertion
+    # order, so a re-read path must keep its ORIGINAL position — never
+    # jump to its latest segment's position and flap the accept/refuse
+    # split turn to turn.
+    path_order: list[str] = []
+    for _seg, path in order:
+        if path not in path_order:
+            path_order.append(path)
     blocks: list[tuple[str, str, bool]] = []
-    for seg, path in order:
-        if latest_segment[path] != seg:
-            continue
+    for path in path_order:
+        seg = latest_segment[path]
         parts = groups[(seg, path)]
-        if len(parts) == 1 and parse_cap_trailer(parts[0][1]) is None:
+        # The fast path requires offset 1 (review round 1 finding 2): a
+        # LONE offset-part is a partial file and must go whole-or-refuse
+        # through the stitcher, never render as the whole.
+        if (
+            len(parts) == 1
+            and parts[0][0] <= 1
+            and parse_cap_trailer(parts[0][1]) is None
+        ):
             block, is_full = _render_read_block(path, parts[0][1])
             blocks.append((path, block, is_full))
             continue
@@ -1608,7 +1623,9 @@ class ServingEnsembleCaller:
             # pipeline pass, no model call; the emission is trace-
             # accounted (design v1.1, pre-flight major 4).
             path, offset = continuation
-            emit_read_continuation_trace(self._trace_root, path, offset)
+            await asyncio.to_thread(
+                emit_read_continuation_trace, self._trace_root, path, offset
+            )
             invocation = ToolCallInvocation(
                 id=f"call_{uuid.uuid4().hex[:8]}",
                 name=_client_tool(context.tools, _READ_TOOL_CANDIDATES, _READ_TOOL),

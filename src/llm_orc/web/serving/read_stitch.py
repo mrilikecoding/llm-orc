@@ -142,9 +142,7 @@ def _parsed_read_arguments(call: Any) -> dict[str, Any] | None:
         return None
     if not isinstance(arguments, dict):
         return None
-    if not arguments.get("filePath") or "command" in arguments:
-        return None
-    if "content" in arguments:
+    if not arguments.get("filePath") or "content" in arguments:
         return None
     return arguments
 
@@ -256,5 +254,7 @@ def _render_stitched_read_block(path: str, stitched: str) -> tuple[str, bool]:
         return f"assistant: [read {path} (failed)] empty read result", False
     if len(stitched) > _READ_FILE_CAP:
         return f"assistant: [read {path} (oversize)]", False
-    body = "\n".join(f"  {line}" for line in stitched.splitlines())
+    body = "\n".join(
+        f"  {line}" if line.strip() else "" for line in stitched.splitlines()
+    )
     return f"assistant: [read {path}]\n{body}", True
