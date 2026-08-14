@@ -48,7 +48,12 @@ def _readable_decision(dep: object) -> dict | None:
         parsed = json.loads(_response(dep))
     except json.JSONDecodeError:
         return None
-    if not isinstance(parsed, dict) or not parsed.get("target"):
+    if not isinstance(parsed, dict):
+        return None
+    target = parsed.get("target")
+    # non-empty STRING, not merely truthy (review finding 8): a drifted
+    # producer emitting a number/list/whitespace target must not route.
+    if not isinstance(target, str) or not target.strip():
         return None
     if "build" not in parsed and "kind" not in parsed:
         return None
