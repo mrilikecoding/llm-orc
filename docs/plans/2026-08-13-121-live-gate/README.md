@@ -53,3 +53,13 @@ wording: "Refused: could not read …: the client truncated the read
 
 Zero fabrication in every run; every grounded claim spot-checked
 against the real file content.
+
+## Post-review-round-2 re-validation (`gate-truncation-postfix.jsonl`)
+
+After the round-2 fixes (the structural `read_paths` grounding signal
+that killed the re-pick livelock, plus the grep_render extraction that
+restored the caller's budget headroom), the grounded gate re-passes
+live on the rebuilt serve: glob → grep → pick → read
+`src/llm_orc/web/serving/turn_trace.py` → grounded answer citing the
+real mechanism (`projected_tokens_v2` pre-flight estimation checked
+against actual usage metrics). One run, first try.
