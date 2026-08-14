@@ -1134,6 +1134,28 @@ def _write_count_this_turn(messages: Sequence[Any]) -> int:
     )
 
 
+def _read_paths_this_turn(messages: Sequence[Any]) -> list[str]:
+    """The filePaths of THIS turn's read tool_calls, in wire order.
+
+    Structural by construction (post-boundary tool_calls, never rendered
+    context text — the ``_wrote_path_this_turn`` precedent). #121 review
+    round 2 blocker N1: the grep phase grounds on menu ∩ this-turn reads;
+    rendered-text order is first-occurrence with in-place updates, so
+    "the last rendered header" is NOT the chronologically latest read and
+    keying on it livelocked the pick."""
+    items = list(messages)
+    boundary = _latest_user_index(items)
+    paths: list[str] = []
+    for message in items[boundary + 1 :]:
+        for call in getattr(message, "tool_calls", ()) or ():
+            arguments = _parsed_arguments(call)
+            if arguments is not None and _is_read_shaped(arguments):
+                path = str(arguments.get("filePath", ""))
+                if path and path not in paths:
+                    paths.append(path)
+    return paths
+
+
 def _tool_result_ack(messages: Sequence[Any]) -> str | None:
     """A short acknowledgment when the call is a tool-result continuation.
 
@@ -1577,6 +1599,7 @@ class ServingEnsembleCaller:
                 recall_ledger=_recall_ledger(context.messages, reject_prefixes),
                 previous_ask=_previous_ask(context.messages, reject_prefixes),
                 self_read_round=round_index,
+                read_paths=_read_paths_this_turn(context.messages) + list(self_reads),
             )
             requested = _self_read_requests(outcome)
             if not requested:
@@ -1599,6 +1622,7 @@ class ServingEnsembleCaller:
         recall_ledger: list[dict[str, Any]] | None = None,
         previous_ask: dict[str, str] | None = None,
         self_read_round: int = 0,
+        read_paths: list[str] | None = None,
     ) -> dict[str, Any]:
         config = self._load_config()
         executor = ExecutorFactory.create_root_executor(project_dir=self._project_dir)
@@ -1618,6 +1642,10 @@ class ServingEnsembleCaller:
                     # classify (a standalone script) can gate serve-owned
                     # discovery without a cross-boundary import.
                     "self_reference": self._self_reference_enabled(),
+                    # #121 round-2 blocker N1: THIS turn's read paths
+                    # (client tool_calls + native self reads), the
+                    # structural signal the grep phase grounds on.
+                    "read_paths": read_paths or [],
                 }
             ),
         )

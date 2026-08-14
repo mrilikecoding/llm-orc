@@ -1193,17 +1193,15 @@ class _GrepPhase(NamedTuple):
     not_grounded_reason: str = ""
 
 
-def _latest_read_path(context: str) -> tuple[str, str] | None:
-    """(path, variant) of the LATEST ``[read ...]`` header in the rendered
-    context, or ``None`` when no read has happened — the grep phase keys
-    its grounding on THIS (the pick's own, always latest) read, never on
-    menu-order iteration over every visible path (review round 1 finding
-    2: a stale prior read must neither bypass the pick nor preempt a
-    successful grounding with its old failure)."""
-    latest: tuple[str, str] | None = None
+def _read_variant(context: str, path: str) -> str | None:
+    """The rendered variant of ``path``'s LAST ``[read ...]`` header ("" =
+    whole body visible), or ``None`` when no block for that exact path
+    exists. Full-path keyed."""
+    variant: str | None = None
     for match in _READ_ATTEMPT_RE.finditer(context):
-        latest = (match.group(1), match.group(3) or "")
-    return latest
+        if match.group(1) == path:
+            variant = match.group(3) or ""
+    return variant
 
 
 def _empty_glob_listing(context: str) -> bool:
@@ -1218,14 +1216,25 @@ def _empty_glob_listing(context: str) -> bool:
 
 
 def _grep_phase(
-    context: str, task: str, stems: list[str], self_reference: bool
+    context: str,
+    task: str,
+    stems: list[str],
+    self_reference: bool,
+    turn_reads: list[str],
 ) -> _GrepPhase:
     """The #121 state machine over the rendered context: no grep block +
     complete (or complete-but-empty) listing -> one grep round; block
-    failed/empty menu -> conceptual fall-through; menu + latest read not
-    a menu file -> defer the pick; menu + latest read visible ->
-    AST-confirmed grounding; menu + latest read failed -> honest
-    refusal."""
+    failed/empty menu -> conceptual fall-through; no THIS-TURN read of a
+    menu file -> defer the pick; this-turn read visible -> AST-confirmed
+    grounding; this-turn read failed -> honest refusal.
+
+    Grounding keys on ``turn_reads`` — the caller's STRUCTURAL record of
+    this turn's read tool_calls and native self reads (review round 2
+    blocker N1: rendered-text order is first-occurrence with in-place
+    updates, so "the last rendered header" is not the latest read, and
+    keying on it livelocked the pick; a stale prior-turn read is never a
+    this-turn read, so it can neither bypass the pick nor preempt a
+    grounding with its old failure)."""
     block = _latest_grep_block(context)
     if block is None:
         listing = _latest_glob_listing(context)
@@ -1240,9 +1249,12 @@ def _grep_phase(
     menu = _grep_menu(block.rows, stems, self_reference)
     if not menu:
         return _GrepPhase()
-    latest = _latest_read_path(context)
-    if latest is not None and latest[0] in menu.values():
-        path, variant = latest
+    for path in turn_reads:
+        if path not in menu.values():
+            continue
+        variant = _read_variant(context, path)
+        if variant is None:
+            continue
         if not variant:
             body = _visible_path_body(context, path)
             names = _ast_defined_names(body) if body else None
@@ -1265,7 +1277,12 @@ def _grep_phase(
                     f"{', '.join(attributed)}"
                 ),
             )
-        reason = _attempt_reason(variant, _visibility(context)[0])
+        # Round-2 N2: a native self read never involved the client.
+        reason = _attempt_reason(
+            variant,
+            _visibility(context)[0],
+            client=not path.startswith(".llm-orc/"),
+        )
         return _GrepPhase(read_failed=f"could not read {path}: {reason}")
     lines = [f"- {identifier} ({menu[identifier]})" for identifier in menu]
     pick_input = (
@@ -2209,7 +2226,14 @@ def main() -> None:
         and not read_failed
         and not needs_self_files
     ):
-        phase = _grep_phase(conversation_raw, task, explain_stems, self_reference)
+        turn_reads = [
+            str(path)
+            for path in (turn.get("read_paths") or [])
+            if isinstance(path, str) and path
+        ]
+        phase = _grep_phase(
+            conversation_raw, task, explain_stems, self_reference, turn_reads
+        )
         needs_grep = phase.needs_grep
         defer_pick = phase.defer_pick
         pick_input = phase.pick_input
