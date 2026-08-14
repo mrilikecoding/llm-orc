@@ -13,13 +13,11 @@ import json
 from llm_orc.core.session.messages import ChatMessage
 from llm_orc.web.serving.chunks import ClientToolCall
 from llm_orc.web.serving.read_stitch import (
+    _read_continuation,
     parse_cap_trailer,
     stitch_parts,
 )
-from llm_orc.web.serving.serving_ensemble_caller import (
-    _read_continuation,
-    _render_context,
-)
+from llm_orc.web.serving.serving_ensemble_caller import _render_context
 
 # The REAL captured trailer (gate-recall-ledger-run2.jsonl, 2026-08-13).
 _REAL_TRAILER = (
