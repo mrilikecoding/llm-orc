@@ -42,8 +42,15 @@ from llm_orc.web.serving.grep_render import (
     _grep_pattern,
     _render_grep_block,
 )
+from llm_orc.web.serving.read_stitch import (
+    parse_cap_trailer,
+    stitch_parts,
+)
 from llm_orc.web.serving.token_estimate import projected_tokens_v2
-from llm_orc.web.serving.turn_trace import emit_turn_trace
+from llm_orc.web.serving.turn_trace import (
+    emit_read_continuation_trace,
+    emit_turn_trace,
+)
 
 if TYPE_CHECKING:
     # A surviving ADR-013 container that still lives under agentic/ during the
@@ -188,6 +195,10 @@ _projected_tokens = projected_tokens_v2
 # in-process re-entry — the visible-or-attempted property already
 # terminates after one round; this is the deterministic backstop.
 _SELF_READ_MAX_ROUNDS = 3
+# #153 offset-continuation reads: at most this many read CALLS per
+# path per turn (the 96KB serve window needs 2 parts at the client's
+# 50KB cap; one spare).
+_READ_PART_BOUND = 3
 # The two label roots classify may emit (the real deployment carries a
 # .llm-orc path component; test fixtures root at the scripts tree). A label
 # must be one of these prefixes plus a bare basename — never a nested path.
@@ -859,21 +870,99 @@ def _render_read_block(path: str, raw: str) -> tuple[str, bool]:
     return f"assistant: [read {path}]\n{_indent_body(normalized)}", True
 
 
-def _read_blocks(messages: Sequence[Any]) -> list[tuple[str, str, bool]]:
-    """(path, block, is_full) for every tool result answering a read-shaped
-    call, in wire order. Selected from the FULL history: on the resume pass
-    the read result sits after the last user message."""
-    call_paths = _call_field_map(messages, _is_read_shaped, "filePath")
-    blocks: list[tuple[str, str, bool]] = []
+def _read_call_info(messages: Sequence[Any]) -> dict[str, tuple[str, int]]:
+    """tool_call_id -> (filePath, offset) for every read-shaped call; a
+    call without an ``offset`` param reads from line 1."""
+    info: dict[str, tuple[str, int]] = {}
     for message in messages:
+        for call in getattr(message, "tool_calls", ()) or ():
+            arguments = _parsed_arguments(call)
+            if (
+                arguments is not None
+                and _is_read_shaped(arguments)
+                and isinstance(call, dict)
+                and call.get("id")
+            ):
+                try:
+                    offset = int(arguments.get("offset", 1) or 1)
+                except (TypeError, ValueError):
+                    offset = 1
+                info[str(call["id"])] = (str(arguments["filePath"]), offset)
+    return info
+
+
+def _read_part_groups(
+    messages: Sequence[Any],
+) -> tuple[dict[tuple[int, str], list[tuple[int, str]]], list[tuple[int, str]]]:
+    """Read results grouped per (turn segment, path) with their offsets,
+    plus first-occurrence order — a segment is the span between
+    consecutive user messages (#153 design v1.1: parts from different
+    segments never stitch)."""
+    call_info = _read_call_info(messages)
+    groups: dict[tuple[int, str], list[tuple[int, str]]] = {}
+    order: list[tuple[int, str]] = []
+    segment = 0
+    for message in messages:
+        content = getattr(message, "content", None)
+        if getattr(message, "role", None) == "user" and (content or "").strip():
+            segment += 1
+            continue
         if getattr(message, "role", None) != "tool":
             continue
-        path = call_paths.get(getattr(message, "tool_call_id", None) or "")
-        if path:
-            content = getattr(message, "content", None)
-            block, is_full = _render_read_block(path, content or "")
+        info = call_info.get(getattr(message, "tool_call_id", None) or "")
+        if not info:
+            continue
+        path, offset = info
+        key = (segment, path)
+        groups.setdefault(key, []).append((offset, content or ""))
+        if key not in order:
+            order.append(key)
+    return groups, order
+
+
+def _read_blocks(messages: Sequence[Any]) -> list[tuple[str, str, bool]]:
+    """(path, block, is_full) per path, from the FULL history. Multi-part
+    offset-continuation reads (#153) are grouped per TURN SEGMENT (the
+    span between consecutive user messages) and only the path's LATEST
+    segment renders — stale parts from an earlier turn can never stitch
+    with fresh ones after the file changed on disk (design v1.1,
+    pre-flight major 3). A single uncapped part keeps the existing
+    single-read render byte-identically; anything multi-part or
+    cap-trailed goes through the stitcher, whole-or-refuse."""
+    groups, order = _read_part_groups(messages)
+    latest_segment = {path: seg for (seg, path) in order}
+    blocks: list[tuple[str, str, bool]] = []
+    for seg, path in order:
+        if latest_segment[path] != seg:
+            continue
+        parts = groups[(seg, path)]
+        if len(parts) == 1 and parse_cap_trailer(parts[0][1]) is None:
+            block, is_full = _render_read_block(path, parts[0][1])
             blocks.append((path, block, is_full))
+            continue
+        stitched = stitch_parts(parts)
+        if stitched is None:
+            blocks.append(
+                (
+                    path,
+                    f"assistant: [read {path} (truncated)] client read cap",
+                    False,
+                )
+            )
+            continue
+        blocks.append((path, *_render_stitched_read_block(path, stitched)))
     return blocks
+
+
+def _render_stitched_read_block(path: str, stitched: str) -> tuple[str, bool]:
+    """A complete stitched source rendered through the read-block tail —
+    the per-file cap applies to the WHOLE, and the block enters the same
+    token-budget accounting as any single read (budget parity)."""
+    if not stitched.strip():
+        return f"assistant: [read {path} (failed)] empty read result", False
+    if len(stitched) > _READ_FILE_CAP:
+        return f"assistant: [read {path} (oversize)]", False
+    return f"assistant: [read {path}]\n{_indent_body(stitched)}", True
 
 
 def _render_run_block(command: str, raw: str) -> str:
@@ -1154,6 +1243,52 @@ def _read_paths_this_turn(messages: Sequence[Any]) -> list[str]:
                 if path and path not in paths:
                     paths.append(path)
     return paths
+
+
+def _read_continuation(messages: Sequence[Any]) -> tuple[str, int] | None:
+    """(path, offset) for the next offset-continuation read (#153), or
+    ``None``. THIS turn's read results only; for each path whose LAST
+    part carries the cap trailer: the READ CALL COUNT for the path this
+    turn must be under ``_READ_PART_BOUND`` (a call count, never a dict
+    keyed by offset — a non-conforming client repeating a window would
+    freeze that and spin, pre-flight blocker 1), the trailer's
+    continue-offset must exceed the part's own offset param
+    (monotonicity), and the trailer's showing-start must equal the
+    requested offset — any violation stops continuing so the render
+    refuses instead."""
+    items = list(messages)
+    boundary = _latest_user_index(items)
+    post_user = items[boundary + 1 :]
+    call_info = _read_call_info(post_user)
+    call_counts: dict[str, int] = {}
+    for _call_id, (path, _offset) in call_info.items():
+        call_counts[path] = call_counts.get(path, 0) + 1
+    last_part: dict[str, tuple[int, str]] = {}
+    for message in post_user:
+        if getattr(message, "role", None) != "tool":
+            continue
+        info = call_info.get(getattr(message, "tool_call_id", None) or "")
+        if info:
+            path, offset = info
+            last_part[path] = (offset, getattr(message, "content", None) or "")
+    for path, (offset, raw) in last_part.items():
+        continuation = _continuation_offset(raw, offset, call_counts.get(path, 0))
+        if continuation is not None:
+            return path, continuation
+    return None
+
+
+def _continuation_offset(raw: str, offset: int, call_count: int) -> int | None:
+    """The validated continuation offset for one capped part, or ``None``:
+    under the call-count bound, monotonic (continue-offset > the part's
+    own offset), and showing-start equals the requested offset."""
+    cap = parse_cap_trailer(raw)
+    if cap is None or call_count >= _READ_PART_BOUND:
+        return None
+    showing_start, _showing_end, continue_offset = cap
+    if continue_offset <= offset or showing_start != offset:
+        return None
+    return continue_offset
 
 
 def _tool_result_ack(messages: Sequence[Any]) -> str | None:
@@ -1574,6 +1709,20 @@ class ServingEnsembleCaller:
         if not context.tools:
             yield ContentDelta(content=_aux_reply(context.messages))
             yield Completion(finish_reason="stop")
+            return
+        continuation = _read_continuation(context.messages)
+        if continuation is not None:
+            # #153: a capped read continues deterministically — no
+            # pipeline pass, no model call; the emission is trace-
+            # accounted (design v1.1, pre-flight major 4).
+            path, offset = continuation
+            emit_read_continuation_trace(self._trace_root, path, offset)
+            invocation = ToolCallInvocation(
+                id=f"call_{uuid.uuid4().hex[:8]}",
+                name=_client_tool(context.tools, _READ_TOOL_CANDIDATES, _READ_TOOL),
+                arguments=json.dumps({"filePath": path, "offset": offset}),
+            )
+            yield ClientToolCall(tool_calls=(invocation,))
             return
         ack = _tool_result_ack(context.messages)
         if ack is not None:

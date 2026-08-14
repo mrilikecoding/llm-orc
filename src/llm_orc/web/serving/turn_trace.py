@@ -391,3 +391,21 @@ def emit_turn_trace(
     except OSError:
         pass
     return trace
+
+
+def emit_read_continuation_trace(root: Path, path: str, offset: int) -> None:
+    """A model-free trace row for an offset-continuation read emission
+    (#153, design v1.1 pre-flight major 4): the continuation pass never
+    runs the pipeline, so without this row a multi-part stitched turn
+    would be invisible to the instruments. IO failures are swallowed,
+    same as ``emit_turn_trace``."""
+    row = {
+        "ensemble": "serving",
+        "read_continuation": {"path": path, "offset": offset},
+    }
+    try:
+        root.mkdir(parents=True, exist_ok=True)
+        with (root / "turns.jsonl").open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(row) + "\n")
+    except OSError:
+        pass
