@@ -79,7 +79,19 @@ false-positive family (#147). Versions differ across rows; do not pool.
 Caveats: parity table v1 (`docs/plans/2026-07-15-first-parity-table.md`)
 plus host-CLAUDE.md leakage observed on Arm-1 Sonnet runs (#141).
 
-**v0.18.17 released 2026-08-14** (PyPI + Homebrew): the #121
+**v0.18.18 released 2026-08-14** (PyPI + Homebrew): #153
+offset-continuation reads — client-capped reads continue at the
+trailer-named offset and stitch whole-or-refuse (call-count bound with
+offset monotonicity; POSITIVE end-of-file completeness with the total-N
+crosscheck; same-turn-segment parts). Live gate: the 80KB serving
+caller itself grounds via a 2-part stitch — the #121 coverage bound
+CONVERTED; run 9 regression row 13/13, 0 dishonest, oracle 2/0/1,
+fastest wall of the family, seam inert on the ladder. Two-round
+adversarial review (round 1: a budget first-read-wins ordering
+regression and a lone-offset-part wrong-accept, both fixed with
+mutation-verified pins) → APPROVE. Remaining on #153: the 2000-line-cap
+trailer wording (fails closed until captured), the per-line 2000-char
+silent truncation (#149 family). **v0.18.17 released 2026-08-14**: the #121
 content-grep rung, slice A — def-anchored one-round content search,
 deterministic identifier menu over verified definition sites, guarded
 closed-menu pick (abstention falls open), AST-verified grounding
@@ -235,7 +247,9 @@ dishonest outcome.
 - [x] #143 closed (honest miss; reopen rides #119) · #145 repo-scale reads merged+live · #148 #150 read-seam hardening
 - [x] #144 slice — serve-native dot-dir self-reference merged+live (grounded exit rides #106/#151/chunked reads)
 - [x] #121 slice A — content-grep rung merged+live (exit gate met; bounds ride #153)
-- [ ] #153 offset-continuation reads · #149 client-side truncation flank
+- [x] #153 offset reads merged+live (50–96KB grounding restored; the
+  #121 bound converted); remaining flanks recorded on the issue
+- [ ] #149 client-side truncation flank
 - [ ] #122 edit delegation · #123 multi-file · #124 command registry · #117 fix-completion tail
 
 ### epic:ws5-long-horizon
