@@ -1,4 +1,8 @@
-# Offset-continuation reads (#153) — design
+# Offset-continuation reads (#153) — design v1.1
+
+**Status:** v1.1 after reviewer pre-flight (PROCEED-WITH-CHANGES: 2
+blockers + 2 majors + minors, all folded in below; record in the session
+transcript and issue #153).
 
 **Goal:** restore whole-file grounding for 50–96KB files. OpenCode's read
 tool caps output at 50KB (and 2000 lines) with an explicit trailer naming
@@ -12,25 +16,43 @@ end to end.
 
 ## Mechanism (caller-side, deterministic, no classify changes)
 
-1. **Pre-pipeline continuation.** In `run()`, before the ack/pipeline
-   path: scan THIS turn's read results; if any path's LAST part carries
-   the cap trailer and that path's part count is under
-   `_READ_PART_BOUND = 3` (96/50 needs 2; one spare), emit the
-   continuation read (`filePath` + the trailer's `offset`) directly as a
-   ClientToolCall — no pipeline pass, no model call. The trailer parse
-   extends `_CLIENT_READ_CAP_RE` to capture `Use offset=(\d+)`.
-2. **Stitching at render.** `_read_blocks` groups read results per
-   (path, offset) over the full history (latest result per key, the
-   existing durability rule), normalizes EACH part (per-part gutter and
-   trailer strip), and stitches ascending by offset with a CONTIGUITY
-   check: each capped part's continuation offset must equal the next
-   part's `offset` param. A contiguous, complete stitch (final part
-   uncapped) renders through the normal read-block tail — the 96KB cap
-   and the token budget apply to the WHOLE (budget parity: a stitched
-   102KB classify.py still renders oversize; an over-budget stitch
-   renders over-budget). Gaps, an over-bound part count, or a still-
-   capped final part render today's refusing `(truncated)` variant —
-   fail closed, never a silently partial whole.
+1. **Pre-pipeline continuation.** In `run()`, AFTER the toolless gate
+   and before the ack/pipeline path: scan THIS turn's read results; if
+   any path's LAST part carries the cap trailer, emit the continuation
+   read (`filePath` + the trailer's `offset`) directly as a
+   ClientToolCall — no pipeline pass, no model call. **Termination
+   (pre-flight blocker 1):** the bound counts READ CALLS for the path
+   this turn (`_READ_PART_BOUND = 3`, from the wire's post-boundary
+   tool_calls — never a dict keyed by offset, which freezes when a
+   non-conforming client repeats the same offset), AND the trailer's
+   continue-offset must be strictly greater than the part's own offset
+   param, AND the trailer's "Showing lines X-Y" start must equal the
+   requested offset — any violation stops continuing and the render
+   refuses. Each continuation emission writes a model-free trace row
+   (path/offset/part index — pre-flight major 4, the #144
+   resolution-10 accounting class).
+2. **Stitching at render, same-turn-segment only (pre-flight major
+   3).** Parts are grouped per (turn segment, path) — a segment is the
+   span between consecutive user messages — and only the path's LATEST
+   segment stitches; parts from different segments never mix (a stale
+   part 1 from an earlier turn can never be concatenated with a fresh
+   part 2 after the file changed on disk, and an orphaned old key can
+   never wedge future stitches). Per-part normalization strips the cap
+   trailer BEFORE the gutter-uniformity check (pre-flight minor 5 —
+   the ungutted trailer line otherwise defeats the `all()` check and
+   leaves gutters on every line), then gutters, then the EOF trailer.
+   Contiguity: each capped part's continue-offset must equal the next
+   part's `offset` param. **Completeness is POSITIVE (pre-flight
+   blocker 2):** the final part must carry the wire's own
+   `(End of file - total N lines)` trailer AND N must equal the
+   stitched line count — never "no cap trailer seen" (an unrecognized
+   trailer variant, e.g. the unverified 2000-line-cap wording, or a
+   per-continuation-call line-capped part, then fails the EOF check
+   and refuses instead of rendering a corrupt whole). A complete
+   stitch renders through the normal read-block tail — the 96KB cap
+   and the token budget apply to the WHOLE. Gaps, over-bound,
+   monotonicity violations, or a failed completeness check render the
+   refusing `(truncated)` variant — fail closed.
 3. **Bound honesty.** The part bound is the deterministic backstop
    (the #144/`_SELF_READ_MAX_ROUNDS` pattern); bound-exceeded refuses
    with the existing client-cap reason. Self reads are untouched
@@ -62,10 +84,23 @@ ledger built?" grounds the 80KB caller end to end via a 2-part stitch
 (converting the #121 recorded bound), plus a battery row and the
 author-independent adversarial review.
 
+## Module home (pre-flight minor 7)
+
+The stitch/continuation code lands in a NEW module
+(`web/serving/read_stitch.py`), not the caller — the caller's own
+rendered block sits at ~32.3K projected tokens against the 35K budget
+(7.7% headroom) and this arc's code would consume most of it; the
+grep_render extraction is the precedent. The whale pin stays the
+instrument.
+
 ## Not built here
 
 The line-cap (2000-line) trailer variant's exact wording is unverified —
-the parser keys on the captured KB-cap trailer; if the live gate meets a
-different trailer for long-line-count files, it gets captured and added
-(instrument-preconditions discipline). Multi-file read fans and
-`max_rounds` generalization stay deferred.
+positive completeness makes that safe (an unrecognized cap fails the EOF
+check and refuses); if the live gate captures the wording it gets added.
+The schema's per-line 2000-char silent truncation carries NO trailer and
+the EOF/total-N check cannot catch it — recorded as an open #149-family
+flank, not solved here. Multi-file read fans and `max_rounds`
+generalization stay deferred; the truncated-write-then-reread interplay
+(pre-flight note 8b) is a pre-existing hazard to trace before any arc
+multiplies it.
