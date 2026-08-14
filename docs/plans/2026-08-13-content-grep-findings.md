@@ -62,3 +62,27 @@ Model arms use qwen3:8b — the deployed cheap-seat tier — via ollama,
   #148-style truncation semantics, #149 client-side-truncation flank).
 - Wire format is already captured
   (`2026-07-13-opencode-run-captures/grep-tool-result-wire-format.txt`).
+
+## Post-pre-flight addendum (arm G + cut-survival, 2026-08-13)
+
+The v1 design pre-flight returned REDESIGN (three blockers: mention-volume
+rendering made the rung a no-op — 145–3,212 lines vs a 50-line cap, 10/10
+battery over cap; the defer_pick wiring could not ride the decide node's
+clean-task input contract; the wire grammar was refuted by the actual
+opencode binary — 100-match client cap with the header count computed FROM
+the capped array, "No files found" for empty, suffix/footer truncation
+markers, blank-line file groups). New measurements for v2:
+
+- **Arm G (def-anchored two-shape pattern):** raw volumes drop to 60–286
+  lines (vs 3,212), right file present in the filtered menu 8/10 — the
+  two misses are the dot-dir questions (slice-B territory).
+- **Cut-survival:** taking only the FIRST 100 matches (the client's own
+  cap, rg walk order), the right file remains in the filtered menu
+  **8/8** workspace questions.
+- Ops note for spike reruns: rg inherits stdin; under a heredoc-driven
+  python it silently searches the exhausted stdin pipe and returns
+  nothing — pass stdin=DEVNULL (one measurement round was lost to this).
+
+v2 design: def-anchored pattern, wire grammar rebuilt from the binary,
+cut-tolerant menus with AST-verified read-time def confirmation carrying
+the honesty invariant, and the pick as its own guarded DAG node.

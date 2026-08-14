@@ -1,129 +1,167 @@
-# Content-grep meta-task rung (#121) — design
+# Content-grep meta-task rung (#121) — design v2
 
-**Slice A** (this design): the client-grep workspace surface — one grep
-round, a deterministic identifier menu, a guarded closed-menu pick, then
-the existing read→grounded-explain seam. **Slice B** (named, not built
-here): the serve-native half of the two-surface union (grep over the
-serve's own scripts, the #144 pattern) — spike arm F showed it recovers
-dot-dir questions, but #121's exit gate ("a content question about the
-llm-orc repo answered via grep → read, grounded and honest") passes on
-workspace files alone, so slice A ships first.
+**Status:** v2 after reviewer pre-flight (verdict on v1: REDESIGN — three
+blockers, all adjudicated below with new measurements; the pre-flight
+record is on issue #121 and in the session transcript). The doctrine-9
+composition survives from v1; the mechanism is rebuilt.
 
-**Evidence base:** `2026-08-13-content-grep-findings.md`. The issue's
-original direction (model proposes the pattern) is REFUTED (0/30 on the
-deployed seat — invented identifiers). What is validated: deterministic
-harvest → closed menu of REAL identifiers with definition-site files →
-cheap-seat pick with abstention → find-or-refuse ladder. 21/30 right at
-arm F, zero fabrication, zero off-menu; residual misses ground real
-adjacent files with honest attribution.
+**Slice A** (this design): the client-grep workspace surface. **Slice B**
+(named, not built): the serve-native half of the two-surface union (grep
+over the serve's own scripts, the #144 pattern) — the two battery
+questions whose subjects live under `.llm-orc` cannot ground in slice A
+and fall through conceptually, exactly as today.
+
+**Evidence base:** `2026-08-13-content-grep-findings.md` (spike arms
+A–G). Validated: deterministic harvest → closed menu of REAL identifiers
+with definition-site files → cheap-seat pick with abstention →
+find-or-refuse ladder (arm F: 21/30, zero fabrication). Refuted: model
+proposes the pattern (0/30); mention-volume rendering (pre-flight F1:
+145–3,212 match lines per battery question). New measurements for v2:
+the def-anchored two-shape pattern keeps the right file in the
+post-client-cut menu **8/8** workspace battery questions (raw volumes
+60–286, client cap 100, rg walk order — measured 2026-08-13).
+
+## Pre-flight resolutions (bind the mechanism)
+
+1. **Def-anchored wire pattern (closes F1).** The grep round matches
+   DEFINITION-shaped lines only, never mentions:
+   `^\s*(def|class)\s+[A-Za-z0-9_]*(stem1|…)[A-Za-z0-9_]*` alternated
+   with the module-level assignment shape
+   `^[A-Za-z_][A-Za-z0-9_]*(stem1|…)[A-Za-z0-9_]* *=`, case-insensitive,
+   `include: "*.py"`. Stems come from `_explain_stems` (charset-checked
+   by construction); `[A-Za-z0-9_]*` on BOTH sides of the alternation so
+   stem-initial identifiers match (F8), and the whole pattern is
+   metacharacter-free beyond its own closed template. Measured: raw
+   volumes 60–286 on the battery vs 3,212 for v1's mention pattern.
+2. **Wire grammar from the binary, not the n=1 capture (closes F3).**
+   opencode 1.17.15's grep: caps at 100 matches, header
+   `Found <N> matches` with `<N>` computed FROM the capped array (count
+   arithmetic is inert — v1's count-mismatch check is dropped), a
+   ` (more matches available)` header suffix and/or a
+   `(Results truncated. Consider using a more specific path or
+   pattern.)` trailing footer when cut, `No files found` (not "Found 0")
+   when empty, and BLANK LINES between file groups. The normalizer
+   parses all three variants; the capture note file gets an amendment
+   recording the refuted "N may be 0" claim (instrument-preconditions
+   discipline: corrected, not edited away).
+3. **Cut results still build menus (semantics pivot).** Glob truncation
+   refuses because filename discovery makes a UNIQUENESS claim over a
+   complete set (#148). The menu pick claims no uniqueness — the answer
+   says "here is <file>, which defines <identifier>" — so a client-cut
+   result may still seed the menu. Measured: the right file survives the
+   100-match cut 8/8. Honesty is carried by resolution 5's read-time
+   confirmation, and the render marks the block `(truncated)` (from the
+   wire's own suffix/footer/metadata signals or the serve's 50-line
+   post-filter cap) so classify can state incompleteness in the
+   dispatch instruction — the answer may note other definitions exist.
+4. **The pick is its own guarded node (closes F2).** `defer_pick` does
+   NOT ride the needs_decider empty-target convention (that would fire
+   the seat-routing decide node with a static prompt and a foreign
+   closed set). classify emits `defer_pick: true` plus a new
+   `pick_input` field (the clean question + the menu, composed
+   classify-side, bounded); serving.yaml gains a `pick` node —
+   `when: ${classify.defer_pick}`, `input_key: pick_input`, cheap tier —
+   whose closed instruction is "pick ONE identifier from the list or
+   abstain". resolve validates the response by EXACT token membership in
+   the menu (never `_decider_target`'s substring fallback — F10; the
+   abstain sentinel is `none`, and a menu identifier literally named
+   `none` is excluded from menus at build time), then MINTS
+   `needs_files=[def_file]` and threads `picked: <identifier>` through
+   shape/form_gate (new pass-through field). Off-menu, abstain, or an
+   unreadable pick response → conceptual fall-through (today's
+   behavior). The decide node is untouched; `task` stays the clean turn.
+5. **Deterministic pass-4 re-grounding + AST def confirmation (closes
+   F2's oscillation and F5's forged def-lines).** classify never learns
+   the pick from the wire; on the read-continuation pass it re-derives
+   deterministically: menu (recomputed from the still-rendered grep
+   block) ∩ the visible read's path → grounded explain for that file,
+   attributing EVERY menu identifier whose def-site is that file (no
+   re-pick, no oscillation; visible → grounded, attempted-failed → the
+   existing read_failed refusal, so `defer_pick` never fires twice).
+   Before composing the grounded dispatch, classify `ast.parse`s the
+   read block's body and confirms a FunctionDef/ClassDef/module-level
+   assignment target actually bears each attributed identifier — a
+   docstring or string literal containing `def foo` is not an AST
+   definition, so a forged def-line can neither ground nor
+   mis-attribute; identifiers that fail confirmation are dropped, and if
+   none survive the turn refuses honestly (not-grounded with the
+   mismatch reason). Unparseable read content (a broken .py) refuses
+   rather than grounds.
+6. **Menu build (deterministic, from the rendered block alone).** Parse
+   each rendered def-line: extract the defined identifier (the token
+   after `def `/`class `, or the assignment target), keep lines from
+   non-test non-docs `.py` files, require the identifier to CONTAIN a
+   question stem (case-insensitive, matching the wire pattern's
+   semantics — F9), and admit identifiers with exactly ONE def-site file
+   among the rendered lines. Cap 10, first-occurrence order (the rarity
+   ranking stays a named untuned lever). Path tokens never enter: the
+   identifier is parsed from the def-line's code span, not the
+   `path: Line N:` prefix (F11). Empty menu → conceptual fall-through.
+7. **Grep/glob discrimination (closes F4).** The caller's grep tool
+   calls always carry `include`, and `_is_grep_shaped` (pattern +
+   include, no filePath/command) is checked BEFORE `_is_glob_shaped`
+   everywhere a call shape routes (block mapping, `_resumes_turn`), so a
+   grep echo can never render as a failed glob block and shadow the real
+   listing. Echo validation mirrors the glob discipline with a closed
+   regex over the issued template; a non-matching echo renders failed
+   under a fixed safe token.
+8. **Render budget (closes F7).** The rendered grep block is capped at
+   50 post-filter lines AND a 4,096-char ceiling (the run-block
+   precedent), so its worst-case projected-token charge (~1,200) fits
+   the reserve derivation; the `_READ_TOKEN_BUDGET` comment gains the
+   line-item. The #148 strip extends to truncated grep blocks in seat
+   prompts.
+9. **No config flag, justified by firing rate.** The rung adds one grep
+   round + one cheap pick call ONLY on turns that today end conceptual;
+   with the def-anchored pattern the round is small and the pick is one
+   bounded cheap-tier call. Latency-class additivity, not
+   contamination-class (#144's flag rationale) — flagless stands, and
+   the live gate measures the added latency.
 
 ## Trigger (additive only)
 
-The rung fires exactly on today's conceptual fall-through residue: an
-is_explain turn with no named file whose explain-discovery glob round
-completed with ZERO candidates (workspace ∪ self). Every other routing is
-byte-identical. The turn shape becomes: glob round → grep round → read
-round → grounded answer (or an honest exit at any rung).
-
-## Mechanism
-
-1. **One grep round.** classify emits a new signal `needs_grep` carrying
-   the comma-joined explain stems (the same charset-checked
-   `_explain_stems` output the glob round used — never model text). The
-   caller templates the pattern:
-   `[A-Za-z_][A-Za-z0-9_]*(stem1|stem2|…)[A-Za-z0-9_]*` with
-   `include: "*.py"` (the captured OpenCode grep schema: {pattern, path?,
-   include?}). Stems re-asserted against the glob-stem charset before
-   entering the template; echo validation on resume mirrors the glob
-   discipline exactly (a non-matching echo renders failed under a fixed
-   safe token).
-2. **Rendered block.** `assistant: [grepped <stems>]` header, two-space
-   indented body of `path: Line N: text` lines mapped from the captured
-   wire format ("Found N matches" header, per-file grouping). Caps: at
-   most 50 rendered match lines, header-marked `(truncated)` when cut.
-   **Count-mismatch detection (a #149 partial close, grep-only):** the
-   wire's own "Found N matches" count is compared against the number of
-   matches actually present in the raw result — a mismatch renders the
-   block `(truncated)` too, so a client-side cut cannot present as
-   complete. A truncated block disables menu grounding for the turn
-   (conceptual fall-through — the #148 semantics); empty (Found 0)
-   renders `(failed)` like an empty glob.
-3. **Deterministic menu (classify-side, from the block alone).** From
-   the rendered match lines: extract identifiers matching
-   `[A-Za-z_][A-Za-z0-9_]*` that CONTAIN a question stem
-   (case-insensitive); an identifier's definition sites are the matched
-   lines shaped `def <ident>…`/`class <ident>…`/`<ident> = …` (line
-   text is in the block); menu entries are identifiers with EXACTLY ONE
-   definition-site file among non-test `.py` files (def-site required —
-   spike arm D's comment-mention hole; a mention-only identifier never
-   enters the menu). Menu capped at 10, first-occurrence-in-block order
-   (deterministic; the rarity ranking the spike left untuned is a named
-   future lever, not built here). Empty menu → conceptual fall-through.
-4. **Guarded closed-menu pick.** classify defers to the model exactly
-   like defer_recall: a new `defer_pick` signal carrying the precomputed
-   menu (identifier → file). A guarded model node (decide-node pattern,
-   cheap tier) picks ONE identifier or abstains; resolve validates the
-   pick against the closed menu — off-menu or abstain falls through to
-   the conceptual explainer (today's behavior; fail-open to honesty,
-   never to a guess about a file). Doctrine 9: this is the rung's ONLY
-   model judgment — bounded, closed-set, gate-backstopped, and every
-   menu option is a REAL identifier with a verified definition site.
-5. **Read → ground.** The pick's definition-site file enters the
-   existing read seam (`needs_files`; a serve-owned def-site file would
-   ride `needs_self_files` in slice B). Cap and token budget compose
-   unchanged (over-budget refuses honestly with the #144 wording). The
-   grounded dispatch names the file as today and appends the matched
-   identifier to the explain instruction so the answer's attribution
-   carries both.
-
-## Chain and threading
-
-CHAIN_EXPLAIN gains rows after `need-self-files`, before `explainer`:
-`need-grep` (needs_grep or grep_failed), then the defer_pick empty-target
-row (decider), in first-match order so a rendered grep block on the
-re-entry pass routes to menu/pick instead of re-requesting. Signals
-thread classify → resolve → shape → form_gate → emit as always; emit
-gains `{"finish": false, "grep": "<stems>"}`; the caller maps it to the
-advertised grep tool (candidates `("grep", "Grep")`), renders results,
-and `_resumes_turn`/`_is_grep_shaped` admit the continuation. New
-dispatch shape `need-grep.yaml` + echo (both copies, top-level included).
+is_explain, no named file, explain-discovery glob round COMPLETE with
+zero candidates (workspace ∪ self), no grep block yet → `needs_grep`
+(the stems). Grep block present → menu → `defer_pick` (or fall-through).
+Pick validated → read round. Read visible → AST-confirmed grounded
+explain. Every other routing byte-identical; each seam is
+one-round-or-refuse so the turn shape is statically bounded at three
+client rounds.
 
 ## Invariants (rule 6) and regression instruments
 
-- **Grounding:** a grep-grounded answer's file demonstrably contains the
-  picked identifier at a definition site, computable from the rendered
-  block. Instruments: corpus tests — mention-only identifiers never
-  enter the menu; a crafted block grounding wrong-file is impossible
-  without a forged def-line (and forged column-0 headers are already
-  excluded by the fenced grammar).
-- **Pattern safety:** only charset-checked stems enter the template;
-  echo validation both directions. Instruments: unsafe-stem and
+- **Grounding:** a grep-grounded answer's file ACTUALLY DEFINES every
+  attributed identifier, verified by AST over the read content.
+  Instruments: corpus tests — a docstring-forged def-line never grounds
+  and never mis-attributes; unparseable read content refuses; a
+  mention-only file never enters the menu.
+- **Closed-set pick:** off-menu/abstain/unreadable → conceptual
+  fall-through; exact-token validation only. Instruments: resolve tests
+  with off-menu, substring-colliding, and `none` responses.
+- **Pattern/echo safety:** only charset-checked stems enter the
+  template; echo validation both directions. Instruments: unsafe-stem +
   echo-mismatch tests mirroring the glob suite.
-- **Truncation honesty:** header-count mismatch or render-cap cut →
-  `(truncated)` → menu disabled. Instruments: crafted-result tests for
-  both cut modes; the #148 strip applies to truncated grep blocks in
-  seat prompts.
-- **Closed-set pick:** an off-menu pick never grounds. Instrument:
-  resolve test feeding an out-of-menu decider response asserting
-  conceptual fall-through.
-- **Additivity:** every non-fall-through routing byte-identical; corpus
-  regression probes flag-independent (this rung has no config flag — it
-  is deterministic-bounded everywhere a model isn't, and the pick seat
-  fails open to today's behavior).
+- **Wire-grammar fidelity:** all three captured binary variants
+  (suffix-truncated, footer-truncated, `No files found`) normalize
+  correctly; blank-line file groups survive. Instruments:
+  crafted-result tests per variant.
+- **No re-pick:** the pick node runs at most once per turn.
+  Instrument: corpus test asserting the read-continuation pass emits
+  grounded/refusal, never defer_pick.
+- **Additivity:** corpus regression probes over non-fall-through
+  routings.
 
 ## Exit gate & validation
 
-- Corpus/table/threading/caller tests per the instruments above (TDD).
-- **Live (RIG):** "where is the recall ledger built?" through real
-  OpenCode → glob (no candidates) → grep → menu → pick → read
-  `serving_ensemble_caller.py` → grounded answer naming
-  `_recall_ledger`; plus one refusal-shaped and one abstain-shaped
-  question from the battery. Ladder rerun + trajectory row + adversarial
-  review with a wrong-accept hunt (does any turn ground a file that
-  does not define its picked identifier?).
+TDD per the instruments; then live (RIG): "where is the recall ledger
+built?" through real OpenCode → glob (zero candidates) → grep → menu →
+pick → read `serving_ensemble_caller.py` → grounded answer attributing
+`_recall_ledger` (AST-confirmed); plus one abstain-shaped question and
+one truncated-result question. Ladder rerun + trajectory row +
+adversarial review with the wrong-accept hunt: does any turn ground a
+file that does not AST-define its attributed identifiers?
 
 ## Not built here
 
-Slice B (serve-native grep half of the union); menu rarity ranking;
-grep→build; the read fan over multiple def-site candidates (still the
-`max_rounds` trigger, per the chain-executor design's named deferral).
+Slice B (serve-native grep half); menu rarity ranking; grep→build; the
+multi-def-site read fan (still the `max_rounds` trigger).
