@@ -161,6 +161,11 @@ def _seam_outcome(gated: dict) -> dict | None:
     if needs_files:
         # delegate the file reads to the client permission seam.
         return {"finish": False, "reads": list(needs_files)}
+    needs_self_files = gated.get("needs_self_files") or []
+    if needs_self_files:
+        # #144 serve-native self-reference: the caller reads the serve's
+        # own script server-side — never a client tool call.
+        return {"finish": False, "self_reads": list(needs_self_files)}
     needs_glob = str(gated.get("needs_glob", ""))
     if needs_glob:
         # issue #83 discovery: delegate one workspace listing.

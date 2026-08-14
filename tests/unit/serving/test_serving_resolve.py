@@ -388,3 +388,28 @@ def test_recap_vote_without_a_precomputed_message_falls_back_to_explainer() -> N
     routing = _resolve(classify_decision, decide_response='{"target": "recap"}')
     assert routing["target"] == "explainer"
     assert routing["recall_answer"] == ""
+
+
+def test_needs_self_files_passes_through_resolve() -> None:
+    # #144 serve-native self-reference: the self-read request rides the
+    # routing decision like every seam field.
+    routing = _resolve(
+        _structural(
+            target="need-self-files",
+            kind="need_self_files",
+            build=False,
+            needs_self_files=[".llm-orc/scripts/agentic_serving/resolve.py"],
+        )
+    )
+    assert routing["target"] == "need-self-files"
+    assert routing["needs_self_files"] == [
+        ".llm-orc/scripts/agentic_serving/resolve.py"
+    ]
+
+
+def test_decider_path_defaults_needs_self_files_empty() -> None:
+    routing = _resolve(
+        _structural(target="", kind="", build=False, needs_decider=True),
+        decide_response='{"target": "explainer"}',
+    )
+    assert routing["needs_self_files"] == []
