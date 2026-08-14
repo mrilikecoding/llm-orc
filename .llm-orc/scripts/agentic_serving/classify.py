@@ -250,7 +250,8 @@ _VISIBLE_HEADER_RE = re.compile(
     re.MULTILINE,
 )
 _READ_ATTEMPT_RE = re.compile(
-    r"^assistant: \[read ([^\]]+?)( \((failed|oversize|over-budget)\))?\]",
+    r"^assistant: \[read ([^\]]+?)"
+    r"( \((failed|oversize|over-budget|truncated)\))?\]",
     re.MULTILINE,
 )
 _READ_CAP_KB = 96
@@ -413,6 +414,11 @@ def _attempt_reason(variant: str, visible: set[str], client: bool = True) -> str
     client (review finding 4)."""
     if variant == "oversize":
         return f"file exceeds the {_READ_CAP_KB} KB read cap"
+    if variant == "truncated":
+        # #121 live-gate discovery: the CLIENT capped the read output (a
+        # bound inside the serve's own cap), so the content arrived
+        # partial — refused whole-file-or-refuse, never half-grounded.
+        return "the client truncated the read (file exceeds the client's read cap)"
     if variant == "failed":
         return "client read failed" if client else "read failed"
     if variant == "over-budget":
