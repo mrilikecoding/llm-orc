@@ -468,3 +468,28 @@ def test_recall_answer_field_emits_the_honest_message() -> None:
     message = "You haven't asked me to build anything yet."
     outcome = _emit({"recall_answer": message})
     assert outcome == {"finish": True, "content": message}
+
+
+def test_needs_self_files_emits_a_self_reads_outcome() -> None:
+    # #144 serve-native self-reference: the caller executes this read
+    # natively — no client tool call, so the outcome is its own vocabulary.
+    outcome = _emit(
+        gated={
+            "build": False,
+            "file": "solution.py",
+            "content": "Requesting self files.",
+            "valid": True,
+            "reason": "ok",
+            "needs_files": [],
+            "read_failed": "",
+            "needs_self_files": [".llm-orc/scripts/agentic_serving/resolve.py"],
+            "accept": None,
+            "accept_reason": "",
+            "seat_admitted": None,
+            "seat_contract_reason": "",
+        }
+    )
+    assert outcome == {
+        "finish": False,
+        "self_reads": [".llm-orc/scripts/agentic_serving/resolve.py"],
+    }

@@ -1,0 +1,12 @@
+name: need-self-files
+description: |
+  #144 serve-native self-reference — the cheap dispatch target for a turn
+  that must first read one of the serve's OWN scripts server-side (dot-dirs
+  are unreachable by the client's glob). The routing decision (classify)
+  already carries the paths; this shape exists so the skeleton dispatches
+  SOMETHING without burning a build round. One deterministic script node,
+  no model calls.
+serves: need-self-files
+agents:
+  - name: echo
+    script: scripts/agentic_serving/need_self_files_echo.py

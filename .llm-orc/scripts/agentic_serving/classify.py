@@ -30,6 +30,7 @@ from __future__ import annotations
 import json
 import re
 import sys
+from pathlib import Path
 from typing import NamedTuple
 
 from _helpers import PRIOR_CODE_MARKER as _PRIOR_CODE_MARKER
@@ -896,40 +897,214 @@ def _explain_read_request(path: str, context: str) -> tuple[list[str], str]:
     return [path], ""
 
 
+# --- #144 serve-native dot-dir self-reference -----------------------------
+# The serve's own scripts (THIS file's siblings) are workspace-invisible to
+# the client's glob (dot-dirs, verified 2026-07-14), so self-referential
+# explains discover them by direct enumeration and read them server-side.
+# Opt-in per project (`serving.self_reference`, threaded by the caller as
+# the turn field ``self_reference``, default off): the scripts carry
+# generic basenames (shape.py, resolve.py, emit.py), and with the union
+# always on, "how does shape affect the output?" in an unrelated served
+# project would ground the serve's own seat-prompt builder (pre-flight
+# finding 1). The flag's documented bound: self-reference assumes the
+# serve-owned scripts ARE the workspace's own `.llm-orc` (the self-hosting
+# deployment), so a basename shared across the two namespaces names the
+# same file.
+
+
+def _self_script_dir() -> Path:
+    """The operative serve-owned scripts dir: THIS running script's own
+    directory (fixtures copytree the scripts, so ``__file__``-relative is
+    the correct enumeration there too)."""
+    return Path(__file__).resolve().parent
+
+
+def _self_label(path: Path) -> str:
+    """The honest, client-actionable label for a serve-owned script:
+    ``.llm-orc``-rooted when the deployment carries that component
+    (``.llm-orc/scripts/agentic_serving/x.py``), else rooted at the scripts
+    tree (``scripts/agentic_serving/x.py``, the fixture layout)."""
+    parts = path.parts
+    if ".llm-orc" in parts:
+        index = len(parts) - 1 - parts[::-1].index(".llm-orc")
+        return "/".join(parts[index:])
+    return "/".join(parts[-3:])
+
+
+def _self_labels() -> list[str]:
+    """Labels of every enumerable serve-owned script, sorted for
+    determinism — the same candidate discipline as the workspace listing
+    (``.py``, never ``test_*``)."""
+    return sorted(
+        _self_label(path)
+        for path in _self_script_dir().glob("*.py")
+        if not path.name.startswith("test_")
+    )
+
+
+def _self_candidates(stems: list[str]) -> list[str]:
+    """Serve-owned candidates for a bare-symbol explain turn: the
+    byte-identical named-after-the-symbol subset rule the workspace listing
+    uses (``_explain_glob_candidates``), applied to the serve's own script
+    enumeration. Spike-validated 2026-08-13 (6/12 battery questions
+    exactly-one, 0 wrong-file; docs/plans/2026-08-13-serve-owned-discovery-
+    findings.md)."""
+    stem_set = set(stems)
+    candidates: list[str] = []
+    for label in _self_labels():
+        components = _basename_components(label.rsplit("/", 1)[-1])
+        if components and components <= stem_set:
+            candidates.append(label)
+    return candidates
+
+
+def _self_named_label(named_file: str) -> str:
+    """The canonical serve-owned label a named-file explain refers to, or
+    ``""`` when the name is not an exact serve-owned path. Accepts the
+    dot-stripped capture too: ``_FILE_RE``'s word-boundary start drops the
+    leading dot from ``.llm-orc/...``, so the user's exact naming arrives
+    as ``llm-orc/...``. Exact labels only — a bare basename stays on
+    today's path (a workspace twin could be meant), which keeps the
+    wrong-namespace bound closed."""
+    for label in _self_labels():
+        if named_file == label or f".{named_file}" == label:
+            return label
+    return ""
+
+
+def _visibility_paths(context: str) -> tuple[set[str], dict[str, str]]:
+    """(visible full paths, attempted full path -> failure detail) — the
+    full-path sibling of ``_visibility`` for the self-read namespace
+    (pre-flight finding 2): serve-owned script paths share basenames with
+    plausible workspace files, so self-read decisions key on the exact
+    rendered path, never the basename. Reasons come from the same
+    ``_attempt_reason`` composition, so the two namespaces can never word
+    the same refusal differently."""
+    visible_basenames = {
+        path.rsplit("/", 1)[-1]
+        for path, variant in _VISIBLE_HEADER_RE.findall(context)
+        if not variant
+    }
+    visible = {
+        path
+        for path, variant in _VISIBLE_HEADER_RE.findall(context)
+        if not variant
+    }
+    attempted: dict[str, str] = {}
+    for path, _, variant in _READ_ATTEMPT_RE.findall(context):
+        reason = _attempt_reason(variant, visible_basenames)
+        if reason:
+            attempted[path] = reason
+    return visible, attempted
+
+
+def _visible_path_body(context: str, path: str) -> str:
+    """The LATEST visible block body for the EXACT rendered ``path`` — the
+    full-path sibling of ``_visible_target_body`` for self-read grounding
+    (pre-flight finding 2): a later workspace basename twin must never win
+    the last-wins scan and get quoted under the serve-owned header."""
+    lines = context.splitlines()
+    start = -1
+    for index, line in enumerate(lines):
+        match = _VISIBLE_HEADER_RE.match(line)
+        if match and not match.group(2) and match.group(1) == path:
+            start = index
+    if start < 0:
+        return ""
+    body_lines: list[str] = []
+    for line in lines[start + 1 :]:
+        if line.startswith("  "):
+            body_lines.append(line[2:])
+        elif not line.strip():
+            body_lines.append("")
+        else:
+            break
+    return "\n".join(body_lines).strip()
+
+
+def _self_read_request(label: str, context: str) -> tuple[list[str], str]:
+    """(self paths to read, refusal reason) for a serve-owned candidate —
+    the full-path-keyed sibling of ``_explain_read_request``. Visible ->
+    nothing to request; a prior failed/over-budget attempt refuses instead
+    of re-requesting; otherwise ONE server-side read."""
+    visible, attempted = _visibility_paths(context)
+    if label in visible:
+        return [], ""
+    if label in attempted:
+        return [], f"could not read {label}: {attempted[label]}"
+    return [label], ""
+
+
 def _explain_discover(
-    context: str, stems: list[str]
-) -> tuple[str, str, str, str, list[str], str]:
+    context: str, stems: list[str], self_reference: bool = False
+) -> tuple[str, str, str, str, list[str], str, list[str]]:
     """(named_file, named_basename, needs_glob, glob_failed, needs_files,
-    read_failed) for a bare-symbol explain turn (glob->read grounded-
-    explain, WS-3 slice 1): one glob round (comma-joined stems, brace-
-    alternation pattern), then the shared candidate discipline (``.py``, not
-    ``test_*``, one-or-refuse) once the listing returns. Mirrors the build
-    discover -> read seam's two-pass shape without touching it — never
-    several files read, never a guess.
+    read_failed, needs_self_files) for a bare-symbol explain turn
+    (glob->read grounded-explain, WS-3 slice 1; #144 self-reference): one
+    glob round (comma-joined stems, brace-alternation pattern), then the
+    shared candidate discipline (``.py``, not ``test_*``, one-or-refuse)
+    over the UNION of the listing's candidates and — flag on — the serve's
+    own scripts. Mirrors the build discover -> read seam's two-pass shape
+    without touching it — never several files read, never a guess.
+
+    Union timing (pre-flight finding 3): the glob round always runs first
+    (a serve-owned match must never suppress the workspace half or the
+    collision refusal), and serve-owned candidates join only over a
+    COMPLETE listing — a truncated or failed block is not the complete
+    candidate set, so the turn keeps today's conceptual fall-through
+    instead of grounding over partial knowledge (the #148 semantics).
     """
     candidates = _explain_glob_candidates(context, stems)
     if candidates is None:
-        return "", "", ",".join(stems), "", [], ""
+        return "", "", ",".join(stems), "", [], "", []
+    listing = _latest_glob_listing(context)
+    complete = (
+        listing is not None and not listing.truncated and bool(listing.paths)
+    )
+    self_candidates = (
+        _self_candidates(stems) if (self_reference and complete) else []
+    )
+    union = [*candidates, *self_candidates]
     stem_list = ",".join(stems)
-    if len(candidates) == 1:
-        candidate = candidates[0]
+    if len(union) == 1:
+        if self_candidates:
+            label = self_candidates[0]
+            needs_self, read_failed = _self_read_request(label, context)
+            if not needs_self and not read_failed:
+                # visible (this turn's server-side read landed) -> grounded
+                return label, label.rsplit("/", 1)[-1], "", "", [], "", []
+            return "", "", "", "", [], read_failed, needs_self
+        candidate = union[0]
         needs_files, read_failed = _explain_read_request(candidate, context)
         basename = candidate.rsplit("/", 1)[-1]
-        return candidate, basename, "", "", needs_files, read_failed
-    if not candidates:
+        return candidate, basename, "", "", needs_files, read_failed, []
+    if not union:
         # No repo file matched the stems — fall through to the conceptual
         # explainer (general-knowledge answer, today's behavior) rather than
         # refusing: the slice only ADDS grounding, it never removes the
         # general-answer capability. Loop-safe — the [globbed] listing
         # already exists in context, so _explain_glob_candidates returns []
         # (not None), and these all-empty signals never re-set needs_glob.
-        return "", "", "", "", [], ""
+        return "", "", "", "", [], "", []
+    if self_candidates:
+        # A serve-owned candidate is in the mix: the refusal names where
+        # each half lives (pre-flight finding 9 — "workspace listing" would
+        # be a false claim for the serve's own scripts).
+        parts = []
+        if candidates:
+            parts.append(f"{', '.join(candidates)} (workspace)")
+        parts.append(f"{', '.join(self_candidates)} (the serve's own scripts)")
+        refusal = (
+            f"multiple files match '{stem_list}': {'; '.join(parts)}"
+            " — please name one"
+        )
+        return "", "", "", refusal, [], "", []
     listed = ", ".join(candidates)
     refusal = (
         f"multiple files match '{stem_list}' in the workspace listing: {listed}"
         " — please name one"
     )
-    return "", "", "", refusal, [], ""
+    return "", "", "", refusal, [], "", []
 
 
 def _visible_stem_paths(context: str, stem: str) -> list[str]:
@@ -1461,18 +1636,21 @@ def _discover_and_read(
     named_file: str,
     named_basename: str,
     explain_stems: list[str] | None = None,
-) -> tuple[str, str, str, str, list[str], str]:
+    self_reference: bool = False,
+) -> tuple[str, str, str, str, list[str], str, list[str]]:
     """The discover -> read seam (issue #83) plus rung 1.5's target-test read
     batched into the same round: (named_file, named_basename, needs_glob,
-    glob_failed, needs_files, read_failed). A glob MATCH renames the turn's
-    file; the target-test read never causes a refusal on its own.
+    glob_failed, needs_files, read_failed, needs_self_files). A glob MATCH
+    renames the turn's file; the target-test read never causes a refusal on
+    its own. ``needs_self_files`` (#144) is only ever set by the explain-
+    discovery branch — the build seam never self-reads.
 
     ``explain_stems``, when non-empty, takes the explain-discovery branch
     (glob->read grounded-explain, WS-3 slice 1) instead — the caller only
     passes stems for an is_explain turn with no named file, so this and the
     build discover -> read seam below never cross (isolation)."""
     if explain_stems:
-        return _explain_discover(context, explain_stems)
+        return _explain_discover(context, explain_stems, self_reference)
     needs_glob, glob_file, glob_failed = _discovery(
         task, context, tests_primary, has_build_signal
     )
@@ -1498,6 +1676,7 @@ def _discover_and_read(
         glob_failed,
         needs_files,
         read_failed,
+        [],
     )
 
 
@@ -1649,6 +1828,33 @@ def main() -> None:
         explain_visible, explain_attempted = _visibility(conversation_raw)
         explain_ungrounded = named_basename not in explain_visible
 
+    # #144 serve-native self-reference, named-file leg (pre-flight finding
+    # 6, narrowed): an explain naming the EXACT serve-owned path self-reads
+    # directly — full-path keyed (finding 2), so a workspace basename twin
+    # neither satisfies nor poisons it. A bare basename stays on today's
+    # path: the user could mean a workspace twin, and the honest refusal
+    # already names the remedy.
+    needs_self_files: list[str] = []
+    self_reference = bool(turn.get("self_reference"))
+    self_label = (
+        _self_named_label(named_file)
+        if (self_reference and is_explain and named_file)
+        else ""
+    )
+    if self_label:
+        named_file, named_basename = self_label, self_label.rsplit("/", 1)[-1]
+        self_reads, self_read_failed = _self_read_request(
+            self_label, conversation_raw
+        )
+        if self_reads:
+            explain_ungrounded = False
+            needs_self_files = self_reads
+        elif self_read_failed:
+            explain_ungrounded = True
+            explain_attempted[named_basename] = self_read_failed.split(": ", 1)[-1]
+        else:
+            explain_ungrounded = False
+
     # Chained fix-execution: a fix-intent turn whose gated build already
     # shipped its write THIS turn chains into the run seam. wrote_path is
     # structural (the caller derives it from post-boundary write tool_calls,
@@ -1708,6 +1914,7 @@ def main() -> None:
             glob_failed,
             needs_files,
             read_failed,
+            needs_self_files,
         ) = _discover_and_read(
             task,
             conversation_raw,
@@ -1716,6 +1923,7 @@ def main() -> None:
             named_file,
             named_basename,
             explain_stems=explain_stems,
+            self_reference=self_reference,
         )
     bundle = _SignalBundle(
         is_explain=is_explain,
@@ -1730,6 +1938,7 @@ def main() -> None:
         glob_failed=glob_failed,
         needs_files=needs_files,
         read_failed=read_failed,
+        needs_self_files=needs_self_files,
         tests_primary=tests_primary,
         has_build_signal=has_build_signal,
         kind_hint=str(turn.get("kind", "python_module")),
@@ -1820,8 +2029,14 @@ def main() -> None:
         # grounded-explain design: named_file present here always means
         # grounded (the ungrounded case routes to "not-grounded" above) —
         # point the seat AT the target's real wire content and instruct it
-        # to explain that, not to recall or guess.
-        block_body = _visible_target_body(conversation_raw, named_basename)
+        # to explain that, not to recall or guess. A serve-owned label
+        # (#144) selects its body by EXACT path (pre-flight finding 2): a
+        # later workspace basename twin must never win the last-wins scan
+        # and get quoted under the serve-owned header.
+        if self_reference and named_file in _self_labels():
+            block_body = _visible_path_body(conversation_raw, named_file)
+        else:
+            block_body = _visible_target_body(conversation_raw, named_basename)
         dispatch_input = (
             f"Conversation so far:\n{conversation}\n\n"
             f"The actual current content of {named_file}:\n{block_body}\n\n"
@@ -1845,6 +2060,7 @@ def main() -> None:
                 "needs_run": needs_run,
                 "needs_glob": needs_glob,
                 "glob_failed": glob_failed,
+                "needs_self_files": needs_self_files,
                 "not_grounded": not_grounded,
                 "not_grounded_reason": not_grounded_reason,
                 "recall_answer": recall_answer,

@@ -85,6 +85,8 @@ def main() -> None:
                 "needs_run": str(shaped.get("needs_run", "")),
                 "needs_glob": str(shaped.get("needs_glob", "")),
                 "glob_failed": str(shaped.get("glob_failed", "")),
+                # #144 serve-native self-reference: rides the routing decision.
+                "needs_self_files": shaped.get("needs_self_files", []),
                 "not_grounded": str(shaped.get("not_grounded", "")),
                 "not_grounded_reason": str(shaped.get("not_grounded_reason", "")),
                 "recall_answer": str(shaped.get("recall_answer", "")),

@@ -11,6 +11,7 @@ engine runs a script node.
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -2799,3 +2800,276 @@ def test_ledger_recap_says_nothing_built_when_the_ledger_is_empty() -> None:
     recap = _ledger_recap({"recall_ledger": []})
     assert "built" in recap.lower()
     assert "yet" in recap.lower()
+
+
+# --- #144 serve-native dot-dir self-reference ------------------------------
+# Design: docs/plans/2026-08-13-dot-dir-self-reference-design.md. The corpus
+# below runs classify from a PINNED fixture scripts dir (pre-flight finding
+# 10b: enumerating the live dir would let any future script silently flip
+# these expectations), with dummy stand-ins fixing the candidate set.
+
+_SELF_STAND_INS = (
+    "resolve.py",
+    "shape.py",
+    "form_gate.py",
+    "emit.py",
+    "accept_gate.py",
+)
+
+
+@pytest.fixture
+def self_scripts(tmp_path: Path) -> Path:
+    scripts = tmp_path / "scripts" / "agentic_serving"
+    scripts.mkdir(parents=True)
+    for name in ("classify.py", "chain_plan.py", "_helpers.py"):
+        shutil.copy(SCRIPTS / name, scripts / name)
+    for name in _SELF_STAND_INS:
+        (scripts / name).write_text("# stand-in\n")
+    return scripts
+
+
+def _classify_at(scripts: Path, turn: dict[str, Any]) -> dict[str, Any]:
+    envelope = json.dumps({"input": json.dumps(turn)})
+    out = subprocess.run(
+        [sys.executable, str(scripts / "classify.py")],
+        input=envelope,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    result: dict[str, Any] = json.loads(out)
+    return result
+
+
+_GATE_LISTING = (
+    "assistant: [globbed classify,decide,routing]\n"
+    "  /work/tests/test_serving_classify.py"
+)
+
+
+def test_self_discovery_off_by_default_falls_through_conceptual(
+    self_scripts: Path,
+) -> None:
+    # Default-off invariant (pre-flight finding 1): without the opt-in flag
+    # the turn behaves byte-identically to today — conceptual fall-through,
+    # never a serve-owned candidate.
+    decision = _classify_at(
+        self_scripts,
+        {"task": "how does classify decide routing?", "context": _GATE_LISTING},
+    )
+    assert decision["target"] == "explainer"
+    assert decision["needs_self_files"] == []
+
+
+def test_self_discovery_requires_the_glob_round_first(self_scripts: Path) -> None:
+    # Union timing (pre-flight finding 3): a serve-owned match must never
+    # suppress the glob round — the workspace half of the union needs it.
+    decision = _classify_at(
+        self_scripts,
+        {"task": "how does classify decide routing?", "self_reference": True},
+    )
+    assert decision["target"] == "need-glob"
+    assert decision["needs_glob"] == "classify,decide,routing"
+    assert decision["needs_self_files"] == []
+
+
+def test_self_discovery_emits_a_self_read_for_the_sole_self_candidate(
+    self_scripts: Path,
+) -> None:
+    decision = _classify_at(
+        self_scripts,
+        {
+            "task": "how does classify decide routing?",
+            "context": _GATE_LISTING,
+            "self_reference": True,
+        },
+    )
+    assert decision["target"] == "need-self-files"
+    assert decision["needs_self_files"] == ["scripts/agentic_serving/classify.py"]
+
+
+def test_truncated_listing_disables_self_discovery(self_scripts: Path) -> None:
+    # Pre-flight finding 3: a truncated listing is not the complete
+    # candidate set, so serve-owned grounding is disabled for the turn —
+    # today's conceptual fall-through, never a coin-flip union.
+    listing = "assistant: [globbed classify,decide,routing (truncated)]\n  /work/a.py"
+    decision = _classify_at(
+        self_scripts,
+        {
+            "task": "how does classify decide routing?",
+            "context": listing,
+            "self_reference": True,
+        },
+    )
+    assert decision["target"] == "explainer"
+    assert decision["needs_self_files"] == []
+
+
+def test_failed_glob_disables_self_discovery(self_scripts: Path) -> None:
+    # A (failed) block is zero workspace knowledge, not a complete listing
+    # — the union errs closed and the turn keeps today's fall-through.
+    listing = "assistant: [globbed classify,decide,routing (failed)] empty glob result"
+    decision = _classify_at(
+        self_scripts,
+        {
+            "task": "how does classify decide routing?",
+            "context": listing,
+            "self_reference": True,
+        },
+    )
+    assert decision["target"] == "explainer"
+    assert decision["needs_self_files"] == []
+
+
+def test_workspace_and_self_collision_refuses_naming_both(
+    self_scripts: Path,
+) -> None:
+    listing = "assistant: [globbed resolve,pick,seat]\n  /work/resolve.py"
+    decision = _classify_at(
+        self_scripts,
+        {
+            "task": "how does resolve pick the seat?",
+            "context": listing,
+            "self_reference": True,
+        },
+    )
+    assert decision["needs_self_files"] == []
+    assert "/work/resolve.py" in decision["glob_failed"]
+    assert "scripts/agentic_serving/resolve.py" in decision["glob_failed"]
+    assert "workspace" in decision["glob_failed"]
+    assert "serve's own scripts" in decision["glob_failed"]
+
+
+def test_visible_self_read_grounds_the_explain(self_scripts: Path) -> None:
+    context = (
+        f"{_GATE_LISTING}\n"
+        "assistant: [read scripts/agentic_serving/classify.py]\n"
+        "  def main(): pass"
+    )
+    decision = _classify_at(
+        self_scripts,
+        {
+            "task": "how does classify decide routing?",
+            "context": context,
+            "self_reference": True,
+        },
+    )
+    assert decision["target"] == "explainer"
+    assert decision["needs_self_files"] == []
+    assert (
+        "The actual current content of scripts/agentic_serving/classify.py"
+        in decision["dispatch_input"]
+    )
+    assert "def main(): pass" in decision["dispatch_input"]
+
+
+def test_workspace_basename_twin_never_satisfies_a_self_read(
+    self_scripts: Path,
+) -> None:
+    # Namespace isolation (pre-flight finding 2): a visible workspace
+    # classify.py must not satisfy the serve's own classify.py.
+    context = (
+        f"{_GATE_LISTING}\nassistant: [read /work/classify.py]\n  def other(): pass"
+    )
+    decision = _classify_at(
+        self_scripts,
+        {
+            "task": "how does classify decide routing?",
+            "context": context,
+            "self_reference": True,
+        },
+    )
+    assert decision["target"] == "need-self-files"
+    assert decision["needs_self_files"] == ["scripts/agentic_serving/classify.py"]
+
+
+def test_attempted_self_read_refuses_with_the_recorded_reason(
+    self_scripts: Path,
+) -> None:
+    context = (
+        f"{_GATE_LISTING}\n"
+        "assistant: [read scripts/agentic_serving/classify.py (over-budget)]"
+    )
+    decision = _classify_at(
+        self_scripts,
+        {
+            "task": "how does classify decide routing?",
+            "context": context,
+            "self_reference": True,
+        },
+    )
+    assert decision["needs_self_files"] == []
+    assert (
+        "could not read scripts/agentic_serving/classify.py" in decision["read_failed"]
+    )
+    assert "alone exceeds the session read budget" in decision["read_failed"]
+
+
+def test_named_self_path_self_reads_when_flag_on(self_scripts: Path) -> None:
+    # Pre-flight finding 6 (narrowed): an explain that names the exact
+    # serve-owned path self-reads directly — no glob round, no ambiguity.
+    decision = _classify_at(
+        self_scripts,
+        {
+            "task": "explain scripts/agentic_serving/resolve.py",
+            "self_reference": True,
+        },
+    )
+    assert decision["target"] == "need-self-files"
+    assert decision["needs_self_files"] == ["scripts/agentic_serving/resolve.py"]
+
+
+def test_named_self_path_stays_not_grounded_when_flag_off(
+    self_scripts: Path,
+) -> None:
+    decision = _classify_at(
+        self_scripts,
+        {"task": "explain scripts/agentic_serving/resolve.py"},
+    )
+    assert decision["target"] == "not-grounded"
+    assert decision["needs_self_files"] == []
+
+
+def test_visible_named_self_path_grounds_with_the_self_body(
+    self_scripts: Path,
+) -> None:
+    # Full-path body attribution (pre-flight finding 2): the LATER visible
+    # workspace basename twin must not win a last-wins basename scan.
+    context = (
+        "assistant: [read scripts/agentic_serving/resolve.py]\n"
+        "  def self_resolve(): pass\n"
+        "assistant: [read /work/resolve.py]\n"
+        "  def workspace(): pass"
+    )
+    decision = _classify_at(
+        self_scripts,
+        {
+            "task": "explain scripts/agentic_serving/resolve.py",
+            "context": context,
+            "self_reference": True,
+        },
+    )
+    assert decision["target"] == "explainer"
+    # The "actual current content" section must quote the SELF body: with
+    # basename last-wins the later /work/resolve.py body would sit here.
+    assert (
+        "The actual current content of scripts/agentic_serving/resolve.py:\n"
+        "def self_resolve(): pass" in decision["dispatch_input"]
+    )
+
+
+def test_named_dotted_self_path_matches_the_dotted_label() -> None:
+    # The real repo's labels are .llm-orc-rooted; _FILE_RE drops the leading
+    # dot when the user names one, so label matching must accept the
+    # dot-stripped capture. Runs against the live scripts dir (resolve.py is
+    # a stable member).
+    decision = _classify(
+        {
+            "task": "explain .llm-orc/scripts/agentic_serving/resolve.py",
+            "self_reference": True,
+        }
+    )
+    assert decision["target"] == "need-self-files"
+    assert decision["needs_self_files"] == [
+        ".llm-orc/scripts/agentic_serving/resolve.py"
+    ]

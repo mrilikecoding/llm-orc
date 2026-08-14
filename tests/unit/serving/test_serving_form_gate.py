@@ -163,3 +163,16 @@ def test_form_gate_passes_is_build_ask_through() -> None:
 def test_form_gate_defaults_is_build_ask_false_when_absent() -> None:
     gated = _gate({"build": False, "file": "solution.py", "content": "prose"})
     assert gated["is_build_ask"] is False
+
+
+def test_needs_self_files_passes_through_form_gate() -> None:
+    # #144 serve-native self-reference: rides the routing decision.
+    gated = _gate(
+        {
+            "build": False,
+            "file": "solution.py",
+            "content": "Requesting self files.",
+            "needs_self_files": [".llm-orc/scripts/agentic_serving/resolve.py"],
+        }
+    )
+    assert gated["needs_self_files"] == [".llm-orc/scripts/agentic_serving/resolve.py"]
