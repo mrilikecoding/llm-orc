@@ -166,6 +166,10 @@ def _seam_outcome(gated: dict) -> dict | None:
         # #144 serve-native self-reference: the caller reads the serve's
         # own script server-side — never a client tool call.
         return {"finish": False, "self_reads": list(needs_self_files)}
+    needs_grep = str(gated.get("needs_grep", ""))
+    if needs_grep:
+        # #121 content-grep: delegate ONE def-anchored search round.
+        return {"finish": False, "grep": needs_grep}
     needs_glob = str(gated.get("needs_glob", ""))
     if needs_glob:
         # issue #83 discovery: delegate one workspace listing.

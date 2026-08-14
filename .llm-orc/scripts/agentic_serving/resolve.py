@@ -60,6 +60,23 @@ def _response(dep: object) -> str:
     return dep.get("response", "") if isinstance(dep, dict) else ""
 
 
+def _pick_choice(response: str, menu: dict) -> str:
+    """The pick node's validated menu choice, or "" (abstain, off-menu,
+    or unreadable). Exact token membership only (#121 final-review F10):
+    no substring fallback over a dynamic identifier menu."""
+    match = _JSON_RE.search(response or "")
+    if match:
+        try:
+            obj = json.loads(match.group(0))
+        except json.JSONDecodeError:
+            obj = None
+        if isinstance(obj, dict):
+            choice = obj.get("pick")
+            if isinstance(choice, str) and choice in menu:
+                return choice
+    return ""
+
+
 def _decider_target(response: str) -> str:
     """A known seat target from the decider's output, or "" when none resolves.
 
@@ -107,6 +124,12 @@ def main() -> None:
     needs_self_files = classify.get("needs_self_files", [])
     if not isinstance(needs_self_files, list):
         needs_self_files = []
+    # #121 content-grep: the grep round rides the routing decision; the
+    # deferred menu pick is resolved below after the decider merge.
+    needs_grep = str(classify.get("needs_grep", ""))
+    pick_menu = classify.get("pick_menu", {})
+    if not isinstance(pick_menu, dict):
+        pick_menu = {}
     not_grounded = str(classify.get("not_grounded", ""))
     not_grounded_reason = str(classify.get("not_grounded_reason", ""))
     recall_answer = str(classify.get("recall_answer", ""))
@@ -142,6 +165,26 @@ def main() -> None:
         kind = classify.get("kind", "")
         build = bool(classify.get("build", False))
 
+    # #121: a valid closed-menu pick upgrades the fail-open explainer
+    # target to the read of the picked definition-site file. EXACT token
+    # membership only — never _decider_target's substring fallback (a
+    # response naming off-menu `_recall_ledger` must not substring-hit an
+    # on-menu `_recall` and silently pick a different identifier). A
+    # `.llm-orc`-rooted def-site rides the #144 native seam (a client
+    # read would re-open the wire-normalizer gutting hole). Off-menu,
+    # abstain, or an unreadable response leaves the conceptual explainer.
+    picked = ""
+    if bool(classify.get("defer_pick")) and pick_menu:
+        picked = _pick_choice(_response(deps.get("pick", {})), pick_menu)
+        if picked:
+            def_file = str(pick_menu[picked])
+            if def_file.startswith(".llm-orc/"):
+                needs_self_files = [def_file]
+                target, kind, build = "need-self-files", "need_self_files", False
+            else:
+                needs_files = [def_file]
+                target, kind, build = "need-files", "need_files", False
+
     # Map the semantic intent to the serving shape the seat dispatches, from the
     # operator-curated Shape Catalog (WP-C8). An intent with no registered shape
     # passes through unchanged (empty/unknown still fails deterministically).
@@ -162,6 +205,8 @@ def main() -> None:
                 "needs_glob": needs_glob,
                 "glob_failed": glob_failed,
                 "needs_self_files": needs_self_files,
+                "needs_grep": needs_grep,
+                "picked": picked,
                 "not_grounded": not_grounded,
                 "not_grounded_reason": not_grounded_reason,
                 "recall_answer": recall_answer,

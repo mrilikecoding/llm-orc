@@ -88,9 +88,31 @@ agents:
       {"target": "code-seat"}, {"target": "tests-seat"}, {"target": "explainer"},
       {"target": "recall"}, or {"target": "recap"}
 
+  # #121 content-grep: the closed-menu pick — the rung's ONLY model
+  # judgment. Guarded on classify's defer_pick (never the needs_decider
+  # convention); input is classify's precomputed pick_input (question +
+  # the menu of REAL identifiers, def-sites pre-verified). resolve
+  # validates the response by exact token membership and upgrades the
+  # fail-open explainer target to the read on a valid pick.
+  - name: pick
+    model_profile: agentic-tier-cheap-general
+    options:
+      think: false
+    depends_on: [classify]
+    input_key: pick_input
+    when: ${classify.defer_pick}
+    system_prompt: |
+      You choose from a closed list. The user message contains a question
+      about a codebase and a list of REAL identifiers defined in it. Pick
+      the ONE identifier whose definition most directly answers the
+      question, or abstain if none fits.
+
+      Respond with ONLY a JSON object, no other text and no code fences:
+      {"pick": "<identifier-from-the-list>"} or {"pick": "none"}
+
   - name: resolve
     script: scripts/agentic_serving/resolve.py
-    depends_on: [classify, decide]
+    depends_on: [classify, decide, pick]
 
   - name: seat
     dispatch: "${resolve.target}"

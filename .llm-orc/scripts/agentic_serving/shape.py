@@ -131,6 +131,9 @@ def main() -> None:
                 "glob_failed": str(decision.get("glob_failed", "")),
                 # #144 serve-native self-reference: rides the routing decision.
                 "needs_self_files": decision.get("needs_self_files", []),
+                # #121 content-grep: rides the routing decision.
+                "needs_grep": str(decision.get("needs_grep", "")),
+                "picked": str(decision.get("picked", "")),
                 "not_grounded": str(decision.get("not_grounded", "")),
                 "not_grounded_reason": str(decision.get("not_grounded_reason", "")),
                 "recall_answer": str(decision.get("recall_answer", "")),
