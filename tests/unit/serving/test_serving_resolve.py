@@ -413,3 +413,103 @@ def test_decider_path_defaults_needs_self_files_empty() -> None:
         decide_response='{"target": "explainer"}',
     )
     assert routing["needs_self_files"] == []
+
+
+def test_needs_grep_passes_through_resolve() -> None:
+    # #121 content-grep: rides the routing decision.
+    routing = _resolve(
+        _structural(
+            target="need-grep",
+            kind="need_grep",
+            build=False,
+            needs_grep="recall,ledger,built",
+        )
+    )
+    assert routing["target"] == "need-grep"
+    assert routing["needs_grep"] == "recall,ledger,built"
+    assert routing["picked"] == ""
+
+
+def _defer_pick_decision(**overrides: object) -> dict[str, object]:
+    decision = _structural(
+        target="explainer",
+        kind="explanation",
+        build=False,
+        defer_pick=True,
+        pick_menu={
+            "_recall": "src/app/short.py",
+            "_recall_ledger": "src/app/ledger.py",
+            "_ledger_of": ".llm-orc/scripts/agentic_serving/ledger.py",
+        },
+    )
+    decision.update(overrides)
+    return decision
+
+
+def test_valid_pick_mints_the_workspace_read() -> None:
+    routing = _resolve(
+        _defer_pick_decision(),
+        decide_response=None,
+    )
+    # no pick dep at all -> fail-open explainer
+    assert routing["target"] == "explainer"
+
+    deps_routing = _resolve_with_pick(
+        _defer_pick_decision(), '{"pick": "_recall_ledger"}'
+    )
+    assert deps_routing["target"] == "need-files"
+    assert deps_routing["needs_files"] == ["src/app/ledger.py"]
+    assert deps_routing["picked"] == "_recall_ledger"
+    assert deps_routing["build"] is False
+
+
+def test_self_rooted_pick_mints_the_native_read() -> None:
+    routing = _resolve_with_pick(_defer_pick_decision(), '{"pick": "_ledger_of"}')
+    assert routing["target"] == "need-self-files"
+    assert routing["needs_self_files"] == [".llm-orc/scripts/agentic_serving/ledger.py"]
+    assert routing["picked"] == "_ledger_of"
+
+
+def test_off_menu_pick_falls_open_to_the_explainer() -> None:
+    routing = _resolve_with_pick(_defer_pick_decision(), '{"pick": "_invented"}')
+    assert routing["target"] == "explainer"
+    assert routing["needs_files"] == []
+    assert routing["picked"] == ""
+
+
+def test_pick_validation_never_substring_matches() -> None:
+    # #121 final-review F10: a response naming off-menu `_recall_ledger_x`
+    # must not substring-hit an on-menu identifier.
+    routing = _resolve_with_pick(_defer_pick_decision(), '{"pick": "_recall_ledger_x"}')
+    assert routing["target"] == "explainer"
+    assert routing["picked"] == ""
+
+
+def test_abstain_falls_open_to_the_explainer() -> None:
+    routing = _resolve_with_pick(_defer_pick_decision(), '{"pick": "none"}')
+    assert routing["target"] == "explainer"
+    assert routing["picked"] == ""
+
+
+def test_unreadable_pick_response_falls_open() -> None:
+    routing = _resolve_with_pick(_defer_pick_decision(), "I pick _recall_ledger")
+    assert routing["target"] == "explainer"
+    assert routing["picked"] == ""
+
+
+def _resolve_with_pick(
+    classify_decision: dict[str, Any], pick_response: str
+) -> dict[str, Any]:
+    deps: dict[str, Any] = {
+        "classify": {"response": json.dumps(classify_decision)},
+        "pick": {"response": pick_response},
+    }
+    out = subprocess.run(
+        [sys.executable, str(RESOLVE)],
+        input=json.dumps({"dependencies": deps}),
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    result: dict[str, Any] = json.loads(out)
+    return result

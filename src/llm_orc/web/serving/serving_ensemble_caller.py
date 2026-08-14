@@ -35,6 +35,13 @@ from llm_orc.web.serving.chunks import (
     OrchestratorChunk,
     ToolCallInvocation,
 )
+from llm_orc.web.serving.grep_render import (
+    _GLOB_STEM_RE,
+    _GREP_INCLUDE,
+    _UNTRUSTED_STEM,
+    _grep_pattern,
+    _render_grep_block,
+)
 from llm_orc.web.serving.token_estimate import projected_tokens_v2
 from llm_orc.web.serving.turn_trace import emit_turn_trace
 
@@ -54,6 +61,8 @@ _BASH_TOOL = "bash"
 _BASH_TOOL_CANDIDATES = ("bash", "shell", "terminal", "Bash")
 _GLOB_TOOL = "glob"
 _GLOB_TOOL_CANDIDATES = ("glob", "Glob")
+_GREP_TOOL = "grep"
+_GREP_TOOL_CANDIDATES = ("grep", "Grep")
 
 
 def _client_tool(
@@ -200,7 +209,6 @@ _UNTRUSTED_COMMAND = "untrusted-command"
 # issue #83 discovery: the glob pattern is template-built from classify's
 # charset-checked stem, re-asserted here — an unsafe stem never enters the
 # pattern template (the run-command discipline).
-_GLOB_STEM_RE = re.compile(r"^[A-Za-z_]\w*$")
 # The closed pattern template the serve issues. On resume the pattern comes
 # back over the wire (the client echoes the tool_call), so it is validated
 # against the template before its stem may enter the rendered header — a
@@ -211,7 +219,6 @@ _GLOB_PATTERN_RE = re.compile(r"^\*\*/\*([A-Za-z_]\w*)\*$")
 # _explain_stems, several candidate stems in one round). Same charset per
 # part as the single-stem template; the echo validation mirrors it exactly.
 _GLOB_BRACE_PATTERN_RE = re.compile(r"^\*\*/\*\{([A-Za-z_]\w*(?:,[A-Za-z_]\w*)+)\}\*$")
-_UNTRUSTED_STEM = "untrusted-stem"
 # Listing cap (discovery design bounds): the rendered block keeps at most
 # 50 paths, header-marked when cut; classify matches on the rendered block
 # only.
@@ -241,6 +248,14 @@ _LINE_NUM_GUTTER_RE = re.compile(r"^\s*\d+\| ?")
 # opening tag (nothing can precede it but <path>/<type>) and now extends
 # to the wrapper's real closing tag, wherever in the body it falls.
 _CONTENT_TAG_RE = re.compile(r"<content>(.*)</content>", re.DOTALL)
+# #121 live-gate discovery: OpenCode's read tool caps its output at 50KB
+# with this explicit trailer — INSIDE the serve's 96KB per-file cap, so a
+# 50-96KB file arrives complete-looking but half-shown. The trailer is
+# deterministic; a capped read renders as a refusing (truncated) variant,
+# never a whole-looking block (whole-file-or-refuse).
+_CLIENT_READ_CAP_RE = re.compile(
+    r"^\(Output capped at .+\. Showing lines \d+-\d+\..*\)$", re.MULTILINE
+)
 _END_OF_FILE_TRAILER_RE = re.compile(r"^\(End of file - total \d+ lines?\)$")
 _OPENCODE_GUTTER_RE = re.compile(r"^\d+: ?")
 
@@ -356,7 +371,12 @@ def _render_context(
     kept = _whole_blocks_within_cap(write_blocks)
     kept = _select_read_blocks(messages, task, tail_paths, self_reads) + kept
     post_user = items[boundary + 1 :]
-    kept = kept + _run_blocks(post_user) + _glob_blocks(post_user)
+    kept = (
+        kept
+        + _run_blocks(post_user)
+        + _glob_blocks(post_user)
+        + _grep_blocks(post_user)
+    )
 
     if kept:
         selected_text = "\n".join(kept)
@@ -749,6 +769,18 @@ def _is_glob_shaped(arguments: dict[str, Any]) -> bool:
     )
 
 
+def _is_grep_shaped(arguments: dict[str, Any]) -> bool:
+    """A grep tool call: pattern PLUS include, no filePath, no command.
+    A grep call also satisfies the older glob shape, so grep is checked
+    FIRST everywhere a call shape routes (#121 final-review F4)."""
+    return (
+        bool(arguments.get("pattern"))
+        and "include" in arguments
+        and "filePath" not in arguments
+        and "command" not in arguments
+    )
+
+
 def _call_field_map(
     messages: Sequence[Any],
     predicate: Callable[[dict[str, Any]], bool],
@@ -811,6 +843,11 @@ def _render_read_block(path: str, raw: str) -> tuple[str, bool]:
     flat = " ".join((raw or "").strip().split())
     if not flat:
         return f"assistant: [read {path} (failed)] empty read result", False
+    if _CLIENT_READ_CAP_RE.search(raw or ""):
+        return (
+            f"assistant: [read {path} (truncated)] client read cap",
+            False,
+        )
     if "<content>" not in raw:
         lowered = flat.lower()
         if lowered.startswith("file not found") or lowered.startswith("error"):
@@ -952,8 +989,15 @@ def _glob_blocks(post_user: Sequence[Any]) -> list[str]:
     """Glob blocks answering THIS turn only — a workspace listing is
     ephemeral discovery evidence like run output (the design's selection
     rule): the chain's later passes still see it, later turns never
-    re-render a stale listing. Reads remain the durable state."""
-    patterns = _call_field_map(post_user, _is_glob_shaped, "pattern")
+    re-render a stale listing. Reads remain the durable state. A
+    grep-shaped call is excluded here (#121 final-review F4: it also
+    satisfies the older glob shape, and a spurious failed-glob render
+    would shadow the real listing in the last-wins scan)."""
+    patterns = _call_field_map(
+        post_user,
+        lambda arguments: _is_glob_shaped(arguments) and not _is_grep_shaped(arguments),
+        "pattern",
+    )
     blocks: list[str] = []
     for message in post_user:
         if getattr(message, "role", None) != "tool":
@@ -962,6 +1006,22 @@ def _glob_blocks(post_user: Sequence[Any]) -> list[str]:
         if pattern:
             content = getattr(message, "content", None)
             blocks.append(_render_glob_block(pattern, content or ""))
+    return blocks
+
+
+def _grep_blocks(post_user: Sequence[Any], root: Path | None = None) -> list[str]:
+    """Grep blocks answering THIS turn only — content-search results are
+    ephemeral discovery evidence exactly like glob listings."""
+    patterns = _call_field_map(post_user, _is_grep_shaped, "pattern")
+    base = root or Path.cwd()
+    blocks: list[str] = []
+    for message in post_user:
+        if getattr(message, "role", None) != "tool":
+            continue
+        pattern = patterns.get(getattr(message, "tool_call_id", None) or "")
+        if pattern:
+            content = getattr(message, "content", None)
+            blocks.append(_render_grep_block(pattern, content or "", base))
     return blocks
 
 
@@ -985,12 +1045,14 @@ def _render_text(message: Any, role: str) -> str | None:
 
 
 def _resumes_turn(call: Any) -> bool:
-    """Read, run, and glob continuations resume the turn (issue #83) —
-    their results belong in context for another pipeline pass."""
+    """Read, run, glob, and grep continuations resume the turn (issue
+    #83; #121) — their results belong in context for another pipeline
+    pass."""
     arguments = _parsed_arguments(call)
     return arguments is not None and (
         _is_read_shaped(arguments)
         or _is_run_shaped(arguments)
+        or _is_grep_shaped(arguments)
         or _is_glob_shaped(arguments)
     )
 
@@ -1070,6 +1132,28 @@ def _write_count_this_turn(messages: Sequence[Any]) -> int:
         for message in items[boundary + 1 :]
         if _written_file_path(getattr(message, "tool_calls", ()) or ())
     )
+
+
+def _read_paths_this_turn(messages: Sequence[Any]) -> list[str]:
+    """The filePaths of THIS turn's read tool_calls, in wire order.
+
+    Structural by construction (post-boundary tool_calls, never rendered
+    context text — the ``_wrote_path_this_turn`` precedent). #121 review
+    round 2 blocker N1: the grep phase grounds on menu ∩ this-turn reads;
+    rendered-text order is first-occurrence with in-place updates, so
+    "the last rendered header" is NOT the chronologically latest read and
+    keying on it livelocked the pick."""
+    items = list(messages)
+    boundary = _latest_user_index(items)
+    paths: list[str] = []
+    for message in items[boundary + 1 :]:
+        for call in getattr(message, "tool_calls", ()) or ():
+            arguments = _parsed_arguments(call)
+            if arguments is not None and _is_read_shaped(arguments):
+                path = str(arguments.get("filePath", ""))
+                if path and path not in paths:
+                    paths.append(path)
+    return paths
 
 
 def _tool_result_ack(messages: Sequence[Any]) -> str | None:
@@ -1293,6 +1377,21 @@ def _outcome_chunks(
             arguments=json.dumps({"command": str(run), "description": "Run tests"}),
         )
         return [ClientToolCall(tool_calls=(invocation,))]
+    grep_stems = str(outcome.get("grep") or "")
+    if grep_stems:
+        grep_pattern = _grep_pattern(grep_stems)
+        if grep_pattern is None:
+            # defense in depth on classify's charset discipline (#121)
+            return [
+                ContentDelta(content="Refused: grep stems failed safety validation."),
+                Completion(finish_reason="stop"),
+            ]
+        invocation = ToolCallInvocation(
+            id=f"call_{uuid.uuid4().hex[:8]}",
+            name=_client_tool(tools, _GREP_TOOL_CANDIDATES, _GREP_TOOL),
+            arguments=json.dumps({"pattern": grep_pattern, "include": _GREP_INCLUDE}),
+        )
+        return [ClientToolCall(tool_calls=(invocation,))]
     glob_stem = str(outcome.get("glob") or "")
     if glob_stem:
         pattern = _glob_pattern(glob_stem)
@@ -1500,6 +1599,7 @@ class ServingEnsembleCaller:
                 recall_ledger=_recall_ledger(context.messages, reject_prefixes),
                 previous_ask=_previous_ask(context.messages, reject_prefixes),
                 self_read_round=round_index,
+                read_paths=_read_paths_this_turn(context.messages) + list(self_reads),
             )
             requested = _self_read_requests(outcome)
             if not requested:
@@ -1522,6 +1622,7 @@ class ServingEnsembleCaller:
         recall_ledger: list[dict[str, Any]] | None = None,
         previous_ask: dict[str, str] | None = None,
         self_read_round: int = 0,
+        read_paths: list[str] | None = None,
     ) -> dict[str, Any]:
         config = self._load_config()
         executor = ExecutorFactory.create_root_executor(project_dir=self._project_dir)
@@ -1541,6 +1642,10 @@ class ServingEnsembleCaller:
                     # classify (a standalone script) can gate serve-owned
                     # discovery without a cross-boundary import.
                     "self_reference": self._self_reference_enabled(),
+                    # #121 round-2 blocker N1: THIS turn's read paths
+                    # (client tool_calls + native self reads), the
+                    # structural signal the grep phase grounds on.
+                    "read_paths": read_paths or [],
                 }
             ),
         )

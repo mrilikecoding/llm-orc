@@ -723,12 +723,17 @@ def test_real_repo_files_admit_or_refuse_at_current_size() -> None:
 
     for name, rel_path in expected_refuses.items():
         rendered = render_read(name, rel_path)
-        assert f"[read {name} (over-budget)]" in rendered, (
-            f"{name} was expected to REFUSE over-budget (the pinned bound "
-            "this test documents) but rendered whole instead — either the "
-            "file shrank below the budget or the budget/estimator moved; "
-            "either way this needs the design-fork treatment, not a "
-            "silent update."
+        refused = (
+            f"[read {name} (over-budget)]" in rendered
+            or f"[read {name} (oversize)]" in rendered
+        )
+        assert refused, (
+            f"{name} was expected to REFUSE (the pinned bound this test "
+            "documents — over-budget originally; oversize since the file "
+            "crossed the 96KB per-file cap at #121 slice 2, 102KB) but "
+            "rendered whole instead — either the file shrank below both "
+            "bounds or the budget/estimator moved; either way this needs "
+            "the design-fork treatment, not a silent update."
         )
         assert f"[read {name}]" not in rendered
 
