@@ -1213,6 +1213,23 @@ def _serve_outcome(result: dict[str, Any]) -> dict[str, Any]:
     return {"finish": True, "content": str(outcome)}
 
 
+def _render_self_read_block(path: str, content: str) -> tuple[str, bool]:
+    """A serve-owned script rendered straight into the read-block grammar
+    (#144 review finding 1): trusted disk bytes take NO client-wire
+    normalizer heuristics — a script containing a literal ``<content>``
+    pair must render verbatim, never gutted to the span between the tags
+    (and never trailer- or gutter-stripped). Byte-identical to
+    ``_render_read_block`` for tag-free content, so the whale's pinned
+    over-budget projection is unchanged; the oversize cap and the failed
+    empty-read variant mirror the wire path exactly."""
+    normalized = content.strip()
+    if not normalized:
+        return f"assistant: [read {path} (failed)] empty read result", False
+    if len(normalized) > _READ_FILE_CAP:
+        return f"assistant: [read {path} (oversize)]", False
+    return f"assistant: [read {path}]\n{_indent_body(normalized)}", True
+
+
 def _self_read_requests(outcome: dict[str, Any]) -> list[str]:
     """The #144 self-read labels an unfinished outcome requests, else []."""
     if outcome.get("finish"):
@@ -1400,20 +1417,21 @@ class ServingEnsembleCaller:
 
     def _execute_self_read(self, label: str) -> tuple[str, bool]:
         """Read one serve-owned script server-side and render it through the
-        SAME block grammar as a client read (#144).
+        read-block grammar (#144).
 
         Confinement invariant (pre-flight finding 8): a self read only ever
         reads a file in the ENUMERATED serve-owned set — label shape
         (a known prefix plus a bare basename), then resolved-path
         containment in the scripts dir (chases a planted symlink), then
-        membership among the dir's own ``*.py`` entries. Set membership,
-        never a string prefix. Failures render the failed-read variant so
-        classify refuses on re-entry instead of re-requesting.
+        membership among the dir's own ``*.py`` entries (``test_*``
+        excluded, matching classify's label set — review finding 3). Set
+        membership, never a string prefix. Failures render the failed-read
+        variant so classify refuses on re-entry instead of re-requesting;
+        a malformed label refuses rather than raising (review finding 6).
 
-        Trusted bytes stay trusted (pre-flight finding 10a): the content is
-        wrapped the way the discovery spike measured it, so the failed-read
-        prefix sniff can never misfire on a script that happens to start
-        with "Error", and the budget projection matches the measured pin.
+        Trusted bytes stay trusted (review finding 1): rendering goes
+        through ``_render_self_read_block``, never the client-wire
+        normalizer heuristics.
         """
         basename = ""
         for prefix in _SELF_READ_PREFIXES:
@@ -1425,13 +1443,20 @@ class ServingEnsembleCaller:
                 f"assistant: [read {label} (failed)] not a serve-owned script",
                 False,
             )
-        scripts_dir = (self._project_dir / "scripts" / "agentic_serving").resolve()
-        candidate = (scripts_dir / basename).resolve()
-        enumerated = {
-            entry.resolve()
-            for entry in scripts_dir.glob("*.py")
-            if entry.resolve().is_relative_to(scripts_dir)
-        }
+        try:
+            scripts_dir = (self._project_dir / "scripts" / "agentic_serving").resolve()
+            candidate = (scripts_dir / basename).resolve()
+            enumerated = {
+                entry.resolve()
+                for entry in scripts_dir.glob("*.py")
+                if not entry.name.startswith("test_")
+                and entry.resolve().is_relative_to(scripts_dir)
+            }
+        except (OSError, ValueError):
+            return (
+                f"assistant: [read {label} (failed)] not a serve-owned script",
+                False,
+            )
         if not candidate.is_relative_to(scripts_dir) or candidate not in enumerated:
             return (
                 f"assistant: [read {label} (failed)] not a serve-owned script",
@@ -1444,7 +1469,7 @@ class ServingEnsembleCaller:
                 f"assistant: [read {label} (failed)] could not read the script",
                 False,
             )
-        return _render_read_block(label, f"<file>\n{content}\n</file>")
+        return _render_self_read_block(label, content)
 
     async def run(self, context: SessionContext) -> AsyncIterator[OrchestratorChunk]:
         if not context.tools:

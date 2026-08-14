@@ -3073,3 +3073,48 @@ def test_named_dotted_self_path_matches_the_dotted_label() -> None:
     assert decision["needs_self_files"] == [
         ".llm-orc/scripts/agentic_serving/resolve.py"
     ]
+
+
+def test_failed_self_read_reason_never_blames_the_client(
+    self_scripts: Path,
+) -> None:
+    # Review finding 4: a failed SERVER-side self read must not compose
+    # "client read failed" — no client was involved.
+    context = (
+        f"{_GATE_LISTING}\n"
+        "assistant: [read scripts/agentic_serving/classify.py (failed)]"
+        " not a serve-owned script"
+    )
+    decision = _classify_at(
+        self_scripts,
+        {
+            "task": "how does classify decide routing?",
+            "context": context,
+            "self_reference": True,
+        },
+    )
+    assert "read failed" in decision["read_failed"]
+    assert "client read failed" not in decision["read_failed"]
+
+
+def test_self_label_in_the_workspace_listing_dedupes_to_one_candidate(
+    self_scripts: Path,
+) -> None:
+    # Review finding 5: a dot-dir-capable client listing the self label
+    # itself must not manufacture a two-candidate refusal naming the same
+    # file twice.
+    listing = (
+        "assistant: [globbed classify,decide,routing]\n"
+        "  scripts/agentic_serving/classify.py"
+    )
+    decision = _classify_at(
+        self_scripts,
+        {
+            "task": "how does classify decide routing?",
+            "context": listing,
+            "self_reference": True,
+        },
+    )
+    assert decision["target"] == "need-self-files"
+    assert decision["needs_self_files"] == ["scripts/agentic_serving/classify.py"]
+    assert decision["glob_failed"] == ""

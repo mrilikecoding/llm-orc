@@ -403,15 +403,17 @@ def _run_test_command(task: str) -> str:
     return " ".join(["pytest", "-q", *named]).strip()
 
 
-def _attempt_reason(variant: str, visible: set[str]) -> str:
+def _attempt_reason(variant: str, visible: set[str], client: bool = True) -> str:
     """The failure detail a read-attempt variant records, shared by the
     basename-keyed ``_visibility`` and the full-path ``_visibility_paths``
     (#144) so the two namespaces can never word the same refusal
-    differently."""
+    differently. ``client=False`` (the self-read namespace) drops the
+    "client" attribution — a failed SERVER-side read never involved the
+    client (review finding 4)."""
     if variant == "oversize":
         return f"file exceeds the {_READ_CAP_KB} KB read cap"
     if variant == "failed":
-        return "client read failed"
+        return "client read failed" if client else "read failed"
     if variant == "over-budget":
         # C1 (#145): the caller already refused to render this read's
         # body (it would have pushed the total held projected-token
@@ -992,7 +994,7 @@ def _visibility_paths(context: str) -> tuple[set[str], dict[str, str]]:
     }
     attempted: dict[str, str] = {}
     for path, _, variant in _READ_ATTEMPT_RE.findall(context):
-        reason = _attempt_reason(variant, visible_basenames)
+        reason = _attempt_reason(variant, visible_basenames, client=False)
         if reason:
             attempted[path] = reason
     return visible, attempted
@@ -1064,7 +1066,10 @@ def _explain_discover(
     self_candidates = (
         _self_candidates(stems) if (self_reference and complete) else []
     )
-    union = [*candidates, *self_candidates]
+    # Dedup (review finding 5): a client that CAN list dot-dirs would list
+    # the self label itself — the same file must never manufacture a
+    # two-candidate false-ambiguity refusal naming it twice.
+    union = list(dict.fromkeys([*candidates, *self_candidates]))
     stem_list = ",".join(stems)
     if len(union) == 1:
         if self_candidates:

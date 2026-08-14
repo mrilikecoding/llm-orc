@@ -218,3 +218,84 @@ def test_emit_turn_trace_stamps_the_self_read_round(tmp_path: Path) -> None:
     assert trace["self_read_round"] == 2
     trace = emit_turn_trace("serving", {}, tmp_path)
     assert "self_read_round" not in trace
+
+
+# --- trusted bytes stay verbatim (review finding 1) --------------------------
+
+
+def test_self_read_of_a_content_tag_bearing_script_renders_verbatim(
+    project: Path,
+) -> None:
+    # Review finding 1 (MAJOR): trusted disk bytes must never pass the
+    # client-wire <content> extraction — a script containing literal
+    # <content>/</content> strings was gutted to the span between them and
+    # presented as "the actual current content".
+    scripts = project / "scripts" / "agentic_serving"
+    source = (
+        "PREFIX_CODE = 1\n"
+        'OPEN_TAG = "<content>"\n'
+        'CLOSE_TAG = "</content>"\n'
+        "SUFFIX_CODE = 2\n"
+    )
+    (scripts / "tags.py").write_text(source)
+    block, is_full = _caller(project)._execute_self_read(
+        ".llm-orc/scripts/agentic_serving/tags.py"
+    )
+    assert is_full
+    assert "PREFIX_CODE = 1" in block
+    assert "SUFFIX_CODE = 2" in block
+    assert '"<content>"' in block
+
+
+def test_self_read_render_matches_the_wire_render_for_plain_content(
+    project: Path,
+) -> None:
+    # Budget-parity anchor for the finding-1 fix: for tag-free content the
+    # direct render must be byte-identical to what the wire path produced,
+    # so the whale's pinned projection is unchanged.
+    from llm_orc.web.serving.serving_ensemble_caller import _render_read_block
+
+    content = (project / "scripts" / "agentic_serving" / "resolve.py").read_text()
+    wire_block, wire_full = _render_read_block(
+        ".llm-orc/scripts/agentic_serving/resolve.py", f"<file>\n{content}\n</file>"
+    )
+    block, is_full = _caller(project)._execute_self_read(_LABEL)
+    assert (block, is_full) == (wire_block, wire_full)
+
+
+# --- membership, not containment (review finding 2) --------------------------
+
+
+def test_non_enumerated_file_inside_the_scripts_dir_refuses(project: Path) -> None:
+    # Review finding 2: the invariant is membership in the enumerated set —
+    # a file INSIDE scripts/agentic_serving that is not an enumerated
+    # script must refuse (a pure containment check would read it).
+    scripts = project / "scripts" / "agentic_serving"
+    (scripts / "notes.txt").write_text("not a script\n")
+    block, is_full = _caller(project)._execute_self_read(
+        ".llm-orc/scripts/agentic_serving/notes.txt"
+    )
+    assert not is_full
+    assert "not a script" not in block
+
+
+def test_test_prefixed_script_is_not_enumerated_caller_side(project: Path) -> None:
+    # Review finding 3: the caller's enumerated set must agree with
+    # classify's label set — test_* is excluded on both sides.
+    scripts = project / "scripts" / "agentic_serving"
+    (scripts / "test_probe.py").write_text("PROBE = 1\n")
+    block, is_full = _caller(project)._execute_self_read(
+        ".llm-orc/scripts/agentic_serving/test_probe.py"
+    )
+    assert not is_full
+    assert "PROBE" not in block
+
+
+def test_embedded_nul_label_refuses_instead_of_raising(project: Path) -> None:
+    # Review finding 6: a NUL in the label raised ValueError out of the
+    # stream instead of refusing.
+    block, is_full = _caller(project)._execute_self_read(
+        ".llm-orc/scripts/agentic_serving/re\x00solve.py"
+    )
+    assert not is_full
+    assert "(failed)" in block
