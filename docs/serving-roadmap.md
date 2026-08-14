@@ -79,25 +79,29 @@ false-positive family (#147). Versions differ across rows; do not pool.
 Caveats: parity table v1 (`docs/plans/2026-07-15-first-parity-table.md`)
 plus host-CLAUDE.md leakage observed on Arm-1 Sonnet runs (#141).
 
-**v0.18.16 released 2026-08-13** (PyPI + Homebrew green): #148
-(truncated-listing refuse), #145+#150 (repo-scale reads: 96KB cap,
-token-denominated read budget, runtime truncation backstop), and the
-#144 slice (serve-native dot-dir self-reference: opt-in
-`serving.self_reference`, glob-first union discovery, full-path
-namespace, confined native reads under the shared budget — design
-pre-flight 3 blockers closed, adversarial review round 1 major fixed
-and round-2 APPROVED, live gate passed with the first grounded
-self-referential answer, arm-0 run 7 regression row 13/13 with the
-self path inert on the ladder). #144 stays OPEN for its literal
-"answers grounded" exit — blocked by classify.py itself (~39.9K
-projected tokens vs the 35K budget), unblockers #106/#151/chunked
-reads. #143 CLOSED as an honest miss (mechanism refuted at class
-level + gate refuted empirically; reopen rides #119). Open follow-ups
-filed today: #147 (classifier false-positive family), #149
-(client-side truncation flank), #151 (server-queried window +
-per-era thresholds), #152 (failed routing node cascades to a junk
-build write — surfaced by the #144 live-gate misfire). Operating
-rules: `docs/loop-protocol.md`.
+**v0.18.17 released 2026-08-14** (PyPI + Homebrew): the #121
+content-grep rung, slice A — def-anchored one-round content search,
+deterministic identifier menu over verified definition sites, guarded
+closed-menu pick (abstention falls open), AST-verified grounding
+attribution keyed on a structural this-turn read signal. Exit gate MET
+live (grounded answer citing turn_trace.py's real constants; re-passed
+first-try post-fix); arm-0 run 8 regression row 13/13, 0 dishonest,
+oracle 2/1/0 (best row), grep path inert on the ladder. Three design
+review rounds (v1 REDESIGN with measured blockers; ground truth via
+`opencode debug rg search`) and three implementation rounds (round-2
+BLOCKER: rendered-order keying livelocked the pick; fixed
+structurally). The gates DISCOVERED #153: OpenCode caps read output at
+50KB inside the serve's 96KB window — fixed (capped reads refuse
+honestly); offset-continuation reads are the named recovery, and the
+80KB caller attracting picks then refusing at the cap is the recorded
+coverage bound. **v0.18.16 released 2026-08-13**: #148, #145+#150,
+and the #144 self-reference slice (its literal "answers grounded"
+exit stays OPEN on the whale — unblockers #106/#151/chunked reads).
+#143 CLOSED as an honest miss (reopen rides #119). Open follow-ups:
+#147 (classifier false positives), #149 (client-side truncation
+flanks), #151 (server-queried window), #152 (routing-crash cascade),
+#153 (client read cap / offset reads). Operating rules:
+`docs/loop-protocol.md`.
 
 ## Timeline
 
@@ -135,8 +139,10 @@ Remaining, in order:
   validated (grounded self-reference for budget-fitting scripts; the
   literal classify-grounded exit stays open on the whale, riding
   #106/#151/chunked reads); #152 filed (routing-crash cascade)
-- [ ] #121 — content-grep meta-task rung (Approach B; bare-token grep
-  re-refuted at serve-owned scope, spike 3)
+- [x] #121 slice A — content-grep rung merged + live-validated (exit
+  gate met: grep→menu→pick→AST-confirmed grounding); coverage bounds
+  ride #153 (offset reads) and the truncated-listing trigger gate;
+  #153 filed+fixed (client 50KB read cap refuses honestly)
 - [ ] #141 #138 #63 — parity v2 inputs (CLAUDE.md confound, volume scaling, statistics), then parity table v2 with realism rows
 - [ ] #126 — long-horizon 30-turn battery (#136 #137 feed the design)
 - [ ] #139 #140 — memory spikes; #127 plexus substrate; #82 remainder (cross-session)
@@ -228,7 +234,8 @@ dishonest outcome.
 - [x] read/run/discovery delegation, fix-execution, chain executor, meta-task slice 1
 - [x] #143 closed (honest miss; reopen rides #119) · #145 repo-scale reads merged+live · #148 #150 read-seam hardening
 - [x] #144 slice — serve-native dot-dir self-reference merged+live (grounded exit rides #106/#151/chunked reads)
-- [ ] #121 grep · #149 client-side truncation flank
+- [x] #121 slice A — content-grep rung merged+live (exit gate met; bounds ride #153)
+- [ ] #153 offset-continuation reads · #149 client-side truncation flank
 - [ ] #122 edit delegation · #123 multi-file · #124 command registry · #117 fix-completion tail
 
 ### epic:ws5-long-horizon
