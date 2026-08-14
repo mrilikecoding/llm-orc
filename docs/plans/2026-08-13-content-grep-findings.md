@@ -112,3 +112,17 @@ deterministic serve-side surface filter (hidden-component paths dropped;
 Design v2.1 folds in the re-review's seven changes. Arm H/I scripts:
 scratchpad `arm_h.py`/`arm_i.py` (session artifacts; the battery, rules,
 and numbers are recorded here and in the design doc).
+
+## Final-review addendum (arm H-strict, 2026-08-13)
+
+The final review verdict: CHANGES-REQUIRED -> PROCEED once four surgical
+items land (no further round). Applied: (1) flag-on `.llm-orc` picks
+mint `needs_self_files` (the #144 native seam — a client read would
+re-open the wire-normalizer gutting hole and feed AST confirmation
+mangled bytes), with the flag-on surface scoped to the self-read label
+roots; (2) result paths RELATIVIZED before rendering, and survival
+re-measured under the strict production render (relative paths, 50-line
++ 4,096-char caps): **28/30 in-menu**, production menus 12-44 entries,
+misses concentrated on the one five-common-stem question — gate and
+dot-dir questions fully stable; (3) the arm D/F citation corrected;
+(4) the exit gate's determinism framed as rig-state-dependent.
