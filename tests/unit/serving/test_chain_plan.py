@@ -193,6 +193,25 @@ def test_explain_needs_files_outranks_the_explainer_row() -> None:
     assert decision == ("need-files", "need_files", False, False)
 
 
+def test_explain_needs_self_files_routes_to_the_self_read_step() -> None:
+    # #144 serve-native self-reference: the serve reads its own script
+    # without the client seam — a distinct step so the caller can execute
+    # the read natively instead of emitting a ClientToolCall.
+    decision = _decide(
+        is_explain=True,
+        needs_self_files=[".llm-orc/scripts/agentic_serving/resolve.py"],
+    )
+    assert decision == ("need-self-files", "need_self_files", False, False)
+
+
+def test_self_files_never_fires_off_the_explain_chain() -> None:
+    # Isolation: needs_self_files without is_explain must not route — the
+    # self-read seam is explain-discovery's, and a stray signal on any
+    # other turn falls through to the decider like today.
+    decision = _advance(_SignalBundle(**{**_DEFAULTS, "needs_self_files": ["x.py"]}))
+    assert decision.needs_decider is True
+
+
 def test_chain_explain_row_order_is_recall_notgrounded_defer_glob_files_explainer() -> (
     None
 ):
@@ -206,6 +225,7 @@ def test_chain_explain_row_order_is_recall_notgrounded_defer_glob_files_explaine
         "",  # defer to the guarded decider (recap, review round 2)
         "need-glob",
         "need-files",
+        "need-self-files",  # #144: before the explainer, after the client seams
         "explainer",
     ]
 

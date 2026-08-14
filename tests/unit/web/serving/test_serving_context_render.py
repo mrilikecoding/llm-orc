@@ -956,6 +956,19 @@ def test_write_outcome_falls_back_to_write_when_nothing_advertised() -> None:
     assert call.tool_calls[0].name == "write"
 
 
+def test_unrecognized_outcome_refuses_instead_of_defaulting_to_a_write() -> None:
+    # Version-skew guard (#144 pre-flight finding 7): project scripts and the
+    # installed caller rev independently, so an outcome key this caller does
+    # not recognize (a newer scripts vocabulary) must refuse honestly — the
+    # old terminal branch shipped a junk empty "solution.py" write instead.
+    chunks = _outcome_chunks(
+        {"finish": False, "self_reads": [".llm-orc/scripts/x.py"]}, []
+    )
+
+    assert not any(isinstance(chunk, ClientToolCall) for chunk in chunks)
+    assert any("Refused" in getattr(chunk, "content", "") for chunk in chunks)
+
+
 def test_opencode_wrapped_read_result_normalizes_to_plain_source() -> None:
     """Captured wire (opencode 1.17.15, 2026-07-09): a successful read wraps
     plain source in <path>/<type>/<content> tags with an unpadded "N: "
