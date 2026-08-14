@@ -80,6 +80,13 @@ class SignalBundle:
     # the client's glob, and self-knowledge must not depend on client
     # capability). Defaulted so existing bundles are unchanged.
     needs_self_files: list[str] = field(default_factory=list)
+    # #121 content-grep: ONE def-anchored grep round for the explain
+    # fall-through residue; defer_pick routes the identifier-menu pick to
+    # its own guarded node (never the needs_decider convention — the
+    # row's target stays the fail-open explainer and resolve upgrades it
+    # on a valid pick). Defaulted so existing bundles are unchanged.
+    needs_grep: str = ""
+    defer_pick: bool = False
 
 
 _Guard = Callable[[SignalBundle], bool]
@@ -215,6 +222,22 @@ def _explain_need_self_files(bundle: SignalBundle) -> bool:
     is_explain like the other explain-discovery rows, so a stray signal on
     any other turn falls through to today's routing."""
     return bundle.is_explain and bool(bundle.needs_self_files)
+
+
+def _explain_need_grep(bundle: SignalBundle) -> bool:
+    """#121 content-grep: one def-anchored grep round for the explain
+    fall-through residue — guarded on is_explain like every explain-
+    discovery row."""
+    return bundle.is_explain and bool(bundle.needs_grep)
+
+
+def _explain_defer_pick(bundle: SignalBundle) -> bool:
+    """#121: the identifier-menu pick defers to its own guarded node. The
+    target is the fail-open explainer (design final-review change 5: an
+    empty target would silently mint needs_decider and fire the
+    seat-routing decide node); resolve upgrades to the read on a valid
+    pick."""
+    return bundle.is_explain and bundle.defer_pick
 
 
 def _explain_explainer(bundle: SignalBundle) -> bool:
@@ -360,6 +383,23 @@ CHAIN_EXPLAIN = Chain(
             kind="need_self_files",
             build=False,
             guard=_explain_need_self_files,
+        ),
+        # #121 content-grep: the grep round and the pick-defer row, after
+        # every earlier seam (a turn carries at most one by construction),
+        # before the explainer so first-match cannot short-circuit them.
+        Step(
+            chain_label="explain",
+            target="need-grep",
+            kind="need_grep",
+            build=False,
+            guard=_explain_need_grep,
+        ),
+        Step(
+            chain_label="explain",
+            target=_EXPLAIN_SEAT,
+            kind="explanation",
+            build=False,
+            guard=_explain_defer_pick,
         ),
         Step(
             chain_label="explain",

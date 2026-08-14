@@ -1,0 +1,11 @@
+name: need-grep
+description: |
+  #121 content-grep — the cheap dispatch target for a turn that must first
+  run ONE def-anchored content search through the client permission seam.
+  The routing decision (classify) already carries the stems; this shape
+  exists so the skeleton dispatches SOMETHING without burning a build
+  round. One deterministic script node, no model calls.
+serves: need-grep
+agents:
+  - name: echo
+    script: scripts/agentic_serving/need_grep_echo.py

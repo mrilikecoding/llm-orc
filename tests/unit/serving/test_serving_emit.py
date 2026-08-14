@@ -493,3 +493,24 @@ def test_needs_self_files_emits_a_self_reads_outcome() -> None:
         "finish": False,
         "self_reads": [".llm-orc/scripts/agentic_serving/resolve.py"],
     }
+
+
+def test_needs_grep_emits_a_grep_outcome() -> None:
+    # #121 content-grep: the caller maps this to ONE grep tool call.
+    outcome = _emit(
+        gated={
+            "build": False,
+            "file": "solution.py",
+            "content": "Searching definitions.",
+            "valid": True,
+            "reason": "ok",
+            "needs_files": [],
+            "read_failed": "",
+            "needs_grep": "recall,ledger,built",
+            "accept": None,
+            "accept_reason": "",
+            "seat_admitted": None,
+            "seat_contract_reason": "",
+        }
+    )
+    assert outcome == {"finish": False, "grep": "recall,ledger,built"}

@@ -160,6 +160,7 @@ def serving_project(tmp_path: Path) -> Path:
         REAL_AGENTIC_SERVING / "need-self-files.yaml",
         ensembles / "need-self-files.yaml",
     )
+    shutil.copy(REAL_AGENTIC_SERVING / "need-grep.yaml", ensembles / "need-grep.yaml")
     return tmp_path
 
 
@@ -487,13 +488,73 @@ def test_bare_symbol_explain_zero_glob_matches_answers_conceptually(
 
     assert resp.status_code == 200
     choice = resp.json()["choices"][0]
+    # #121: the fall-through residue now gets ONE content-grep round first.
+    assert choice["finish_reason"] == "tool_calls"
+    grep_call = choice["message"]["tool_calls"][0]
+    assert grep_call["function"]["name"] == "grep"
+    grep_args = json.loads(grep_call["function"]["arguments"])
+    assert grep_args["include"] == "*.py"
+
+    # A no-definition grep result completes the fall-through: conceptual
+    # prose, no refusal, no re-grep.
+    resp = serving_client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "ensemble-agent",
+            "messages": [
+                {"role": "user", "content": "explain how recursion works"},
+                {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "id": "call_g1",
+                            "type": "function",
+                            "function": {
+                                "name": "glob",
+                                "arguments": ('{"pattern": "**/*{recursion,works}*"}'),
+                            },
+                        }
+                    ],
+                },
+                {
+                    "role": "tool",
+                    "tool_call_id": "call_g1",
+                    "content": "/work/notes.md\n/work/README.md",
+                },
+                {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "id": "call_gr1",
+                            "type": "function",
+                            "function": {
+                                "name": "grep",
+                                "arguments": json.dumps(grep_args),
+                            },
+                        }
+                    ],
+                },
+                {
+                    "role": "tool",
+                    "tool_call_id": "call_gr1",
+                    "content": "No files found",
+                },
+            ],
+            "tools": [_WRITE_TOOL],
+        },
+    )
+    assert resp.status_code == 200
+    choice = resp.json()["choices"][0]
     assert choice["finish_reason"] == "stop"
     assert not choice["message"].get("tool_calls")
     content = choice["message"]["content"]
-    # the hermetic echo explainer seat answered (it contains "add") — proof
-    # the turn reached the conceptual seat, not an honest-refusal message
+    # the hermetic echo explainer seat answered — proof the turn reached
+    # the conceptual seat, not an honest-refusal message
     assert content
     assert "no file matching" not in content
+    assert "Refused" not in content
     assert "add" in content
 
 
@@ -595,14 +656,16 @@ def recall_decider_client(
     serving_yaml = serving_project / "ensembles" / "serving.yaml"
     text = serving_yaml.read_text()
     before, _, after = text.partition("  - name: decide")
-    _, _, resolve_onward = after.partition("  - name: resolve")
+    # partition at the PICK node (#121) so the stub replaces only the
+    # decide body — resolve depends on pick, which must survive.
+    _, _, pick_onward = after.partition("  - name: pick")
     stub = (
         "  - name: decide\n"
         "    script: \"echo 'recall'\"\n"
         "    depends_on: [classify]\n"
         "    when: ${classify.needs_decider}\n"
     )
-    serving_yaml.write_text(before + stub + "  - name: resolve" + resolve_onward)
+    serving_yaml.write_text(before + stub + "  - name: pick" + pick_onward)
 
     def _caller() -> ServingEnsembleCaller:
         return ServingEnsembleCaller(project_dir=serving_project, ensemble="serving")
@@ -677,14 +740,14 @@ def recap_decider_client(
     serving_yaml = serving_project / "ensembles" / "serving.yaml"
     text = serving_yaml.read_text()
     before, _, after = text.partition("  - name: decide")
-    _, _, resolve_onward = after.partition("  - name: resolve")
+    _, _, pick_onward = after.partition("  - name: pick")
     stub = (
         "  - name: decide\n"
         "    script: \"echo 'recap'\"\n"
         "    depends_on: [classify]\n"
         "    when: ${classify.needs_decider}\n"
     )
-    serving_yaml.write_text(before + stub + "  - name: resolve" + resolve_onward)
+    serving_yaml.write_text(before + stub + "  - name: pick" + pick_onward)
 
     def _caller() -> ServingEnsembleCaller:
         return ServingEnsembleCaller(project_dir=serving_project, ensemble="serving")
@@ -2269,7 +2332,10 @@ def test_gate_question_self_reads_and_refuses_the_whale_over_budget(
     content = choice["message"]["content"]
     assert "Refused: could not read" in content
     assert "classify.py" in content
-    assert "alone exceeds the session read budget" in content
+    # The whale crossed the 96KB per-file cap outright (102KB at #121
+    # slice 2), so the honest refusal now cites the size cap; before that
+    # growth it cited the token budget. Either is the honest bound.
+    assert "read cap" in content or "read budget" in content
 
 
 def test_self_question_grounds_from_the_serve_scripts_without_a_client_read(
@@ -2328,8 +2394,10 @@ def test_gate_question_stays_conceptual_with_the_flag_off(
 
     assert resp.status_code == 200
     choice = resp.json()["choices"][0]
-    assert choice["finish_reason"] == "stop"
-    assert not choice["message"].get("tool_calls")
+    # #121 later added a flagless content-grep round to this fall-through;
+    # the #144 invariant this test pins is the SELF path staying off.
+    assert choice["finish_reason"] == "tool_calls"
+    assert choice["message"]["tool_calls"][0]["function"]["name"] == "grep"
 
     traces = [
         json.loads(line)
