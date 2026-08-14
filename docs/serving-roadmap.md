@@ -79,11 +79,9 @@ false-positive family (#147). Versions differ across rows; do not pool.
 Caveats: parity table v1 (`docs/plans/2026-07-15-first-parity-table.md`)
 plus host-CLAUDE.md leakage observed on Arm-1 Sonnet runs (#141).
 
-**v0.18.15 released 2026-08-13** (#146 closed; PyPI + Homebrew green).
-Merged-unreleased on main since the tag: #148 (truncated-listing
-refuse, run-6 validation row); #145+#150 (repo-scale reads: 96KB
-cap, token-denominated read budget, runtime truncation backstop —
-five review rounds, live gate passed, dogfood entry 1 converted);
+**v0.18.16 released 2026-08-13** (PyPI + Homebrew green): #148
+(truncated-listing refuse), #145+#150 (repo-scale reads: 96KB cap,
+token-denominated read budget, runtime truncation backstop), and the
 #144 slice (serve-native dot-dir self-reference: opt-in
 `serving.self_reference`, glob-first union discovery, full-path
 namespace, confined native reads under the shared budget — design
