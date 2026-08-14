@@ -17,6 +17,7 @@ identically (``build=False``) whether it answers a build ask's discovery round
 or a bare-symbol explain's, so the prefix itself is what tells the ledger
 whether a build outcome may be attributed at all.
 
+    routing failed (#152):       {"finish": true, "content": "Refused: serving pipeline error: <reason>"}
     read failed (build ask):     {"finish": true, "content": "Build refused: <read_failed reason>"}
     read failed (non-build ask): {"finish": true, "content": "Refused: <read_failed reason>"}
     glob failed (build ask):     {"finish": true, "content": "Build refused: <glob_failed reason>"}
@@ -148,6 +149,16 @@ def _seam_outcome(gated: dict) -> dict | None:
     form_gate) — the SAME refusal shape (build=False) otherwise answers a
     bare-symbol explain's discovery round, which is never a build ask.
     """
+    routing_failed = str(gated.get("routing_failed", ""))
+    if routing_failed:
+        # #152 fail-closed routing: no readable routing decision — the seat
+        # dispatched on a failed decision, so no content-bearing route is
+        # trustworthy; refuse before every other outcome. Always the plain
+        # non-minting prefix: an unreadable decision makes ``is_build_ask``
+        # unknowable, and the ledger doctrine is under-report, never
+        # misreport.
+        prefix = TERMINALS["refused"].prefix
+        return {"finish": True, "content": f"{prefix}{routing_failed}"}
     is_build_ask = bool(gated.get("is_build_ask", False))
     refused = TERMINALS["build_refused"] if is_build_ask else TERMINALS["refused"]
     read_failed = str(gated.get("read_failed", ""))
