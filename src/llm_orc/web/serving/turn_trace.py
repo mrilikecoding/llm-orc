@@ -364,15 +364,25 @@ def summarize_turn_trace(trace: dict[str, Any]) -> str:
 
 
 def emit_turn_trace(
-    ensemble_name: str, result_dict: dict[str, Any], root: Path
+    ensemble_name: str,
+    result_dict: dict[str, Any],
+    root: Path,
+    self_read_round: int = 0,
 ) -> dict[str, Any]:
     """Build the turn trace, append it to ``<root>/turns.jsonl``, and write a
     one-line summary to stderr. Returns the trace so callers/tests can inspect
-    it. Tracing must never break the serve, so IO failures are swallowed."""
+    it. Tracing must never break the serve, so IO failures are swallowed.
+
+    ``self_read_round`` (#144, pre-flight finding 10c): a non-zero value
+    marks an in-process self-read re-entry pass, so instruments counting
+    traces as turns can collapse the extra passes instead of over-counting.
+    """
     try:
         trace = build_turn_trace(ensemble_name, result_dict)
     except Exception:  # noqa: BLE001 — tracing must never break the serve
         trace = {"ensemble": ensemble_name, "execution_order": [], "nodes": []}
+    if self_read_round:
+        trace["self_read_round"] = self_read_round
     try:
         root.mkdir(parents=True, exist_ok=True)
         with (root / "turns.jsonl").open("a", encoding="utf-8") as handle:
