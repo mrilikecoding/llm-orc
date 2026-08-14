@@ -200,7 +200,7 @@ def main() -> None:
     print(f"\n  tally over {len(BATTERY) * 3} samples: {tally}")
 
 
-if __name__ == "__main__" and __import__("sys").argv[-1] not in ("arm-c", "arm-d", "arm-e", "arm-f"):
+if __name__ == "__main__" and __import__("sys").argv[-1] not in ("arm-c", "arm-d", "arm-e", "arm-f", "arm-g"):
     main()
 
 
@@ -611,3 +611,48 @@ def arm_f() -> None:
 
 if __name__ == "__main__" and __import__("sys").argv[-1] == "arm-f":
     arm_f()
+
+
+# --- Arm G (post-pre-flight): def-anchored pattern feasibility -------------
+# Pre-flight F1 measured the mention-volume pattern at 145-3,212 lines per
+# battery question (every one over a 50-line render cap). Arm G measures
+# the redesign's def-site-anchored pattern: only DEFINITION lines whose
+# name contains a stem match, so the volume question and the
+# right-file-in-menu question are answered together. Deterministic only.
+
+
+def def_anchored_pattern(question_stems: list[str]) -> str:
+    alternation = "|".join(question_stems)
+    return (
+        rf"^\s*(def|class)\s+[A-Za-z0-9_]*({alternation})[A-Za-z0-9_]*"
+        rf"|^[A-Za-z_][A-Za-z0-9_]*({alternation})[A-Za-z0-9_]* *="
+    )
+
+
+def arm_g() -> None:
+    print("=== Arm G: def-anchored pattern — volume + menu membership ===")
+    for question, _, expected in BATTERY:
+        pattern = def_anchored_pattern(stems(question))
+        result = subprocess.run(
+            ["rg", "-n", "-i", "-g", "*.py", "--", pattern],
+            capture_output=True,
+            text=True,
+        )
+        lines = [ln for ln in result.stdout.splitlines() if ln.strip()]
+        files = sorted(
+            {
+                ln.split(":", 1)[0]
+                for ln in lines
+                if not ln.split(":", 1)[0].rsplit("/", 1)[-1].startswith("test_")
+                and not ln.split(":", 1)[0].startswith("docs/")
+            }
+        )
+        hit = any(f.endswith(expected) for f in files)
+        print(
+            f"  {'IN-MENU ' if hit else 'MISSING '}"
+            f"lines={len(lines):4} menu-files={len(files):2}  {question[:44]}"
+        )
+
+
+if __name__ == "__main__" and __import__("sys").argv[-1] == "arm-g":
+    arm_g()
