@@ -27,6 +27,7 @@ skeleton (AS-11).
 
 from __future__ import annotations
 
+import ast
 import json
 import re
 import sys
@@ -1024,6 +1025,223 @@ def _visible_path_body(context: str, path: str) -> str:
     return "\n".join(body_lines).strip()
 
 
+# --- #121 content-grep rung ------------------------------------------------
+# Design: docs/plans/2026-08-13-content-grep-design.md. Fires only on the
+# conceptual fall-through residue (explain, complete glob listing, zero
+# union candidates): one def-anchored grep round, a deterministic
+# identifier menu from the rendered block, a guarded closed-menu pick,
+# and AST-confirmed grounding — the answer's file must ACTUALLY define
+# every attributed identifier.
+
+_GREP_HEADER_PREFIX = "assistant: [grepped "
+_GREP_ROW_LINE_RE = re.compile(r"^  (\S+): Line (\d+): (.*)$")
+_MENU_DEF_RE = re.compile(r"^\s*(?:def|class)\s+([A-Za-z_][A-Za-z0-9_]*)")
+_MENU_ASSIGN_RE = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)\s*=")
+# The abstain sentinel the pick node uses; an identifier literally named
+# this is excluded from menus at build time (design resolution 4).
+_PICK_ABSTAIN = "none"
+# The fixed truncation hedge (design resolution 3, final-review change
+# 4): composed here deterministically, never left to seat discretion.
+_GREP_HEDGE = (
+    "Note: the definition search was cut before completing; other "
+    "definitions may exist elsewhere in the workspace."
+)
+
+
+class _GrepBlock(NamedTuple):
+    """The turn's latest ``[grepped ...]`` block: its stems, whether the
+    result was cut (wire signals or render caps — one flag, the render
+    already folded them), whether it failed, and the rendered rows."""
+
+    stems: str
+    truncated: bool
+    failed: bool
+    rows: list[tuple[str, int, str]]
+
+
+def _latest_grep_block(context: str) -> _GrepBlock | None:
+    """The turn's LATEST ``[grepped ...]`` block, or ``None`` when no grep
+    round has run yet. Column-0 anchored header scan (fenced block
+    grammar), last wins — mirrors ``_latest_glob_listing``."""
+    lines = context.splitlines()
+    start = -1
+    for index, line in enumerate(lines):
+        if line.startswith(_GREP_HEADER_PREFIX):
+            start = index
+    if start < 0:
+        return None
+    header = lines[start]
+    failed = " (failed)]" in header
+    truncated = header.endswith(" (truncated)]")
+    stems_end = header.find(" (", len(_GREP_HEADER_PREFIX))
+    if stems_end < 0:
+        stems_end = header.find("]", len(_GREP_HEADER_PREFIX))
+    stems = header[len(_GREP_HEADER_PREFIX) : stems_end]
+    rows: list[tuple[str, int, str]] = []
+    for line in lines[start + 1 :]:
+        if not line.startswith("  "):
+            break
+        row = _GREP_ROW_LINE_RE.match(line)
+        if row:
+            rows.append((row.group(1), int(row.group(2)), row.group(3)))
+    return _GrepBlock(stems=stems, truncated=truncated, failed=failed, rows=rows)
+
+
+def _grep_surface_ok(path: str, self_reference: bool) -> bool:
+    """The deterministic search surface (design resolution 6): non-test,
+    non-docs ``.py``; any hidden path component excludes — except the
+    exact #144 self-read label shape
+    ``.llm-orc/scripts/agentic_serving/<basename>.py``, admitted iff the
+    self-reference flag is on, so the flag-on surface and the native
+    read seam admit the same set."""
+    parts = path.split("/")
+    name = parts[-1]
+    if not name.endswith(".py") or name.startswith("test_"):
+        return False
+    if parts[0] == "docs":
+        return False
+    if any(part.startswith(".") for part in parts[:-1]):
+        return (
+            self_reference
+            and len(parts) == 4
+            and parts[0] == ".llm-orc"
+            and parts[1] == "scripts"
+            and parts[2] == "agentic_serving"
+        )
+    return True
+
+
+def _grep_menu(
+    rows: list[tuple[str, int, str]], stems: list[str], self_reference: bool
+) -> dict[str, str]:
+    """identifier -> definition-site file, from the rendered rows alone:
+    def-line shapes only (a mention never enters), identifier CONTAINS a
+    question stem (case-insensitive, the wire pattern's semantics), and
+    exactly ONE def-site file per identifier. First-occurrence order."""
+    lowered = [stem.lower() for stem in stems]
+    def_sites: dict[str, set[str]] = {}
+    order: list[str] = []
+    for path, _lineno, text in rows:
+        if not _grep_surface_ok(path, self_reference):
+            continue
+        match = _MENU_DEF_RE.match(text) or _MENU_ASSIGN_RE.match(text)
+        if not match:
+            continue
+        identifier = match.group(1)
+        if identifier == _PICK_ABSTAIN:
+            continue
+        low = identifier.lower()
+        if not any(stem in low for stem in lowered):
+            continue
+        if identifier not in def_sites:
+            order.append(identifier)
+        def_sites.setdefault(identifier, set()).add(path)
+    return {
+        identifier: next(iter(def_sites[identifier]))
+        for identifier in order
+        if len(def_sites[identifier]) == 1
+    }
+
+
+def _ast_defined_names(source: str) -> set[str] | None:
+    """Every name the source ACTUALLY defines (functions, classes at any
+    depth; module-level Assign and AnnAssign targets), or ``None`` when
+    the source does not parse. A docstring or string literal containing
+    ``def foo`` is not an AST definition — the forged-def-line guard
+    (design resolution 5)."""
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return None
+    names: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef):
+            names.add(node.name)
+    for node in tree.body:
+        if isinstance(node, ast.Assign):
+            for target in node.targets:
+                if isinstance(target, ast.Name):
+                    names.add(target.id)
+        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+            names.add(node.target.id)
+    return names
+
+
+class _GrepPhase(NamedTuple):
+    """The grep rung's contribution to the turn, all-empty when inert."""
+
+    needs_grep: str = ""
+    defer_pick: bool = False
+    pick_input: str = ""
+    pick_menu: dict[str, str] = {}
+    grounded_file: str = ""
+    grounded_names: list[str] = []
+    hedge: bool = False
+    read_failed: str = ""
+    not_grounded_reason: str = ""
+
+
+def _grep_phase(context: str, task: str, stems: list[str], self_reference: bool) -> _GrepPhase:
+    """The #121 state machine over the rendered context: no grep block +
+    complete listing -> one grep round; block failed/empty menu ->
+    conceptual fall-through; menu + no read -> defer the pick; menu +
+    visible read -> AST-confirmed grounding; menu + failed read ->
+    honest refusal."""
+    block = _latest_grep_block(context)
+    if block is None:
+        listing = _latest_glob_listing(context)
+        complete = (
+            listing is not None and not listing.truncated and bool(listing.paths)
+        )
+        if complete:
+            return _GrepPhase(needs_grep=",".join(stems))
+        return _GrepPhase()
+    if block.failed:
+        return _GrepPhase()
+    menu = _grep_menu(block.rows, stems, self_reference)
+    if not menu:
+        return _GrepPhase()
+    visible, attempted = _visibility_paths(context)
+    for path in dict.fromkeys(menu.values()):
+        if path in visible:
+            body = _visible_path_body(context, path)
+            names = _ast_defined_names(body) if body else None
+            confirmed = [
+                identifier
+                for identifier, def_file in menu.items()
+                if def_file == path and names is not None and identifier in names
+            ]
+            if confirmed:
+                return _GrepPhase(
+                    grounded_file=path,
+                    grounded_names=confirmed,
+                    hedge=block.truncated,
+                )
+            attributed = [i for i, f in menu.items() if f == path]
+            return _GrepPhase(
+                grounded_file=path,
+                not_grounded_reason=(
+                    f"the read content of {path} does not define "
+                    f"{', '.join(attributed)}"
+                ),
+            )
+        if path in attempted:
+            return _GrepPhase(
+                read_failed=f"could not read {path}: {attempted[path]}"
+            )
+    lines = [f"- {identifier} ({menu[identifier]})" for identifier in menu]
+    pick_input = (
+        f"Question: {task}\n\n"
+        "Identifiers (REAL definitions found in this workspace):\n"
+        + "\n".join(lines)
+        + "\n\nPick the ONE identifier whose definition most directly "
+        "answers the question, or abstain.\nRespond with ONLY a JSON "
+        'object, no other text: {"pick": "<identifier-from-the-list>"} '
+        'or {"pick": "none"}'
+    )
+    return _GrepPhase(defer_pick=True, pick_input=pick_input, pick_menu=menu)
+
+
 def _self_read_request(label: str, context: str) -> tuple[list[str], str]:
     """(self paths to read, refusal reason) for a serve-owned candidate —
     the full-path-keyed sibling of ``_explain_read_request``. Visible ->
@@ -1930,6 +2148,43 @@ def main() -> None:
             explain_stems=explain_stems,
             self_reference=self_reference,
         )
+    # #121 content-grep: fires only when the whole explain-discovery fell
+    # through (no candidates, no signals) — the conceptual residue.
+    needs_grep = ""
+    defer_pick = False
+    pick_input = ""
+    pick_menu: dict[str, str] = {}
+    grep_names: list[str] = []
+    grep_hedge = False
+    if (
+        explain_stems
+        and not named_file
+        and not needs_glob
+        and not glob_failed
+        and not needs_files
+        and not read_failed
+        and not needs_self_files
+    ):
+        phase = _grep_phase(conversation_raw, task, explain_stems, self_reference)
+        needs_grep = phase.needs_grep
+        defer_pick = phase.defer_pick
+        pick_input = phase.pick_input
+        pick_menu = phase.pick_menu
+        if phase.read_failed:
+            read_failed = phase.read_failed
+        if phase.grounded_file and phase.not_grounded_reason:
+            # AST confirmation failed: the read content does not define
+            # the attributed identifiers — refuse, never ground a forgery.
+            named_file = phase.grounded_file
+            named_basename = named_file.rsplit("/", 1)[-1]
+            explain_ungrounded = True
+            explain_attempted[named_basename] = phase.not_grounded_reason
+        elif phase.grounded_file:
+            named_file = phase.grounded_file
+            named_basename = named_file.rsplit("/", 1)[-1]
+            grep_names = phase.grounded_names
+            grep_hedge = phase.hedge
+
     bundle = _SignalBundle(
         is_explain=is_explain,
         explain_ungrounded=explain_ungrounded,
@@ -1944,6 +2199,8 @@ def main() -> None:
         needs_files=needs_files,
         read_failed=read_failed,
         needs_self_files=needs_self_files,
+        needs_grep=needs_grep,
+        defer_pick=defer_pick,
         tests_primary=tests_primary,
         has_build_signal=has_build_signal,
         kind_hint=str(turn.get("kind", "python_module")),
@@ -2038,7 +2295,7 @@ def main() -> None:
         # (#144) selects its body by EXACT path (pre-flight finding 2): a
         # later workspace basename twin must never win the last-wins scan
         # and get quoted under the serve-owned header.
-        if self_reference and named_file in _self_labels():
+        if (self_reference and named_file in _self_labels()) or grep_names:
             block_body = _visible_path_body(conversation_raw, named_file)
         else:
             block_body = _visible_target_body(conversation_raw, named_basename)
@@ -2049,6 +2306,16 @@ def main() -> None:
             f"Explain {named_file}'s ACTUAL content shown above — do not "
             "guess or invent behavior it does not have."
         )
+        if grep_names:
+            # #121: attribution names the AST-confirmed definitions the
+            # content search grounded on; the hedge is the fixed sentence
+            # (design resolution 3), never seat discretion.
+            dispatch_input += (
+                "\n\nThe grounding was found by content search: "
+                f"{named_file} defines {', '.join(grep_names)}."
+            )
+            if grep_hedge:
+                dispatch_input += f"\n\n{_GREP_HEDGE}"
 
     print(
         json.dumps(
@@ -2066,6 +2333,10 @@ def main() -> None:
                 "needs_glob": needs_glob,
                 "glob_failed": glob_failed,
                 "needs_self_files": needs_self_files,
+                "needs_grep": needs_grep,
+                "defer_pick": defer_pick,
+                "pick_input": pick_input,
+                "pick_menu": pick_menu,
                 "not_grounded": not_grounded,
                 "not_grounded_reason": not_grounded_reason,
                 "recall_answer": recall_answer,
