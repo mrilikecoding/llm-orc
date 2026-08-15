@@ -59,7 +59,7 @@ layer is the insulation that keeps an eventual hardening cheap, and
 "frozen component" status is the trigger, tracked informally the way the
 buy-back ledger tracks hosted seats.
 
-## State (2026-08-13)
+## State (2026-08-14)
 
 | arm / serve version | runs | strict | dishonest | record |
 |---|---|---|---|---|
@@ -79,6 +79,21 @@ false-positive family (#147). Versions differ across rows; do not pool.
 Caveats: parity table v1 (`docs/plans/2026-07-15-first-parity-table.md`)
 plus host-CLAUDE.md leakage observed on Arm-1 Sonnet runs (#141).
 
+**#152 merged 2026-08-14** (57315bc, no release — serving scripts only):
+fail-closed routing. shape accepts a decision only when it parses to a
+dict with a non-empty string `target` and `build`/`kind` present;
+anything else (the captured crash envelope, the classify-crash launder
+through resolve's `target: ""`, out-of-set decider, drifted-producer
+shapes) refuses FIRST at emit with the non-minting `Refused: serving
+pipeline error` terminal — never a write, never silent empty prose. The
+2026-08-13 misfire conditions replayed through real OpenCode refuse
+honestly (live gate record); run-10 battery row 13/13, 0 dishonest,
+zero routing refusals on a healthy serve (oracle 0/0/3 — two accept-gate
+rejections plus their cascade, the recurring qwen3:8b variance class).
+Two-round adversarial review APPROVE with four mutation-verified gate
+pins. Follow-ups: #154 (bare-python3 interpreter fragility — the
+misfire's environmental trigger, also explains the checkout-shell
+endpoint failures), #155 (downstream positive-completeness analogues).
 **v0.18.18 released 2026-08-14** (PyPI + Homebrew): #153
 offset-continuation reads — client-capped reads continue at the
 trailer-named offset and stitch whole-or-refuse (call-count bound with
@@ -111,8 +126,8 @@ and the #144 self-reference slice (its literal "answers grounded"
 exit stays OPEN on the whale — unblockers #106/#151/chunked reads).
 #143 CLOSED as an honest miss (reopen rides #119). Open follow-ups:
 #147 (classifier false positives), #149 (client-side truncation
-flanks), #151 (server-queried window), #152 (routing-crash cascade),
-#153 (client read cap / offset reads). Operating rules:
+flanks), #151 (server-queried window), #154 (interpreter PATH
+fragility), #155 (pipeline positive-completeness). Operating rules:
 `docs/loop-protocol.md`.
 
 ## Timeline
@@ -150,7 +165,7 @@ Remaining, in order:
 - [x] #144 slice — serve-native dot-dir self-reference merged + live-
   validated (grounded self-reference for budget-fitting scripts; the
   literal classify-grounded exit stays open on the whale, riding
-  #106/#151/chunked reads); #152 filed (routing-crash cascade)
+  #106/#151/chunked reads); #152 fixed+merged (routing fails closed)
 - [x] #121 slice A — content-grep rung merged + live-validated (exit
   gate met: grep→menu→pick→AST-confirmed grounding); coverage bounds
   ride #153 (offset reads) and the truncated-listing trigger gate;
@@ -270,7 +285,8 @@ dishonest outcome.
 
 ### epic:ws9-platform
 - [x] #146 v0.18.15 released
-- [ ] #151 runtime-window detector remainder · #152 routing-crash cascade · #85 sandbox hardening · #84 gate adversarial harness · #90 llama.cpp · #93 hot path · #95 dead surface · #106 shape home · #110 artifact quality · #114 trace cap · #132 BitNet · #142 reject templates
+- [x] #152 fail-closed routing merged (readability-gated decisions; the misfire class refuses)
+- [ ] #151 runtime-window detector remainder · #154 interpreter PATH fragility · #155 pipeline positive-completeness · #85 sandbox hardening · #84 gate adversarial harness · #90 llama.cpp · #93 hot path · #95 dead surface · #106 shape home · #110 artifact quality · #114 trace cap · #132 BitNet · #142 reject templates
 
 ### epic:off-path
 #80 #65 #30 #66 — parked, not on the north-star path.
