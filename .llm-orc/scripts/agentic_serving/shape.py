@@ -34,6 +34,53 @@ def _response(dep: object) -> str:
     return dep.get("response", "") if isinstance(dep, dict) else ""
 
 
+def _readable_decision(dep: object) -> dict | None:
+    """The parsed routing decision when it carries the producers' contract
+    (#152 fail-closed): a dict with a NON-EMPTY ``target`` and at least
+    one of ``build``/``kind`` present. Presence of the dep alone proves
+    nothing — a crashed node RETURNS its failure envelope as a normal
+    response (script_agent.py's exit-code wrap), and a crashed classify
+    laundered through a healthy resolve arrives with ``target: ""`` (as
+    does an out-of-set decider vote). Positive readability: an unknown
+    future failure shape fails closed instead of sailing past an
+    error-shape denylist."""
+    try:
+        parsed = json.loads(_response(dep))
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(parsed, dict):
+        return None
+    target = parsed.get("target")
+    # non-empty STRING, not merely truthy (review finding 8): a drifted
+    # producer emitting a number/list/whitespace target must not route.
+    if not isinstance(target, str) or not target.strip():
+        return None
+    if "build" not in parsed and "kind" not in parsed:
+        return None
+    return parsed
+
+
+def _routing_failure_reason(deps: dict) -> str:
+    """The deterministic refusal reason for a turn with no readable
+    routing decision, carrying the engine failure envelope's one-line
+    ``error`` when a decision dep has one (never raw stderr)."""
+    for name in ("resolve", "classify"):
+        try:
+            parsed = json.loads(_response(deps.get(name)))
+        except json.JSONDecodeError:
+            continue
+        if isinstance(parsed, dict):
+            error = parsed.get("error")
+            if isinstance(error, str) and error:
+                return (
+                    "serving pipeline error: no readable routing decision "
+                    f"this turn ({name}: {error}); nothing was built or "
+                    "written"
+                )
+    return (
+        "serving pipeline error: no readable routing decision this turn; "
+        "nothing was built or written"
+    )
 
 
 def _envelope_deliverable(seat_terminal: str) -> str | None:
@@ -88,15 +135,20 @@ def _envelope_verdict(seat_terminal: str) -> tuple[bool | None, str]:
 
 def main() -> None:
     deps = _deps(sys.stdin.read().strip())
-    # The routing decision is ``resolve`` when the guarded decider ran, else the
-    # structural ``classify`` decision directly (backward-compatible).
-    decision_dep = deps.get("resolve") or deps.get("classify", {})
-    try:
-        decision = json.loads(_response(decision_dep))
-    except json.JSONDecodeError:
+    # The routing decision is ``resolve`` when the guarded decider ran, else
+    # the structural ``classify`` decision directly (the unit-harness /
+    # pre-resolve back-compat source; live wiring carries only resolve).
+    # #152: readability-gated, never truthiness — with no readable decision
+    # the turn fails CLOSED (build=False plus a ``routing_failed`` reason
+    # emit renders as an honest refusal; the seat dispatched on the failed
+    # decision, so no content-bearing route is trustworthy).
+    decision = _readable_decision(deps.get("resolve")) or _readable_decision(
+        deps.get("classify")
+    )
+    routing_failed = ""
+    if decision is None:
         decision = {}
-    if not isinstance(decision, dict):
-        decision = {}
+        routing_failed = _routing_failure_reason(deps)
 
     seat_terminal = _terminal(_response(deps.get("seat", {})))
     deliverable = _envelope_deliverable(seat_terminal)
@@ -139,6 +191,9 @@ def main() -> None:
                 "recall_answer": str(decision.get("recall_answer", "")),
                 # Review round 2 new blocker 2: pass through unchanged.
                 "is_build_ask": bool(decision.get("is_build_ask", False)),
+                # #152: non-empty exactly when no readable routing decision
+                # arrived — emit refuses on it before every other outcome.
+                "routing_failed": routing_failed,
             }
         )
     )

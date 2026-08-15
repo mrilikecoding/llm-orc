@@ -513,3 +513,15 @@ def _resolve_with_pick(
     ).stdout
     result: dict[str, Any] = json.loads(out)
     return result
+
+
+def test_classify_failure_envelope_launders_to_an_empty_target() -> None:
+    """#152 pre-flight finding 1, the documentation pin: a crashed classify
+    arrives as a failure envelope (the engine's exit-code wrap returns it
+    as a normal response), resolve parses it with no readability check,
+    finds no needs_decider, and the else branch emits target "" — the
+    handoff shape's non-empty-target gate refuses on. If resolve ever
+    grows its own readability gate, revisit this pin alongside shape's."""
+    out = _resolve({"success": False, "error": "Script failed with exit code 1"})
+    assert out["target"] == ""
+    assert out["build"] is False
