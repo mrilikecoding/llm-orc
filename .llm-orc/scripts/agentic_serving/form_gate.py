@@ -96,6 +96,9 @@ def main() -> None:
                 # Review round 2 new blocker 2: pass through unchanged —
                 # emit selects the build-scoped vs plain refused prefix.
                 "is_build_ask": bool(shaped.get("is_build_ask", False)),
+                # #152 fail-closed routing: pass through unchanged — emit
+                # refuses on it before every other outcome.
+                "routing_failed": str(shaped.get("routing_failed", "")),
             }
         )
     )

@@ -2407,3 +2407,98 @@ def test_gate_question_stays_conceptual_with_the_flag_off(
     ]
     targets = [trace.get("chain_plan", {}).get("target") for trace in traces]
     assert "need-self-files" not in targets
+
+
+# --- #152 fail-closed routing: a crashed serving node refuses, never junk ----
+
+_CRASH_STUB = "#!/usr/bin/env python3\nimport sys\nsys.exit(1)\n"
+
+
+def _crashed_script_client(
+    serving_project: Path, monkeypatch: pytest.MonkeyPatch, script: str
+) -> TestClient:
+    """A serving client whose copied ``script`` crashes on every run. The
+    engine wraps the nonzero exit into a failure envelope RETURNED as a
+    normal response (script_agent.py's exit-code wrap), so the node
+    arrives in dependents' deps looking like a readable result — the
+    exact live state of the #144 gate misfire (#152)."""
+    (serving_project / "scripts" / "agentic_serving" / script).write_text(_CRASH_STUB)
+
+    def _caller() -> ServingEnsembleCaller:
+        return ServingEnsembleCaller(project_dir=serving_project, ensemble="serving")
+
+    monkeypatch.setattr(
+        v1_chat_completions, "get_serving_ensemble_caller", _caller, raising=False
+    )
+    return TestClient(create_app())
+
+
+def test_crashed_resolve_refuses_and_never_writes(
+    serving_project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The captured #152 cascade, pinned end to end: a crashed resolve
+    previously degraded into build=True + file="solution.py" + empty
+    content (the failure envelope parsed as a decision, the build default
+    fired, and ast.parse("") passed the form gate) — a junk empty write
+    shipped to the client. It must be an honest refusal, never a write."""
+    client = _crashed_script_client(serving_project, monkeypatch, "resolve.py")
+    resp = client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "ensemble-agent",
+            "messages": [
+                {
+                    "role": "user",
+                    "content": "write a function that adds two numbers in add.py",
+                }
+            ],
+            "tools": [_WRITE_TOOL],
+        },
+    )
+
+    assert resp.status_code == 200
+    choice = resp.json()["choices"][0]
+    assert choice["finish_reason"] == "stop"
+    assert not choice["message"].get("tool_calls")
+    content = choice["message"]["content"]
+    assert content.startswith("Refused: serving pipeline error")
+    assert "nothing was built or written" in content
+
+
+def test_crashed_classify_refuses_instead_of_a_silent_empty_finish(
+    serving_project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The laundering hole (#152 pre-flight finding 1), pinned end to end:
+    a crashed classify rides through a healthy resolve as target "" (the
+    key is present, so key-presence readability would pass it), the seat
+    dispatch on "" fails deterministically, and the wire previously
+    shipped a silent empty prose finish. The non-empty-target gate must
+    refuse instead.
+
+    Environment note: the engine runs .py scripts via bare ``python3``
+    (script_agent._get_interpreter), so in a shell whose PATH python3
+    lacks llm_orc the REAL resolve.py dies on import and this test
+    degrades to the resolve-also-crashed refusal path — still red
+    pre-fix and green post-fix, but only a venv-on-PATH run (make test,
+    CI) exercises the laundering path itself."""
+    client = _crashed_script_client(serving_project, monkeypatch, "classify.py")
+    resp = client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "ensemble-agent",
+            "messages": [
+                {
+                    "role": "user",
+                    "content": "write a function that adds two numbers in add.py",
+                }
+            ],
+            "tools": [_WRITE_TOOL],
+        },
+    )
+
+    assert resp.status_code == 200
+    choice = resp.json()["choices"][0]
+    assert choice["finish_reason"] == "stop"
+    assert not choice["message"].get("tool_calls")
+    content = choice["message"]["content"]
+    assert content.startswith("Refused: serving pipeline error")

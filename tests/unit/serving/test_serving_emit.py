@@ -514,3 +514,38 @@ def test_needs_grep_emits_a_grep_outcome() -> None:
         }
     )
     assert outcome == {"finish": False, "grep": "recall,ledger,built"}
+
+
+def test_routing_failed_refuses_with_the_plain_prefix_and_never_writes() -> None:
+    """#152 fail-closed routing: a turn with no readable routing decision
+    refuses FIRST — before seam fields, gates, and the build path — with
+    the non-minting plain prefix (an unreadable decision makes
+    is_build_ask unknowable; under-report, never misreport). The junk
+    content a dead seat produced must never ride out as a write or as a
+    prose finish."""
+    reason = (
+        "serving pipeline error: no readable routing decision this turn "
+        "(resolve: Script failed with exit code 1); nothing was built or "
+        "written"
+    )
+    outcome = _emit(
+        gated={
+            "build": False,
+            "file": "solution.py",
+            "content": "",
+            "valid": True,
+            "reason": "ok",
+            "accept": None,
+            "accept_reason": "",
+            "seat_admitted": None,
+            "seat_contract_reason": "",
+            # Competing seam field (review finding 9): shape zeroes every
+            # seam field on the refusal path, so this state is only
+            # reachable through a drifted shape — the ordering pin makes
+            # "refuses FIRST" a tested property, not a comment.
+            "recall_answer": "a drifted shape left this behind",
+            "routing_failed": reason,
+        }
+    )
+    assert outcome == {"finish": True, "content": f"Refused: {reason}"}
+    assert "file" not in outcome
