@@ -424,13 +424,22 @@ Remaining, in order:
   #153 filed+fixed (client 50KB read cap refuses honestly)
 - [x] #63 slice + #138 INSTRUMENT — statistics (Wilson/Fisher) and the
   volume-ladder instrument built, merged, and calibrated on arm 0
-- [ ] #138 paid runs (r=8 per level; awaiting practitioner go on cost)
-  and #141 (awaiting go on the None condition), then parity table v2
+- [x] v0.19.0 released — script cache keyed on BYTES and shipped disabled
+  (#160), instruments in the gate (#156), pipeline positive-completeness
+  (#155 Arc A), plus #152 #154 #157 #158 #159 #164
+- [ ] Volume paid runs (r=8 per level; awaiting practitioner go on cost)
+  and #141 (awaiting go on the None condition), then parity table v2.
+  NOTE: #138 is CLOSED — it tracked the INSTRUMENT, which shipped. The
+  paid runs it gates have **no open issue**, so they are invisible to
+  `gh issue list`; file one or keep this line as the tracker.
 - [ ] #126 — long-horizon 30-turn battery (#136 #137 feed the design)
-- [ ] #139 #140 — memory spikes; #127 plexus substrate; #82 remainder (cross-session)
+- [ ] #140 memory spike (#139 closed: context curve measured); #127
+  plexus substrate; #82 remainder (cross-session)
 - [ ] #128 #129 #130 — task shapes toward compose-at-runtime
 - [ ] #125 — Rust gate; #119 #135 — seat ladder on-signal
 - [ ] #85 #84 #90 #93 #95 #106 #110 #114 #132 #142 — platform hardening as gates demand
+- [ ] #161 #162 #163 #165 #166 — script-cache purity/imports/degrade, the
+  -n auto flake, and the empty-deliverable write; #155 Arcs B/C remainder
 - [ ] North star: parity on real work, honesty column held at zero
 
 ## Doctrine (what we learned, made binding)
@@ -509,7 +518,8 @@ dishonest outcome.
 - [x] Instrument + Arm-0 column + parity table v1 + Arm-2 auto-scoring (#131)
 - [x] #131 Arm-2 n=3; Arm-1 go/no-go + runs n=3 (all columns complete)
 - [ ] #147 `_PASS_CLAIM_RE` false-positive family (three refuted captures)
-- [ ] #141 CLAUDE.md confound · #138 volume scaling · #63 statistics
+- [ ] #141 CLAUDE.md confound · volume scaling paid runs (#138 closed;
+  instrument shipped, runs need a go and have no tracker) · #63 statistics
 - [ ] Parity table v2 (realism rows; interval estimates)
 
 ### epic:ws3-client-surface — the serve upgrades any client
@@ -545,7 +555,11 @@ dishonest outcome.
 - [x] #157 script-agent timeouts fixed (one resolver for inner and outer bounds; six nodes declare their own)
 - [x] #158 script agents off the event loop (4.15s -> 1.03s; duplicate outer timeout retired)
 - [x] #159 failure envelopes no longer cached (two-clause predicate; the corpus emits no boolean success)
-- [ ] #151 runtime-window detector remainder · #155 pipeline positive-completeness · #156 instrument pins ungated · #160 cache keys on path not bytes · #85 sandbox hardening · #84 gate adversarial harness · #90 llama.cpp · #93 hot path · #95 dead surface · #106 shape home · #110 artifact quality · #114 trace cap · #132 BitNet · #142 reject templates
+- [x] #160 cache identity is the script's BYTES, and the cache ships DISABLED (two of six primitives are impure; a hit elided a write) — v0.19.0
+- [x] #156 the 511 measurement instruments run in `make test` and CI (a regression in them used to corrupt evidence without failing a build)
+- [x] #164 script-agent-architecture documents the cache that exists (the per-agent `cache:` key it showed is rejected by `extra="forbid"`)
+- [x] #155 Arc A — a node that cannot READ its input refuses (crashed shape/form_gate finished as an empty success); Arcs B/C still open
+- [ ] #151 runtime-window detector remainder · #155 Arcs B/C · #161 cache purity · #162 cache misses imports · #163 identity degrades silently · #165 `-n auto` flake · #166 empty deliverable written to the client · #85 sandbox hardening · #84 gate adversarial harness · #90 llama.cpp · #93 hot path · #95 dead surface · #106 shape home · #110 artifact quality · #114 trace cap · #132 BitNet · #142 reject templates
 
 ### epic:off-path
 #80 #65 #30 #66 — parked, not on the north-star path.
@@ -588,4 +602,9 @@ Session roles:
 
 Superseded by epic labels: `gh issue list --label epic:<name>`. Closed
 2026-07-11: #31 #78 #79 #64. Closed since: #83 #98 #99 #100 #104 #105
-#107–#109 #111–#113 #115 #116 #118 #120 #133 #134.
+#107–#109 #111–#113 #115 #116 #118 #120 #133 #134 #138 #139 #145 #152
+#153 #154 #156 #157 #158 #159 #160 #164.
+
+Two closed issues still gate open work, so `gh issue list` does not show
+it: **#138** (instrument shipped; the paid runs it gates need a go) and
+**#139** (curve measured; #140 carries the remainder).
