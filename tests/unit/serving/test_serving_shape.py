@@ -338,3 +338,62 @@ def test_non_string_or_whitespace_target_refuses() -> None:
         )
         assert shaped["build"] is False, f"target={target!r}"
         assert shaped["routing_failed"], f"target={target!r}"
+
+
+# --- #155 Arc A: shape recognises a dead seat_contract ---------------------
+
+_ENGINE_WRAP = (
+    '{"success": false, "data": null, "error": "Schema JSON execution failed: '
+    'Command \'[...]\' returned non-zero exit status 1.", "agent_requests": []}'
+)
+
+_DECISION = {"target": "code-seat", "build": True, "kind": "build"}
+_SEAT = {"status": "success", "primary": "x = 1"}
+
+
+def test_a_crashed_seat_contract_sets_node_failed() -> None:
+    """#155: `_seat_verdict` returned (None, "") for anything without a
+    `seat_admitted` key, so a DEAD seat contract read downstream as "no
+    per-seat gate ran" — indistinguishable from a route that has no gate.
+    That permissive fallback is what let a dead seat's output through."""
+    shaped = _shape_raw(
+        {
+            "classify": {"response": json.dumps(_DECISION)},
+            "seat": {"response": json.dumps(_SEAT)},
+            "seat_contract": {"response": _ENGINE_WRAP},
+        }
+    )
+
+    assert shaped["node_failed"]
+
+
+def test_an_absent_seat_contract_is_not_a_failure() -> None:
+    """The distinction the check turns on: the explain path carries no
+    seat_contract block at all, so ABSENT means "no gate configured" while
+    PRESENT-but-unreadable means "the gate died"."""
+    shaped = _shape_raw(
+        {
+            "classify": {"response": json.dumps(_DECISION)},
+            "seat": {"response": json.dumps(_SEAT)},
+        }
+    )
+
+    assert not shaped["node_failed"]
+    assert shaped["seat_admitted"] is None
+
+
+def test_a_healthy_seat_contract_is_not_a_failure() -> None:
+    shaped = _shape_raw(
+        {
+            "classify": {"response": json.dumps(_DECISION)},
+            "seat": {"response": json.dumps(_SEAT)},
+            "seat_contract": {
+                "response": json.dumps(
+                    {"seat_admitted": True, "seat_contract_reason": ""}
+                )
+            },
+        }
+    )
+
+    assert not shaped["node_failed"]
+    assert shaped["seat_admitted"] is True

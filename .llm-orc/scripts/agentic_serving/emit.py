@@ -149,6 +149,17 @@ def _seam_outcome(gated: dict) -> dict | None:
     form_gate) — the SAME refusal shape (build=False) otherwise answers a
     bare-symbol explain's discovery round, which is never a build ask.
     """
+    node_failed = str(gated.get("node_failed", ""))
+    if node_failed:
+        # #155: an upstream node could not be READ, so nothing downstream
+        # of it is trustworthy. Same non-minting prefix and same reason as
+        # routing_failed below: a broken pipeline makes is_build_ask
+        # unknowable.
+        prefix = TERMINALS["refused"].prefix
+        return {
+            "finish": True,
+            "content": f"{prefix}serving pipeline error: {node_failed}",
+        }
     routing_failed = str(gated.get("routing_failed", ""))
     if routing_failed:
         # #152 fail-closed routing: no readable routing decision — the seat
@@ -210,14 +221,53 @@ def _seam_outcome(gated: dict) -> dict | None:
     return None
 
 
+def _readable_gate(dep: object) -> dict | None:
+    """The form_gate node's output, or ``None`` when it cannot be read (#155).
+
+    Positive recognition on ``valid``, which ``form_gate.main`` emits on
+    every path — build and non-build alike, from a single ``print`` with
+    no early return. The engine's wrap for a dead serving node carries
+    ``success``/``data``/``error``/``agent_requests``, disjoint from it.
+
+    This has to run BEFORE any field is read off the result, because the
+    old ``except: gated = {}`` is not merely unhandled — ``{}`` answers
+    every subsequent question plausibly (``build=False``, ``content=""``,
+    no refusal reason), so the non-build branch printed
+    ``{"finish": true, "content": ""}``. A failure was converted into a
+    well-formed success the client cannot distinguish from "the model had
+    nothing to say".
+    """
+    try:
+        parsed = json.loads(_response(dep))
+    except (json.JSONDecodeError, TypeError):
+        return None
+    if not isinstance(parsed, dict) or "valid" not in parsed:
+        return None
+    return parsed
+
+
 def main() -> None:
     deps = _deps(sys.stdin.read().strip())
-    try:
-        gated = json.loads(_response(deps.get("form_gate", {})))
-    except json.JSONDecodeError:
-        gated = {}
-    if not isinstance(gated, dict):
-        gated = {}
+    readable = _readable_gate(deps.get("form_gate", {}))
+    if readable is None:
+        # Non-minting prefix, for #152's reason: with the pipeline itself
+        # unreadable, ``is_build_ask`` is unknowable, and the ledger
+        # doctrine is under-report rather than misreport.
+        prefix = TERMINALS["refused"].prefix
+        print(
+            json.dumps(
+                {
+                    "finish": True,
+                    "content": (
+                        f"{prefix}serving pipeline error: the form gate node "
+                        f"returned unreadable output; nothing was built or "
+                        f"written"
+                    ),
+                }
+            )
+        )
+        return
+    gated = readable
 
     build = bool(gated.get("build", False))
     content = str(gated.get("content", ""))
