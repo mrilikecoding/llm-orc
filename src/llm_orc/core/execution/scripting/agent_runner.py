@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import os
@@ -16,6 +17,7 @@ from llm_orc.agents.script_agent import (
     ScriptAgent,
 )
 from llm_orc.core.execution.scripting.cache import ScriptCache
+from llm_orc.core.execution.scripting.resolver import ScriptResolver
 from llm_orc.core.execution.scripting.user_input_handler import (
     ScriptUserInputHandler,
 )
@@ -127,8 +129,33 @@ class ScriptAgentRunner:
             "input_data": input_data,
             "parameters": parameters,
         }
+        # An agent whose whole purpose is to ask a human is never cached
+        # (#160): the ANSWER is not part of the key, so a second identical
+        # one replayed the first person's response without prompting.
+        # Checked at BOTH get and set — the byte-identity below aliases
+        # several references onto one key while this predicate still judges
+        # each reference separately, so a get-only skip would let an
+        # interactive agent's entry be hit by a non-interactive alias.
+        # A DISABLED cache is checked here rather than only inside
+        # ScriptCache.get/set, because computing the identity is the
+        # expensive part and those check `enabled` only after being
+        # called. Without this the shipped default — off — still paid a
+        # resolution and a whole-file read, twice per execution, to build
+        # a key nothing would ever look up.
+        cacheable = self._cache_is_enabled() and not self._requires_user_input(
+            agent_config
+        )
+        # NOTE: script_content stays the RAW reference below, because
+        # _validate_primitive_output needs it (_normalize_script_ref returns
+        # None for an identity string, which would silently disable the
+        # primitive schema check on every cache hit).
+        cache_identity = self._cache_identity(script_content) if cacheable else ""
 
-        cached_result = self._script_cache.get(script_content, cache_key_params)
+        cached_result = (
+            self._script_cache.get(cache_identity, cache_key_params)
+            if cacheable
+            else None
+        )
         if cached_result is not None:
             cached_output = cached_result.get("output", "")
             self._validate_primitive_output(script_content, cached_output)
@@ -147,14 +174,105 @@ class ScriptAgentRunner:
         # key across processes. The old entry also carried a hardcoded
         # "success": True that nothing read, on entries that might hold a
         # failure.
-        if not _reports_failure(response):
+        # The digest above was taken BEFORE the subprocess opened the file,
+        # so a script edited during its own run produced output from the NEW
+        # bytes and stored it under the OLD bytes' key — two executions
+        # sharing an entry although they ran different bytes, which is the
+        # exact invariant this issue exists to establish, and it persisted
+        # for the full TTL rather than self-correcting. Re-reading here
+        # closes the window: if the bytes moved, this run's output belongs
+        # to no key we can name, so it belongs in no entry.
+        edited_mid_run = cacheable and self._cache_identity(script_content) != (
+            cache_identity
+        )
+        if cacheable and not edited_mid_run and not _reports_failure(response):
             cache_result = {
                 "output": response,
                 "execution_metadata": {"duration_ms": duration_ms},
             }
-            self._script_cache.set(script_content, cache_key_params, cache_result)
+            self._script_cache.set(cache_identity, cache_key_params, cache_result)
 
         return response, model_instance, substituted
+
+    def _cache_is_enabled(self) -> bool:
+        """Whether the cache would store anything at all.
+
+        ``bool()`` rather than the attribute itself because several
+        suites pass a ``Mock`` here, whose auto-created ``config.enabled``
+        is a truthy Mock — which keeps those tests where they were.
+
+        An earlier draft wrapped both lookups in ``getattr`` defaults and
+        justified it as tolerance for Mocks. Review measured that the
+        defaults never fire: a plain ``Mock`` answers with its own
+        auto-created attribute, and only ``Mock(spec=...)`` would reach a
+        default, which nothing in the suite uses. Deleting the layer
+        changed no test. Dead defensive code with a rationale naming the
+        wrong objects is worse than none.
+        """
+        return bool(self._script_cache.config.enabled)
+
+    def _cache_identity(self, script_ref: str) -> str:
+        """What identifies this script for caching (#160).
+
+        The cache used to key on ``agent_config.script``, a REFERENCE,
+        which in every shipped ensemble is a path — so the key named the
+        file and never its contents, and editing a script served the
+        pre-edit result for the TTL.
+
+        A reference that resolves to a FILE is identified by that path
+        AND the sha256 of its bytes. Both halves matter: bytes alone
+        would collide two different scripts with identical contents,
+        which bites when a script reads its own ``__file__`` or a sibling
+        relative path; path alone is the original bug.
+
+        A reference that does not resolve to a file is returned as-is,
+        which is CORRECT rather than a fallback: ``resolve_script_path``
+        returns inline content verbatim, so ``script: "echo hello"``
+        genuinely is its own content. An unresolvable reference also
+        lands here — computing a cache key must never be the thing that
+        reports a missing script, and execution a moment later produces
+        the real error.
+
+        ``os.path.isfile`` rather than leaning on the try/except below,
+        and it does more than ask whether a file exists. Two drafts of
+        this docstring got its contribution wrong in opposite directions,
+        so what follows is measured. It buys NOTHING for inline content
+        longer than PATH_MAX: ``read_bytes`` raises ``OSError`` there and
+        the ``except`` already catches it. It buys three things the
+        ``except`` cannot:
+
+        - inline content carrying a NUL byte, where ``read_bytes`` raises
+          ``ValueError`` rather than ``OSError``, so it escapes and kills
+          the run;
+        - a FIFO, which resolves fine and is not a regular file;
+          ``read_bytes`` blocks on open until a writer appears, so
+          without the guard computing a cache key HANGS the agent;
+        - a character device such as ``/dev/zero``, which reads
+          unbounded.
+
+        The last two are why this is ``isfile`` and not ``exists``.
+        """
+        # A fast path, NOT a correctness guard, and review was right to
+        # flag it as looking like one: resolve_script_path("") returns ""
+        # and os.path.isfile("") is False, so the fall-through returns ""
+        # anyway and removing this line changes no result. It stays
+        # because execute() passes "" for a non-ScriptAgentConfig, and
+        # building a resolver to learn nothing is worse than one branch.
+        if not script_ref:
+            return script_ref
+        try:
+            resolved = ScriptResolver(
+                project_dir=self._project_dir
+            ).resolve_script_path(script_ref)
+        except Exception:
+            return script_ref
+        if not os.path.isfile(resolved):
+            return resolved
+        try:
+            digest = hashlib.sha256(Path(resolved).read_bytes()).hexdigest()
+        except OSError:
+            return resolved
+        return f"{resolved}:{digest}"
 
     async def _execute_without_cache(
         self,

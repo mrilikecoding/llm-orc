@@ -19,7 +19,15 @@ from llm_orc.core.execution.artifact_manager import ArtifactManager
 class ScriptCacheConfig:
     """Configuration for ScriptCache system."""
 
-    enabled: bool = True
+    # Off by default (#160). The cache assumes a script is a pure function of
+    # (bytes, input, parameters), and two of the six registered primitives are
+    # not — the two most-used in this repo's ensembles. Measured through the
+    # real runner: a hit on primitives/file-ops/write_file.py reports
+    # {"success": true} while the file does NOT exist (the write is elided),
+    # and primitives/file-ops/read_file.py serves stale content when the file
+    # it reads changes. Neither is reachable by any cache key. #161 carries the
+    # purity requirement that would justify turning this back on.
+    enabled: bool = False
     ttl_seconds: int = 3600  # 1 hour default TTL
     max_size: int = 1000  # Maximum number of cached entries
     persist_to_artifacts: bool = False  # Whether to persist cache to artifacts

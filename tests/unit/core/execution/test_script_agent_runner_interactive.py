@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
+import threading
 from pathlib import Path
 from typing import Any
 from unittest.mock import Mock, patch
@@ -440,7 +442,7 @@ class TestFailuresAreNotCached:
     def _run_twice(self, tmp_path: Path, body: str) -> dict[str, Any]:
         script = tmp_path / "probe.py"
         script.write_text(body)
-        cache = ScriptCache(ScriptCacheConfig())  # shipped defaults: ENABLED
+        cache = ScriptCache(ScriptCacheConfig(enabled=True))  # off by default (#160)
         runner = ScriptAgentRunner(
             script_cache=cache,
             usage_collector=UsageCollector(),
@@ -526,7 +528,7 @@ class TestFailuresAreNotCached:
         on an entry that might hold a failure."""
         script = tmp_path / "ok.py"
         script.write_text('import json\nprint(json.dumps({"success": True}))\n')
-        cache = ScriptCache(ScriptCacheConfig())
+        cache = ScriptCache(ScriptCacheConfig(enabled=True))
         runner = ScriptAgentRunner(
             script_cache=cache,
             usage_collector=UsageCollector(),
@@ -538,7 +540,9 @@ class TestFailuresAreNotCached:
         config = ScriptAgentConfig(name="ok", script=str(script))
         asyncio.run(runner.execute(config, "{}"))
 
-        entry = cache.get(str(script), {"input_data": "{}", "parameters": {}})
+        # The cache is keyed by identity now (#160), not by the raw path.
+        identity = runner._cache_identity(str(script))
+        entry = cache.get(identity, {"input_data": "{}", "parameters": {}})
         assert entry is not None
         assert "success" not in entry
 
@@ -576,7 +580,7 @@ class TestFailuresAreNotCached:
         the non-schema path never produces that shape."""
         script = tmp_path / "arr.py"
         script.write_text("print('[1, 2, 3]')\n")
-        cache = ScriptCache(ScriptCacheConfig())
+        cache = ScriptCache(ScriptCacheConfig(enabled=True))
         runner = ScriptAgentRunner(
             script_cache=cache,
             usage_collector=UsageCollector(),
@@ -598,3 +602,397 @@ class TestFailuresAreNotCached:
 
         assert response == "[1, 2, 3]"
         assert cache.get_stats()["sets"] == 1
+
+
+class TestCacheIdentity:
+    """#160: the cache key hashed agent_config.script, a REFERENCE, which
+    in every shipped ensemble is a path. So it identified the file's name
+    and never its contents: edit a script, re-run, and get the pre-edit
+    result for the TTL — cross-process under persist_to_artifacts.
+
+    Strictly worse than the cached-failure replay fixed in #159, and
+    invisible to that predicate, since a stale SUCCESS caches correctly
+    under any failure-skipping rule.
+    """
+
+    def _runner(
+        self,
+        cache: ScriptCache,
+        project_dir: Path | None = None,
+    ) -> ScriptAgentRunner:
+        return ScriptAgentRunner(
+            script_cache=cache,
+            usage_collector=UsageCollector(),
+            progress_controller=None,
+            emit_event=lambda name, data: None,
+            project_dir=project_dir,
+            performance_config={"execution": {"default_timeout": 30}},
+        )
+
+    def _emit(self, value: str) -> str:
+        return f'import json\nprint(json.dumps({{"v": "{value}"}}))\n'
+
+    def test_editing_a_script_invalidates_its_entry(self, tmp_path: Path) -> None:
+        """The issue's reproduction."""
+        script = tmp_path / "probe.py"
+        script.write_text(self._emit("one"))
+        cache = ScriptCache(ScriptCacheConfig(enabled=True))
+        runner = self._runner(cache)
+        config = ScriptAgentConfig(name="probe", script=str(script))
+
+        first, _, _ = asyncio.run(runner.execute(config, "{}"))
+        script.write_text(self._emit("two"))
+        second, _, _ = asyncio.run(runner.execute(config, "{}"))
+
+        assert json.loads(first)["v"] == "one"
+        assert json.loads(second)["v"] == "two"
+
+    def test_a_project_relative_reference_is_also_invalidated(
+        self, tmp_path: Path
+    ) -> None:
+        """THE critical pin. If the key-time resolver is built without
+        threading project_dir, a project-relative reference fails to
+        resolve, the identity falls back to the reference string, and this
+        whole change ships INERT — while every other pin here stays green,
+        because they use absolute tmp_path references that resolve either
+        way. Project-relative is the shape every shipped ensemble uses."""
+        scripts = tmp_path / ".llm-orc" / "scripts"
+        scripts.mkdir(parents=True)
+        (scripts / "probe.py").write_text(self._emit("one"))
+        cache = ScriptCache(ScriptCacheConfig(enabled=True))
+        runner = self._runner(cache, project_dir=tmp_path)
+        config = ScriptAgentConfig(name="probe", script="scripts/probe.py")
+
+        first, _, _ = asyncio.run(runner.execute(config, "{}"))
+        (scripts / "probe.py").write_text(self._emit("two"))
+        second, _, _ = asyncio.run(runner.execute(config, "{}"))
+
+        assert json.loads(first)["v"] == "one"
+        assert json.loads(second)["v"] == "two"
+
+    def test_the_cross_process_case_is_invalidated(self, tmp_path: Path) -> None:
+        """The worst case the issue names: a FRESH ScriptCache reading the
+        persisted entry after an edit.
+
+        The second half is not decoration. Review showed that the edit
+        assertions alone pass identically when persistence is broken in
+        EITHER direction (never written, or never read), because a total
+        persistence failure produces the same observation as correct
+        invalidation. So the pin has to watch an UNCHANGED script hit
+        across a fresh cache too, or it is only proving that nothing
+        persists at all.
+        """
+        script = tmp_path / "probe.py"
+        script.write_text(self._emit("one"))
+        config = ScriptAgentConfig(name="probe", script=str(script))
+        cfg = ScriptCacheConfig(
+            enabled=True, persist_to_artifacts=True, artifact_base_dir=tmp_path
+        )
+
+        first, _, _ = asyncio.run(self._runner(ScriptCache(cfg)).execute(config, "{}"))
+        script.write_text(self._emit("two"))
+        second, _, _ = asyncio.run(self._runner(ScriptCache(cfg)).execute(config, "{}"))
+
+        assert json.loads(first)["v"] == "one"
+        assert json.loads(second)["v"] == "two"
+
+        # Unchanged from here on, so a third fresh cache MUST hit the entry
+        # the second run persisted.
+        third_cache = ScriptCache(cfg)
+        third, _, _ = asyncio.run(self._runner(third_cache).execute(config, "{}"))
+
+        assert json.loads(third)["v"] == "two"
+        assert third_cache.get_stats()["hits"] == 1, (
+            "nothing crossed the process boundary, so the edit half of this "
+            "pin was passing for the wrong reason"
+        )
+
+    def test_a_script_edited_mid_run_does_not_poison_the_old_bytes(
+        self, tmp_path: Path
+    ) -> None:
+        """The race the digest's placement opens, found by review.
+
+        The digest is taken before the subprocess opens the file, so an edit
+        landing in that window makes the run produce the NEW bytes' output
+        and file it under the OLD bytes' key. The design doc first called
+        this self-correcting on the next run. It is not: the old-bytes key
+        is poisoned for the full TTL, and two executions end up sharing an
+        entry although they ran different bytes, which is a literal
+        violation of this issue's invariant rather than mere staleness.
+        """
+        script = tmp_path / "probe.py"
+        script.write_text(self._emit("one"))
+        cache = ScriptCache(ScriptCacheConfig(enabled=True))
+        runner = self._runner(cache)
+        config = ScriptAgentConfig(name="probe", script=str(script))
+
+        real = runner._execute_without_cache
+
+        async def edit_then_run(agent_config: Any, input_data: str) -> Any:
+            # Lands in the real window: after the identity is computed,
+            # before the child reads the file.
+            script.write_text(self._emit("two"))
+            return await real(agent_config, input_data)
+
+        with patch.object(runner, "_execute_without_cache", new=edit_then_run):
+            first, _, _ = asyncio.run(runner.execute(config, "{}"))
+
+        assert json.loads(first)["v"] == "two", "the child ran the edited bytes"
+
+        # Put the ORIGINAL bytes back. They must not be served the other
+        # version's output.
+        script.write_text(self._emit("one"))
+        second, _, _ = asyncio.run(runner.execute(config, "{}"))
+
+        assert json.loads(second)["v"] == "one"
+        assert cache.get_stats()["hits"] == 0
+
+    def test_a_disabled_cache_computes_no_identity(self, tmp_path: Path) -> None:
+        """The shipped default must not pay for a key nobody reads.
+
+        Review measured that with the cache off — which is now the
+        default — _cache_identity still ran twice per execution, each
+        time resolving the reference and slurping the whole script into
+        memory to hash it. For a 1.2MB script that was 1.67 ms of pure
+        waste per agent; for classify.py at 103KB, a 103KB read twice,
+        forever. ScriptCache.get/set check `enabled` only after being
+        called, so the check has to happen before the identity is built.
+        """
+        script = tmp_path / "probe.py"
+        script.write_text(self._emit("one"))
+        cache = ScriptCache(ScriptCacheConfig(enabled=False))
+        runner = self._runner(cache)
+        config = ScriptAgentConfig(name="probe", script=str(script))
+
+        with patch.object(
+            runner, "_cache_identity", wraps=runner._cache_identity
+        ) as spy:
+            asyncio.run(runner.execute(config, "{}"))
+
+        assert spy.call_count == 0
+
+    def test_a_fifo_reference_does_not_hang_the_agent(self, tmp_path: Path) -> None:
+        """Why the guard is os.path.isfile and not os.path.exists.
+
+        A FIFO resolves fine and is not a regular file. read_bytes blocks
+        on open until a writer appears, so with `exists` in place of
+        `isfile` computing a cache key hangs the agent forever — and
+        review showed that swap survives the whole suite unpinned. A
+        watchdog thread is the cheap way to pin a hang.
+        """
+        fifo = tmp_path / "piped.sh"
+        os.mkfifo(fifo)
+        runner = self._runner(ScriptCache(ScriptCacheConfig(enabled=True)))
+
+        result: list[str] = []
+        worker = threading.Thread(
+            target=lambda: result.append(runner._cache_identity(str(fifo))),
+            daemon=True,
+        )
+        worker.start()
+        worker.join(timeout=5)
+
+        assert not worker.is_alive(), "computing a cache identity hung on a FIFO"
+        assert result == [str(fifo)], "a FIFO must yield no digest"
+
+    def test_an_edit_reverted_mid_run_is_a_known_wrong_accept(
+        self, tmp_path: Path
+    ) -> None:
+        """Pins a KNOWN-WRONG behaviour so a future fix has a baseline.
+
+        The mid-run re-read compares before-bytes to after-bytes, so it
+        sees a NET move only. An edit reverted inside the same window is
+        invisible: the run produced B's output, the file is back to A,
+        the identity matches, and A's key is filed with B's output. Two
+        executions then share an entry although they ran different bytes
+        — the invariant this issue exists to establish.
+
+        Closing it properly needs the digest the child ACTUALLY read,
+        which the child does not report. Recorded rather than fixed. If
+        this pin ever goes red because the served value is "one", the
+        hole closed and the pin should become an ordinary assertion.
+        """
+        script = tmp_path / "probe.py"
+        script.write_text(self._emit("one"))
+        cache = ScriptCache(ScriptCacheConfig(enabled=True))
+        runner = self._runner(cache)
+        config = ScriptAgentConfig(name="probe", script=str(script))
+
+        real = runner._execute_without_cache
+
+        async def edit_run_then_revert(agent_config: Any, input_data: str) -> Any:
+            script.write_text(self._emit("two"))
+            result = await real(agent_config, input_data)
+            script.write_text(self._emit("one"))
+            return result
+
+        with patch.object(runner, "_execute_without_cache", new=edit_run_then_revert):
+            first, _, _ = asyncio.run(runner.execute(config, "{}"))
+
+        assert json.loads(first)["v"] == "two", "the child ran the edited bytes"
+
+        second, _, _ = asyncio.run(runner.execute(config, "{}"))
+
+        assert cache.get_stats()["hits"] == 1
+        assert json.loads(second)["v"] == "two", (
+            "KNOWN BOUND: bytes 'one' were served bytes 'two' output"
+        )
+
+    def test_an_unchanged_script_still_hits(self, tmp_path: Path) -> None:
+        script = tmp_path / "probe.py"
+        script.write_text(self._emit("one"))
+        cache = ScriptCache(ScriptCacheConfig(enabled=True))
+        runner = self._runner(cache)
+        config = ScriptAgentConfig(name="probe", script=str(script))
+
+        asyncio.run(runner.execute(config, "{}"))
+        asyncio.run(runner.execute(config, "{}"))
+
+        assert cache.get_stats()["hits"] == 1
+        assert cache.get_stats()["sets"] == 1
+
+    def test_inline_content_still_caches(self) -> None:
+        """The case the current code gets RIGHT, and which a naive
+        'always hash the file' fix would break: an inline reference is
+        genuinely its own content."""
+        cache = ScriptCache(ScriptCacheConfig(enabled=True))
+        runner = self._runner(cache)
+        config = ScriptAgentConfig(name="inline", script="echo hello")
+
+        asyncio.run(runner.execute(config, "{}"))
+        asyncio.run(runner.execute(config, "{}"))
+
+        assert cache.get_stats()["hits"] == 1
+
+    def test_identical_bytes_at_different_paths_do_not_share_an_entry(
+        self, tmp_path: Path
+    ) -> None:
+        """Pins the PATH half of the pair: bytes alone would collide two
+        scripts that read their own __file__ or a sibling relative path."""
+        body = self._emit("same")
+        (tmp_path / "a.py").write_text(body)
+        (tmp_path / "b.py").write_text(body)
+        cache = ScriptCache(ScriptCacheConfig(enabled=True))
+        runner = self._runner(cache)
+
+        for name in ("a", "b"):
+            asyncio.run(
+                runner.execute(
+                    ScriptAgentConfig(name=name, script=str(tmp_path / f"{name}.py")),
+                    "{}",
+                )
+            )
+
+        assert cache.get_stats()["hits"] == 0
+        assert cache.get_stats()["sets"] == 2
+
+    def test_an_unresolvable_reference_does_not_raise(self, tmp_path: Path) -> None:
+        """Computing a cache key must never be the thing that reports a
+        missing script; execution a moment later produces the real error."""
+        cache = ScriptCache(ScriptCacheConfig(enabled=True))
+        runner = self._runner(cache, project_dir=tmp_path)
+        config = ScriptAgentConfig(name="gone", script="scripts/does_not_exist.py")
+
+        response, _, _ = asyncio.run(runner.execute(config, "{}"))
+
+        assert json.loads(response)["success"] is False
+
+    def test_inline_content_with_a_nul_byte_does_not_raise(
+        self, tmp_path: Path
+    ) -> None:
+        """One of three things the os.path.isfile guard uniquely buys.
+
+        Written after a mutation run showed that removing that guard killed
+        no pin. For inline content too long for PATH_MAX, read_bytes raises
+        OSError, which the except below already catches, so the guard is
+        redundant there. For inline content carrying a NUL byte it raises
+        ValueError, which an `except OSError` does NOT catch, so it escapes
+        _cache_identity and kills the run before the script is ever
+        executed.
+
+        Review later found two more, both non-files that resolve fine: a
+        FIFO, where read_bytes blocks on open until a writer appears and so
+        HANGS the agent, and a character device such as /dev/zero, which
+        reads unbounded. Neither is pinned here; a hang is awkward to pin
+        without a watchdog, and this pin already kills the mutant.
+        """
+        cache = ScriptCache(ScriptCacheConfig(enabled=True))
+        runner = self._runner(cache, project_dir=tmp_path)
+        config = ScriptAgentConfig(name="nul", script="echo\x00hello")
+
+        # The point is that this returns rather than raising ValueError;
+        # whatever the execution then makes of the reference is its business.
+        asyncio.run(runner.execute(config, "{}"))
+
+    def test_an_interactive_agent_never_reads_a_non_interactive_alias_entry(
+        self, tmp_path: Path
+    ) -> None:
+        """The interactive skip at the GET, which nothing else pins.
+
+        Found by review: with only the set guarded, nothing is ever written,
+        so test_an_interactive_agent_is_never_cached's `hits == 0` is
+        trivially true and the get-side guard could be deleted with the whole
+        suite green. This pin makes a NON-interactive agent write the entry,
+        then asks whether the interactive one reads it.
+
+        The alias is live in a shipped install rather than contrived. The
+        resolver normalizes hyphen to underscore, so
+        primitives/user-interaction/get-user-input.py resolves to the packaged
+        interactive primitive and gets the same identity, while
+        ScriptUserInputHandler.requires_user_input() answers False for it.
+        That is the aliasing the byte-identity introduced.
+        """
+        d = tmp_path / ".llm-orc" / "scripts" / "primitives" / "user_interaction"
+        d.mkdir(parents=True)
+        (d / "get_user_input.py").write_text(
+            'import json\nprint(json.dumps({"answer": "FIRST-AGENTS-ANSWER"}))\n'
+        )
+        cache = ScriptCache(ScriptCacheConfig(enabled=True))
+        runner = self._runner(cache, project_dir=tmp_path)
+
+        alias = ScriptAgentConfig(
+            name="alias",
+            script="scripts/primitives/user-interaction/get-user-input.py",
+        )
+        asyncio.run(runner.execute(alias, "{}"))
+        assert cache.get_stats()["sets"] == 1, "the alias should have cached"
+
+        interactive = ScriptAgentConfig(
+            name="ask",
+            script="scripts/primitives/user_interaction/get_user_input.py",
+        )
+        with patch("builtins.input", return_value="typed") as mock_input:
+            asyncio.run(runner.execute(interactive, "{}"))
+
+        assert cache.get_stats()["hits"] == 0, (
+            "an interactive agent was served a non-interactive alias's entry"
+        )
+        assert mock_input.called, "the human was never prompted; cache replayed"
+
+    def test_an_interactive_agent_is_never_cached(self, tmp_path: Path) -> None:
+        """The human's ANSWER is not part of the key, so a second identical
+        interactive agent replayed the first person's answer without
+        prompting. Skipped at BOTH get and set: the new key aliases several
+        references onto one file, while the interactive predicate still
+        judges each reference separately, so a get-only skip would let an
+        interactive agent's entry be hit by a non-interactive alias."""
+        scripts = tmp_path / ".llm-orc" / "scripts" / "primitives" / "user_interaction"
+        scripts.mkdir(parents=True)
+        (scripts / "get_user_input.py").write_text(
+            'import json\nprint(json.dumps({"answer": "typed"}))\n'
+        )
+        cache = ScriptCache(ScriptCacheConfig(enabled=True))
+        runner = self._runner(cache, project_dir=tmp_path)
+        config = ScriptAgentConfig(
+            name="ask", script="scripts/primitives/user_interaction/get_user_input.py"
+        )
+
+        # Patch the prompt itself: pytest raises OSError (not EOFError) when
+        # a test reads stdin under capture, and the point here is the cache
+        # path, not the terminal.
+        with patch("builtins.input", return_value="typed"):
+            asyncio.run(runner.execute(config, "{}"))
+            asyncio.run(runner.execute(config, "{}"))
+
+        assert cache.get_stats()["sets"] == 0
+        assert cache.get_stats()["hits"] == 0

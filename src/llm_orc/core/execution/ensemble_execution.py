@@ -343,14 +343,53 @@ class EnsembleExecutor:
         self._agent_dispatcher._semaphore = asyncio.Semaphore(n) if n > 0 else None
 
     def _load_script_cache_config(self) -> ScriptCacheConfig:
-        """Load script cache configuration from performance config."""
-        cache_config = self._performance_config.get("script_cache", {})
+        """Load script cache configuration from performance config.
+
+        Every default is read off ``ScriptCacheConfig`` rather than
+        restated here. They WERE restated, and the copy drifted: this
+        function hardcoded ``enabled=True`` while the dataclass shipped
+        ``False``, so the disabled default was inert for every project
+        without an explicit opt-out — which is every fresh install, since
+        ``templates/global-config.yaml`` writes no ``script_cache`` block
+        and ``load_performance_config`` has no such key in its defaults.
+        The dataclass is the one place the defaults live.
+
+        The block is normalised because a hand-edited YAML value is not
+        always a mapping, and every non-mapping shape used to raise
+        ``AttributeError`` out of executor construction — killing every
+        invocation, not just caching:
+
+        - ``script_cache:`` with no body parses to ``None``. This is what
+          commenting out the one key under it leaves behind.
+        - ``script_cache: true`` / ``false`` is at least as plausible a
+          hand-edit, and is read as the ``enabled`` flag it obviously
+          means. An earlier fix used a bare ``or {}``, which closed the
+          falsy half only: ``true`` still crashed, and ``false`` silently
+          fell back to defaults. That second one was harmless solely
+          because the default is currently off — the moment #161
+          justifies flipping it back, ``script_cache: false`` would have
+          silently ENABLED the cache.
+        - anything else (a string, a list) cannot be interpreted, so it
+          falls back to defaults rather than crashing. Computing a cache
+          config must not be the thing that takes down the executor.
+        """
+        raw = self._performance_config.get("script_cache")
+        cache_config: dict[str, Any]
+        if isinstance(raw, dict):
+            cache_config = raw
+        elif isinstance(raw, bool):
+            cache_config = {"enabled": raw}
+        else:
+            cache_config = {}
+        defaults = ScriptCacheConfig()
 
         return ScriptCacheConfig(
-            enabled=cache_config.get("enabled", True),
-            ttl_seconds=cache_config.get("ttl_seconds", 3600),
-            max_size=cache_config.get("max_size", 1000),
-            persist_to_artifacts=cache_config.get("persist_to_artifacts", False),
+            enabled=cache_config.get("enabled", defaults.enabled),
+            ttl_seconds=cache_config.get("ttl_seconds", defaults.ttl_seconds),
+            max_size=cache_config.get("max_size", defaults.max_size),
+            persist_to_artifacts=cache_config.get(
+                "persist_to_artifacts", defaults.persist_to_artifacts
+            ),
             artifact_base_dir=self._artifact_manager.base_dir,
         )
 
