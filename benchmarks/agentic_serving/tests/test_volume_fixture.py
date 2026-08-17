@@ -135,7 +135,7 @@ def test_fixed_seeded_suite_goes_green(tmp_path: Path) -> None:
     fixes = {
         "ledger.py": (
             "def balance(entries):\n"
-            '    if not entries:\n'
+            "    if not entries:\n"
             '        raise ValueError("no entries")\n'
             "    total = 0\n"
             "    for amount in entries:\n"
@@ -150,13 +150,9 @@ def test_fixed_seeded_suite_goes_green(tmp_path: Path) -> None:
             "    return items[-n:]\n"
         ),
         "rate.py": (
-            "def per_hour(count, minutes):\n"
-            "    return count / (minutes / 60)\n"
+            "def per_hour(count, minutes):\n    return count / (minutes / 60)\n"
         ),
-        "label.py": (
-            "def slug(title):\n"
-            '    return title.lower().replace(" ", "-")\n'
-        ),
+        "label.py": ('def slug(title):\n    return title.lower().replace(" ", "-")\n'),
     }
     for name, body in fixes.items():
         (dest / name).write_text(body)

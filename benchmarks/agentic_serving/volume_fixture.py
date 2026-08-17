@@ -93,10 +93,7 @@ _FILES: dict[str, str] = {
         "def test_per_hour_half_hour():\n"
         "    assert per_hour(30, 30) == 60\n"
     ),
-    "label.py": (
-        "def slug(title):\n"
-        '    return title.replace(" ", "-")\n'
-    ),
+    "label.py": ('def slug(title):\n    return title.replace(" ", "-")\n'),
     "test_label.py": (
         "from label import slug\n"
         "\n"
@@ -153,8 +150,7 @@ def write_fixture(dest: Path, level: int) -> dict[str, str]:
     ):
         subprocess.run(command, check=True, capture_output=True)
     return {
-        name: hashlib.sha256(body.encode()).hexdigest()
-        for name, body in files.items()
+        name: hashlib.sha256(body.encode()).hexdigest() for name, body in files.items()
     }
 
 
