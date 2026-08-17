@@ -1,6 +1,7 @@
 """Tests for script resolution and discovery."""
 
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 from unittest.mock import patch
@@ -588,3 +589,41 @@ class TestScriptResolver:
             resolver = ScriptResolver()
             with pytest.raises(ScriptNotFoundError):
                 resolver.resolve_script_path("primitives/nonexistent-dir/missing.py")
+
+
+class TestTestScriptInterpreter:
+    """#154: ``llm-orc scripts test`` ran a .py script bare, relying on its
+    shebang and the exec bit, so it failed with Permission denied on any
+    script checked in as mode 644 (every serving script) and otherwise
+    resolved python through PATH like the engine used to. Same invariant,
+    same fix, so the repo has one way to run a python script."""
+
+    def test_a_non_executable_python_script_still_runs(self, tmp_path: Path) -> None:
+        script = tmp_path / ".llm-orc" / "scripts" / "probe.py"
+        script.parent.mkdir(parents=True)
+        script.write_text('import json\nprint(json.dumps({"ran": True}))\n')
+        script.chmod(0o644)
+
+        resolver = ScriptResolver(project_dir=tmp_path)
+        result = resolver.test_script("probe.py", {})
+
+        assert result["success"] is True, result
+        assert "ran" in str(result["output"])
+
+    def test_a_python_script_runs_under_the_host_interpreter(
+        self, tmp_path: Path
+    ) -> None:
+        """The same guarantee the engine gives: an import that works
+        in-process works here."""
+        script = tmp_path / ".llm-orc" / "scripts" / "imports_llm_orc.py"
+        script.parent.mkdir(parents=True)
+        script.write_text(
+            'import json, sys, llm_orc\nprint(json.dumps({"exe": sys.executable}))\n'
+        )
+        script.chmod(0o644)
+
+        resolver = ScriptResolver(project_dir=tmp_path)
+        result = resolver.test_script("imports_llm_orc.py", {})
+
+        assert result["success"] is True, result
+        assert sys.executable in str(result["output"])

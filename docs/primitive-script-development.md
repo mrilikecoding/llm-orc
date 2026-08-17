@@ -4,6 +4,18 @@
 
 A primitive script is a standalone executable that implements a specific, reusable functionality following the `ScriptContract` interface.
 
+### Which Python runs your script
+
+Python scripts run under **the same interpreter running llm-orc**, not the
+`python3` on your PATH. So any package llm-orc can import, your script can
+import (`pydantic`, `llm_orc.script_utils`), and the shebang line is
+conventional rather than load-bearing.
+
+The practical consequence: if your script needs a third-party package,
+install it into the environment llm-orc itself is installed in. A package
+that is only in a separate project virtualenv will not be importable, even
+when that virtualenv is active in your shell.
+
 ### Minimal Example: User Input Primitive
 
 ```python
