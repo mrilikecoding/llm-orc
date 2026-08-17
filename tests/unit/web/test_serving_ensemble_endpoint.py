@@ -2476,11 +2476,16 @@ def test_a_crashed_seat_contract_refuses_a_build_with_the_minting_prefix(
 ) -> None:
     """The seat gate died on a turn that actually depends on it.
 
-    MINTING prefix, unlike the pipeline failures above: routing succeeded
-    by construction to reach the build branch, so `is_build_ask` is known
-    rather than unknowable — and this shape already minted
-    `rejected_contract` before the change, so a non-minting refusal would
-    COST a ledger entry the system currently earns.
+    MINTING prefix, unlike the pipeline failures above, because routing
+    succeeded by construction to reach the build branch, so
+    `is_build_ask` is known rather than unknowable.
+
+    An earlier version of this docstring justified it as preserving a
+    `rejected_contract` entry the system already earned. That was wrong,
+    and was lifted from the design doc's Arc B bullet about a dead `seat`
+    DISPATCH node — a different fault. Measured against main: a dead
+    `seat_contract` SHIPPED, minting `shipped`. The change converts a
+    wrong-accept into a refusal, which is why the entry must still mint.
     """
     client = _crashed_script_client(serving_project, monkeypatch, "seat_contract.py")
     resp = client.post(

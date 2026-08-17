@@ -526,6 +526,16 @@ _BUILD_ASK_REJECT_SHAPES: list[dict[str, Any]] = [
         "content": "bad",
         "reason": "not valid Python",
     },
+    # #155: the seat-side gate died on a turn that would otherwise ship.
+    # Build-reachable and minting, so it belongs in this list — review
+    # found it missing, which is exactly what this list exists to catch.
+    {
+        "build": True,
+        "valid": True,
+        "file": "a.py",
+        "content": "x = 1",
+        "seat_gate_failed": "the seat contract node returned unreadable output",
+    },
 ]
 
 

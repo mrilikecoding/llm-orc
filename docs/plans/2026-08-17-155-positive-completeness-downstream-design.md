@@ -96,9 +96,15 @@ This is where the single-fault silent-empty-success actually lives.
    `seat_contract` NODE; the second claimed absence means "filtered for
    not succeeding", which is false, since `when:`-skipped nodes are
    routinely absent and a crashed script agent is always PRESENT with an
-   error envelope. Measured at zero absences across 650 live turns, so
-   the branch is a deliberate trip-wire for a future skeleton change
-   rather than handling for a live failure mode.
+   error envelope. Measured at zero absences across 658 recorded
+   live turns, so the branch is a deliberate trip-wire for a future
+   skeleton change rather than handling for a live failure mode. The
+   same trace carries four turns where `seat_contract` genuinely
+   CRASHED (present, `status="success"`, carrying the engine's
+   non-zero-exit wrap) — the live failure mode this arc exists for,
+   observed rather than hypothesised. One of them, line 468, is the
+   pre-fix behaviour on record: `{"finish": false, "file":
+   "solution.py", "content": ""}`.
 
 The engine wrap's keys (`success`, `data`, `error`, `agent_requests`)
 are disjoint from both healthy key sets, so positive recognition
@@ -142,19 +148,23 @@ change converts a wrong-accept into a refusal.
    showed why it matters (see Arc B).
 7. An ABSENT `seat_contract` also fails closed (see above for why that
    branch is a trip-wire rather than live handling).
-9. **A dead seat gate never refuses a NON-build turn** — the `build`
+8. **A dead seat gate never refuses a NON-build turn** — the `build`
    guard, which round 2 shipped unpinned. Deleting it left all 3977
    tests green while converting a healthy prose turn into a MINTING
    `Build refused:`, i.e. a ledger entry on a turn carrying no build
    ask.
-10. **The accept gate outranks a dead seat gate**, and a seat-contract
-    rejection outranks it too. The decision this doc demanded and round
-    2 answered silently.
-11. **End to end through the REAL ensemble**, via `_crashed_script_client`
+9. **The accept gate outranks a dead seat gate**, the form gate does
+   too, and a seat-contract rejection outranks it as well. The decision
+   this doc demanded and round 2 answered silently. The form-gate half
+   was missed until round 4: the branch was gated on `build` alone, so
+   a build turn whose deliverable does not parse lost its SyntaxError
+   reason to a generic pipeline error. It is gated on `valid` now, so
+   it fires only on a turn that would otherwise SHIP.
+10. **End to end through the REAL ensemble**, via `_crashed_script_client`
     with `shape.py`, `form_gate.py` and `seat_contract.py` genuinely
     crashed. Both of round 2's blockers existed because every pin fed a
     node directly and nothing ran the chain with a fault injected.
-8. Two existing fixtures in `test_serving_emit.py` are hand-built
+11. Two existing fixtures in `test_serving_emit.py` are hand-built
    partial dicts without `valid` and will newly refuse:
    `test_seat_contract_rejection_uses_the_exported_prefix` and
    `test_recall_answer_field_emits_the_honest_message`. Updating them is
@@ -181,12 +191,24 @@ Three constraints round 1 violated:
   zero-cost echo on delegation routes; the outcome rides the routing
   decision. Review demonstrated that an early check turns four working
   behaviours (`reads`, `glob`, `grep`, `recall`) into refusals.
-- **Prefix.** A dead seat on a build turn currently mints
-  `rejected_contract` via `seat_contract`. Routing succeeded by
-  construction, so `is_build_ask` is KNOWN, and the non-minting prefix
-  would cost a ledger entry the system currently earns. It needs
-  `BUILD_REFUSED_PREFIX`, and the design must say which gate wins when
-  both fire.
+- **Prefix.** Needs `BUILD_REFUSED_PREFIX`: routing succeeded by
+  construction, so `is_build_ask` is KNOWN rather than unknowable.
+
+  **CORRECTION — this bullet contained a false claim and Arc A lifted
+  it.** It said "a dead seat on a build turn currently mints
+  `rejected_contract` via `seat_contract`", which contradicts the bullet
+  two lines up: a dead seat produces an empty deliverable that SHIPS
+  (minting `shipped`), which is why #166 exists. Measured against main
+  for the analogous seat_contract fault: it shipped. Arc A copied the
+  claim into a production comment, a test docstring and a commit
+  message before review caught it. The prefix conclusion is unaffected;
+  the reason for it is not "preserving an entry the system earns" but
+  "a build ask that gets refused must mint `refused`".
+
+  Arc A has now ANSWERED "which gate wins when both fire", so this is
+  no longer an open Arc B requirement: the accept gate and the form
+  gate both outrank a dead seat gate, because both hold a real computed
+  verdict while it only reports an unknown admission verdict.
 - **False refusals.** An explain turn whose answer IS an error envelope
   ships today and would be refused. Not hypothetical here: the corpus is
   agents that emit these envelopes and dogfooding asks about them. The

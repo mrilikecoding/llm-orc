@@ -318,7 +318,7 @@ def main() -> None:
             "finish": True,
             "content": f"{TERMINALS['accept_gate'].prefix}{reason}",
         }
-    elif build and seat_gate_failed:
+    elif build and gated.get("valid", False) and seat_gate_failed:
         # #155: the seat-side gate died on a turn that actually depends on
         # it.
         #
@@ -329,15 +329,21 @@ def main() -> None:
         #   vacuous echo on every non-build route (only four ensembles
         #   declare a `seat_contract:` block), so refusing there kills
         #   turns its verdict cannot affect.
-        # - After the accept gate, because that gate holds a REAL verdict
-        #   the system computed ("tests do not pass") carrying a retry
-        #   invitation, while this one only says the admission verdict is
-        #   unknown. Refusing ahead of it discarded the better answer and
-        #   converted a `rejected_gate` ledger entry into a `refused` one.
+        # - After the accept gate, and gated on `valid`, because BOTH of
+        #   those hold a REAL verdict the system computed — "tests do not
+        #   pass" with its retry invitation, and "deliverable for a.py is
+        #   not valid Python: <SyntaxError>" — while this one only says
+        #   the admission verdict is unknown. Refusing ahead of either
+        #   replaced a specific, actionable reason with a generic one, and
+        #   `_reject_kind` carries that reason into the recall templates,
+        #   so a later "why didn't that ship?" got the pipeline error
+        #   instead of the syntax error.
         #
-        # So this fires only where it must: a turn that would otherwise
-        # SHIP, on an unknown admission verdict. That is the wrong-accept
-        # it exists to prevent, and nothing else.
+        # The `valid` conjunct is what makes the next sentence true, and
+        # an earlier draft asserted it without it: this fires ONLY on a
+        # turn that would otherwise SHIP, on an unknown admission verdict.
+        # That is the wrong-accept it exists to prevent, and nothing
+        # else.
         #
         # MINTING prefix, unlike the pipeline failure above, because
         # routing succeeded by construction to reach the build branch, so
