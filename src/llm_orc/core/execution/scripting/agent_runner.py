@@ -29,6 +29,38 @@ from llm_orc.schemas.agent_config import AgentConfig, ScriptAgentConfig
 logger = logging.getLogger(__name__)
 
 
+def _reports_failure(response: Any) -> bool:
+    """Whether a script's own response says it did not succeed (#159).
+
+    Two clauses, because one does not cover the corpus:
+
+    - ``success`` read for TRUTHINESS with a ``True`` default, so
+      ``{"success": 0}`` and ``{"success": null}`` count while a response
+      that simply omits the key does NOT (a bare
+      ``not parsed.get("success")`` would stop caching everything).
+    - a truthy ``error`` key, which is what catches the case this issue
+      was filed about: ``web_searcher`` reports every failure as
+      ``{"error": ...}`` and exits 0, so neither a ``success`` key nor an
+      exception envelope exists. NONE of the 33 scripts in
+      ``.llm-orc/scripts/agentic_serving/`` emit a boolean ``success``.
+
+    Non-``str`` responses are possible — ``_parse_output`` returns
+    ``json.loads`` verbatim and ``execute`` passes it through unwrapped
+    when it is not a dict — so a script printing ``[1,2,3]`` or ``null``
+    arrives as a ``list`` or ``None``. Those are not failures, and
+    parsing them unguarded would raise.
+    """
+    if not isinstance(response, str):
+        return False
+    try:
+        parsed = json.loads(response)
+    except (json.JSONDecodeError, TypeError):
+        return False
+    if not isinstance(parsed, dict):
+        return False
+    return not parsed.get("success", True) or bool(parsed.get("error"))
+
+
 class ScriptAgentRunner:
     """Runs script agents with caching and resource monitoring."""
 
@@ -92,12 +124,19 @@ class ScriptAgentRunner:
         )
         duration_ms = int((time.time() - start_time) * 1000)
 
-        cache_result = {
-            "output": response,
-            "execution_metadata": {"duration_ms": duration_ms},
-            "success": True,
-        }
-        self._script_cache.set(script_content, cache_key_params, cache_result)
+        # A failure is never cached (#159). ScriptCache replays entries for
+        # a 3600s TTL on the same (script, input, parameters) key, and with
+        # persist_to_artifacts it survives a restart, so one rate-limited
+        # search or one timeout under momentary load used to poison that
+        # key across processes. The old entry also carried a hardcoded
+        # "success": True that nothing read, on entries that might hold a
+        # failure.
+        if not _reports_failure(response):
+            cache_result = {
+                "output": response,
+                "execution_metadata": {"duration_ms": duration_ms},
+            }
+            self._script_cache.set(script_content, cache_key_params, cache_result)
 
         return response, model_instance, substituted
 
