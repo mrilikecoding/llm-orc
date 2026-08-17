@@ -53,7 +53,7 @@ jobs:
     
     - name: Run type checking
       run: |
-        uv run mypy src tests
+        uv run mypy src tests benchmarks
 
   security:
     runs-on: ubuntu-latest
