@@ -7,9 +7,22 @@ unbounded.
 
 Serve restarted on the branch, venv on PATH. Build ask through real
 `opencode run`: one `write` tool_call, `add.py` on disk
-(`written-add.py`), "Wrote add.py." That path runs the gated build,
-so it exercises `accept_executor` — the node whose worst case (45s
-aggregate + one 15s child = 60s) is the reason six nodes now declare
+(`written-add.py`), "Wrote add.py."
+
+That the GATED path ran, rather than being inferred from the write, is
+recorded from the serve trace (`.llm-orc/.serve-trace/turns.jsonl`,
+untracked, so quoted here):
+
+```
+resolve -> "target": "build-gated"
+seat    -> "tests_pass": true, "tests_adequate": true,
+           "accept_reason": "tests pass and are adequate",
+           "held_round": false
+```
+
+`tests_pass: true` can only come from `accept_executor` having run, now
+under its new 180s bound. That is the node whose worst case (45s
+aggregate + one 15s child = 60s) is the reason six nodes declare
 explicit timeouts instead of racing the shipped 60s default.
 
 The ladder battery was NOT re-run. Every serving script completes in

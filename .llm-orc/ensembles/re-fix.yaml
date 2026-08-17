@@ -34,7 +34,8 @@ agents:
     # case (accept_executor's budget check runs BEFORE each spawn), and
     # the SHIPPED default_timeout is also 60 — so this node declares its
     # own headroom rather than racing the default on a fresh install
-    # (#157). Keep in sync with DEFAULT_TIMEOUT x _BUDGET_MULTIPLIER.
+    # (#157). If DEFAULT_TIMEOUT or _BUDGET_MULTIPLIER change, retune
+    # against the WORST CASE (budget + one child), not the budget.
     timeout_seconds: 180
     depends_on: [select]
 

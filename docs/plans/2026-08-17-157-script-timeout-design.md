@@ -1,6 +1,6 @@
 # #157 — engine-run script agents get a real timeout (design)
 
-Status: pre-flight. Issue: #157 (found during the #154 review).
+Status: SHIPPED (2026-08-17). Issue: #157 (found during the #154 review).
 
 ## Mechanism (measured, and worse than the issue states)
 
@@ -155,9 +155,13 @@ well past the agent's reported failure.
   at `ensemble_execution.py:228`, before the runner is built at
   `:264-270`) and, in `_execute_without_cache`, fill the dumped dict's
   `timeout_seconds` from that helper before constructing ScriptAgent.
-  `agent_runner.py:109` is the ONLY `ScriptAgent(...)` site in `src/`.
+  `agent_runner.py`'s `_execute_without_cache` holds the ONLY
+  `ScriptAgent(...)` site in `src/`.
   BEHAVIORAL, second commit.
-- Keep `or 60` in `script_agent.py:106` as the standalone floor.
+- Keep a floor in `ScriptAgent` for a directly-constructed agent. NOT
+  `or 60`, and not `.get(key, 60)` either: the key is usually PRESENT
+  and None, which is the whole bug, and `or` would additionally swallow
+  an explicit 0 and desync the inner bound from the outer.
 - **Do NOT** widen `execute_agent_with_timeout`'s executor callable.
   That two-arg seam is deliberate and documented as test-patchable at
   `ensemble_execution.py:304-313`; threading through it would mix a

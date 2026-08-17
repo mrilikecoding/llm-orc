@@ -147,6 +147,14 @@ class TestImplicitAgentDetection:
             mock_agent_class.assert_called_once_with(
                 "enhanced_script", expected_config, project_dir=None
             )
+            # The assertion above only catches a broken hand-off while the
+            # ambient default_timeout differs from ScriptAgent's own floor;
+            # run where they coincide (a fresh install, where both are 60)
+            # and it goes blind. Pin the wiring itself, ambient-independent.
+            assert (
+                executor._script_agent_runner._performance_config
+                is executor._performance_config
+            )
             mock_agent_instance.execute.assert_called_once()
 
     def test_agent_type_detection_in_config_validation(self) -> None:
