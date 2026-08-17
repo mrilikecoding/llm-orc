@@ -192,3 +192,54 @@ class TestEnsembleScriptCacheIntegration:
             result = script_cache.get(script_content, {})
 
             assert result is None  # Disabled cache returns None
+
+    def test_a_project_with_no_script_cache_block_gets_a_disabled_cache(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The shipped default has to survive the config loader (#160).
+
+        Found by review: the flip to ScriptCacheConfig.enabled = False was
+        INERT, because _load_script_cache_config restated every default and
+        hardcoded enabled=True. The dataclass pin in test_script_cache.py
+        asserts a field the runtime never read, so it could not catch this.
+
+        This is the shape of every fresh install: templates/global-config.yaml
+        writes no script_cache block and load_performance_config has no such
+        key in its defaults, so the absent-config path IS the default path.
+        """
+        llm_orc_dir = tmp_path / ".llm-orc"
+        llm_orc_dir.mkdir()
+        (llm_orc_dir / "config.yaml").write_text("project:\n  name: fresh\n")
+        monkeypatch.chdir(tmp_path)
+        # No global config either, so nothing supplies a script_cache block.
+        monkeypatch.setenv("HOME", str(tmp_path))
+
+        executor = ExecutorFactory.create_root_executor()
+
+        assert executor._script_cache_config.enabled is False
+
+    def test_an_explicit_opt_in_still_wins(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Reading defaults off the dataclass must not break the override.
+
+        Without this, "enabled=defaults.enabled" could be mistidied into a
+        constant False and the config key would stop being honoured, with the
+        pin above still green.
+        """
+        llm_orc_dir = tmp_path / ".llm-orc"
+        llm_orc_dir.mkdir()
+        (llm_orc_dir / "config.yaml").write_text(
+            yaml.dump(
+                {
+                    "project": {"name": "opted-in"},
+                    "performance": {"script_cache": {"enabled": True}},
+                }
+            )
+        )
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setenv("HOME", str(tmp_path))
+
+        executor = ExecutorFactory.create_root_executor()
+
+        assert executor._script_cache_config.enabled is True

@@ -343,14 +343,27 @@ class EnsembleExecutor:
         self._agent_dispatcher._semaphore = asyncio.Semaphore(n) if n > 0 else None
 
     def _load_script_cache_config(self) -> ScriptCacheConfig:
-        """Load script cache configuration from performance config."""
+        """Load script cache configuration from performance config.
+
+        Every default is read off ``ScriptCacheConfig`` rather than
+        restated here. They WERE restated, and the copy drifted: this
+        function hardcoded ``enabled=True`` while the dataclass shipped
+        ``False``, so the disabled default was inert for every project
+        without an explicit opt-out — which is every fresh install, since
+        ``templates/global-config.yaml`` writes no ``script_cache`` block
+        and ``load_performance_config`` has no such key in its defaults.
+        The dataclass is the one place the defaults live.
+        """
         cache_config = self._performance_config.get("script_cache", {})
+        defaults = ScriptCacheConfig()
 
         return ScriptCacheConfig(
-            enabled=cache_config.get("enabled", True),
-            ttl_seconds=cache_config.get("ttl_seconds", 3600),
-            max_size=cache_config.get("max_size", 1000),
-            persist_to_artifacts=cache_config.get("persist_to_artifacts", False),
+            enabled=cache_config.get("enabled", defaults.enabled),
+            ttl_seconds=cache_config.get("ttl_seconds", defaults.ttl_seconds),
+            max_size=cache_config.get("max_size", defaults.max_size),
+            persist_to_artifacts=cache_config.get(
+                "persist_to_artifacts", defaults.persist_to_artifacts
+            ),
             artifact_base_dir=self._artifact_manager.base_dir,
         )
 
