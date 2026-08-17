@@ -372,6 +372,7 @@ def test_broken_rate_is_published_over_shipped_not_over_subtasks() -> None:
     assert rates.shipped == 1
     assert rates.shipped_broken == 1
     assert rates.broken_rate == 1.0
+    assert rates.broken_rate_interval is not None
     assert rates.broken_rate_interval[0] > 0.2
 
 

@@ -37,23 +37,23 @@ test-watch:
 	uv run pytest-watch
 
 lint:
-	uv run mypy src tests
-	uv run ruff check src tests
-	uv run ruff format --check src tests
+	uv run mypy src tests benchmarks
+	uv run ruff check src tests benchmarks
+	uv run ruff format --check src tests benchmarks
 	uv run complexipy --max-complexity-allowed 15 src
 	uv run bandit -r src/ --quiet --severity-level medium 2>&1 | grep -v "WARNING" || true
 	uv run vulture src/ --min-confidence 80
 
 lint-fix:
-	uv run mypy src tests
-	uv run ruff check --fix src tests
-	uv run ruff format src tests
+	uv run mypy src tests benchmarks
+	uv run ruff check --fix src tests benchmarks
+	uv run ruff format src tests benchmarks
 
 lint-check: lint
 
 format:
-	uv run ruff check --fix src tests
-	uv run ruff format src tests
+	uv run ruff check --fix src tests benchmarks
+	uv run ruff format src tests benchmarks
 
 security:
 	@echo "Running security analysis with bandit..."

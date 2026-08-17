@@ -86,7 +86,11 @@ warn_return_any = true
 warn_unused_configs = true
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+# benchmarks/ holds the MEASUREMENT INSTRUMENTS (oracles, scorers,
+# stats, fixtures). A regression there does not fail a build unless it is
+# listed here — it silently corrupts a run's evidence, and the next
+# battery inherits it (#156).
+testpaths = ["tests", "benchmarks/agentic_serving/tests"]
 asyncio_mode = "auto"
 addopts = "--cov=llm_orc --cov-report=term-missing --cov-fail-under=90"
 filterwarnings = [
