@@ -22,6 +22,7 @@ from llm_orc.core.execution.scripting.user_input_handler import (
 from llm_orc.core.execution.usage_collector import (
     UsageCollector,
 )
+from llm_orc.core.execution.utils import resolve_agent_timeout
 from llm_orc.models.base import ModelInterface
 from llm_orc.schemas.agent_config import AgentConfig, ScriptAgentConfig
 
@@ -39,6 +40,7 @@ class ScriptAgentRunner:
         emit_event: Callable[[str, dict[str, Any]], None],
         project_dir: Path | None,
         strict_schema: bool = False,
+        performance_config: dict[str, Any] | None = None,
     ) -> None:
         self._script_cache = script_cache
         self._usage_collector = usage_collector
@@ -46,6 +48,11 @@ class ScriptAgentRunner:
         self._emit_event = emit_event
         self._project_dir = project_dir
         self._strict_schema = strict_schema
+        # #157: the subprocess bound has to be the SAME number the
+        # dispatcher resolved, or a script agent runs unbounded — which is
+        # exactly what happened, since model_dump always supplies
+        # timeout_seconds and supplies None when unset.
+        self._performance_config = performance_config or {}
         self._input_lock = asyncio.Lock()
 
     async def execute(
@@ -106,9 +113,16 @@ class ScriptAgentRunner:
 
         try:
             # ScriptAgent.__init__ expects dict — convert at boundary
+            config_dict = agent_config.model_dump()
+            # Fill the resolved bound in rather than leaving the dumped
+            # None, so the subprocess is bounded by the same number the
+            # dispatcher applies as its outer timeout (#157).
+            config_dict["timeout_seconds"] = resolve_agent_timeout(
+                config_dict, self._performance_config
+            )
             script_agent = ScriptAgent(
                 agent_name,
-                agent_config.model_dump(),
+                config_dict,
                 project_dir=self._project_dir,
             )
 
