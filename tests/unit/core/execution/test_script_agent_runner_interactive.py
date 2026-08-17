@@ -351,14 +351,30 @@ class TestScriptAgentsSkipTheOuterTimeout:
     def test_a_timed_out_script_agent_keeps_todays_result_shape(
         self, tmp_path: Path
     ) -> None:
-        """The contract does NOT move: a timeout comes back as a successful
-        agent carrying a failure envelope, exactly as today. Consumers read
-        that shape — fan_out/coordinator.py skips expansion when upstream
-        status is not success — so flipping it would silently unexpand a
-        fan-out. This pin is what stops someone 'fixing' it later."""
+        """The contract does NOT move, asserted END TO END through the real
+        dispatcher and coordinator, because that is where the contract now
+        lives. An earlier version of this pin built a ScriptAgentRunner
+        directly and asserted on the raw response string; review round 1
+        showed a one-line mutation of the coordinator (resolving the
+        default instead of skipping the timer) that flipped status from
+        success to failed with the ENTIRE suite still green.
+
+        A timeout comes back as a SUCCESSFUL agent carrying a failure
+        envelope. Consumers read that shape — fan_out/coordinator.py skips
+        expansion when upstream status is not success — so flipping it
+        would silently unexpand a fan-out.
+        """
+        from llm_orc.core.execution.phases.agent_dispatcher import AgentDispatcher
+        from llm_orc.core.execution.phases.agent_execution_coordinator import (
+            AgentExecutionCoordinator,
+        )
+        from llm_orc.core.execution.phases.dependency_resolver import (
+            DependencyResolver,
+        )
+
         script = tmp_path / "hangs.py"
         script.write_text("import time\ntime.sleep(30)\n")
-        config = ScriptAgentConfig(name="hangs", script=str(script))
+        perf = {"execution": {"default_timeout": 1}}
 
         runner = ScriptAgentRunner(
             script_cache=ScriptCache(ScriptCacheConfig(enabled=False)),
@@ -366,10 +382,32 @@ class TestScriptAgentsSkipTheOuterTimeout:
             progress_controller=None,
             emit_event=lambda name, data: None,
             project_dir=None,
-            performance_config={"execution": {"default_timeout": 1}},
+            performance_config=perf,
         )
-        response, _model, _sub = asyncio.run(runner.execute(config, "{}"))
 
-        parsed = json.loads(response)
+        async def _executor(cfg: Any, inp: str) -> Any:
+            return await runner.execute(cfg, inp)
+
+        async def _resolve(cfg: Any) -> dict[str, Any]:
+            dumped: dict[str, Any] = cfg.model_dump()
+            return dumped
+
+        dispatcher = AgentDispatcher(
+            AgentExecutionCoordinator(perf, _executor),
+            DependencyResolver(lambda name: ""),
+            NoOpProgressController(),
+            lambda name, data: None,
+            _resolve,
+            perf,
+        )
+        config = ScriptAgentConfig(name="hangs", script=str(script))
+
+        results = asyncio.run(dispatcher.execute_agents_in_phase([config], "{}"))
+        result = results["hangs"]
+
+        assert result.status == "success", result.error
+        assert result.error is None
+        assert result.response is not None
+        parsed = json.loads(result.response)
         assert parsed["success"] is False
         assert "timed out" in parsed["error"].lower()

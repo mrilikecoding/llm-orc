@@ -826,8 +826,8 @@ class TestScriptAgentsOffTheEventLoop:
     model-backed agent awaiting in the same loop.
     """
 
-    def _script(self, tmp_path: Path, body: str) -> str:
-        script = tmp_path / f"s{abs(hash(body)) % 10000}.py"
+    def _script(self, tmp_path: Path, body: str, name: str = "s") -> str:
+        script = tmp_path / f"{name}.py"
         script.write_text(body)
         return str(script)
 
@@ -857,7 +857,7 @@ class TestScriptAgentsOffTheEventLoop:
         asyncio.sleep(0) registered 0 ticks before this change. Snapshot
         around the call rather than reading at the end, or the version
         that passes today gets written."""
-        path = self._script(self._tmp(tmp_path), "import time\ntime.sleep(0.6)\n")
+        path = self._script(tmp_path, "import time\ntime.sleep(0.6)\n")
         ticks = 0
 
         async def spin() -> None:
@@ -879,9 +879,6 @@ class TestScriptAgentsOffTheEventLoop:
 
         before, after = asyncio.run(run())
         assert after > before
-
-    def _tmp(self, tmp_path: Path) -> Path:
-        return tmp_path
 
     def test_the_subprocess_runs_in_the_dedicated_pool(self, tmp_path: Path) -> None:
         """With no semaphore left, this is the ONLY symptom if the work
