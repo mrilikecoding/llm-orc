@@ -3,6 +3,7 @@
 import asyncio
 import json
 import os
+import sys
 import tempfile
 from pathlib import Path
 from unittest.mock import patch
@@ -725,3 +726,60 @@ print(json.dumps(out))
         parsed_result = json.loads(result)
         assert parsed_result["success"] is False
         assert "error" in parsed_result
+
+
+class TestInterpreterResolution:
+    """#154: a file-backed .py script agent runs under the interpreter
+    running llm-orc, not whichever python3 the operator's PATH exposes.
+
+    The failure this prevents is asymmetric and therefore nasty: serving
+    scripts that import llm_orc died while the stdlib-only scripts in the
+    same ensemble kept running, leaving a half-dead pipeline rather than
+    a clean failure (the 2026-08-13 misfire, #152).
+    """
+
+    def test_python_scripts_run_under_the_host_interpreter(self) -> None:
+        agent = ScriptAgent("t", {"script": "x.py"})
+        assert agent._get_interpreter("x.py") == [sys.executable]
+        assert agent._get_interpreter("/abs/path/to/thing.python") == [sys.executable]
+
+    def test_other_languages_are_untouched(self) -> None:
+        agent = ScriptAgent("t", {"script": "x.sh"})
+        assert agent._get_interpreter("x.sh") == ["bash"]
+        assert agent._get_interpreter("x.bash") == ["bash"]
+        assert agent._get_interpreter("x.js") == ["node"]
+        assert agent._get_interpreter("x.rb") == ["ruby"]
+        assert agent._get_interpreter("x.unknown") == ["bash"]
+
+    def test_falls_back_when_the_host_interpreter_is_unusable(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """An empty sys.executable (embedded) or a frozen bundle, where
+        [sys.executable, script.py] would re-invoke the CLI with a path
+        as argv[1] rather than run the script."""
+        agent = ScriptAgent("t", {"script": "x.py"})
+        monkeypatch.setattr(sys, "executable", "")
+        assert agent._get_interpreter("x.py") == ["python3"]
+        monkeypatch.setattr(sys, "executable", "/opt/llm-orc/llm-orc")
+        monkeypatch.setattr(sys, "frozen", True, raising=False)
+        assert agent._get_interpreter("x.py") == ["python3"]
+
+    @pytest.mark.asyncio
+    async def test_a_script_importing_llm_orc_runs_without_it_on_path(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The behavioral pin, against a REAL subprocess: mocking the
+        interpreter is exactly what hid this class of failure. Runs with
+        PATH stripped of the venv, the misfire's own condition."""
+        script = tmp_path / "needs_llm_orc.py"
+        script.write_text(
+            "import json, llm_orc\n"
+            'print(json.dumps({"ok": True, "pkg": llm_orc.__name__}))\n'
+        )
+        monkeypatch.setenv("PATH", "/usr/bin:/bin")
+        monkeypatch.delenv("VIRTUAL_ENV", raising=False)
+
+        agent = ScriptAgent("t", {"script": str(script), "timeout_seconds": 60})
+        result = await agent.execute("{}")
+
+        assert json.loads(result)["ok"] is True
