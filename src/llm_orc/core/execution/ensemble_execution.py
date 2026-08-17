@@ -354,14 +354,33 @@ class EnsembleExecutor:
         and ``load_performance_config`` has no such key in its defaults.
         The dataclass is the one place the defaults live.
 
-        The trailing ``or {}`` is not decoration. A YAML key written with
-        no body — which is what you get by commenting out ``enabled:``
-        under ``script_cache:`` — parses to ``None``, and the ``.get``
-        below then raised ``AttributeError`` and killed executor
-        construction outright, taking every invocation with it rather
-        than just caching.
+        The block is normalised because a hand-edited YAML value is not
+        always a mapping, and every non-mapping shape used to raise
+        ``AttributeError`` out of executor construction — killing every
+        invocation, not just caching:
+
+        - ``script_cache:`` with no body parses to ``None``. This is what
+          commenting out the one key under it leaves behind.
+        - ``script_cache: true`` / ``false`` is at least as plausible a
+          hand-edit, and is read as the ``enabled`` flag it obviously
+          means. An earlier fix used a bare ``or {}``, which closed the
+          falsy half only: ``true`` still crashed, and ``false`` silently
+          fell back to defaults. That second one was harmless solely
+          because the default is currently off — the moment #161
+          justifies flipping it back, ``script_cache: false`` would have
+          silently ENABLED the cache.
+        - anything else (a string, a list) cannot be interpreted, so it
+          falls back to defaults rather than crashing. Computing a cache
+          config must not be the thing that takes down the executor.
         """
-        cache_config = self._performance_config.get("script_cache") or {}
+        raw = self._performance_config.get("script_cache")
+        cache_config: dict[str, Any]
+        if isinstance(raw, dict):
+            cache_config = raw
+        elif isinstance(raw, bool):
+            cache_config = {"enabled": raw}
+        else:
+            cache_config = {}
         defaults = ScriptCacheConfig()
 
         return ScriptCacheConfig(

@@ -19,7 +19,8 @@ json`: one `write` tool_call, `mul.py` on disk (`written-mul.py`),
 "Wrote mul.py."
 
 Trace evidence that the changed path ran, rather than being inferred
-from the write (`.llm-orc/.serve-trace/turns.jsonl`, untracked, quoted):
+from the write (`.llm-orc/.serve-trace/turns.jsonl`, untracked, quoted
+from the tail of the file):
 
 ```
 "target": "code-seat"
@@ -27,9 +28,19 @@ from the write (`.llm-orc/.serve-trace/turns.jsonl`, untracked, quoted):
 "accept_reason": "tests pass and are adequate"
 ```
 
-`tests_pass: true` comes from `accept_executor`, which is itself a
-script agent, so the changed `execute` ran including the new
-`_cache_is_enabled()` short-circuit and the `cache_identity` skip.
+A script agent produced that, so the changed `execute` ran including the
+new `_cache_is_enabled()` short-circuit and the `cache_identity` skip.
+
+Two limits on this evidence, both found by review of an earlier draft
+that overstated it. First, the draft attributed `tests_pass` to
+`accept_executor` specifically; the trace shows it on the `seat` node,
+and six scripts under `agentic_serving/` touch that key. All six are
+script agents, so the conclusion holds while the attribution did not.
+Second, `turns.jsonl` is append-only back to July and 556 of its 641
+lines mention these keys, and the opencode `sessionID` appears nowhere
+in the trace — so only mtime ties these quotes to this run. That is
+weak provenance for a smoke check and would not be good enough for a
+gate.
 
 ## What this does NOT show
 

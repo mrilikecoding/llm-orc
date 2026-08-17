@@ -231,26 +231,70 @@ instead.
 13. **An explicit opt-in still wins**, so reading defaults off the
     dataclass cannot be mistidied into a constant.
 
+### Round 5, added after the round-4 review
+
+18. **A non-mapping `script_cache` value does not crash construction.**
+    The `or {}` from round 4 closed the falsy half only: `script_cache:
+    true` still raised `AttributeError` out of executor construction,
+    the identical failure the empty-block fix was named for. A bool is
+    now read as the `enabled` flag it obviously means, which also closes
+    a latent wrong-accept — `script_cache: false` silently meant
+    "defaults", harmless only while the default is off, and would have
+    silently ENABLED the cache the moment #161 justifies flipping it.
+19. **An edit REVERTED mid-run**, pinned as a known-wrong behaviour so a
+    future fix has a baseline. See the bound below.
+
+Two instruments were also corrected rather than added. The empty-block
+pin asserted the default as well as survival, so it died under an
+unrelated mutant another pin already covered; an over-broad pin hides
+which defect it is reporting. And the interactive-routing count
+assertion turned out to derive from THIS repo's `.llm-orc/config.yaml`
+rather than from any default — a trap aimed squarely at #161, since
+anyone re-enabling the cache for dogfooding would get `2 != 1` in a test
+about user input with no hint of the cause. It now states the cache
+state it depends on.
+
+The `_cache_is_enabled` tolerance layer was DELETED rather than pinned.
+Review measured that its `getattr` defaults never fire — a plain `Mock`
+answers with its own auto-created attribute, and only `Mock(spec=...)`
+would reach a default, which nothing in the suite uses — so it was dead
+code carrying a rationale that named the wrong objects.
+
 ### Round 4, added after the round-3 review
 
 14. **`persist_to_artifacts` reaches the runtime.** The one default with
     no pin, which is exactly how `enabled` drifted in the first place.
-    A constant `True` there survived all 3435 tests, would silently
-    ignore an explicit opt-out, and — since entries are orphaned on
-    every edit and `clear()` has no caller in `src/` — means unbounded
-    on-disk growth in every user's project.
+    A constant `True` there survived all 3435 tests and would silently
+    ignore an explicit opt-out. An earlier draft claimed it also meant
+    "unbounded on-disk growth in every user's project"; review falsified
+    that and it is wrong. `ScriptCache.set` returns at its `enabled`
+    check BEFORE `_save_to_artifacts`, so under the default this issue
+    establishes — off — the mutant writes nothing at all. Measured:
+    `enabled=False, persist=True` produces no cache directory and zero
+    entry files. The harm needs a project that has already opted into
+    `enabled: true`. The pin is worth keeping; the stakes are smaller
+    than claimed.
 15. **An empty `script_cache:` block does not crash construction.** A
     YAML key with no body parses to `None`, not `{}`, which is what
     commenting out the one key under it leaves behind. It raised
     `AttributeError` out of executor construction, killing every
     invocation rather than just caching.
 16. **A disabled cache computes no identity.** With the cache off — now
-    the default — the identity was still built twice per execution,
-    each time resolving and reading the whole script to hash it. 1.67 ms
-    per agent for a 1.2MB script; a 103KB read twice for `classify.py`,
-    forever, for a key nothing would look up. `ScriptCache.get`/`set`
-    check `enabled` only after being called, so the check has to happen
-    before the identity is built.
+    the default — the identity was still built twice per execution, each
+    time resolving and reading the whole script to hash it, for a key
+    nothing would look up. `ScriptCache.get`/`set` check `enabled` only
+    after being called, so the check has to happen before the identity
+    is built.
+
+    State the denominator, which an earlier draft omitted and review
+    supplied: a full script-agent `execute` measures ~49 ms here
+    (subprocess-spawn dominated), and the identity for `classify.py`
+    (105,361 bytes) is 0.093 ms — **0.19% of one execution**. So
+    "computing the identity is the expensive part" was wrong by orders
+    of magnitude. The change is still right, because the work buys
+    nothing at all, but it should be read as removing waste rather than
+    as a performance fix — which matters, since what was paid for it is
+    a control-flow change on the shipped default path.
 17. **A FIFO reference does not hang the agent**, pinned with a watchdog
     thread. This is why the guard is `isfile` and not `exists`, and
     review showed that swap survived the entire suite. The bounds
@@ -300,7 +344,9 @@ as evidence of coverage here.
   rather than merely serving something stale. Narrowed by re-reading the
   identity after the run and skipping the `set` if the bytes moved.
 - **The re-read catches a NET move only**, which an earlier draft
-  overstated as closing the window. An edit REVERTED inside the same
+  overstated as closing the window. Reproduced and now pinned as a
+  known-wrong behaviour (instrument 19), so a future fix has something
+  to measure against rather than only prose. An edit REVERTED inside the same
   window is invisible to a before/after comparison, so the entry is
   still written for bytes that were never executed. Closing that
   properly needs the digest the child actually read, which the child

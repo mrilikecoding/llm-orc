@@ -1839,11 +1839,22 @@ class TestEnsembleExecutor:
         from unittest.mock import AsyncMock, Mock, patch
 
         from llm_orc.agents.script_agent import ScriptAgent
+        from llm_orc.core.execution.scripting.cache import (
+            ScriptCache,
+            ScriptCacheConfig,
+        )
         from llm_orc.core.execution.scripting.user_input_handler import (
             ScriptUserInputHandler,
         )
 
         executor = mock_ensemble_executor
+        # State the cache state this test depends on rather than
+        # inheriting it: mock_ensemble_executor builds a real root
+        # executor without chdir, so it picks up THIS repo's
+        # .llm-orc/config.yaml. The handler count below is derived from
+        # that, and #161 is explicitly about turning the cache back on.
+        executor._script_cache = ScriptCache(ScriptCacheConfig(enabled=False))
+        executor._script_agent_runner._script_cache = executor._script_cache
 
         # Create script agent configuration that requires user input
         agent_config = ScriptAgentConfig(
@@ -1910,11 +1921,11 @@ class TestEnsembleExecutor:
 
         # Verify that user input detection was performed. #160 asks the
         # question a second time to decide whether the result may be
-        # cached, but only when the cache is ENABLED — this executor's is
-        # not, so the cacheability check short-circuits before asking and
-        # the count stays 1. Asserted exactly rather than as `.called`,
-        # because a per-execution construction explosion would otherwise
-        # be invisible.
+        # cached, but only when the cache is ENABLED — it is pinned off
+        # above, so the cacheability check short-circuits before asking
+        # and the count stays 1. Asserted exactly rather than as
+        # `.called`, because a per-execution construction explosion would
+        # otherwise be invisible.
         assert mock_handler_class.call_count == 1
         mock_user_input_detection.requires_user_input.assert_any_call(
             "primitives/user-interaction/get_user_input.py"
