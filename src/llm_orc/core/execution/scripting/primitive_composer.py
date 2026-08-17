@@ -7,7 +7,10 @@ from collections import deque
 from typing import Any
 
 from llm_orc.core.execution.scripting.primitive_registry import PrimitiveRegistry
-from llm_orc.core.execution.scripting.resolver import ScriptResolver
+from llm_orc.core.execution.scripting.resolver import (
+    ScriptResolver,
+    _script_command,
+)
 from llm_orc.schemas.script_agent import ScriptAgentInput, ScriptAgentOutput
 
 
@@ -411,8 +414,13 @@ class PrimitiveComposer:
         env["INPUT_DATA"] = primitive_input.model_dump_json()
 
         # Execute the primitive script
+        # Same interpreter rule as the engine (#154).
         result = subprocess.run(
-            [script_path], capture_output=True, text=True, env=env, timeout=30
+            _script_command(script_path),
+            capture_output=True,
+            text=True,
+            env=env,
+            timeout=30,
         )
 
         if result.returncode != 0:

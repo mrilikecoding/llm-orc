@@ -3,6 +3,7 @@
 import json
 import os
 import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -94,7 +95,7 @@ if __name__ == "__main__":
 
         try:
             result = subprocess.run(
-                ["python", str(script_path)],
+                [sys.executable, str(script_path)],
                 env=env,
                 capture_output=True,
                 text=True,
