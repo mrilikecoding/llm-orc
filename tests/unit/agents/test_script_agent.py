@@ -3,14 +3,22 @@
 import asyncio
 import json
 import os
+import subprocess
 import sys
 import tempfile
+import threading
+import time
 from pathlib import Path
+from typing import Any
 from unittest.mock import patch
 
 import pytest
 
-from llm_orc.agents.script_agent import ScriptAgent
+from llm_orc.agents.script_agent import (
+    SCRIPT_POOL_SIZE,
+    SCRIPT_POOL_THREAD_PREFIX,
+    ScriptAgent,
+)
 
 
 class TestScriptAgent:
@@ -809,3 +817,125 @@ class TestTimeoutFloor:
         outer one, which resolves 0 to 0."""
         agent = ScriptAgent("t", {"script": "x.py", "timeout_seconds": 0})
         assert agent.timeout == 0
+
+
+class TestScriptAgentsOffTheEventLoop:
+    """#158: five subprocess.run calls sat directly inside async def, so
+    a script agent blocked the event loop for its whole subprocess. That
+    serialized agents the engine explicitly gathers, and stalled any
+    model-backed agent awaiting in the same loop.
+    """
+
+    def _script(self, tmp_path: Path, body: str, name: str = "s") -> str:
+        script = tmp_path / f"{name}.py"
+        script.write_text(body)
+        return str(script)
+
+    def test_concurrent_script_agents_actually_overlap(self, tmp_path: Path) -> None:
+        """4 x 1s gathered took 4.18s before this change. The bound is a
+        stated number with room for a 2x-loaded machine either way, not a
+        tight one."""
+        path = self._script(
+            tmp_path, "import time, json\ntime.sleep(1)\nprint(json.dumps({'ok': 1}))\n"
+        )
+
+        async def run() -> float:
+            agents = [
+                ScriptAgent(f"a{i}", {"script": path, "timeout_seconds": 30})
+                for i in range(4)
+            ]
+            start = time.time()
+            await asyncio.gather(*(a.execute("{}") for a in agents))
+            return time.time() - start
+
+        assert asyncio.run(run()) < 2.5
+
+    def test_the_loop_stays_responsive_while_a_script_runs(
+        self, tmp_path: Path
+    ) -> None:
+        """The only DIRECT proof the loop is free: a counter ticking on
+        asyncio.sleep(0) registered 0 ticks before this change. Snapshot
+        around the call rather than reading at the end, or the version
+        that passes today gets written."""
+        path = self._script(tmp_path, "import time\ntime.sleep(0.6)\n")
+        ticks = 0
+
+        async def spin() -> None:
+            nonlocal ticks
+            while True:
+                ticks += 1
+                await asyncio.sleep(0)
+
+        async def run() -> tuple[int, int]:
+            spinner = asyncio.create_task(spin())
+            await asyncio.sleep(0)
+            before = ticks
+            await ScriptAgent("a", {"script": path, "timeout_seconds": 30}).execute(
+                "{}"
+            )
+            after = ticks
+            spinner.cancel()
+            return before, after
+
+        before, after = asyncio.run(run())
+        assert after > before
+
+    def test_the_subprocess_runs_in_the_dedicated_pool(self, tmp_path: Path) -> None:
+        """With no semaphore left, this is the ONLY symptom if the work
+        lands in the default pool — which is exactly what asyncio.to_thread
+        would have done while everything else looked correct."""
+        path = self._script(tmp_path, "import json\nprint(json.dumps({'ok': 1}))\n")
+        # Observed in the PARENT: the child process reports its own
+        # MainThread, so only the caller's thread reveals which pool ran it.
+        seen: list[str] = []
+        real_run = subprocess.run
+
+        def _spy(*args: Any, **kwargs: Any) -> Any:
+            seen.append(threading.current_thread().name)
+            return real_run(*args, **kwargs)
+
+        with patch("llm_orc.agents.script_agent.subprocess.run", _spy):
+            asyncio.run(
+                ScriptAgent("a", {"script": path, "timeout_seconds": 30}).execute("{}")
+            )
+
+        assert seen, "subprocess.run was never called"
+        assert SCRIPT_POOL_THREAD_PREFIX in seen[0], seen[0]
+
+    def test_a_hanging_subprocess_still_fails_at_its_inner_bound(
+        self, tmp_path: Path
+    ) -> None:
+        """#158 retires the OUTER timeout for script agents, so the inner
+        one is the whole bound. It is also the only one that ever reaped."""
+        path = self._script(tmp_path, "import time\ntime.sleep(30)\n")
+        result = asyncio.run(
+            ScriptAgent("a", {"script": path, "timeout_seconds": 1}).execute("{}")
+        )
+        parsed = json.loads(result)
+        assert parsed["success"] is False
+        assert "timed out" in parsed["error"].lower()
+
+    def test_saturation_is_honest_rather_than_a_false_timeout(
+        self, tmp_path: Path
+    ) -> None:
+        """More agents than pool slots: every one completes correctly.
+        Queue delay is honest waiting, not a consumed budget — which is
+        precisely what the abandoned thread-slot gate existed to ensure
+        and what removing the outer timer gives for free."""
+        path = self._script(
+            tmp_path,
+            "import time, json\ntime.sleep(0.2)\nprint(json.dumps({'ok': 1}))\n",
+        )
+        count = SCRIPT_POOL_SIZE + 4
+
+        async def run() -> list[str]:
+            agents = [
+                ScriptAgent(f"a{i}", {"script": path, "timeout_seconds": 30})
+                for i in range(count)
+            ]
+            return list(await asyncio.gather(*(a.execute("{}") for a in agents)))
+
+        results = asyncio.run(run())
+        assert len(results) == count
+        for raw in results:
+            assert json.loads(raw)["ok"] == 1
