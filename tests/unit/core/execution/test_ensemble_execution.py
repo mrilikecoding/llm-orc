@@ -1908,10 +1908,14 @@ class TestEnsembleExecutor:
                 agent_config, input_data
             )
 
-        # Verify that user input detection was performed. Asked twice since
-        # #160 — once to decide whether the result may be cached, once to
-        # route — so assert on WHAT was detected, not how many times.
-        assert mock_handler_class.called
+        # Verify that user input detection was performed. #160 asks the
+        # question a second time to decide whether the result may be
+        # cached, but only when the cache is ENABLED — this executor's is
+        # not, so the cacheability check short-circuits before asking and
+        # the count stays 1. Asserted exactly rather than as `.called`,
+        # because a per-execution construction explosion would otherwise
+        # be invisible.
+        assert mock_handler_class.call_count == 1
         mock_user_input_detection.requires_user_input.assert_any_call(
             "primitives/user-interaction/get_user_input.py"
         )

@@ -136,12 +136,20 @@ class ScriptAgentRunner:
         # several references onto one key while this predicate still judges
         # each reference separately, so a get-only skip would let an
         # interactive agent's entry be hit by a non-interactive alias.
-        cacheable = not self._requires_user_input(agent_config)
+        # A DISABLED cache is checked here rather than only inside
+        # ScriptCache.get/set, because computing the identity is the
+        # expensive part and those check `enabled` only after being
+        # called. Without this the shipped default — off — still paid a
+        # resolution and a whole-file read, twice per execution, to build
+        # a key nothing would ever look up.
+        cacheable = self._cache_is_enabled() and not self._requires_user_input(
+            agent_config
+        )
         # NOTE: script_content stays the RAW reference below, because
         # _validate_primitive_output needs it (_normalize_script_ref returns
         # None for an identity string, which would silently disable the
         # primitive schema check on every cache hit).
-        cache_identity = self._cache_identity(script_content)
+        cache_identity = self._cache_identity(script_content) if cacheable else ""
 
         cached_result = (
             self._script_cache.get(cache_identity, cache_key_params)
@@ -185,6 +193,18 @@ class ScriptAgentRunner:
             self._script_cache.set(cache_identity, cache_key_params, cache_result)
 
         return response, model_instance, substituted
+
+    def _cache_is_enabled(self) -> bool:
+        """Whether the cache would store anything at all.
+
+        Tolerant of a cache that is not a real ``ScriptCache`` — several
+        suites pass a ``Mock`` — so an unreadable config answers True and
+        leaves behaviour where it was rather than silently disabling
+        caching for those tests.
+        """
+        config = getattr(self._script_cache, "config", None)
+        enabled = getattr(config, "enabled", True)
+        return bool(enabled)
 
     def _cache_identity(self, script_ref: str) -> str:
         """What identifies this script for caching (#160).

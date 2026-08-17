@@ -353,8 +353,15 @@ class EnsembleExecutor:
         ``templates/global-config.yaml`` writes no ``script_cache`` block
         and ``load_performance_config`` has no such key in its defaults.
         The dataclass is the one place the defaults live.
+
+        The trailing ``or {}`` is not decoration. A YAML key written with
+        no body — which is what you get by commenting out ``enabled:``
+        under ``script_cache:`` — parses to ``None``, and the ``.get``
+        below then raised ``AttributeError`` and killed executor
+        construction outright, taking every invocation with it rather
+        than just caching.
         """
-        cache_config = self._performance_config.get("script_cache", {})
+        cache_config = self._performance_config.get("script_cache") or {}
         defaults = ScriptCacheConfig()
 
         return ScriptCacheConfig(

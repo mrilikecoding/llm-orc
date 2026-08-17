@@ -4,9 +4,10 @@ Status: pre-flight. Issue: #160, found during the #159 review.
 
 ## Mechanism
 
-`ScriptCache._generate_cache_key` (cache.py:65-84) hashes what it calls
-`script_content`, and `agent_runner.py:117-119` passes
-`agent_config.script`. That field is a REFERENCE, and in every ensemble
+`ScriptCache._generate_cache_key` hashes what it calls
+`script_content`, and `ScriptAgentRunner.execute` passes
+`agent_config.script`. (Line numbers are deliberately absent: an
+earlier draft carried them and every one had drifted by round 3.) That field is a REFERENCE, and in every ensemble
 in this repo it is a path (`script: scripts/agentic_serving/resolve.py`).
 So the key identifies the file's name, never its contents.
 
@@ -61,7 +62,7 @@ pre-shadow result is served.
 ### Also: interactive agents stop being cached, at BOTH get and set
 
 The same review found that the human's ANSWER is not part of the key
-(`agent_runner.py:125-128` keys on `input_data` and `parameters` only),
+(`cache_key_params` holds `input_data` and `parameters` only),
 so a second identical interactive agent in the same executor replays the
 first person's answer without prompting. Caching an agent whose entire
 purpose is to ask a human is wrong at any key granularity, so those skip
@@ -78,8 +79,8 @@ answer to a JSON file on disk for the TTL.
 The predicate is coarse in both directions (inline content containing
 `input(` matches; a custom `scripts/ask.py` calling `input()` does not),
 but it cannot be wrong here in a way the ROUTING is not already wrong,
-because `agent_runner.py:234,249` use the same predicate to decide
-whether an agent prompts at all.
+because `_execute_with_parsed_input` and `_execute_with_raw_input` use
+the same predicate to decide whether an agent prompts at all.
 
 ## The default: shipping `enabled: False` after all
 
@@ -161,7 +162,7 @@ key/value store — the same separation the #159 review argued for when it
 kept the failure predicate out of `set`.
 
 `script_content` stays the RAW reference for
-`_validate_primitive_output` (`agent_runner.py:134`), which needs it:
+`_validate_primitive_output`, which needs it:
 `_normalize_script_ref` returns `None` for an identity string, so
 rebinding the local would silently disable the primitive schema check on
 every cache hit, with no pin catching it. Only the two cache calls take
@@ -188,8 +189,11 @@ instead.
 6. **An interactive agent is never cached**, asserting `sets == 0` and
    `hits == 0`. Needs a real file whose name contains `get_user_input.py`
    (the predicate reads the reference, and `_execute_interactive`
-   requires the script to exist); `input()` raises `EOFError` under
-   pytest and is handled, so do not try to observe a prompt.
+   requires the script to exist); `input()` under pytest raises
+   `OSError` ("reading from stdin while output is captured"), NOT the
+   `EOFError` an earlier draft claimed, and `_execute_interactive`
+   catches only `(EOFError, KeyboardInterrupt)` — so the prompt must be
+   patched rather than observed.
 7. **A PROJECT-RELATIVE reference is invalidated by an edit.** The
    critical pin, and the one absent from the first draft: if the
    key-time resolver is built without threading `project_dir`, a
@@ -227,6 +231,32 @@ instead.
 13. **An explicit opt-in still wins**, so reading defaults off the
     dataclass cannot be mistidied into a constant.
 
+### Round 4, added after the round-3 review
+
+14. **`persist_to_artifacts` reaches the runtime.** The one default with
+    no pin, which is exactly how `enabled` drifted in the first place.
+    A constant `True` there survived all 3435 tests, would silently
+    ignore an explicit opt-out, and — since entries are orphaned on
+    every edit and `clear()` has no caller in `src/` — means unbounded
+    on-disk growth in every user's project.
+15. **An empty `script_cache:` block does not crash construction.** A
+    YAML key with no body parses to `None`, not `{}`, which is what
+    commenting out the one key under it leaves behind. It raised
+    `AttributeError` out of executor construction, killing every
+    invocation rather than just caching.
+16. **A disabled cache computes no identity.** With the cache off — now
+    the default — the identity was still built twice per execution,
+    each time resolving and reading the whole script to hash it. 1.67 ms
+    per agent for a 1.2MB script; a 103KB read twice for `classify.py`,
+    forever, for a key nothing would look up. `ScriptCache.get`/`set`
+    check `enabled` only after being called, so the check has to happen
+    before the identity is built.
+17. **A FIFO reference does not hang the agent**, pinned with a watchdog
+    thread. This is why the guard is `isfile` and not `exists`, and
+    review showed that swap survived the entire suite. The bounds
+    section previously called a hang awkward to pin; it takes five
+    lines.
+
 Instrument 8 also gained a second half. Review showed its edit
 assertions passed identically when persistence was broken in EITHER
 direction, because a total persistence failure produces the same
@@ -242,8 +272,9 @@ review corrected that. `ScriptResolver._get_search_paths` falls back to
 working; it goes inert where cwd differs from `project_dir`, which is
 the serve, nested executors, and tests. The pin still earns its place.
 Dropping the digest half and making `_cache_identity` a no-op are
-indistinguishable to the suite (both kill the same three), which is the
-correct signature for "reverted to the bug".
+indistinguishable to the suite — both kill the same four, once round
+2's mid-run pin joined the set — which is the correct signature for
+"reverted to the bug".
 
 Note that `test_script_cache.py:74` is already named
 `test_cache_invalidation_on_script_content_change` and passes today,
@@ -266,9 +297,20 @@ as evidence of coverage here.
   Review demonstrated it is not: the old-bytes key stays poisoned for
   the full TTL, and two executions end up sharing an entry although they
   ran different bytes, which violates the invariant above outright
-  rather than merely serving something stale. Now closed by re-reading
-  the identity after the run and skipping the `set` if the bytes moved.
-  The window is not eliminated, only the wrong entry is.
+  rather than merely serving something stale. Narrowed by re-reading the
+  identity after the run and skipping the `set` if the bytes moved.
+- **The re-read catches a NET move only**, which an earlier draft
+  overstated as closing the window. An edit REVERTED inside the same
+  window is invisible to a before/after comparison, so the entry is
+  still written for bytes that were never executed. Closing that
+  properly needs the digest the child actually read, which the child
+  does not report.
+- The re-read also discards CORRECT entries. The child reads its source
+  within milliseconds of spawn while the re-read happens after the run
+  completes, so an edit landing anywhere in between throws away a result
+  that was a valid entry for the old key — and that is precisely the
+  long-running case where a cache would have paid. Erring toward
+  re-execution, as #159 did.
 - One resolution plus one file read per script-agent execution, and a
   second on the `set` path only (the mid-run re-read above). An earlier
   draft said "computed at both `get` and `set`", which was wrong: the
