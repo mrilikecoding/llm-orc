@@ -219,7 +219,10 @@ class TestScriptCacheConfig:
         config = ScriptCacheConfig()
 
         # Assert
-        assert config.enabled is True
+        # Off since #160: two of six registered primitives are impure, so a
+        # hit can elide a write or serve stale file contents. Turning this
+        # back on is gated on #161's purity mechanism.
+        assert config.enabled is False
         assert config.ttl_seconds == 3600
         assert config.max_size == 1000
         assert config.persist_to_artifacts is False
