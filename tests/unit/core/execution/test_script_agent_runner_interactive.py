@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
+import threading
 from pathlib import Path
 from typing import Any
 from unittest.mock import Mock, patch
@@ -744,6 +746,54 @@ class TestCacheIdentity:
 
         assert json.loads(second)["v"] == "one"
         assert cache.get_stats()["hits"] == 0
+
+    def test_a_disabled_cache_computes_no_identity(self, tmp_path: Path) -> None:
+        """The shipped default must not pay for a key nobody reads.
+
+        Review measured that with the cache off — which is now the
+        default — _cache_identity still ran twice per execution, each
+        time resolving the reference and slurping the whole script into
+        memory to hash it. For a 1.2MB script that was 1.67 ms of pure
+        waste per agent; for classify.py at 103KB, a 103KB read twice,
+        forever. ScriptCache.get/set check `enabled` only after being
+        called, so the check has to happen before the identity is built.
+        """
+        script = tmp_path / "probe.py"
+        script.write_text(self._emit("one"))
+        cache = ScriptCache(ScriptCacheConfig(enabled=False))
+        runner = self._runner(cache)
+        config = ScriptAgentConfig(name="probe", script=str(script))
+
+        with patch.object(
+            runner, "_cache_identity", wraps=runner._cache_identity
+        ) as spy:
+            asyncio.run(runner.execute(config, "{}"))
+
+        assert spy.call_count == 0
+
+    def test_a_fifo_reference_does_not_hang_the_agent(self, tmp_path: Path) -> None:
+        """Why the guard is os.path.isfile and not os.path.exists.
+
+        A FIFO resolves fine and is not a regular file. read_bytes blocks
+        on open until a writer appears, so with `exists` in place of
+        `isfile` computing a cache key hangs the agent forever — and
+        review showed that swap survives the whole suite unpinned. A
+        watchdog thread is the cheap way to pin a hang.
+        """
+        fifo = tmp_path / "piped.sh"
+        os.mkfifo(fifo)
+        runner = self._runner(ScriptCache(ScriptCacheConfig(enabled=True)))
+
+        result: list[str] = []
+        worker = threading.Thread(
+            target=lambda: result.append(runner._cache_identity(str(fifo))),
+            daemon=True,
+        )
+        worker.start()
+        worker.join(timeout=5)
+
+        assert not worker.is_alive(), "computing a cache identity hung on a FIFO"
+        assert result == [str(fifo)], "a FIFO must yield no digest"
 
     def test_an_unchanged_script_still_hits(self, tmp_path: Path) -> None:
         script = tmp_path / "probe.py"

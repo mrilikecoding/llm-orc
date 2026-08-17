@@ -206,13 +206,60 @@ class TestEnsembleScriptCacheIntegration:
         This is the shape of every fresh install: templates/global-config.yaml
         writes no script_cache block and load_performance_config has no such
         key in its defaults, so the absent-config path IS the default path.
+
+        Isolation from the developer's own global config comes from
+        conftest's autouse _isolated_global_config, which sets
+        XDG_CONFIG_HOME. An earlier draft set HOME here and said that was
+        what starved it of a global config; review showed
+        _get_global_config_dir checks XDG_CONFIG_HOME first, so HOME alone
+        would not isolate anything on a box that sets it (most Linux, much
+        CI).
         """
         llm_orc_dir = tmp_path / ".llm-orc"
         llm_orc_dir.mkdir()
         (llm_orc_dir / "config.yaml").write_text("project:\n  name: fresh\n")
         monkeypatch.chdir(tmp_path)
-        # No global config either, so nothing supplies a script_cache block.
-        monkeypatch.setenv("HOME", str(tmp_path))
+
+        executor = ExecutorFactory.create_root_executor()
+
+        assert executor._script_cache_config.enabled is False
+
+    def test_persist_to_artifacts_default_reaches_the_runtime(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The one default with no pin, which is how `enabled` drifted.
+
+        Review found this survives untouched: replacing the whole lookup
+        with a constant True passes all 3435 tests, silently ignores an
+        explicit `persist_to_artifacts: false`, and starts writing entry
+        JSONs into every project's .llm-orc/cache — which, given that
+        entries are orphaned on every script edit and clear() has no
+        caller in src/, is unbounded on-disk growth nobody asked for.
+        """
+        llm_orc_dir = tmp_path / ".llm-orc"
+        llm_orc_dir.mkdir()
+        (llm_orc_dir / "config.yaml").write_text("project:\n  name: fresh\n")
+        monkeypatch.chdir(tmp_path)
+
+        executor = ExecutorFactory.create_root_executor()
+
+        assert executor._script_cache_config.persist_to_artifacts is False
+
+    def test_an_empty_script_cache_block_does_not_crash_construction(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """`script_cache:` with no body parses to None, not {}.
+
+        That is what commenting out the one key under it leaves behind,
+        and it used to raise AttributeError out of executor construction,
+        killing every invocation rather than just caching.
+        """
+        llm_orc_dir = tmp_path / ".llm-orc"
+        llm_orc_dir.mkdir()
+        (llm_orc_dir / "config.yaml").write_text(
+            "project:\n  name: empty-block\nperformance:\n  script_cache:\n"
+        )
+        monkeypatch.chdir(tmp_path)
 
         executor = ExecutorFactory.create_root_executor()
 
@@ -238,7 +285,6 @@ class TestEnsembleScriptCacheIntegration:
             )
         )
         monkeypatch.chdir(tmp_path)
-        monkeypatch.setenv("HOME", str(tmp_path))
 
         executor = ExecutorFactory.create_root_executor()
 
