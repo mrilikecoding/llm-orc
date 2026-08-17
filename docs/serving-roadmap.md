@@ -59,7 +59,28 @@ layer is the insulation that keeps an eventual hardening cheap, and
 "frozen component" status is the trigger, tracked informally the way the
 buy-back ledger tracks hosted seats.
 
-## State (2026-08-16)
+## State (2026-08-17)
+
+**#154 merged 2026-08-17** (cea2607, no release): `.py` script agents
+run under llm-orc's OWN interpreter, not whichever `python3` the
+caller's PATH exposes. This is the root cause behind #152's captured
+misfire, where serving scripts importing `llm_orc` died while
+stdlib-only scripts in the same ensemble kept running, producing a
+half-dead pipeline rather than a clean failure. Measured: from a shell
+with no venv on PATH the suite went from **50 failures to 0** (3395
+passing); in the environment where CI runs it is a no-op, since
+`python3` and `sys.executable` are the same binary there. The live gate
+inverts #152's — a bad-PATH serve now answers and builds (positive
+control recorded, and a build ask included because a non-build ask
+cannot observe `seat_contract.py`). `llm-orc scripts test` and the
+primitive composer/registry were routed the same way. Two review
+rounds: round 1 caught a defect I introduced in a BDD fixture plus a
+misattributed baseline in my own record; round 2 approved and caught
+that the newly routed sites had no regression instrument. Follow-up
+filed: #157 (engine-run script agents have NO timeout — `model_dump`
+always supplies the key as None, so the 60s default never applies).
+
+### Earlier (2026-08-16)
 
 **#138 volume-ladder instrument merged 2026-08-16** (2ea793d, no
 release — benchmarks only): the prerequisite the parity-v2
@@ -142,8 +163,9 @@ and the #144 self-reference slice (its literal "answers grounded"
 exit stays OPEN on the whale — unblockers #106/#151/chunked reads).
 #143 CLOSED as an honest miss (reopen rides #119). Open follow-ups:
 #147 (classifier false positives), #149 (client-side truncation
-flanks), #151 (server-queried window), #154 (interpreter PATH
-fragility), #155 (pipeline positive-completeness). Operating rules:
+flanks), #151 (server-queried window), #155 (pipeline
+positive-completeness), #156 (instrument pins ungated), #157
+(script-agent timeout never applied). Operating rules:
 `docs/loop-protocol.md`.
 
 ## Timeline
@@ -305,7 +327,8 @@ dishonest outcome.
 ### epic:ws9-platform
 - [x] #146 v0.18.15 released
 - [x] #152 fail-closed routing merged (readability-gated decisions; the misfire class refuses)
-- [ ] #151 runtime-window detector remainder · #154 interpreter PATH fragility · #155 pipeline positive-completeness · #85 sandbox hardening · #84 gate adversarial harness · #90 llama.cpp · #93 hot path · #95 dead surface · #106 shape home · #110 artifact quality · #114 trace cap · #132 BitNet · #142 reject templates
+- [x] #154 interpreter PATH fragility fixed (.py runs under llm-orc's own interpreter; bare-PATH suite 50 failures -> 0)
+- [ ] #151 runtime-window detector remainder · #155 pipeline positive-completeness · #156 instrument pins ungated · #157 script-agent timeout never applied · #85 sandbox hardening · #84 gate adversarial harness · #90 llama.cpp · #93 hot path · #95 dead surface · #106 shape home · #110 artifact quality · #114 trace cap · #132 BitNet · #142 reject templates
 
 ### epic:off-path
 #80 #65 #30 #66 — parked, not on the north-star path.
