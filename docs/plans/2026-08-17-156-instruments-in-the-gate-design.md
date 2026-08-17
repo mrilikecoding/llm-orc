@@ -12,8 +12,11 @@ Measured 2026-08-17: **511 tests** (the issue said 412; the #138 volume
 pins landed since), all passing, ~13s serial and ~4s under `-n auto`.
 
 `make lint` is `mypy src tests` and `ruff check src tests`, so
-`benchmarks/` is ungated for types and style too. Current state there:
-ruff check clean, ruff format clean, **mypy 3 errors across 42 files**.
+`benchmarks/` is ungated LOCALLY for types and style. In CI the picture
+differs and an earlier draft flattened it: CI runs
+`ruff check . --exclude ...`, which already covered `benchmarks/`, so
+only the TYPE check was missing there. Current state: ruff check clean,
+ruff format clean, **mypy 3 errors across 42 files**.
 
 Why this matters more than a normal coverage gap: these ARE the
 measurement instruments. The oracles decide shipped-correct vs
@@ -58,8 +61,11 @@ Three pieces, three commits.
 
 1. **`tests/unit/__init__.py`** (empty). Measured: with it,
    `pytest tests benchmarks/agentic_serving/tests` collects and passes
-   **3942 tests** in one run. This is structural — no behavior changes,
-   only module names.
+   **3933 tests** in one run (3938 at the branch tip, once this arc's
+   own five guard pins land). An earlier draft said 3942, which review
+   found does not reproduce — a bad number to get wrong in a document
+   whose stance is "measured rather than assumed". This is structural:
+   no behavior changes, only module names.
 
 2. **A guard pin over the shadowing class**, in the shape of #138's
    fixture-name guard. Asserts that no directory pytest will insert into
@@ -106,17 +112,72 @@ importable top-level module.
    no path argument, which is what `make test` and CI actually run.
    Asserting on `testpaths` config alone would not prove collection.
 
+## Round 2, after review
+
+Both guards shipped in a state where they could not fail in the gate,
+which on a branch arguing "a gate that starts red is not a gate" is the
+wrong note to end on. Review demonstrated each.
+
+- **The installed-module guard was inert in a full run.** It used a bare
+  `find_spec`, and by the time it executes in the gate pytest has
+  already prepended every basedir, so a planted
+  `tests/unit/cli/vulture.py` resolved to OUR file, was judged "ours",
+  and passed. It failed only when the guard file ran alone. It now
+  resolves with `PathFinder.find_spec` against `sys.path` MINUS the
+  directories pytest inserted. Verified: the same plant now fails the
+  full `-n auto` gate.
+- **The anti-tautology pin re-implemented the walk inline**, so it
+  pinned nothing about the production helpers. Blanking
+  `_sys_path_insertions` to return an empty dict left all three tests
+  green — the exact case the commit message claimed it caught. The
+  helpers now take a `root`, and the pin drives them against a planted
+  tree. Verified: blanking the walk now kills two pins.
+- **The walk only matched `test_*.py`.** Pytest's `python_files`
+  defaults to `test_*.py *_test.py` and pyproject does not override it,
+  so the identical breakage planted as `thing_test.py` broke collection
+  while the guard stayed green. Both patterns are matched now.
+- **Scope came from a hardcoded `("tests", "benchmarks")`**, which made
+  the guard go permanently red on volume-battery arms written under
+  `benchmarks/` — modules named `ledger.py`, `qty.py` and their tests,
+  which pytest never collects and which this project does not delete.
+  Scope is now read from `testpaths`, so the guard's reach and the
+  gate's reach are the same thing by construction.
+- `make format` and `make lint-fix` could not fix what `make lint` had
+  started checking. Aligned.
+
 ## Known bounds
 
-- Wall-clock: `make test` goes from ~26s to ~50s under `-n auto`. That
-  is the price of gating the instruments and is worth naming rather
-  than discovering.
+- Wall-clock: `make test` goes from ~26s to ~35s under `-n auto`
+  (branch measured at 35.1 / 35.6 / 34.9s; main at 25.9 / 25.8 / 24.9s).
+  Two earlier numbers were recorded, ~39s and ~50s, and they could not
+  both be the measurement; review caught the disagreement. Both sat
+  inside the spread of a noisy box, which is the argument for quoting
+  three runs rather than one.
 - The guard covers the `tests/` and `benchmarks/` trees. It does not
   cover a top-level module added elsewhere that collides with something
   in `src/`.
 - Adding `__init__.py` changes module names for everything under
   `tests/unit/`. Nothing in the suite imports test modules by name, but
   that is an assertion about today's tree, not a guarantee.
+- No coverage floor on the instruments themselves: `--cov` targets
+  `llm_orc` only. Measured with `--cov=benchmarks`, several instruments
+  sit well below the repo's 90% bar (`runner.py` 40%, `bench.py` 56%,
+  `volume_fixture.py` 75%). Instrument coverage can rot with the gate
+  green.
+- `testpaths` names `benchmarks/agentic_serving/tests` specifically, so
+  a future `benchmarks/<other>/tests/` is not gated by construction. The
+  guard now inherits the same bound, deliberately: its scope tracks the
+  gate's.
+- The layout inconsistency that CAUSED this survives. `judge_adequacy`
+  has no `tests/` of its own; its four tests live in
+  `tests/unit/benchmarks/`, which is the very directory whose name did
+  the shadowing. It is harmless now only because one empty
+  `tests/unit/__init__.py` exists.
+- The battery shell scripts are in no gate (no shellcheck).
+- #165's flake did not reproduce during review: ~21 further `-n auto`
+  runs, zero failures. At the observed 1-in-6 that is not a refutation
+  (P(0 in 11) is about 0.13), but it is worth recording that it is
+  unreproduced by a second party on a second checkout.
 - This does not make the instruments CORRECT, only executed. The #84
   fixture-pinning methodology is what argues about their correctness;
   this change only ensures a regression in them fails a build.
