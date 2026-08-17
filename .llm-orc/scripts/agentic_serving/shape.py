@@ -116,6 +116,54 @@ def _seat_verdict(dep: object) -> tuple[bool | None, str]:
     return bool(verdict["seat_admitted"]), str(verdict.get("seat_contract_reason", ""))
 
 
+def _unreadable_seat_contract(deps: dict) -> str:
+    """Why the ``seat_contract`` node could not be read, or ``""`` (#155).
+
+    ``_seat_verdict`` answers ``(None, "")`` for anything without a
+    ``seat_admitted`` key, and emit reads ``None`` as "no per-seat gate
+    ran" — which is indistinguishable from a gate that ran and died.
+
+    Fails closed on an ABSENT dep too. Two drafts got the reason wrong,
+    so it is stated carefully. The first said "the explain path has no
+    seat_contract block", conflating the ensemble's optional
+    ``seat_contract:`` YAML block with the skeleton's ``seat_contract``
+    NODE — ``serving.yaml`` declares that node unconditionally, so it runs
+    on every route and emits ``seat_admitted: true`` vacuously when the
+    route's ensemble declares no contract. The second said an absent dep
+    "means the node was filtered out for not succeeding", which is false
+    in general: ``decide`` and ``pick`` are absent on most turns because
+    ``when:`` skipped them, and every ``ScriptAgent`` failure is caught
+    inside the agent and returned as a ``status="success"`` response
+    carrying an error envelope, so a crashed seat_contract is always
+    PRESENT.
+
+    Measured: zero absences across 650 recorded live turns. So this branch
+    is unreachable in the current skeleton, and it is kept as a deliberate
+    trip-wire rather than as handling for a live failure mode — if a
+    future skeleton guards or removes this node, build turns refuse
+    loudly instead of silently losing the gate. The bound that comes with
+    that: such a skeleton refuses EVERY build turn until this check is
+    updated with it.
+
+    Positive recognition, not a denylist: a healthy ``seat_contract``
+    always emits ``seat_admitted``, so anything lacking it is not a
+    seat_contract output whatever else it may be. The engine's wrap for a
+    dead serving node carries ``success``/``data``/``error``/
+    ``agent_requests`` — disjoint from that — so the check discriminates
+    without enumerating failure shapes.
+
+    Reported separately from a pipeline read failure, because it is a
+    different KIND of thing: see the placement note in emit.
+    """
+    try:
+        parsed = json.loads(_response(deps.get("seat_contract", {})))
+    except (json.JSONDecodeError, TypeError):
+        return "the seat contract node returned unreadable output"
+    if not isinstance(parsed, dict) or "seat_admitted" not in parsed:
+        return "the seat contract node returned unreadable output"
+    return ""
+
+
 def _envelope_verdict(seat_terminal: str) -> tuple[bool | None, str]:
     """The accept-gate verdict from a build-gated envelope's diagnostics, or
     ``(None, "")`` when the seat carries no verdict (an ungated code-seat or a
@@ -157,6 +205,7 @@ def main() -> None:
 
     accept, accept_reason = _envelope_verdict(seat_terminal)
     seat_admitted, seat_contract_reason = _seat_verdict(deps.get("seat_contract"))
+    seat_gate_failed = _unreadable_seat_contract(deps)
 
     print(
         json.dumps(
@@ -194,6 +243,11 @@ def main() -> None:
                 # #152: non-empty exactly when no readable routing decision
                 # arrived — emit refuses on it before every other outcome.
                 "routing_failed": routing_failed,
+                # #155: non-empty exactly when the seat-side gate could not
+                # be read. NOT a pipeline-read failure — the seat contract has
+                # no bearing on a delegation or prose route, so emit consumes
+                # this on the BUILD branch only.
+                "seat_gate_failed": seat_gate_failed,
             }
         )
     )

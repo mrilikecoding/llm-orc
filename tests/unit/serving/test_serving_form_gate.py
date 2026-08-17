@@ -192,3 +192,49 @@ def test_routing_failed_passes_through_form_gate() -> None:
         "serving pipeline error: no readable routing decision"
     )
     assert gated["valid"] is True
+
+
+# --- #155 Arc A: form_gate positively recognises its shape dep -------------
+
+
+def _gate_raw(shape_response: str) -> dict[str, Any]:
+    payload = json.dumps({"dependencies": {"shape": {"response": shape_response}}})
+    out = subprocess.run(
+        [sys.executable, str(FORM_GATE)],
+        input=payload,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    result: dict[str, Any] = json.loads(out)
+    return result
+
+
+_ENGINE_WRAP = (
+    '{"success": false, "data": null, "error": "Schema JSON execution failed: '
+    'Command \'[...]\' returned non-zero exit status 1.", "agent_requests": []}'
+)
+
+
+def test_a_crashed_shape_sets_node_failed() -> None:
+    """#155: form_gate used to degrade an unreadable shape to `build: false,
+    valid: true`, which emit then finished as an empty success."""
+    gated = _gate_raw(_ENGINE_WRAP)
+
+    assert gated["node_failed"]
+    assert gated["build"] is False
+
+
+def test_shape_output_missing_its_keys_sets_node_failed() -> None:
+    """A shape output always carries `build` and `content`."""
+    gated = _gate_raw(json.dumps({"valid": True}))
+
+    assert gated["node_failed"]
+
+
+def test_a_healthy_shape_sets_no_node_failure() -> None:
+    """The pin that stops this degrading into "refuse everything"."""
+    gated = _gate_raw(json.dumps({"build": True, "content": "x = 1"}))
+
+    assert not gated["node_failed"]
+    assert gated["valid"] is True

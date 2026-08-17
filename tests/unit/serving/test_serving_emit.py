@@ -15,6 +15,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 REPO = Path(__file__).resolve().parents[3]
 SCRIPTS = REPO / ".llm-orc" / "scripts" / "agentic_serving"
 EMIT = SCRIPTS / "emit.py"
@@ -405,6 +407,11 @@ def test_seat_contract_rejection_uses_the_exported_prefix() -> None:
     # lockstep with the exported constant (never drift independently).
     outcome = _emit(
         {
+            # `valid` because #155 made emit positively recognise its
+            # form_gate dep, and a real form_gate output always carries it.
+            # Do NOT relax the check to accommodate a partial fixture — that
+            # reinstates the denylist the change exists to remove.
+            "valid": True,
             "build": True,
             "seat_admitted": False,
             "seat_contract_reason": "Assertion 'x' raised exception",
@@ -466,7 +473,8 @@ def test_recall_answer_field_emits_the_honest_message() -> None:
     # decision (a composed string field), emitted as a prose finish with no
     # seat involvement — the same shape as the not_grounded honest message.
     message = "You haven't asked me to build anything yet."
-    outcome = _emit({"recall_answer": message})
+    # `valid` for the #155 reason above: a real form_gate output carries it.
+    outcome = _emit({"valid": True, "recall_answer": message})
     assert outcome == {"finish": True, "content": message}
 
 
@@ -549,3 +557,240 @@ def test_routing_failed_refuses_with_the_plain_prefix_and_never_writes() -> None
     )
     assert outcome == {"finish": True, "content": f"Refused: {reason}"}
     assert "file" not in outcome
+
+
+# --- #155 Arc A: emit positively recognises its form_gate dep ---------------
+
+
+def _emit_raw(form_gate_response: str) -> dict[str, Any]:
+    """Feed emit a RAW form_gate response, including one that is not JSON."""
+    payload = json.dumps(
+        {"dependencies": {"form_gate": {"response": form_gate_response}}}
+    )
+    out = subprocess.run(
+        [sys.executable, str(EMIT)],
+        input=payload,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    result: dict[str, Any] = json.loads(out)
+    return result
+
+
+_ENGINE_WRAP = (
+    '{"success": false, "data": null, "error": "Schema JSON execution failed: '
+    'Command \'[...]\' returned non-zero exit status 1.", "agent_requests": []}'
+)
+
+
+def test_a_crashed_form_gate_refuses_instead_of_finishing_empty() -> None:
+    """#155: the permissive `except json.JSONDecodeError: gated = {}` turned
+    "I could not read my input" into `{"finish": true, "content": ""}` — a
+    successful-looking empty answer the client cannot tell from "the model
+    had nothing to say". The engine's wrap for a dead serving node is the
+    four-key schema-json shape, since these nodes always take the
+    ScriptAgentInput path."""
+    outcome = _emit_raw(_ENGINE_WRAP)
+
+    assert outcome["finish"] is True
+    assert outcome["content"].startswith(REFUSED_PREFIX)
+    assert outcome["content"] != REFUSED_PREFIX
+
+
+def test_form_gate_output_that_is_not_json_at_all_refuses() -> None:
+    """Stdout pollution in a stdlib-only node used to degrade silently."""
+    outcome = _emit_raw("Traceback (most recent call last):\n  boom\n")
+
+    assert outcome["finish"] is True
+    assert outcome["content"].startswith(REFUSED_PREFIX)
+
+
+def test_a_form_gate_output_missing_valid_refuses() -> None:
+    """Positive recognition, not a denylist: form_gate emits `valid` on every
+    path (build and non-build alike), so its absence means this is not a
+    form_gate output — whatever else it may be."""
+    outcome = _emit_raw(json.dumps({"build": False, "content": "hello"}))
+
+    assert outcome["finish"] is True
+    assert outcome["content"].startswith(REFUSED_PREFIX)
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "expected"),
+    [
+        ("needs_files", ["src/foo.py"], {"finish": False, "reads": ["src/foo.py"]}),
+        (
+            "needs_self_files",
+            ["shape.py"],
+            {"finish": False, "self_reads": ["shape.py"]},
+        ),
+        ("needs_glob", "foo", {"finish": False, "glob": "foo"}),
+        ("needs_grep", "def foo", {"finish": False, "grep": "def foo"}),
+        ("needs_run", "pytest -q", {"finish": False, "run": "pytest -q"}),
+    ],
+    ids=["reads", "self-reads", "glob", "grep", "run"],
+)
+def test_delegation_survives_the_new_readability_gate(
+    field: str, value: Any, expected: dict[str, Any]
+) -> None:
+    """The delegation branches still fire once emit's `_readable_gate`
+    check is in front of them.
+
+    Renamed after review: an earlier name claimed this covered "a dead
+    seat", which its fixture does not carry — no seat, no seat_contract,
+    no failure of any kind. The route-level regression it was meant to
+    guard is pinned end to end instead, with a really-crashed node, in
+    test_a_crashed_seat_contract_does_not_break_a_delegation_route.
+    """
+    outcome = _emit({"valid": True, "build": False, "content": "", field: value})
+
+    assert outcome == expected
+
+
+def test_a_threaded_node_failure_refuses() -> None:
+    """The THREADING, which the direct-feed pins above do not reach.
+
+    A crashed shape is caught by form_gate, which still emits a
+    well-formed output (carrying `valid`) with `node_failed` set. So
+    emit's own readability check passes and the refusal depends entirely
+    on emit honouring the threaded reason. Mutation showed that ignoring
+    it left every other pin green, because none of them exercised the
+    full shape -> form_gate -> emit path.
+    """
+    outcome = _emit(
+        {
+            "valid": True,
+            "build": False,
+            "content": "",
+            "node_failed": "the shape node returned unreadable output",
+        }
+    )
+
+    assert outcome["finish"] is True
+    assert outcome["content"].startswith(REFUSED_PREFIX)
+    assert "shape node" in outcome["content"]
+
+
+def test_a_threaded_node_failure_beats_a_delegation_request() -> None:
+    """Ordering: an unreadable upstream node means nothing downstream is
+    trustworthy, including a delegation request that rode along with it."""
+    outcome = _emit(
+        {
+            "valid": True,
+            "build": False,
+            "content": "",
+            "needs_files": ["src/foo.py"],
+            "node_failed": "the shape node returned unreadable output",
+        }
+    )
+
+    assert outcome["finish"] is True
+    assert outcome["content"].startswith(REFUSED_PREFIX)
+
+
+# --- #155: the seat-gate branch, which round 2 shipped with no unit pin ----
+
+
+def test_a_dead_seat_gate_refuses_a_build_that_would_otherwise_ship() -> None:
+    """The wrong-accept this branch exists to prevent, and the only place
+    it fires: the admission verdict is unknown and the turn would ship."""
+    outcome = _emit(
+        {
+            "valid": True,
+            "build": True,
+            "file": "a.py",
+            "content": "x = 1",
+            "seat_gate_failed": "the seat contract node returned unreadable output",
+        }
+    )
+
+    assert outcome["finish"] is True
+    assert outcome["content"].startswith(BUILD_REFUSED_PREFIX)
+    assert "nothing was built or written" in outcome["content"]
+
+
+def test_a_dead_seat_gate_never_refuses_a_non_build_turn() -> None:
+    """The `build and` guard, which review found unpinned: deleting it left
+    all 3977 tests green while converting a healthy prose turn into a
+    MINTING `Build refused:` — a ledger entry on a turn that carried no
+    build ask, which is the #133/#134 invariant."""
+    outcome = _emit(
+        {
+            "valid": True,
+            "build": False,
+            "content": "A tuple is immutable.",
+            "seat_gate_failed": "the seat contract node returned unreadable output",
+        }
+    )
+
+    assert outcome == {"finish": True, "content": "A tuple is immutable."}
+
+
+def test_the_accept_gate_outranks_a_dead_seat_gate() -> None:
+    """Gate precedence, which the design doc demanded a decision on and
+    round 2 answered silently in the wrong direction.
+
+    The accept gate holds a REAL verdict the system computed, carrying a
+    retry invitation; the seat gate only reports that the admission
+    verdict is unknown. Refusing ahead of it discarded the better answer
+    and converted a `rejected_gate` ledger entry into a `refused` one.
+    """
+    outcome = _emit(
+        {
+            "valid": True,
+            "build": True,
+            "file": "a.py",
+            "content": "x = 1",
+            "accept": False,
+            "accept_reason": "tests do not pass",
+            "seat_gate_failed": "the seat contract node returned unreadable output",
+        }
+    )
+
+    assert outcome["content"].startswith(ACCEPT_GATE_REJECT_PREFIX)
+    assert "tests do not pass" in outcome["content"]
+
+
+def test_a_seat_contract_rejection_outranks_a_dead_seat_gate() -> None:
+    """Cannot co-occur in live wiring — both derive from one parse of one
+    dep — but the ordering is asserted so a future split cannot silently
+    demote an explicit rejection to a pipeline error."""
+    outcome = _emit(
+        {
+            "valid": True,
+            "build": True,
+            "file": "a.py",
+            "content": "x = 1",
+            "seat_admitted": False,
+            "seat_contract_reason": "no artifact",
+            "seat_gate_failed": "the seat contract node returned unreadable output",
+        }
+    )
+
+    assert outcome["content"].startswith(SEAT_CONTRACT_REJECT_PREFIX)
+
+
+def test_the_form_gate_reason_outranks_a_dead_seat_gate() -> None:
+    """A form-gate refusal keeps its own computed reason.
+
+    Round 3 moved this branch after the accept gate for exactly this
+    argument and then left it ahead of the form-gate refusal, so a build
+    turn whose deliverable does not parse lost "deliverable for a.py is
+    not valid Python: <SyntaxError>" and got the generic pipeline error.
+    `_reject_kind` carries the reason into the recall templates, so the
+    loss shows up later as "why didn't that ship?".
+    """
+    outcome = _emit(
+        {
+            "valid": False,
+            "build": True,
+            "file": "a.py",
+            "content": "def (",
+            "reason": "deliverable for a.py is not valid Python: invalid syntax",
+            "seat_gate_failed": "the seat contract node returned unreadable output",
+        }
+    )
+
+    assert "not valid Python" in outcome["content"]
+    assert "seat contract" not in outcome["content"]

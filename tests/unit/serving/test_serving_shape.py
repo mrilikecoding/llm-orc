@@ -338,3 +338,81 @@ def test_non_string_or_whitespace_target_refuses() -> None:
         )
         assert shaped["build"] is False, f"target={target!r}"
         assert shaped["routing_failed"], f"target={target!r}"
+
+
+# --- #155 Arc A: shape recognises a dead seat_contract ---------------------
+
+_ENGINE_WRAP = (
+    '{"success": false, "data": null, "error": "Schema JSON execution failed: '
+    'Command \'[...]\' returned non-zero exit status 1.", "agent_requests": []}'
+)
+
+_DECISION = {"target": "code-seat", "build": True, "kind": "build"}
+_SEAT = {"status": "success", "primary": "x = 1"}
+
+
+def test_a_crashed_seat_contract_is_reported() -> None:
+    """#155: `_seat_verdict` returned (None, "") for anything without a
+    `seat_admitted` key, so a DEAD seat contract read downstream as "no
+    per-seat gate ran" — indistinguishable from a route that has no gate.
+
+    Reported as `seat_gate_failed` rather than as a pipeline read failure,
+    because emit must consume it on the BUILD branch only: the seat
+    contract is a vacuous echo on every other route, so refusing there
+    would kill turns its verdict cannot affect.
+    """
+    shaped = _shape_raw(
+        {
+            "classify": {"response": json.dumps(_DECISION)},
+            "seat": {"response": json.dumps(_SEAT)},
+            "seat_contract": {"response": _ENGINE_WRAP},
+        }
+    )
+
+    assert shaped["seat_gate_failed"]
+
+
+def test_an_absent_seat_contract_also_fails_closed() -> None:
+    """Review corrected an earlier draft that failed OPEN here.
+
+    The draft's reason was "the explain path has no seat_contract block",
+    which conflates the ensemble's optional `seat_contract:` YAML block
+    with the skeleton's `seat_contract` NODE. `serving.yaml` declares that
+    node unconditionally, so it runs on every route and emits
+    `seat_admitted: true` vacuously when the route declares no contract.
+    An earlier version of this docstring then claimed an absent dep
+    "means it was filtered out for not succeeding". That is false in
+    general: `when:`-skipped nodes are routinely absent, and a crashed
+    script agent is always PRESENT with an error envelope, since every
+    failure is caught inside the agent and returned as a
+    `status="success"` response. Measured at zero absences across 658
+    recorded live turns, so this branch is unreachable in the current
+    skeleton and is kept as a deliberate trip-wire: if a future skeleton
+    guards or removes the node, build turns refuse loudly rather than
+    silently losing the gate.
+    """
+    shaped = _shape_raw(
+        {
+            "classify": {"response": json.dumps(_DECISION)},
+            "seat": {"response": json.dumps(_SEAT)},
+        }
+    )
+
+    assert shaped["seat_gate_failed"]
+
+
+def test_a_healthy_seat_contract_is_not_a_failure() -> None:
+    shaped = _shape_raw(
+        {
+            "classify": {"response": json.dumps(_DECISION)},
+            "seat": {"response": json.dumps(_SEAT)},
+            "seat_contract": {
+                "response": json.dumps(
+                    {"seat_admitted": True, "seat_contract_reason": ""}
+                )
+            },
+        }
+    )
+
+    assert not shaped["seat_gate_failed"]
+    assert shaped["seat_admitted"] is True
