@@ -490,6 +490,14 @@ class TestFailuresAreNotCached:
         [
             ('import json\nprint(json.dumps({"n": 1}))\n', "no-success-key"),
             ("print('plain prose output')\n", "prose"),
+            # ScriptAgentOutput.model_dump() ALWAYS emits error: null, so an
+            # implementer writing `"error" in parsed` instead of a truthiness
+            # check silently stops caching every schema-path success — the
+            # exact mirror of the no-success-key degradation above.
+            (
+                'import json\nprint(json.dumps({"success": True, "error": None}))\n',
+                "benign-null-error",
+            ),
         ],
     )
     def test_responses_without_a_success_key_still_cache(
