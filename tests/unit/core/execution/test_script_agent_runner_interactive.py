@@ -533,3 +533,60 @@ class TestFailuresAreNotCached:
         entry = cache.get(str(script), {"input_data": "{}", "parameters": {}})
         assert entry is not None
         assert "success" not in entry
+
+    def test_a_bare_success_false_is_not_cached(self, tmp_path: Path) -> None:
+        """No error key, so the error clause cannot see it. This is the ONLY
+        pin that dies when the success clause is deleted outright: every
+        other failure in the corpus — including sys.exit(3)'s envelope,
+        which carries "Script failed with exit code 3" — also sets a truthy
+        error, so the error clause alone would catch them."""
+        stats = self._run_twice(
+            tmp_path,
+            'import json\nprint(json.dumps({"success": False, "reason": "no"}))\n',
+        )
+        assert stats["hits"] == 0
+        assert stats["sets"] == 0
+
+    @pytest.mark.parametrize(("literal", "label"), [("0", "zero"), ("null", "null")])
+    def test_a_falsy_non_bool_success_is_not_cached(
+        self, tmp_path: Path, literal: str, label: str
+    ) -> None:
+        """Truthiness rather than `is False`, which is what the predicate's
+        docstring argues for and what nothing else pins: a script emitting
+        {"success": 0} or {"success": null} is reporting failure, and an
+        identity check would cache both."""
+        stats = self._run_twice(tmp_path, f"print('{{\"success\": {literal}}}')\n")
+        assert stats["hits"] == 0, label
+        assert stats["sets"] == 0, label
+
+    def test_a_schema_path_scalar_response_does_not_raise(self, tmp_path: Path) -> None:
+        """execute_with_schema_json returns RAW stdout rather than routing
+        through _parse_output, so on the ScriptAgentInput dispatch shape a
+        script printing an array yields a str that json-parses to a list.
+        Dropping isinstance(parsed, dict) turns that into AttributeError and
+        kills a run that works today — and no other pin catches it, because
+        the non-schema path never produces that shape."""
+        script = tmp_path / "arr.py"
+        script.write_text("print('[1, 2, 3]')\n")
+        cache = ScriptCache(ScriptCacheConfig())
+        runner = ScriptAgentRunner(
+            script_cache=cache,
+            usage_collector=UsageCollector(),
+            progress_controller=None,
+            emit_event=lambda name, data: None,
+            project_dir=None,
+            performance_config={"execution": {"default_timeout": 30}},
+        )
+        config = ScriptAgentConfig(name="arr", script=str(script))
+        schema_input = json.dumps(
+            {
+                "agent_name": "arr",
+                "input_data": "hi",
+                "dependencies": {},
+                "context": {},
+            }
+        )
+        response, _model, _sub = asyncio.run(runner.execute(config, schema_input))
+
+        assert response == "[1, 2, 3]"
+        assert cache.get_stats()["sets"] == 1
