@@ -45,14 +45,39 @@ def _validity(file: str, content: str) -> tuple[bool, str]:
     return True, "ok"
 
 
+def _readable_shape(dep: object) -> dict | None:
+    """The shape node's output, or ``None`` when it cannot be read (#155).
+
+    Positive recognition. ``shape.main`` has a single ``print`` and no
+    early return, so ``build`` and ``content`` are on every healthy path,
+    build and non-build alike. The engine's wrap for a dead serving node
+    carries ``success``/``data``/``error``/``agent_requests`` instead —
+    disjoint from those — so this discriminates without a denylist of
+    failure shapes, which is the point: an unknown failure shape must
+    fail closed rather than sail past.
+
+    The old code degraded an unreadable shape to ``{}``, which defaulted
+    to ``build: false`` and reported ``valid: true``. That is how a
+    crashed shape reached the client as an empty success.
+    """
+    try:
+        parsed = json.loads(_response(dep))
+    except (json.JSONDecodeError, TypeError):
+        return None
+    if not isinstance(parsed, dict):
+        return None
+    if "build" not in parsed or "content" not in parsed:
+        return None
+    return parsed
+
+
 def main() -> None:
     deps = _deps(sys.stdin.read().strip())
-    try:
-        shaped = json.loads(_response(deps.get("shape", {})))
-    except json.JSONDecodeError:
+    shaped = _readable_shape(deps.get("shape", {}))
+    node_failed = ""
+    if shaped is None:
         shaped = {}
-    if not isinstance(shaped, dict):
-        shaped = {}
+        node_failed = "the shape node returned unreadable output"
 
     build = bool(shaped.get("build", False))
     file = str(shaped.get("file", "solution.py"))
@@ -99,6 +124,10 @@ def main() -> None:
                 # #152 fail-closed routing: pass through unchanged — emit
                 # refuses on it before every other outcome.
                 "routing_failed": str(shaped.get("routing_failed", "")),
+                # #155: this node's own read of shape, OR shape's read of
+                # seat_contract, whichever failed first. Threaded rather than
+                # refused here, because form_gate does not own the terminal.
+                "node_failed": node_failed or str(shaped.get("node_failed", "")),
             }
         )
     )

@@ -116,6 +116,36 @@ def _seat_verdict(dep: object) -> tuple[bool | None, str]:
     return bool(verdict["seat_admitted"]), str(verdict.get("seat_contract_reason", ""))
 
 
+def _unreadable_seat_contract(deps: dict) -> str:
+    """Why the ``seat_contract`` node could not be read, or ``""`` (#155).
+
+    ``_seat_verdict`` answers ``(None, "")`` for anything without a
+    ``seat_admitted`` key, and emit reads ``None`` as "no per-seat gate
+    ran". That is right when the route carries NO seat contract — the
+    explain path has no such block — and wrong when the node ran and
+    died, because a dead gate then reads exactly like an absent one.
+    Present-but-unreadable is the whole distinction.
+
+    Positive recognition, not a denylist: a healthy ``seat_contract``
+    always emits ``seat_admitted``, so anything lacking it is not a
+    seat_contract output whatever else it may be. The engine's wrap for a
+    dead serving node carries ``success``/``data``/``error``/
+    ``agent_requests`` — disjoint from that — so the check discriminates
+    without enumerating failure shapes.
+    """
+    dep = deps.get("seat_contract")
+    if dep is None:
+        return ""
+    raw = _response(dep)
+    try:
+        parsed = json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        return "the seat contract node returned unreadable output"
+    if not isinstance(parsed, dict) or "seat_admitted" not in parsed:
+        return "the seat contract node returned unreadable output"
+    return ""
+
+
 def _envelope_verdict(seat_terminal: str) -> tuple[bool | None, str]:
     """The accept-gate verdict from a build-gated envelope's diagnostics, or
     ``(None, "")`` when the seat carries no verdict (an ungated code-seat or a
@@ -157,6 +187,7 @@ def main() -> None:
 
     accept, accept_reason = _envelope_verdict(seat_terminal)
     seat_admitted, seat_contract_reason = _seat_verdict(deps.get("seat_contract"))
+    node_failed = _unreadable_seat_contract(deps)
 
     print(
         json.dumps(
@@ -194,6 +225,10 @@ def main() -> None:
                 # #152: non-empty exactly when no readable routing decision
                 # arrived — emit refuses on it before every other outcome.
                 "routing_failed": routing_failed,
+                # #155: non-empty exactly when an upstream node could not be
+                # READ. Distinct from routing_failed, which means the decision
+                # itself was unreadable.
+                "node_failed": node_failed,
             }
         )
     )

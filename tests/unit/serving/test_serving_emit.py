@@ -15,6 +15,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 REPO = Path(__file__).resolve().parents[3]
 SCRIPTS = REPO / ".llm-orc" / "scripts" / "agentic_serving"
 EMIT = SCRIPTS / "emit.py"
@@ -405,6 +407,11 @@ def test_seat_contract_rejection_uses_the_exported_prefix() -> None:
     # lockstep with the exported constant (never drift independently).
     outcome = _emit(
         {
+            # `valid` because #155 made emit positively recognise its
+            # form_gate dep, and a real form_gate output always carries it.
+            # Do NOT relax the check to accommodate a partial fixture — that
+            # reinstates the denylist the change exists to remove.
+            "valid": True,
             "build": True,
             "seat_admitted": False,
             "seat_contract_reason": "Assertion 'x' raised exception",
@@ -466,7 +473,8 @@ def test_recall_answer_field_emits_the_honest_message() -> None:
     # decision (a composed string field), emitted as a prose finish with no
     # seat involvement — the same shape as the not_grounded honest message.
     message = "You haven't asked me to build anything yet."
-    outcome = _emit({"recall_answer": message})
+    # `valid` for the #155 reason above: a real form_gate output carries it.
+    outcome = _emit({"valid": True, "recall_answer": message})
     assert outcome == {"finish": True, "content": message}
 
 
@@ -549,3 +557,133 @@ def test_routing_failed_refuses_with_the_plain_prefix_and_never_writes() -> None
     )
     assert outcome == {"finish": True, "content": f"Refused: {reason}"}
     assert "file" not in outcome
+
+
+# --- #155 Arc A: emit positively recognises its form_gate dep ---------------
+
+
+def _emit_raw(form_gate_response: str) -> dict[str, Any]:
+    """Feed emit a RAW form_gate response, including one that is not JSON."""
+    payload = json.dumps(
+        {"dependencies": {"form_gate": {"response": form_gate_response}}}
+    )
+    out = subprocess.run(
+        [sys.executable, str(EMIT)],
+        input=payload,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    result: dict[str, Any] = json.loads(out)
+    return result
+
+
+_ENGINE_WRAP = (
+    '{"success": false, "data": null, "error": "Schema JSON execution failed: '
+    'Command \'[...]\' returned non-zero exit status 1.", "agent_requests": []}'
+)
+
+
+def test_a_crashed_form_gate_refuses_instead_of_finishing_empty() -> None:
+    """#155: the permissive `except json.JSONDecodeError: gated = {}` turned
+    "I could not read my input" into `{"finish": true, "content": ""}` — a
+    successful-looking empty answer the client cannot tell from "the model
+    had nothing to say". The engine's wrap for a dead serving node is the
+    four-key schema-json shape, since these nodes always take the
+    ScriptAgentInput path."""
+    outcome = _emit_raw(_ENGINE_WRAP)
+
+    assert outcome["finish"] is True
+    assert outcome["content"].startswith(REFUSED_PREFIX)
+    assert outcome["content"] != REFUSED_PREFIX
+
+
+def test_form_gate_output_that_is_not_json_at_all_refuses() -> None:
+    """Stdout pollution in a stdlib-only node used to degrade silently."""
+    outcome = _emit_raw("Traceback (most recent call last):\n  boom\n")
+
+    assert outcome["finish"] is True
+    assert outcome["content"].startswith(REFUSED_PREFIX)
+
+
+def test_a_form_gate_output_missing_valid_refuses() -> None:
+    """Positive recognition, not a denylist: form_gate emits `valid` on every
+    path (build and non-build alike), so its absence means this is not a
+    form_gate output — whatever else it may be."""
+    outcome = _emit_raw(json.dumps({"build": False, "content": "hello"}))
+
+    assert outcome["finish"] is True
+    assert outcome["content"].startswith(REFUSED_PREFIX)
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "expected"),
+    [
+        ("needs_files", ["src/foo.py"], {"finish": False, "reads": ["src/foo.py"]}),
+        (
+            "needs_self_files",
+            ["shape.py"],
+            {"finish": False, "self_reads": ["shape.py"]},
+        ),
+        ("needs_glob", "foo", {"finish": False, "glob": "foo"}),
+        ("needs_grep", "def foo", {"finish": False, "grep": "def foo"}),
+        ("needs_run", "pytest -q", {"finish": False, "run": "pytest -q"}),
+    ],
+    ids=["reads", "self-reads", "glob", "grep", "run"],
+)
+def test_delegation_still_delegates_with_a_dead_seat(
+    field: str, value: Any, expected: dict[str, Any]
+) -> None:
+    """#155 pre-flight found this regression before it was written.
+
+    The seat is a zero-cost echo on delegation routes — the outcome rides
+    the ROUTING decision, not the seat — so all five of these work today
+    with a crashed seat, and an early seat check would turn them into
+    refusals. `node_failed` deliberately means only "an upstream node
+    could not be READ", never "the seat produced nothing useful"; the
+    latter belongs on the build branch (#166 / Arc B).
+    """
+    outcome = _emit({"valid": True, "build": False, "content": "", field: value})
+
+    assert outcome == expected
+
+
+def test_a_threaded_node_failure_refuses() -> None:
+    """The THREADING, which the direct-feed pins above do not reach.
+
+    A crashed shape is caught by form_gate, which still emits a
+    well-formed output (carrying `valid`) with `node_failed` set. So
+    emit's own readability check passes and the refusal depends entirely
+    on emit honouring the threaded reason. Mutation showed that ignoring
+    it left every other pin green, because none of them exercised the
+    full shape -> form_gate -> emit path.
+    """
+    outcome = _emit(
+        {
+            "valid": True,
+            "build": False,
+            "content": "",
+            "node_failed": "the shape node returned unreadable output",
+        }
+    )
+
+    assert outcome["finish"] is True
+    assert outcome["content"].startswith(REFUSED_PREFIX)
+    assert "shape node" in outcome["content"]
+
+
+def test_a_threaded_node_failure_beats_a_delegation_request() -> None:
+    """Ordering: an unreadable upstream node means nothing downstream is
+    trustworthy, including a delegation request that rode along with it."""
+    outcome = _emit(
+        {
+            "valid": True,
+            "build": False,
+            "content": "",
+            "needs_files": ["src/foo.py"],
+            "node_failed": "the shape node returned unreadable output",
+        }
+    )
+
+    assert outcome["finish"] is True
+    assert outcome["content"].startswith(REFUSED_PREFIX)
