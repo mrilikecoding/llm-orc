@@ -325,3 +325,45 @@ def test_turn_from_jsonl_survives_a_truncated_final_line() -> None:
 
 def test_parse_events_ignores_whitespace_only_output() -> None:
     assert oa.parse_events("\n  \n\t\n") == []
+
+
+def test_error_state_tool_calls_are_marked_is_error() -> None:
+    """The real wire shape for a failed tool is ``status: "error"`` with an
+    ``error`` key and NO ``output`` (verified against
+    docs/plans/2026-07-14-arm0-runs). Leaving is_error False made every
+    consumer's error guard inert for arms 0 and 1 while the arm-2 adapter
+    set it correctly — an arm asymmetry in a cross-arm comparison."""
+    events = [
+        {
+            "type": "tool_use",
+            "part": {
+                "tool": "bash",
+                "state": {
+                    "status": "error",
+                    "input": {"command": "pytest -q"},
+                    "error": "command not found: pytest",
+                },
+            },
+        }
+    ]
+    turn = oa.turn_from_events(events, index=1, prompt="p")
+    assert turn.tool_calls[0].is_error is True
+
+
+def test_completed_state_tool_calls_are_not_marked_is_error() -> None:
+    events = [
+        {
+            "type": "tool_use",
+            "part": {
+                "tool": "bash",
+                "state": {
+                    "status": "completed",
+                    "input": {"command": "pytest -q"},
+                    "output": "1 passed",
+                },
+            },
+        }
+    ]
+    turn = oa.turn_from_events(events, index=1, prompt="p")
+    assert turn.tool_calls[0].is_error is False
+    assert turn.tool_calls[0].result_text == "1 passed"
