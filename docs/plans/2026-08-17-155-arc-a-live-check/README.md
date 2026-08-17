@@ -46,16 +46,15 @@ Not this turn. They are the node-chain reproductions, before and after
 ```
 BEFORE  form_gate CRASHED -> {"finish": true, "content": ""}
         shape     CRASHED -> {"finish": true, "content": ""}
-
-AFTER   form_gate CRASHED  -> Refused: serving pipeline error: the form
-                              gate node returned unreadable output
-        shape CRASHED      -> Refused: serving pipeline error: the shape
-                              node returned unreadable output
-        seat_contract DEAD -> Refused: serving pipeline error: the seat
-                              contract node returned unreadable output
-        HEALTHY build      -> unchanged, ships the deliverable
 ```
 
-plus six mutants, all killed. The ladder battery was NOT re-run: nothing
+For AFTER see `node-chain-after.txt`, regenerated at round 3 — an
+earlier revision of this section quoted strings the code no longer
+emits, which review caught. In summary: an unreadable shape or form gate
+refuses with the non-minting prefix, a dead seat gate refuses a BUILD
+turn with the minting one (and leaves the other eight routes untouched,
+see `route-survival-after.txt`), and a healthy build is unchanged.
+
+Thirteen mutants across three rounds, all killed. The ladder battery was NOT re-run: nothing
 here changes what a seat decides, only what happens when a node cannot
 be read at all.
