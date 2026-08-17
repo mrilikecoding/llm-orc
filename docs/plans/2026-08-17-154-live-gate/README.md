@@ -58,7 +58,7 @@ From a shell with no venv on PATH, the symptom the issue cites:
 
 | | failures |
 |---|---|
-| before | 50 (all in the serving endpoint suite) |
+| before | 50 (39 in the serving endpoint suite, 11 in the BDD bare-`python` line) |
 | after the interpreter fix | 11 |
 | after the unrelated `["python", ...]` line was fixed too | **0 of 3394** |
 

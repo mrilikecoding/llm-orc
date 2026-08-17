@@ -6,6 +6,7 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+from llm_orc.core.execution.scripting.resolver import _script_command
 from llm_orc.schemas.script_agent import ScriptAgentInput, ScriptAgentOutput
 
 
@@ -147,8 +148,11 @@ class PrimitiveRegistry:
             env = os.environ.copy()
             env["INPUT_DATA"] = test_input.model_dump_json()
 
+            # Same interpreter rule as the engine (#154): every shipped
+            # primitive is mode 644, so a bare invocation relying on the
+            # exec bit fails on all of them.
             result = subprocess.run(
-                [script_path],
+                _script_command(script_path),
                 capture_output=True,
                 text=True,
                 env=env,
