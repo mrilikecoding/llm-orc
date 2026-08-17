@@ -27,13 +27,15 @@ expects, each test file seeded RED, no cross-module imports:
 | module | seeded flaw (each a 1-3 line fix) | red test expects |
 |---|---|---|
 | `ledger.py` — `balance(entries)` | no guard on empty entries | `pytest.raises(ValueError, match="no entries")` on `[]` |
-| `parse.py` — `parse_qty(text)` | no strip before int() | `parse_qty(" 7 ")  == 7` |
+| `qty.py` — `parse_qty(text)` | bare `int(text)` chokes on decimal strings | `parse_qty("7.0") == 7` |
 | `window.py` — `last_n(items, n)` | returns `items[-n:]` with n=0 giving full list | `last_n(xs, 0) == []` |
 | `rate.py` — `per_hour(count, minutes)` | divides by minutes, not minutes/60 | `per_hour(30, 30) == 60` |
 | `label.py` — `slug(title)` | no lowercase before hyphenation | `slug("My Day") == "my-day"` |
 
-Five DISTINCT flaw classes (missing raise, missing normalize, boundary,
-unit conversion, case-fold) so a level's subtasks are not one fix
+Each test file seeds exactly ONE green case and ONE red case per
+module, so a pytest run is never trivially all-red and a correct fix
+flips exactly the red one. Five DISTINCT flaw classes (missing raise,
+missing normalize, boundary, unit conversion, case-fold) so a level's subtasks are not one fix
 pattern repeated — repetition would let a single insight cascade and
 understate volume cost. All flaws are the same size class; none require
 cross-file reasoning. Exact seeded bytes land in the fixture generator
@@ -183,6 +185,24 @@ label (finding 9).
 Validation before any paid run: arm-0 dry run end to end (free), the
 scorer's outputs hand-checked against the raw JSONLs, oracle
 fixture-pins green both directions.
+
+## Build-time corrections (recorded, not silent)
+
+Two drafted details were wrong and were fixed while building the
+fixture, both caught by the pins:
+
+1. The drafted `parse.py` flaw was "no strip before `int()`", which is
+   not a flaw at all — `int()` already strips whitespace. Replaced with
+   a real one: bare `int(text)` raises on a decimal string.
+2. The module could not be called `parse.py`. It shadowed the `parse`
+   PyPI package that this repo's pytest plugin stack imports
+   (pytest_bdd → parse_type), so every pytest run inside a seeded
+   workspace died at plugin load. That kills the truth-capture rc AND
+   the arm's own verification run, and a crashed verification run is
+   indistinguishable from a skipped one at the wire grain — the
+   confound would have pointed straight at the hypothesis. Renamed to
+   `qty.py`; a permanent guard pin now asserts no fixture module name
+   resolves to an importable top-level module.
 
 ## Known bounds
 
