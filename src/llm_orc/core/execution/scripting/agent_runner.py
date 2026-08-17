@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import os
@@ -16,6 +17,7 @@ from llm_orc.agents.script_agent import (
     ScriptAgent,
 )
 from llm_orc.core.execution.scripting.cache import ScriptCache
+from llm_orc.core.execution.scripting.resolver import ScriptResolver
 from llm_orc.core.execution.scripting.user_input_handler import (
     ScriptUserInputHandler,
 )
@@ -127,8 +129,25 @@ class ScriptAgentRunner:
             "input_data": input_data,
             "parameters": parameters,
         }
+        # An agent whose whole purpose is to ask a human is never cached
+        # (#160): the ANSWER is not part of the key, so a second identical
+        # one replayed the first person's response without prompting.
+        # Checked at BOTH get and set — the byte-identity below aliases
+        # several references onto one key while this predicate still judges
+        # each reference separately, so a get-only skip would let an
+        # interactive agent's entry be hit by a non-interactive alias.
+        cacheable = not self._requires_user_input(agent_config)
+        # NOTE: script_content stays the RAW reference below, because
+        # _validate_primitive_output needs it (_normalize_script_ref returns
+        # None for an identity string, which would silently disable the
+        # primitive schema check on every cache hit).
+        cache_identity = self._cache_identity(script_content)
 
-        cached_result = self._script_cache.get(script_content, cache_key_params)
+        cached_result = (
+            self._script_cache.get(cache_identity, cache_key_params)
+            if cacheable
+            else None
+        )
         if cached_result is not None:
             cached_output = cached_result.get("output", "")
             self._validate_primitive_output(script_content, cached_output)
@@ -147,14 +166,61 @@ class ScriptAgentRunner:
         # key across processes. The old entry also carried a hardcoded
         # "success": True that nothing read, on entries that might hold a
         # failure.
-        if not _reports_failure(response):
+        if cacheable and not _reports_failure(response):
             cache_result = {
                 "output": response,
                 "execution_metadata": {"duration_ms": duration_ms},
             }
-            self._script_cache.set(script_content, cache_key_params, cache_result)
+            self._script_cache.set(cache_identity, cache_key_params, cache_result)
 
         return response, model_instance, substituted
+
+    def _cache_identity(self, script_ref: str) -> str:
+        """What identifies this script for caching (#160).
+
+        The cache used to key on ``agent_config.script``, a REFERENCE,
+        which in every shipped ensemble is a path — so the key named the
+        file and never its contents, and editing a script served the
+        pre-edit result for the TTL.
+
+        A reference that resolves to a FILE is identified by that path
+        AND the sha256 of its bytes. Both halves matter: bytes alone
+        would collide two different scripts with identical contents,
+        which bites when a script reads its own ``__file__`` or a sibling
+        relative path; path alone is the original bug.
+
+        A reference that does not resolve to a file is returned as-is,
+        which is CORRECT rather than a fallback: ``resolve_script_path``
+        returns inline content verbatim, so ``script: "echo hello"``
+        genuinely is its own content. An unresolvable reference also
+        lands here — computing a cache key must never be the thing that
+        reports a missing script, and execution a moment later produces
+        the real error.
+
+        ``os.path.isfile`` rather than leaning on the try/except below.
+        Measured, because an earlier draft of this docstring claimed more
+        than the guard delivers: for inline content too long for PATH_MAX
+        ``read_bytes`` raises ``OSError``, which the ``except`` already
+        catches, so the guard is redundant there. Its ONE unique
+        contribution is inline content containing a NUL byte, where
+        ``read_bytes`` raises ``ValueError`` and an ``except OSError``
+        would let it escape and kill the run.
+        """
+        if not script_ref:
+            return script_ref
+        try:
+            resolved = ScriptResolver(
+                project_dir=self._project_dir
+            ).resolve_script_path(script_ref)
+        except Exception:
+            return script_ref
+        if not os.path.isfile(resolved):
+            return resolved
+        try:
+            digest = hashlib.sha256(Path(resolved).read_bytes()).hexdigest()
+        except OSError:
+            return resolved
+        return f"{resolved}:{digest}"
 
     async def _execute_without_cache(
         self,

@@ -158,14 +158,16 @@ class TestCacheHitValidation:
 
         agent_config = ScriptAgentConfig(
             name="test_agent",
-            script="primitives/user-interaction/get_user_input.py",
+            # NOT an interactive primitive: #160 skips the cache entirely for
+            # those, so a get_user_input reference would never reach the get.
+            script="primitives/file-ops/read_file.py",
         )
 
         with patch.object(runner, "_validate_primitive_output") as mock_validate:
             await runner.execute(agent_config, "{}")
 
         mock_validate.assert_called_once_with(
-            "primitives/user-interaction/get_user_input.py",
+            "primitives/file-ops/read_file.py",
             '{"cached": true}',
         )
 

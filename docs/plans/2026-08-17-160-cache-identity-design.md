@@ -40,10 +40,13 @@ An unresolvable reference falls back to the reference string rather than
 raising: cache-key computation must not be the thing that reports a
 missing script, and execution a moment later produces the proper error.
 
-The not-a-file test uses `os.path.isfile`, which swallows both `OSError`
-(inline content longer than `PATH_MAX`) and `ValueError` (inline content
-containing a NUL byte, which `Path.read_bytes` raises and an
-`except OSError` would miss).
+The not-a-file test uses `os.path.isfile`. An earlier draft of this
+paragraph claimed it buys two things; measurement during mutation
+verification cut that to one. Inline content longer than `PATH_MAX`
+makes `read_bytes` raise `OSError`, which the `except` already catches,
+so the guard is redundant there. Its one unique contribution is inline
+content carrying a NUL byte, where `read_bytes` raises `ValueError` —
+not an `OSError` — and that escapes and kills the run.
 
 Two consequences worth naming rather than discovering. Hyphen and
 underscore forms of a primitive reference (`primitives/file-ops/...` and
@@ -170,6 +173,20 @@ instead.
    the script, then read through a FRESH `ScriptCache`. This is the
    worst case the issue names, and the only pin proving the key is a
    pure function of bytes rather than of process state.
+
+9. **Inline content with a NUL byte does not raise.** Not in the draft;
+   added because mutation verification showed removing the
+   `os.path.isfile` guard killed nothing. That is the guard's only
+   unique job, per the measurement above.
+
+Mutation-verified: eight mutants, every one killed. The one that matters
+most is finding 7's — building the key-time resolver without
+`project_dir` kills only `test_a_project_relative_reference_is_also_invalidated`,
+so without that pin this change ships inert for every shipped ensemble
+while the other eight stay green. Dropping the digest half and making
+`_cache_identity` a no-op are indistinguishable to the suite (both kill
+the same three), which is the correct signature for "reverted to the
+bug".
 
 Note that `test_script_cache.py:74` is already named
 `test_cache_invalidation_on_script_content_change` and passes today,
