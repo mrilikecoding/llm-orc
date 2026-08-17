@@ -45,6 +45,14 @@ Known bounds, recorded rather than silently carried:
 - ``STALE_RUN`` needs a recognizable write-shaped call to detect. An arm
   that writes only through bash heredocs will not produce one, and its
   reproduce-then-fix turn falls back to the red-run cells.
+- The red/green signal is WHOLE-SUITE, so a partially-delivering arm
+  lands in ``RAN_RED_SHIPPED`` by construction: the suite is red because
+  of the modules it did not fix, not because it ignored a failure in its
+  own work. Observed in the arm-0 calibration run, where the serve fixed
+  ledger correctly at L2 and L5 and the remaining seeded failures made
+  every run red. Read that cell together with ``shipped`` and the
+  per-module outcomes, never as ignore-the-red on its own; it means
+  ignore-the-red only for an arm that delivered every subtask.
 """
 
 from __future__ import annotations
