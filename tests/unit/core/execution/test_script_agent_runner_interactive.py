@@ -4,12 +4,18 @@ from __future__ import annotations
 
 import asyncio
 import json
+from pathlib import Path
+from typing import Any
 from unittest.mock import Mock, patch
 
 import pytest
 
+from llm_orc.agents.script_agent import ScriptAgent
 from llm_orc.core.execution.progress_controller import NoOpProgressController
 from llm_orc.core.execution.scripting.agent_runner import ScriptAgentRunner
+from llm_orc.core.execution.scripting.cache import ScriptCache, ScriptCacheConfig
+from llm_orc.core.execution.usage_collector import UsageCollector
+from llm_orc.schemas.agent_config import ScriptAgentConfig
 
 
 def _make_runner(
@@ -222,3 +228,73 @@ class TestExecuteInteractiveSerializesConcurrent:
             assert a_end < b_start_indices[0] or call_order.index(
                 "input_end_B?"
             ) < call_order.index("input_start_A?")
+
+
+class TestScriptAgentTimeoutWiring:
+    """#157: engine-run script agents had NO bound at all.
+
+    ``config.get("timeout_seconds", 60)`` never saw its default, because
+    ``model_dump()`` always emits the key and supplies None when unset,
+    so every subprocess ran with ``timeout=None``. The outer
+    ``asyncio.wait_for`` could not save it either: the blocking
+    subprocess sits in an ``async def`` and stalls the event loop, so
+    that timer never runs (#158).
+
+    These pins are on the WIRING rather than on the timeout mechanism,
+    because the mechanism was fine — a directly-constructed ScriptAgent
+    has always honoured its timeout (test_script_agent.py). What broke
+    was the number never arriving.
+    """
+
+    def _runner(self, default_timeout: int) -> ScriptAgentRunner:
+        return ScriptAgentRunner(
+            script_cache=ScriptCache(ScriptCacheConfig(enabled=False)),
+            usage_collector=UsageCollector(),
+            progress_controller=None,
+            emit_event=lambda name, data: None,
+            project_dir=None,
+            performance_config={"execution": {"default_timeout": default_timeout}},
+        )
+
+    @pytest.mark.parametrize(
+        ("explicit", "expected"),
+        [(None, 7), (3, 3)],
+        ids=["inherits-the-operator-default", "explicit-still-wins"],
+    )
+    def test_the_constructed_agent_gets_the_resolved_timeout(
+        self, tmp_path: Path, explicit: int | None, expected: int
+    ) -> None:
+        script = tmp_path / "quick.py"
+        script.write_text('import json\nprint(json.dumps({"ok": True}))\n')
+        config = ScriptAgentConfig(
+            name="quick", script=str(script), timeout_seconds=explicit
+        )
+
+        runner = self._runner(default_timeout=7)
+        captured: list[ScriptAgent] = []
+        real_init = ScriptAgent.__init__
+
+        def _capture(self: ScriptAgent, *args: Any, **kwargs: Any) -> None:
+            real_init(self, *args, **kwargs)
+            captured.append(self)
+
+        with patch.object(ScriptAgent, "__init__", _capture):
+            asyncio.run(runner.execute(config, "{}"))
+
+        assert captured, "no ScriptAgent was constructed"
+        assert captured[0].timeout == expected
+
+    def test_a_hanging_script_is_bounded_by_the_operator_default(
+        self, tmp_path: Path
+    ) -> None:
+        """The behavioral half, unmocked: before this fix the sleep ran to
+        completion because the bound was None. No wall-clock upper bound
+        is asserted — a loaded machine must not make this flaky."""
+        script = tmp_path / "hangs.py"
+        script.write_text("import time\ntime.sleep(30)\n")
+        config = ScriptAgentConfig(name="hangs", script=str(script))
+
+        runner = self._runner(default_timeout=1)
+        response, _model, _substituted = asyncio.run(runner.execute(config, "{}"))
+
+        assert "timed out" in response.lower(), response

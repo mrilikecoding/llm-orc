@@ -86,3 +86,7 @@ default_task: |
 agents:
   - name: searcher
     script: scripts/agentic_serving/web_searcher.py
+    # The default ddgs backend sets no timeout of its own and retries
+    # under rate limiting, so this is the one script agent whose runtime
+    # a third party decides (#157). kagi/tavily bound at 30s per request.
+    timeout_seconds: 120

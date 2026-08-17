@@ -103,7 +103,14 @@ class ScriptAgent:
         self.config = config
         self.script = config.get("script", "")
         self.command = config.get("command", "")
-        self.timeout = config.get("timeout_seconds", 60)
+        # The floor, for an agent constructed directly rather than through
+        # ScriptAgentRunner (which fills in the ensemble's resolved bound).
+        # A plain `.get(key, 60)` does NOT provide it: the key is usually
+        # PRESENT and None, which is what left the subprocess unbounded
+        # (#157). Not `or 60` either — that would swallow an explicit 0 and
+        # silently disagree with the outer bound.
+        configured_timeout = config.get("timeout_seconds")
+        self.timeout = 60 if configured_timeout is None else configured_timeout
         self.environment = config.get("environment", {})
 
         if not self.script and not self.command:
