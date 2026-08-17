@@ -1804,7 +1804,20 @@ def validate_concurrent_execution(bdd_context: dict[str, Any]) -> None:
 
 @then("total execution time should be bounded by the slowest script")
 def validate_execution_time_bounds(bdd_context: dict[str, Any]) -> None:
-    """Validate execution time is reasonable."""
+    """Validate execution time is reasonable.
+
+    NOTE (#158): this step is NOT the concurrency guarantee its sentence
+    describes, and must not be read as one. Its scenario references
+    script paths that do not exist, so it passed unchanged while script
+    agents were fully serialized on the event loop — a green test
+    asserting the invariant nobody had implemented yet.
+
+    The real pins live in
+    ``tests/unit/agents/test_script_agent.py::TestScriptAgentsOffTheEventLoop``:
+    N agents gathered finish in well under N x the script duration, and
+    a loop-tick counter moves while a script runs. Both are red against
+    the pre-#158 code. This step is kept only as a smoke bound.
+    """
     result = bdd_context.get("parallel_execution_result", {})
     execution_duration = result.get("execution_duration", 999.0)
 
