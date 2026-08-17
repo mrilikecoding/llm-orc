@@ -363,6 +363,17 @@ class TestScriptAgentsSkipTheOuterTimeout:
         envelope. Consumers read that shape — fan_out/coordinator.py skips
         expansion when upstream status is not success — so flipping it
         would silently unexpand a fan-out.
+
+        Do NOT tighten the timings here. This catches a reintroduced outer
+        bound at EITHER site (the dispatcher returning an int, or the
+        coordinator resolving a default) by relying on the outer timer
+        firing before the inner one. Those bounds are equal by
+        construction, and the measured head start is only 0.4-1.0ms — the
+        setup path before the interpreter spawns. It is a strict
+        happens-before rather than a race (27/27 including a saturated
+        box), but the margin is far smaller than it looks. The dispatcher
+        route also has deterministic, timing-free coverage in
+        test_a_script_agent_gets_no_outer_timeout above.
         """
         from llm_orc.core.execution.phases.agent_dispatcher import AgentDispatcher
         from llm_orc.core.execution.phases.agent_execution_coordinator import (
