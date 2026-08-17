@@ -16,6 +16,7 @@ docs/plans/2026-08-15-138-volume-instrument-design.md):
 
 from __future__ import annotations
 
+import hashlib
 import subprocess
 import sys
 from pathlib import Path
@@ -180,3 +181,41 @@ def test_cli_verify_prints_the_manifest(tmp_path: Path) -> None:
         path, digest = line.split("\t")
         assert path.endswith(".py")
         assert len(digest) == 64
+
+
+# The seeded bytes, pinned by literal digest. Without a literal here the
+# "hash-pinned fixture" claim is circular: level_manifest hashes the same
+# source strings the fixture writes, so it agrees with itself no matter
+# what the bytes become. A deliberate change to a seeded flaw must fail
+# this and be re-blessed, exactly like the ladder's run-6 baseline.
+SEED_DIGESTS = {
+    "label.py": "d6e6a8daeef4eabbd67e63736105f07d05e3532f1b4e1490882ad602551568cd",
+    "ledger.py": "181ab990ca410ca03034c873f096239f106c274ff8c87dcbe02c0ae1cfde8294",
+    "qty.py": "e91685fd0b2f19744a4be34f83bbd3372972d6ed4dfb16ca2611f0459529fa8b",
+    "rate.py": "8d332b5455fa95e1d4e9c94961bf21252c35558acfa1f6bf05338258b0857481",
+    "test_label.py": "d3236d637ead021ddcabbadc7ad2a38823d89cc97ac2c0d92250f6df7c5347c3",
+    "test_ledger.py": (
+        "1997dee62f4104181e52c59018f45c287473604edad9fd25aa10025c0d2fafdb"
+    ),
+    "test_qty.py": "4021fd003558a1244bed63426b6ae7cf167741918d72b075215757e37fde245b",
+    "test_rate.py": "9bb2db42579db271b7b79d8fcdd48926493ae9b094f4c405f8050f8d2c702a36",
+    "test_window.py": (
+        "9fde9261c14bd73b3e81a30cf9c3127f4c2cd1bc2592c261d1c40f4dd1723fee"
+    ),
+    "window.py": "0ee7ff14035d401baaf15fb97bd767c89c64c2de5557ceedff7e9f57b87e9c74",
+}
+
+
+def test_seeded_bytes_match_their_pinned_digests(tmp_path: Path) -> None:
+    written = write_fixture(tmp_path / "ws", level=5)
+    assert written == SEED_DIGESTS
+
+
+def test_the_returned_manifest_is_read_back_from_disk(tmp_path: Path) -> None:
+    """write_fixture verifies what actually landed rather than echoing the
+    source strings, so an encoding or newline translation between the seed
+    definition and what an arm reads fails loudly."""
+    dest = tmp_path / "ws"
+    write_fixture(dest, level=1)
+    on_disk = hashlib.sha256((dest / "ledger.py").read_bytes()).hexdigest()
+    assert on_disk == SEED_DIGESTS["ledger.py"]

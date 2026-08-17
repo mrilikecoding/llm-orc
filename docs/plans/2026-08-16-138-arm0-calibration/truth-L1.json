@@ -1,0 +1,21 @@
+{
+  "level": 1,
+  "modules": [
+    "ledger"
+  ],
+  "baseline_manifest": {
+    "ledger.py": "181ab990ca410ca03034c873f096239f106c274ff8c87dcbe02c0ae1cfde8294",
+    "test_ledger.py": "1997dee62f4104181e52c59018f45c287473604edad9fd25aa10025c0d2fafdb"
+  },
+  "manifest": {
+    "ledger.py": "c9b1d4d4579d5f7b40018442f7e3562fc1fafa2d530eac9183131df3838dcace",
+    "test_ledger.py": "1997dee62f4104181e52c59018f45c287473604edad9fd25aa10025c0d2fafdb"
+  },
+  "seeded_rc": {
+    "ledger": 0
+  },
+  "oracles": {
+    "ledger": true
+  },
+  "exit_code": 0
+}

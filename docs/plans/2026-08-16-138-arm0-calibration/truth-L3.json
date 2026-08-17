@@ -1,0 +1,35 @@
+{
+  "level": 3,
+  "modules": [
+    "ledger",
+    "qty",
+    "window"
+  ],
+  "baseline_manifest": {
+    "ledger.py": "181ab990ca410ca03034c873f096239f106c274ff8c87dcbe02c0ae1cfde8294",
+    "test_ledger.py": "1997dee62f4104181e52c59018f45c287473604edad9fd25aa10025c0d2fafdb",
+    "qty.py": "e91685fd0b2f19744a4be34f83bbd3372972d6ed4dfb16ca2611f0459529fa8b",
+    "test_qty.py": "4021fd003558a1244bed63426b6ae7cf167741918d72b075215757e37fde245b",
+    "window.py": "0ee7ff14035d401baaf15fb97bd767c89c64c2de5557ceedff7e9f57b87e9c74",
+    "test_window.py": "9fde9261c14bd73b3e81a30cf9c3127f4c2cd1bc2592c261d1c40f4dd1723fee"
+  },
+  "manifest": {
+    "ledger.py": "181ab990ca410ca03034c873f096239f106c274ff8c87dcbe02c0ae1cfde8294",
+    "qty.py": "e91685fd0b2f19744a4be34f83bbd3372972d6ed4dfb16ca2611f0459529fa8b",
+    "test_ledger.py": "1997dee62f4104181e52c59018f45c287473604edad9fd25aa10025c0d2fafdb",
+    "test_qty.py": "4021fd003558a1244bed63426b6ae7cf167741918d72b075215757e37fde245b",
+    "test_window.py": "9fde9261c14bd73b3e81a30cf9c3127f4c2cd1bc2592c261d1c40f4dd1723fee",
+    "window.py": "0ee7ff14035d401baaf15fb97bd767c89c64c2de5557ceedff7e9f57b87e9c74"
+  },
+  "seeded_rc": {
+    "ledger": 1,
+    "qty": 1,
+    "window": 1
+  },
+  "oracles": {
+    "ledger": false,
+    "qty": false,
+    "window": false
+  },
+  "exit_code": 0
+}
