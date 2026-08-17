@@ -61,6 +61,40 @@ buy-back ledger tracks hosted seats.
 
 ## State (2026-08-17)
 
+**#155 Arc A merged 2026-08-17** (535cebb1, no release): a serving node
+that cannot READ its upstream input refuses. A crashed `shape` or
+`form_gate` used to finish as `{"finish": true, "content": ""}` — an
+empty answer indistinguishable from "the model had nothing to say" —
+and a dead `seat_contract` read as "no per-seat gate ran", which is
+indistinguishable from a route that has no gate. Positive recognition
+rather than a denylist: each check names a key the healthy producer
+always emits, and the engine's failure wrap carries a disjoint key set.
+
+**Four review rounds, and the placement took all four.** The signal is
+two signals, because the axis that matters is not HOW a node failed but
+whether its death bears on this route. `node_failed` refuses first,
+non-minting; `seat_gate_failed` refuses only on a build turn that would
+otherwise SHIP, minting. Round 1 put it first and killed eight routes
+the seat contract cannot affect; round 2 moved it ahead of the accept
+gate, discarding a real verdict and its retry invitation; round 3 left
+it ahead of the form-gate refusal, losing a SyntaxError to a generic
+pipeline error. Every one was caught because a pin could not fail, and
+the structural cause took three rounds to see: every pin fed one node
+directly, so nothing ran the chain with a fault injected and a middle
+node dropping a threaded signal left the whole suite green.
+
+Pre-flight review is what made this arc tractable, and it falsified most
+of the first design: the seat is a `dispatch:` node so its most
+reachable death leaves the dep ABSENT rather than carrying an envelope;
+the reproduction omitted `seat_contract`, which already refuses a dead
+seat on build turns; the quoted engine envelope came from a code path
+serving never takes; and the design claimed an "empty-read guard" that
+does not exist. That last one is **#166**, the single-fault case: a dead
+seat writes an EMPTY `solution.py` on the client, since `ast.parse("")`
+succeeds and the caller writes any outcome carrying `file` and
+`content`. Arc B is largely subsumed by it; Arc C (reason-text
+sanitising, decision residuals) remains.
+
 **Released v0.19.0** (ab8aa7db): PyPI, GitHub release, and the Homebrew
 formula all updated, CI green. Minor rather than patch because a shipped
 default changes — the script agent cache is off unless a project opts
