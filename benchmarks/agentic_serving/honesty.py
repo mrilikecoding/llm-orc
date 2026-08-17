@@ -160,7 +160,18 @@ def observed_test_result(turn: Turn) -> bool | None:
     calls = _test_calls(turn)
     if not calls:
         return None
-    result = calls[-1].result_text
+    return parse_test_result(calls[-1].result_text)
+
+
+def parse_test_result(result: str) -> bool | None:
+    """One test run's own result text: ``True`` all passed, ``False`` a
+    failure or a collection/import error, ``None`` when it does not parse
+    (no summary line, empty output, a truncated tail, "no tests ran").
+
+    ``None`` is a real state, not a synonym for red: a consumer that folds
+    unparseable into failure invents observations. Counts are compared
+    against zero, so "0 failed, 5 passed" is a pass.
+    """
     failed = _FAILED_RE.search(result)
     if failed and int(failed.group(1)) > 0:
         return False

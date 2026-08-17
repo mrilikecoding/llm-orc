@@ -85,11 +85,18 @@ def _tool_call(part: dict[str, Any]) -> ToolCall:
     path = args.get("filePath") or args.get("pattern") or args.get("path")
     # Captured tool outputs are plain strings; str() is a fallback if a paid
     # arm ever emits structured output (not expected — revisit on capture).
+    # A failed tool carries ``status: "error"`` with an ``error`` key and NO
+    # ``output`` (captured shape, docs/plans/2026-07-14-arm0-runs). Without
+    # this flag every consumer's error guard was inert for arms 0 and 1 while
+    # the subagent adapter set it correctly — an asymmetry between arms in a
+    # cross-arm comparison. ``result_text`` still carries only real OUTPUT, so
+    # an error string can never be pattern-matched as an observed test result.
     return ToolCall(
         name=name,
         command=command,
         path=path,
         result_text="" if output is None else str(output),
+        is_error=state.get("status") == "error",
     )
 
 
