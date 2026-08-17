@@ -2433,6 +2433,187 @@ def _crashed_script_client(
     return TestClient(create_app())
 
 
+# --- #155 Arc A: a crashed marshal node, pinned through the REAL ensemble ---
+#
+# Review found both of this arc's blockers because nothing ran
+# shape -> form_gate -> emit with a fault injected: the unit pins fed each
+# node directly, so form_gate silently dropping shape's threaded signal left
+# all 3973 tests green, and a check that killed eight healthy routes had pins
+# that were green only because no fixture carried the fault.
+
+
+@pytest.mark.parametrize("script", ["shape.py", "form_gate.py"])
+def test_a_crashed_marshal_node_refuses_a_build_and_never_writes(
+    serving_project: Path, monkeypatch: pytest.MonkeyPatch, script: str
+) -> None:
+    """The gap this arc exists to close: a crashed shape or form_gate used
+    to finish as `{"finish": true, "content": ""}` — an empty answer the
+    client cannot distinguish from "the model had nothing to say"."""
+    client = _crashed_script_client(serving_project, monkeypatch, script)
+    resp = client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "ensemble-agent",
+            "messages": [
+                {"role": "user", "content": "write an add function in add.py"}
+            ],
+            "tools": [_WRITE_TOOL],
+        },
+    )
+
+    assert resp.status_code == 200
+    choice = resp.json()["choices"][0]
+    assert choice["finish_reason"] == "stop"
+    assert not choice["message"].get("tool_calls")
+    content = choice["message"]["content"]
+    assert content.startswith("Refused: serving pipeline error")
+    assert "nothing was built or written" in content
+    assert content.strip() != "Refused: serving pipeline error"
+
+
+def test_a_crashed_seat_contract_refuses_a_build_with_the_minting_prefix(
+    serving_project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The seat gate died on a turn that actually depends on it.
+
+    MINTING prefix, unlike the pipeline failures above, because routing
+    succeeded by construction to reach the build branch, so
+    `is_build_ask` is known rather than unknowable.
+
+    An earlier version of this docstring justified it as preserving a
+    `rejected_contract` entry the system already earned. That was wrong,
+    and was lifted from the design doc's Arc B bullet about a dead `seat`
+    DISPATCH node — a different fault. Measured against main: a dead
+    `seat_contract` SHIPPED, minting `shipped`. The change converts a
+    wrong-accept into a refusal, which is why the entry must still mint.
+    """
+    client = _crashed_script_client(serving_project, monkeypatch, "seat_contract.py")
+    resp = client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "ensemble-agent",
+            "messages": [
+                {"role": "user", "content": "write an add function in add.py"}
+            ],
+            "tools": [_WRITE_TOOL],
+        },
+    )
+
+    assert resp.status_code == 200
+    choice = resp.json()["choices"][0]
+    assert not choice["message"].get("tool_calls")
+    content = choice["message"]["content"]
+    assert content.startswith("Build refused: ")
+    assert "seat contract" in content
+    assert "nothing was built or written" in content
+
+
+def test_a_crashed_seat_contract_does_not_break_a_delegation_route(
+    serving_project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The blocker review caught, pinned where the unit fixtures could not.
+
+    `seat_contract` is a vacuous echo on every non-build route — only four
+    ensembles declare a `seat_contract:` block, so its verdict cannot
+    change a glob/read/recall outcome. An earlier draft refused on its
+    death ahead of the delegation seams, which killed eight routes it has
+    no bearing on. It is also the node most likely to die: the only one in
+    the marshal chain importing `llm_orc` and `yaml`, doing file I/O, and
+    running `asyncio.run`, on the engine's default timeout.
+    """
+    client = _crashed_script_client(serving_project, monkeypatch, "seat_contract.py")
+    resp = client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "ensemble-agent",
+            "messages": [{"role": "user", "content": "explain how recursion works"}],
+            "tools": [_WRITE_TOOL],
+        },
+    )
+
+    assert resp.status_code == 200
+    choice = resp.json()["choices"][0]
+    assert choice["finish_reason"] == "tool_calls", choice["message"].get("content")
+    call = choice["message"]["tool_calls"][0]
+    assert call["function"]["name"] == "glob"
+
+
+def test_a_crashed_seat_contract_does_not_refuse_a_prose_finish(
+    serving_project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The `build and` guard, end to end, on the one route that reaches it.
+
+    Review found this unpinned: deleting `build and` from emit's seat-gate
+    branch left all 3977 tests green while converting a healthy prose turn
+    into a MINTING `Build refused:` — a ledger entry on a turn that
+    carried no build ask (#133/#134).
+
+    The unit pin alone was not enough, and neither was the delegation
+    pin: a bare-concept question routes to `need-glob` and exits through
+    `_seam_outcome` before the branch is reached. Getting to `build=False`
+    with no seam takes the full glob -> grep fall-through, which is why
+    this drives all three messages with `seat_contract.py` really dead.
+    """
+    client = _crashed_script_client(serving_project, monkeypatch, "seat_contract.py")
+    resp = client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "ensemble-agent",
+            "messages": [
+                {"role": "user", "content": "explain how recursion works"},
+                {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "id": "call_g1",
+                            "type": "function",
+                            "function": {
+                                "name": "glob",
+                                "arguments": '{"pattern": "**/*{recursion,works}*"}',
+                            },
+                        }
+                    ],
+                },
+                {
+                    "role": "tool",
+                    "tool_call_id": "call_g1",
+                    "content": "/work/notes.md\n/work/README.md",
+                },
+                {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "id": "call_gr1",
+                            "type": "function",
+                            "function": {
+                                "name": "grep",
+                                "arguments": '{"pattern": "recursion", '
+                                '"include": "*.py"}',
+                            },
+                        }
+                    ],
+                },
+                {
+                    "role": "tool",
+                    "tool_call_id": "call_gr1",
+                    "content": "No files found",
+                },
+            ],
+            "tools": [_WRITE_TOOL],
+        },
+    )
+
+    assert resp.status_code == 200
+    choice = resp.json()["choices"][0]
+    assert choice["finish_reason"] == "stop"
+    content = choice["message"]["content"]
+    assert content
+    assert "Build refused" not in content
+    assert "Refused" not in content
+
+
 def test_crashed_resolve_refuses_and_never_writes(
     serving_project: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

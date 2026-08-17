@@ -485,7 +485,12 @@ def test_every_registry_terminal_agrees_with_the_ledgers_recognition() -> None:
 # case a future main() edit stops actually rendering from TERMINALS.
 _BUILD_ASK_REJECT_SHAPES: list[dict[str, Any]] = [
     # seat contract not met
-    {"build": True, "seat_admitted": False, "seat_contract_reason": "bad envelope"},
+    {
+        "build": True,
+        "valid": True,
+        "seat_admitted": False,
+        "seat_contract_reason": "bad envelope",
+    },
     # accept gate rejected
     {
         "build": True,
@@ -500,6 +505,7 @@ _BUILD_ASK_REJECT_SHAPES: list[dict[str, Any]] = [
         "build": False,
         "file": "x.py",
         "content": "n/a",
+        "valid": True,
         "read_failed": "client read failed",
         "is_build_ask": True,
     },
@@ -508,6 +514,7 @@ _BUILD_ASK_REJECT_SHAPES: list[dict[str, Any]] = [
         "build": False,
         "file": "x.py",
         "content": "n/a",
+        "valid": True,
         "glob_failed": "no file matching 'x' in the workspace listing",
         "is_build_ask": True,
     },
@@ -518,6 +525,16 @@ _BUILD_ASK_REJECT_SHAPES: list[dict[str, Any]] = [
         "file": "a.py",
         "content": "bad",
         "reason": "not valid Python",
+    },
+    # #155: the seat-side gate died on a turn that would otherwise ship.
+    # Build-reachable and minting, so it belongs in this list — review
+    # found it missing, which is exactly what this list exists to catch.
+    {
+        "build": True,
+        "valid": True,
+        "file": "a.py",
+        "content": "x = 1",
+        "seat_gate_failed": "the seat contract node returned unreadable output",
     },
 ]
 
@@ -538,15 +555,20 @@ def test_non_build_ask_read_and_glob_refusals_never_mint() -> None:
     # Review round 2 new blocker 2's own invariant, via the real subprocess:
     # is_build_ask absent/False must never mint, even for the SAME
     # read_failed/glob_failed reasons a build ask would mint for.
+    # `valid` on both: without it, #155's positive recognition refuses these
+    # as a PIPELINE error, which also does not mint — so they would pass
+    # while testing a different path than the one they name.
     shapes = [
         {
             "build": False,
+            "valid": True,
             "file": "x.py",
             "content": "n/a",
             "read_failed": "client read failed",
         },
         {
             "build": False,
+            "valid": True,
             "file": "x.py",
             "content": "n/a",
             "glob_failed": "no file matching 'x' in the workspace listing",
@@ -554,6 +576,9 @@ def test_non_build_ask_read_and_glob_refusals_never_mint() -> None:
     ]
     for gated in shapes:
         outcome = _emit(gated)
+        # Guard against passing for the wrong reason: these must be the
+        # read/glob refusals, not a pipeline error.
+        assert "pipeline error" not in outcome["content"], outcome["content"]
         message = SimpleNamespace(
             role="assistant", content=outcome["content"], tool_calls=None
         )

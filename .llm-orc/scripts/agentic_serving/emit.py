@@ -36,6 +36,14 @@ whether a build outcome may be attributed at all.
 The read/glob/run branches are mutually exclusive by construction — classify
 routes each turn to exactly one seam — so their order below only mirrors the
 failure-before-request style, never resolves a real conflict.
+
+#155 adds two refuse terminals that reuse existing prefixes rather than
+adding table entries: a pipeline-read failure (``REFUSED_PREFIX``, never
+mints — an unreadable shape or form_gate makes ``is_build_ask``
+unknowable) and a dead seat-side gate on a build turn
+(``BUILD_REFUSED_PREFIX``, mints ``refused`` — routing succeeded by
+construction, so ``is_build_ask`` is known).
+
 """
 
 from __future__ import annotations
@@ -149,6 +157,28 @@ def _seam_outcome(gated: dict) -> dict | None:
     form_gate) — the SAME refusal shape (build=False) otherwise answers a
     bare-symbol explain's discovery round, which is never a build ask.
     """
+    node_failed = str(gated.get("node_failed", ""))
+    if node_failed:
+        # #155: the SHAPE node could not be read, so the routing decision,
+        # every delegation request and the deliverable all came from an
+        # unreadable source — nothing this turn is trustworthy. Refuses
+        # before every other outcome, with the same non-minting prefix and
+        # the same reason as routing_failed below: a broken pipeline makes
+        # is_build_ask unknowable.
+        #
+        # Deliberately NOT where the seat-gate failure goes. Review found
+        # that treating them alike refused eight routes the seat contract
+        # has no bearing on: it is a vacuous echo on every non-build route,
+        # so its death cannot change those outcomes but was killing the
+        # turn anyway.
+        prefix = TERMINALS["refused"].prefix
+        return {
+            "finish": True,
+            "content": (
+                f"{prefix}serving pipeline error: {node_failed}; "
+                f"nothing was built or written"
+            ),
+        }
     routing_failed = str(gated.get("routing_failed", ""))
     if routing_failed:
         # #152 fail-closed routing: no readable routing decision — the seat
@@ -210,19 +240,60 @@ def _seam_outcome(gated: dict) -> dict | None:
     return None
 
 
+def _readable_gate(dep: object) -> dict | None:
+    """The form_gate node's output, or ``None`` when it cannot be read (#155).
+
+    Positive recognition on ``valid``, which ``form_gate.main`` emits on
+    every path — build and non-build alike, from a single ``print`` with
+    no early return. The engine's wrap for a dead serving node carries
+    ``success``/``data``/``error``/``agent_requests``, disjoint from it.
+
+    This has to run BEFORE any field is read off the result, because the
+    old ``except: gated = {}`` is not merely unhandled — ``{}`` answers
+    every subsequent question plausibly (``build=False``, ``content=""``,
+    no refusal reason), so the non-build branch printed
+    ``{"finish": true, "content": ""}``. A failure was converted into a
+    well-formed success the client cannot distinguish from "the model had
+    nothing to say".
+    """
+    try:
+        parsed = json.loads(_response(dep))
+    except (json.JSONDecodeError, TypeError):
+        return None
+    if not isinstance(parsed, dict) or "valid" not in parsed:
+        return None
+    return parsed
+
+
 def main() -> None:
     deps = _deps(sys.stdin.read().strip())
-    try:
-        gated = json.loads(_response(deps.get("form_gate", {})))
-    except json.JSONDecodeError:
-        gated = {}
-    if not isinstance(gated, dict):
-        gated = {}
+    readable = _readable_gate(deps.get("form_gate", {}))
+    if readable is None:
+        # Non-minting prefix, for #152's reason: with the pipeline itself
+        # unreadable, ``is_build_ask`` is unknowable, and the ledger
+        # doctrine is under-report rather than misreport.
+        prefix = TERMINALS["refused"].prefix
+        print(
+            json.dumps(
+                {
+                    "finish": True,
+                    "content": (
+                        f"{prefix}serving pipeline error: the form gate node "
+                        f"returned unreadable output; nothing was built or "
+                        f"written"
+                    ),
+                }
+            )
+        )
+        return
+    gated = readable
 
     build = bool(gated.get("build", False))
     content = str(gated.get("content", ""))
     accept = gated.get("accept")
     seat_admitted = gated.get("seat_admitted")
+
+    seat_gate_failed = str(gated.get("seat_gate_failed", ""))
 
     seam = _seam_outcome(gated)
     if seam is not None:
@@ -246,6 +317,49 @@ def main() -> None:
         outcome = {
             "finish": True,
             "content": f"{TERMINALS['accept_gate'].prefix}{reason}",
+        }
+    elif build and gated.get("valid", False) and seat_gate_failed:
+        # #155: the seat-side gate died on a turn that actually depends on
+        # it.
+        #
+        # PLACEMENT, which the design doc demanded a decision on and an
+        # earlier round answered silently. Two constraints:
+        #
+        # - After the delegation seams, because the seat contract is a
+        #   vacuous echo on every non-build route (only four ensembles
+        #   declare a `seat_contract:` block), so refusing there kills
+        #   turns its verdict cannot affect.
+        # - After the accept gate, and gated on `valid`, because BOTH of
+        #   those hold a REAL verdict the system computed — "tests do not
+        #   pass" with its retry invitation, and "deliverable for a.py is
+        #   not valid Python: <SyntaxError>" — while this one only says
+        #   the admission verdict is unknown. Refusing ahead of either
+        #   replaced a specific, actionable reason with a generic one, and
+        #   `_reject_kind` carries that reason into the recall templates,
+        #   so a later "why didn't that ship?" got the pipeline error
+        #   instead of the syntax error.
+        #
+        # The `valid` conjunct is what makes the next sentence true, and
+        # an earlier draft asserted it without it: this fires ONLY on a
+        # turn that would otherwise SHIP, on an unknown admission verdict.
+        # That is the wrong-accept it exists to prevent, and nothing
+        # else.
+        #
+        # MINTING prefix, unlike the pipeline failure above, because
+        # routing succeeded by construction to reach the build branch, so
+        # is_build_ask is KNOWN rather than unknowable. (An earlier draft
+        # justified it as preserving a `rejected_contract` entry the system
+        # already earned. That was wrong, and was lifted from the design
+        # doc's Arc B bullet about a dead `seat` DISPATCH node — a
+        # different fault. Measured: before this arc a dead seat_contract
+        # SHIPPED, minting `shipped`. The change converts a wrong-accept
+        # into a refusal, which is why the entry must still mint.)
+        outcome = {
+            "finish": True,
+            "content": (
+                f"{TERMINALS['build_refused'].prefix}serving pipeline error: "
+                f"{seat_gate_failed}; nothing was built or written"
+            ),
         }
     elif build and gated.get("valid", False):
         outcome = {
