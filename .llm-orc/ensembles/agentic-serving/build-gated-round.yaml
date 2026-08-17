@@ -42,6 +42,13 @@ agents:
 
   - name: executor
     script: scripts/agentic_serving/accept_executor.py
+    # 45s aggregate budget + one 15s per-child timeout = a 60s worst
+    # case (accept_executor's budget check runs BEFORE each spawn), and
+    # the SHIPPED default_timeout is also 60 — so this node declares its
+    # own headroom rather than racing the default on a fresh install
+    # (#157). If DEFAULT_TIMEOUT or _BUDGET_MULTIPLIER change, retune
+    # against the WORST CASE (budget + one child), not the budget.
+    timeout_seconds: 180
     depends_on: [gather]
 
   - name: judge

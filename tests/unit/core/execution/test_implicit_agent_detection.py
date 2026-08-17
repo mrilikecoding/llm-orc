@@ -128,9 +128,32 @@ class TestImplicitAgentDetection:
             await executor._execute_agent(agent_config, "test input")
 
             # ScriptAgentRunner converts typed config to dict via model_dump()
-            # before instantiating ScriptAgent — assert the boundary conversion
+            # before instantiating ScriptAgent — assert the boundary conversion.
+            # timeout_seconds is the one key the runner fills rather than
+            # passes through: model_dump supplies None for an unset timeout,
+            # and None meant "no bound at all" for the subprocess (#157), so
+            # the runner substitutes the same value the dispatcher resolved.
+            # Read the number from the executor's own performance config
+            # rather than hardcoding it: the operator's default_timeout is
+            # what gets substituted, so a literal here would pass or fail
+            # depending on whose .llm-orc/config.yaml the suite runs under.
+            expected_config = agent_config.model_dump()
+            assert expected_config["timeout_seconds"] is None
+            expected_config["timeout_seconds"] = int(
+                executor._performance_config.get("execution", {}).get(
+                    "default_timeout", 60
+                )
+            )
             mock_agent_class.assert_called_once_with(
-                "enhanced_script", agent_config.model_dump(), project_dir=None
+                "enhanced_script", expected_config, project_dir=None
+            )
+            # The assertion above only catches a broken hand-off while the
+            # ambient default_timeout differs from ScriptAgent's own floor;
+            # run where they coincide (a fresh install, where both are 60)
+            # and it goes blind. Pin the wiring itself, ambient-independent.
+            assert (
+                executor._script_agent_runner._performance_config
+                is executor._performance_config
             )
             mock_agent_instance.execute.assert_called_once()
 
