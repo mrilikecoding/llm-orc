@@ -61,6 +61,60 @@ buy-back ledger tracks hosted seats.
 
 ## State (2026-08-17)
 
+**#160 merged 2026-08-17** (57ae7d7a, no release): a script's cache
+identity is its resolved path AND the sha256 of its bytes, and the cache
+ships DISABLED. Editing a script used to serve the pre-edit result for
+the TTL — a stale SUCCESS #159's predicate could not catch — and under
+`persist_to_artifacts` it crossed processes. Interactive agents now skip
+the cache at both the get and the set, because the byte-identity aliases
+several references onto one key (the resolver's hyphen-to-underscore
+normalization is enough) while `requires_user_input` still judges each
+reference separately.
+
+The default flip was NOT the mitigation an earlier draft argued it was.
+Pre-flight falsified that by demonstration: two of the six registered
+primitives are not pure functions of (bytes, input, parameters), and
+they are the two most-used here. A `write_file.py` hit reports
+`{"success": true}` with the file absent — a hit ELIDES A WRITE — and
+`read_file.py` serves stale content when its input changes. Fixing the
+key does not reach either. #161 carries the purity mechanism.
+
+**Five review rounds, and every one found something that survived the
+entire suite.** Round 1's flip was INERT (the config loader restated
+every default and its copy had drifted to `True`, so a fresh install
+still elided writes; the pin asserted a field the runtime never reads).
+Round 2's skip at the *get* was unpinned and deletable with 3431 tests
+green. Round 3 found `persist_to_artifacts` was the one default with no
+pin — the same defect class recurring inside its own fix — plus an empty
+`script_cache:` block crashing executor construction and a disabled
+cache still hashing each whole script twice per execution. Round 4 found
+the `or {}` fix closed only the falsy half and that a count assertion
+had become a trap aimed at #161. Seventeen instruments, all
+mutation-verified.
+
+Three of my own "measured" claims were falsified and corrected: the
+`os.path.isfile` guard's contribution (wrong twice, opposite
+directions), "computed at both get and set" (once), and the identity's
+cost (0.19% of a ~49ms execution, not "the expensive part"). Bounds
+recorded rather than closed: the identity covers the entry file, not its
+imports (**#162**); an edit reverted mid-run still files B's output
+under A's key, pinned as known-wrong; the identity degrades silently
+when `read_bytes` raises (**#163**). Also filed: **#164** (a doc
+promising a per-agent `cache: true` key that `extra="forbid"` rejects)
+and **#165** (a pre-existing 1-in-6 `-n auto` flake, undiagnosable
+because both persistence paths swallow their exceptions).
+
+**#156 in review** on `fix/156-instruments-in-the-gate`: the 511
+measurement instruments under `benchmarks/agentic_serving/tests` enter
+`make test` and CI. The obstacle was not the one the issue expected —
+`tests/unit/` had no `__init__.py`, so pytest put it on `sys.path` and
+`tests/unit/benchmarks/` shadowed the real top-level package (18
+collection errors, the same class as #138's `parse.py`). Round 1 review
+found both new shadowing guards shipped unable to go red in the gate;
+fixed and re-reviewing.
+
+### Earlier (2026-08-17)
+
 **#159 merged 2026-08-17** (b9949c53, no release): a script's own failure
 is never served from cache. Reproduced before the fix — a timing-out
 agent returned 1.01s then 0.00s from cache, and with
