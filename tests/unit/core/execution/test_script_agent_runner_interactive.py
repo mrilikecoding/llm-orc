@@ -298,3 +298,78 @@ class TestScriptAgentTimeoutWiring:
         response, _model, _substituted = asyncio.run(runner.execute(config, "{}"))
 
         assert "timed out" in response.lower(), response
+
+
+class TestScriptAgentsSkipTheOuterTimeout:
+    """#158: a script agent's outer asyncio.wait_for was a DUPLICATE of
+    its inner subprocess bound and strictly worse at the job — it cannot
+    reap the child, and it cannot fire during the only window it uniquely
+    covers, because that window is what blocks the loop.
+
+    Retiring it (not satisfying it vacuously) is what keeps queue delay
+    from being charged against an agent's budget once script agents
+    genuinely run concurrently.
+    """
+
+    def _dispatcher(self, default_timeout: int = 300) -> Any:
+        from llm_orc.core.execution.phases.agent_dispatcher import AgentDispatcher
+
+        async def _resolve(config: Any) -> dict[str, Any]:
+            dumped: dict[str, Any] = config.model_dump()
+            return dumped
+
+        return AgentDispatcher(
+            execution_coordinator=Mock(),
+            dependency_resolver=Mock(),
+            progress_controller=Mock(),
+            emit_event_fn=lambda name, data: None,
+            resolve_profile_fn=_resolve,
+            performance_config={"execution": {"default_timeout": default_timeout}},
+        )
+
+    def test_a_script_agent_gets_no_outer_timeout(self) -> None:
+        dispatcher = self._dispatcher()
+        config = ScriptAgentConfig(name="s", script="x.py")
+        assert asyncio.run(dispatcher._get_agent_timeout(config)) is None
+
+    def test_an_llm_agent_still_gets_one(self) -> None:
+        from llm_orc.schemas.agent_config import LlmAgentConfig
+
+        dispatcher = self._dispatcher(default_timeout=300)
+        config = LlmAgentConfig(name="m", model_profile="p")
+        assert asyncio.run(dispatcher._get_agent_timeout(config)) == 300
+
+    def test_an_explicit_timeout_on_a_script_agent_is_still_not_an_outer_bound(
+        self,
+    ) -> None:
+        """The explicit value still reaches the SUBPROCESS via the runner;
+        what it no longer does is start a timer before the work begins."""
+        dispatcher = self._dispatcher()
+        config = ScriptAgentConfig(name="s", script="x.py", timeout_seconds=45)
+        assert asyncio.run(dispatcher._get_agent_timeout(config)) is None
+
+    def test_a_timed_out_script_agent_keeps_todays_result_shape(
+        self, tmp_path: Path
+    ) -> None:
+        """The contract does NOT move: a timeout comes back as a successful
+        agent carrying a failure envelope, exactly as today. Consumers read
+        that shape — fan_out/coordinator.py skips expansion when upstream
+        status is not success — so flipping it would silently unexpand a
+        fan-out. This pin is what stops someone 'fixing' it later."""
+        script = tmp_path / "hangs.py"
+        script.write_text("import time\ntime.sleep(30)\n")
+        config = ScriptAgentConfig(name="hangs", script=str(script))
+
+        runner = ScriptAgentRunner(
+            script_cache=ScriptCache(ScriptCacheConfig(enabled=False)),
+            usage_collector=UsageCollector(),
+            progress_controller=None,
+            emit_event=lambda name, data: None,
+            project_dir=None,
+            performance_config={"execution": {"default_timeout": 1}},
+        )
+        response, _model, _sub = asyncio.run(runner.execute(config, "{}"))
+
+        parsed = json.loads(response)
+        assert parsed["success"] is False
+        assert "timed out" in parsed["error"].lower()

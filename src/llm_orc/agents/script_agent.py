@@ -1,5 +1,7 @@
 """Script-based agent execution for hybrid LLM/script workflows."""
 
+import asyncio
+import functools
 import json
 import os
 import shlex
@@ -7,11 +9,44 @@ import subprocess
 import sys
 import tempfile
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
 from llm_orc.core.execution.scripting.resolver import ScriptResolver
 from llm_orc.schemas.script_agent import ScriptAgentInput, ScriptAgentOutput
+
+# Script subprocesses run on their OWN pool (#158). They previously ran
+# inline in `async def`, blocking the event loop for the whole life of the
+# child: agents the engine gathers ran serially (4 x 1s measured at 4.15s)
+# and any model-backed agent awaiting in the same loop stalled with them.
+#
+# Dedicated rather than the default executor so script agents do not
+# compete with the Gemini SDK, the Claude CLI subprocess, the interactive
+# path's `input()`, and the serve's trace flushes. That also means
+# `asyncio.to_thread` is NOT usable here: it is hardcoded to
+# `run_in_executor(None, ...)` and would silently land in the default pool.
+SCRIPT_POOL_SIZE = min(32, (os.cpu_count() or 1) + 4)
+SCRIPT_POOL_THREAD_PREFIX = "llm-orc-script"
+SCRIPT_POOL = ThreadPoolExecutor(
+    max_workers=SCRIPT_POOL_SIZE, thread_name_prefix=SCRIPT_POOL_THREAD_PREFIX
+)
+
+
+async def _run_subprocess(
+    *args: Any, **kwargs: Any
+) -> subprocess.CompletedProcess[str]:
+    """Run ``subprocess.run`` on the script pool without blocking the loop.
+
+    ``functools.partial`` rather than a lambda so nothing closes over loop
+    variables. Exceptions propagate exactly as they would inline, which is
+    what keeps ``ScriptAgent.execute``'s TimeoutExpired/CalledProcessError
+    envelopes intact.
+    """
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(
+        SCRIPT_POOL, functools.partial(subprocess.run, *args, **kwargs)
+    )
 
 
 class ScriptEnvironmentManager:
@@ -560,7 +595,7 @@ class ScriptAgent:
         env = self._prepare_script_environment(json_input)
 
         # Execute script with JSON input via stdin and environment variables
-        result = subprocess.run(  # nosec B603
+        result = await _run_subprocess(  # nosec B603
             interpreter + [script_path],
             input=json_input,
             capture_output=True,
@@ -613,7 +648,7 @@ class ScriptAgent:
                 env["INPUT_DATA"] = json_input
                 env["AGENT_PARAMETERS"] = "{}"
 
-            result = subprocess.run(  # nosec B603
+            result = await _run_subprocess(  # nosec B603
                 ["/bin/bash", script_path],
                 input=json_input,
                 capture_output=True,
@@ -650,7 +685,7 @@ class ScriptAgent:
         env = os.environ.copy()
         env.update(self.environment)
 
-        result = subprocess.run(  # nosec B603
+        result = await _run_subprocess(  # nosec B603
             args,
             input=json_input,
             capture_output=True,
@@ -681,7 +716,7 @@ class ScriptAgent:
         env = self._env_manager.prepare_environment(input_json, direct_json=True)
 
         # Execute script with ScriptAgentInput JSON in env AND stdin
-        result = subprocess.run(  # nosec B603
+        result = await _run_subprocess(  # nosec B603
             interpreter + [script_path],
             capture_output=True,
             text=True,
@@ -706,7 +741,7 @@ class ScriptAgent:
             Script output (stdout)
         """
         # Execute inline script with JSON input via stdin
-        result = subprocess.run(  # nosec B602
+        result = await _run_subprocess(  # nosec B602
             script_content,
             shell=True,
             capture_output=True,
