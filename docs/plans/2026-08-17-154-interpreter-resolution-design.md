@@ -66,7 +66,19 @@ pytest subprocess is doomed too, and the chain becomes coherent); and
 str(SCRIPT)]`, so the unit tests and the engine currently disagree
 about how to run the same file.
 
-One site is fixed alongside rather than left divergent:
+Three sites are fixed alongside rather than left divergent. Correcting
+the review record on two of them, because the first justification was
+over-broad: `primitive_composer._execute_primitive` resolves through
+`ScriptResolver`, which searches the packaged `primitives/` tree, so it
+really does hit mode-644 files and really would fail bare — pinned by
+`test_a_packaged_primitive_executes_despite_being_non_executable`,
+mutation-verified. `primitive_registry.validate_primitive` does NOT:
+`discover_primitives` searches only `cwd/.llm-orc/scripts/primitives`
+and `cwd/llm-orchestra-library/scripts/primitives`, and the library
+scripts it could find are mode 755, so the exec-bit argument never
+applied to it. Routing it is still correct (it retires the PATH
+dependency and the class), but it is doubly unreachable and carries no
+pin. And the third:
 `resolver.py:313` runs `[script_path]` bare, relying on shebang plus
 the exec bit, so `llm-orc scripts test
 scripts/agentic_serving/resolve.py` fails today with Permission denied
