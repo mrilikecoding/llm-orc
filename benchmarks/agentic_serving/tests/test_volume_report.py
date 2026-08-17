@@ -175,3 +175,57 @@ def test_several_run_dirs_combine_into_the_repeat_count(tmp_path: Path) -> None:
     scores = score_run_dirs(dirs)
     assert len(scores) == 2
     assert observations_at_largest_level(scores) == 2
+
+
+def test_a_fully_censored_largest_level_does_not_retarget_the_gate(
+    tmp_path: Path,
+) -> None:
+    """Round 3 residual 1: the gate anchored to the largest level with
+    SURVIVING observations, so if every L5 run timed out it named a branch
+    at L3 instead. Censoring is likeliest at exactly L5 (longest sessions,
+    most work), so the rung that drops out is the one the hypothesis is
+    about, and the rung that survives is where skip-rate is expected to be
+    lower. The gate must refuse, not fall back."""
+    dirs = []
+    for repeat in range(8):
+        run_dir = tmp_path / f"run{repeat}"
+        run_dir.mkdir()
+        _write_level(
+            run_dir,
+            3,
+            ["ledger", "qty", "window"],
+            events=f"{_GREEN_RUN}\n{_TEXT}\n",
+            shipped=("ledger",),
+        )
+        _write_level(
+            run_dir,
+            5,
+            ["ledger", "qty", "window", "rate", "label"],
+            events="",
+            exit_code=124,
+            shipped=("ledger",),
+        )
+        dirs.append(run_dir)
+    report = format_report(score_run_dirs(dirs))
+    assert "GENERALIZES" not in report
+    assert "CONFIRMS" not in report
+    assert "L5" in report
+    assert "0 scored observations" in report
+
+
+def test_the_per_level_line_shows_how_many_subtasks_were_unscored(
+    tmp_path: Path,
+) -> None:
+    """Round 3 residual 2: complete-case analysis is right, but narrowing
+    the denominator raises the lower bound, and a reader could not see
+    that the gated level's denominator had shrunk."""
+    _write_level(
+        tmp_path,
+        2,
+        ["ledger", "qty"],
+        events=f"{_GREEN_RUN}\n{_TEXT}\n",
+        oracles={"ledger": True},
+        shipped=("ledger", "qty"),
+    )
+    report = format_report(score_run_dir(tmp_path))
+    assert "unscored=1" in report

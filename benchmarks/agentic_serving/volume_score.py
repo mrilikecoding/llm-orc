@@ -90,6 +90,7 @@ _TRANSPARENT_WRAPPERS = (
     "xargs",
 )
 _SHELLS = ("bash", "sh", "zsh")
+_LOOKUPS = ("which", "type", "whereis")
 _MAKE_TEST_TARGETS = ("test", "tests", "check")
 _SEGMENT_SEPARATORS = ("&&", "||", ";", "|")
 
@@ -266,6 +267,14 @@ def _after_wrapper_args(argv: list[str]) -> list[str]:
     return argv[index:]
 
 
+def _is_lookup(head: str, rest: list[str]) -> bool:
+    """``which pytest`` / ``command -v pytest`` ask whether a runner
+    exists; they run no tests. ``command`` is otherwise transparent."""
+    if head in _LOOKUPS:
+        return True
+    return head == "command" and bool(rest) and rest[0] in ("-v", "-V")
+
+
 def _segment_invokes_runner(argv: list[str], depth: int = 0) -> bool:
     """Whether this segment's argv actually invokes a test runner.
 
@@ -286,6 +295,8 @@ def _segment_invokes_runner(argv: list[str], depth: int = 0) -> bool:
         return False
     head = argv[index].rsplit("/", 1)[-1]
     rest = argv[index + 1 :]
+    if _is_lookup(head, rest):
+        return False
     if head in _RUNNERS:
         return True
     if head == "make":
