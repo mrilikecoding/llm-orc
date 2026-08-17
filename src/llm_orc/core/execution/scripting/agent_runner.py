@@ -197,14 +197,19 @@ class ScriptAgentRunner:
     def _cache_is_enabled(self) -> bool:
         """Whether the cache would store anything at all.
 
-        Tolerant of a cache that is not a real ``ScriptCache`` — several
-        suites pass a ``Mock`` — so an unreadable config answers True and
-        leaves behaviour where it was rather than silently disabling
-        caching for those tests.
+        ``bool()`` rather than the attribute itself because several
+        suites pass a ``Mock`` here, whose auto-created ``config.enabled``
+        is a truthy Mock — which keeps those tests where they were.
+
+        An earlier draft wrapped both lookups in ``getattr`` defaults and
+        justified it as tolerance for Mocks. Review measured that the
+        defaults never fire: a plain ``Mock`` answers with its own
+        auto-created attribute, and only ``Mock(spec=...)`` would reach a
+        default, which nothing in the suite uses. Deleting the layer
+        changed no test. Dead defensive code with a rationale naming the
+        wrong objects is worse than none.
         """
-        config = getattr(self._script_cache, "config", None)
-        enabled = getattr(config, "enabled", True)
-        return bool(enabled)
+        return bool(self._script_cache.config.enabled)
 
     def _cache_identity(self, script_ref: str) -> str:
         """What identifies this script for caching (#160).
