@@ -1,5 +1,6 @@
-form_gate CRASHED -> {"finish": true, "content": "Refused: serving pipeline error: the form gate node returned unreadable output; nothing was built or written"}
-shape CRASHED     -> {"finish": true, "content": "Refused: serving pipeline error: the shape node returned unreadable output"}
-seat_contract DEAD -> {"finish": true, "content": "Refused: serving pipeline error: the seat contract node returned unreadable output"}
+Regenerated after round 3 (build route unless noted).
 
-HEALTHY build     -> {"finish": false, "file": "solution.py", "content": "def f():\n    return 1\n"}
+form_gate CRASHED  -> {"finish": true, "content": "Refused: serving pipeline error: the form gate node returned unreadable output; nothing was built or written"}
+shape CRASHED      -> {"finish": true, "content": "Refused: serving pipeline error: the shape node returned unreadable output; nothing was built or written"}
+seat_contract DEAD -> {"finish": true, "content": "Build refused: serving pipeline error: the seat contract node returned unreadable output; nothing was built or written"}
+HEALTHY build      -> {"finish": false, "file": "solution.py", "content": "def f():\n    return 1\n"}

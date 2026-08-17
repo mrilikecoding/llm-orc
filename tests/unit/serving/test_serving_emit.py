@@ -687,3 +687,85 @@ def test_a_threaded_node_failure_beats_a_delegation_request() -> None:
 
     assert outcome["finish"] is True
     assert outcome["content"].startswith(REFUSED_PREFIX)
+
+
+# --- #155: the seat-gate branch, which round 2 shipped with no unit pin ----
+
+
+def test_a_dead_seat_gate_refuses_a_build_that_would_otherwise_ship() -> None:
+    """The wrong-accept this branch exists to prevent, and the only place
+    it fires: the admission verdict is unknown and the turn would ship."""
+    outcome = _emit(
+        {
+            "valid": True,
+            "build": True,
+            "file": "a.py",
+            "content": "x = 1",
+            "seat_gate_failed": "the seat contract node returned unreadable output",
+        }
+    )
+
+    assert outcome["finish"] is True
+    assert outcome["content"].startswith(BUILD_REFUSED_PREFIX)
+    assert "nothing was built or written" in outcome["content"]
+
+
+def test_a_dead_seat_gate_never_refuses_a_non_build_turn() -> None:
+    """The `build and` guard, which review found unpinned: deleting it left
+    all 3977 tests green while converting a healthy prose turn into a
+    MINTING `Build refused:` — a ledger entry on a turn that carried no
+    build ask, which is the #133/#134 invariant."""
+    outcome = _emit(
+        {
+            "valid": True,
+            "build": False,
+            "content": "A tuple is immutable.",
+            "seat_gate_failed": "the seat contract node returned unreadable output",
+        }
+    )
+
+    assert outcome == {"finish": True, "content": "A tuple is immutable."}
+
+
+def test_the_accept_gate_outranks_a_dead_seat_gate() -> None:
+    """Gate precedence, which the design doc demanded a decision on and
+    round 2 answered silently in the wrong direction.
+
+    The accept gate holds a REAL verdict the system computed, carrying a
+    retry invitation; the seat gate only reports that the admission
+    verdict is unknown. Refusing ahead of it discarded the better answer
+    and converted a `rejected_gate` ledger entry into a `refused` one.
+    """
+    outcome = _emit(
+        {
+            "valid": True,
+            "build": True,
+            "file": "a.py",
+            "content": "x = 1",
+            "accept": False,
+            "accept_reason": "tests do not pass",
+            "seat_gate_failed": "the seat contract node returned unreadable output",
+        }
+    )
+
+    assert outcome["content"].startswith(ACCEPT_GATE_REJECT_PREFIX)
+    assert "tests do not pass" in outcome["content"]
+
+
+def test_a_seat_contract_rejection_outranks_a_dead_seat_gate() -> None:
+    """Cannot co-occur in live wiring — both derive from one parse of one
+    dep — but the ordering is asserted so a future split cannot silently
+    demote an explicit rejection to a pipeline error."""
+    outcome = _emit(
+        {
+            "valid": True,
+            "build": True,
+            "file": "a.py",
+            "content": "x = 1",
+            "seat_admitted": False,
+            "seat_contract_reason": "no artifact",
+            "seat_gate_failed": "the seat contract node returned unreadable output",
+        }
+    )
+
+    assert outcome["content"].startswith(SEAT_CONTRACT_REJECT_PREFIX)

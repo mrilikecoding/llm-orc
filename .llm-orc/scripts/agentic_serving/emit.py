@@ -36,6 +36,14 @@ whether a build outcome may be attributed at all.
 The read/glob/run branches are mutually exclusive by construction — classify
 routes each turn to exactly one seam — so their order below only mirrors the
 failure-before-request style, never resolves a real conflict.
+
+#155 adds two refuse terminals that reuse existing prefixes rather than
+adding table entries: a pipeline-read failure (``REFUSED_PREFIX``, never
+mints — an unreadable shape or form_gate makes ``is_build_ask``
+unknowable) and a dead seat-side gate on a build turn
+(``BUILD_REFUSED_PREFIX``, mints ``refused`` — routing succeeded by
+construction, so ``is_build_ask`` is known).
+
 """
 
 from __future__ import annotations
@@ -290,24 +298,6 @@ def main() -> None:
     seam = _seam_outcome(gated)
     if seam is not None:
         outcome = seam
-    elif build and seat_gate_failed:
-        # #155: the seat-side gate died on a turn that actually depends on
-        # it. Placed here rather than ahead of the delegation seams because
-        # the seat contract is a vacuous echo on every other route.
-        #
-        # MINTING prefix, unlike the pipeline failure above: routing
-        # succeeded by construction to reach the build branch, so
-        # is_build_ask is known rather than unknowable — and a dead gate on
-        # a build turn already minted `rejected_contract` before this
-        # change, so a non-minting refusal would COST a ledger entry the
-        # system currently earns.
-        outcome = {
-            "finish": True,
-            "content": (
-                f"{TERMINALS['build_refused'].prefix}serving pipeline error: "
-                f"{seat_gate_failed}; nothing was built or written"
-            ),
-        }
     elif seat_admitted is False:
         # The seat's output did not meet its own seat-owned contract (WP-E8;
         # ADR-046 §2). Refuse before shipping — a distinct, higher-priority gate
@@ -327,6 +317,43 @@ def main() -> None:
         outcome = {
             "finish": True,
             "content": f"{TERMINALS['accept_gate'].prefix}{reason}",
+        }
+    elif build and seat_gate_failed:
+        # #155: the seat-side gate died on a turn that actually depends on
+        # it.
+        #
+        # PLACEMENT, which the design doc demanded a decision on and an
+        # earlier round answered silently. Two constraints:
+        #
+        # - After the delegation seams, because the seat contract is a
+        #   vacuous echo on every non-build route (only four ensembles
+        #   declare a `seat_contract:` block), so refusing there kills
+        #   turns its verdict cannot affect.
+        # - After the accept gate, because that gate holds a REAL verdict
+        #   the system computed ("tests do not pass") carrying a retry
+        #   invitation, while this one only says the admission verdict is
+        #   unknown. Refusing ahead of it discarded the better answer and
+        #   converted a `rejected_gate` ledger entry into a `refused` one.
+        #
+        # So this fires only where it must: a turn that would otherwise
+        # SHIP, on an unknown admission verdict. That is the wrong-accept
+        # it exists to prevent, and nothing else.
+        #
+        # MINTING prefix, unlike the pipeline failure above, because
+        # routing succeeded by construction to reach the build branch, so
+        # is_build_ask is KNOWN rather than unknowable. (An earlier draft
+        # justified it as preserving a `rejected_contract` entry the system
+        # already earned. That was wrong, and was lifted from the design
+        # doc's Arc B bullet about a dead `seat` DISPATCH node — a
+        # different fault. Measured: before this arc a dead seat_contract
+        # SHIPPED, minting `shipped`. The change converts a wrong-accept
+        # into a refusal, which is why the entry must still mint.)
+        outcome = {
+            "finish": True,
+            "content": (
+                f"{TERMINALS['build_refused'].prefix}serving pipeline error: "
+                f"{seat_gate_failed}; nothing was built or written"
+            ),
         }
     elif build and gated.get("valid", False):
         outcome = {

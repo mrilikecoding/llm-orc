@@ -123,18 +123,27 @@ def _unreadable_seat_contract(deps: dict) -> str:
     ``seat_admitted`` key, and emit reads ``None`` as "no per-seat gate
     ran" — which is indistinguishable from a gate that ran and died.
 
-    Fails closed on an ABSENT dep too, and review corrected an earlier
-    draft that did not. The draft's reason was that "the explain path has
-    no seat_contract block", which conflates the ensemble's optional
+    Fails closed on an ABSENT dep too. Two drafts got the reason wrong,
+    so it is stated carefully. The first said "the explain path has no
+    seat_contract block", conflating the ensemble's optional
     ``seat_contract:`` YAML block with the skeleton's ``seat_contract``
-    NODE: ``serving.yaml`` declares that node unconditionally, with no
-    ``when:``, so it runs on every route and emits ``seat_admitted: true``
-    vacuously when the route's ensemble declares no contract. An absent
-    dep therefore does not mean "no gate configured"; it means the node
-    was filtered out for not succeeding, which is a failure. This also
-    makes the three checks symmetric — emit and form_gate already fail
-    closed on an absent dep, because ``deps.get(name, {})`` yields an
-    empty response that cannot be read.
+    NODE — ``serving.yaml`` declares that node unconditionally, so it runs
+    on every route and emits ``seat_admitted: true`` vacuously when the
+    route's ensemble declares no contract. The second said an absent dep
+    "means the node was filtered out for not succeeding", which is false
+    in general: ``decide`` and ``pick`` are absent on most turns because
+    ``when:`` skipped them, and every ``ScriptAgent`` failure is caught
+    inside the agent and returned as a ``status="success"`` response
+    carrying an error envelope, so a crashed seat_contract is always
+    PRESENT.
+
+    Measured: zero absences across 650 recorded live turns. So this branch
+    is unreachable in the current skeleton, and it is kept as a deliberate
+    trip-wire rather than as handling for a live failure mode — if a
+    future skeleton guards or removes this node, build turns refuse
+    loudly instead of silently losing the gate. The bound that comes with
+    that: such a skeleton refuses EVERY build turn until this check is
+    updated with it.
 
     Positive recognition, not a denylist: a healthy ``seat_contract``
     always emits ``seat_admitted``, so anything lacking it is not a
