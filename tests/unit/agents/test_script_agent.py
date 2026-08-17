@@ -789,3 +789,23 @@ class TestInterpreterResolution:
         # system python, the import alone would succeed pre-fix and this
         # pin would have no red signal at all.
         assert parsed["exe"] == sys.executable
+
+
+class TestTimeoutFloor:
+    """#157 review: the design promised a floor for a directly-constructed
+    ScriptAgent and `.get(key, 60)` did not provide one, because the key is
+    usually PRESENT and None — the exact shape model_dump produces. One
+    construction site is pinned today, but #158's work touches this area."""
+
+    def test_a_present_none_timeout_falls_back_to_the_floor(self) -> None:
+        agent = ScriptAgent("t", {"script": "x.py", "timeout_seconds": None})
+        assert agent.timeout == 60
+
+    def test_an_absent_timeout_falls_back_to_the_floor(self) -> None:
+        assert ScriptAgent("t", {"script": "x.py"}).timeout == 60
+
+    def test_an_explicit_zero_is_preserved(self) -> None:
+        """`or 60` would swallow it and desync the inner bound from the
+        outer one, which resolves 0 to 0."""
+        agent = ScriptAgent("t", {"script": "x.py", "timeout_seconds": 0})
+        assert agent.timeout == 0
