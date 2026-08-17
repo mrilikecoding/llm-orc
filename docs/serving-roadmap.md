@@ -61,6 +61,25 @@ buy-back ledger tracks hosted seats.
 
 ## State (2026-08-17)
 
+**#159 merged 2026-08-17** (b9949c53, no release): a script's own failure
+is never served from cache. Reproduced before the fix — a timing-out
+agent returned 1.01s then 0.00s from cache, and with
+`persist_to_artifacts` the entry survives a restart, so the worst case
+was cross-process rather than one in-process hour. The predicate needed
+TWO clauses: a success-only rule would have missed the case the issue is
+named after, since `web_searcher` reports failures as `{"error": ...}`
+and exits 0, and NONE of the 33 serving scripts emit a boolean `success`
+at all. Twelve pins on `get_stats()` rather than wall time. Merge review
+ran the full mutation table and falsified the commit's own claim that
+each clause had a killing pin; four survivors now each turn exactly one
+pin red, including a real `AttributeError` crash path on the schema
+dispatch shape. Mitigation, not the subsystem fix: **#160** carries the
+deeper hazard — the cache key hashes the script PATH rather than its
+bytes, so editing a script serves the pre-edit result for the TTL, a
+stale SUCCESS no failure-skipping predicate can catch.
+
+### Earlier (2026-08-17)
+
 **#158 merged 2026-08-17** (64e5667b, no release): script agents run off
 the event loop on a dedicated thread pool, and their DUPLICATE outer
 timeout is retired. Measured 4 x 1s gathered: **4.15s -> 1.03s**, loop
@@ -205,8 +224,8 @@ exit stays OPEN on the whale — unblockers #106/#151/chunked reads).
 #143 CLOSED as an honest miss (reopen rides #119). Open follow-ups:
 #147 (classifier false positives), #149 (client-side truncation
 flanks), #151 (server-queried window), #155 (pipeline
-positive-completeness), #156 (instrument pins ungated), #159 (cached failure
-envelopes). Operating rules:
+positive-completeness), #156 (instrument pins ungated), #160 (cache keys on path,
+not bytes). Operating rules:
 `docs/loop-protocol.md`.
 
 ## Timeline
@@ -371,7 +390,8 @@ dishonest outcome.
 - [x] #154 interpreter PATH fragility fixed (.py runs under llm-orc's own interpreter; bare-PATH suite 50 failures -> 0)
 - [x] #157 script-agent timeouts fixed (one resolver for inner and outer bounds; six nodes declare their own)
 - [x] #158 script agents off the event loop (4.15s -> 1.03s; duplicate outer timeout retired)
-- [ ] #151 runtime-window detector remainder · #155 pipeline positive-completeness · #156 instrument pins ungated · #159 failure envelopes cached · #85 sandbox hardening · #84 gate adversarial harness · #90 llama.cpp · #93 hot path · #95 dead surface · #106 shape home · #110 artifact quality · #114 trace cap · #132 BitNet · #142 reject templates
+- [x] #159 failure envelopes no longer cached (two-clause predicate; the corpus emits no boolean success)
+- [ ] #151 runtime-window detector remainder · #155 pipeline positive-completeness · #156 instrument pins ungated · #160 cache keys on path not bytes · #85 sandbox hardening · #84 gate adversarial harness · #90 llama.cpp · #93 hot path · #95 dead surface · #106 shape home · #110 artifact quality · #114 trace cap · #132 BitNet · #142 reject templates
 
 ### epic:off-path
 #80 #65 #30 #66 — parked, not on the north-star path.
