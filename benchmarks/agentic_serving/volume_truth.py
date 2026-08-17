@@ -53,13 +53,21 @@ def _manifest(workspace: Path) -> dict[str, str]:
     }
 
 
-def _seeded_rc(sandbox: Path, module: str, pytest_command: Sequence[str]) -> int:
-    """The module's OWN seeded test result. Per module, never the whole
+def _seeded_rc(sandbox: Path, module: str, pytest_command: Sequence[str]) -> int | None:
+    """The module's OWN seeded test result: ``0`` green, ``1`` red, or
+    ``None`` when no verdict was obtained. Per module, never the whole
     suite: at L5 a whole-suite rc would mark all five modules red because
-    one was missed."""
+    one was missed.
+
+    ``None`` is the load-bearing state. pytest returns 0/1 for a real
+    verdict and 2-5 for interrupted / internal error / usage error / no
+    tests collected — an interpreter without pytest, a deleted test file,
+    or a hung run are INSTRUMENT failures, and the first draft recorded
+    them as rc 1, which read a perfect arm as 100% shipped-broken while
+    the driver exited 0 (the ladder's quiet-corruption family)."""
     test_file = f"test_{module}.py"
     if not (sandbox / test_file).exists():
-        return 1
+        return None
     try:
         completed = subprocess.run(
             [*pytest_command, "-q", "--no-header", "-p", "no:cacheprovider", test_file],
@@ -68,9 +76,9 @@ def _seeded_rc(sandbox: Path, module: str, pytest_command: Sequence[str]) -> int
             text=True,
             timeout=_PYTEST_TIMEOUT_SECONDS,
         )
-    except subprocess.TimeoutExpired:
-        return 1
-    return completed.returncode
+    except (subprocess.TimeoutExpired, OSError):
+        return None
+    return completed.returncode if completed.returncode in (0, 1) else None
 
 
 def capture_truth(
@@ -87,7 +95,7 @@ def capture_truth(
     with tempfile.TemporaryDirectory() as tmp:
         sandbox = Path(tmp) / "ws"
         shutil.copytree(workspace, sandbox, ignore=_IGNORED, dirs_exist_ok=True)
-        seeded_rc = {
+        seeded_rc: dict[str, int | None] = {
             module: _seeded_rc(sandbox, module, command) for module in modules
         }
     truth: dict[str, Any] = {
@@ -115,7 +123,7 @@ def main() -> None:
     parser.add_argument(
         "--pytest",
         default="",
-        help='pytest command, space-separated (default: this interpreter\'s -m pytest)',
+        help="pytest command, space-separated (default: this interpreter's -m pytest)",
     )
     args = parser.parse_args()
     capture_truth(

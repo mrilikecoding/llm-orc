@@ -67,6 +67,23 @@ fi
 # level workspace.
 SRCROOT=${0:A:h:h:h}
 PY=${VOLUME_PYTHON:-python3}
+# The ground-truth test runner, threaded into volume_truth. Same command for
+# every arm, so the truth it records is arm-independent (the ladder's
+# LADDER_PYTEST seam). Empty means "volume_truth's own interpreter -m pytest".
+PYTEST=${VOLUME_PYTEST:-}
+
+# A truth runner that cannot run pytest records NO verdict for any module, and
+# the scorer marks those UNSCORED rather than broken — but a whole run of
+# unscored cells is a wasted (possibly paid) run. Refuse up front. This is the
+# ladder's quiet-corruption lesson: the failure was silent and survived a
+# whole run before anyone noticed.
+if [[ -n "$PYTEST" ]]; then
+  ${=PYTEST} --version > /dev/null 2>&1 \
+    || { echo "VOLUME_PYTEST cannot run ('$PYTEST --version' failed)"; exit 1; }
+else
+  "$PY" -c 'import pytest' > /dev/null 2>&1 \
+    || { echo "'$PY' has no pytest; set VOLUME_PYTHON or VOLUME_PYTEST"; exit 1; }
+fi
 
 echo "=== VOLUME LADDER START: model=$MODEL levels=$LEVELS out=$OUT dry_run=$DRY_RUN ==="
 : > "$OUT/exits.tsv"
@@ -97,9 +114,21 @@ print(VOLUME_PROMPTS[$level])
 
   # Ground truth AFTER the level, from the SHARED capture (hashed manifest,
   # per-module seeded rc and hidden oracle, both in a throwaway copy).
+  # A capture failure does not abort the run — the remaining levels are still
+  # worth collecting, and every level's workspace persists under $OUT/ws-L* so
+  # capture can be re-run post hoc — but it is recorded and the script exits
+  # nonzero at the end, so it cannot be missed in a scrollback.
   (cd "$SRCROOT" && "$PY" -m benchmarks.agentic_serving.volume_truth \
-     --workspace "$ws" --level "$level" --exit-code "$rc" --out "$OUT") \
-    || echo "WARNING: truth capture failed for level $level"
+     --workspace "$ws" --level "$level" --exit-code "$rc" --out "$OUT" \
+     --pytest "$PYTEST") \
+    || { echo "WARNING: truth capture failed for level $level"; \
+         printf 'L%s\n' "$level" >> "$OUT/truth-failures.txt"; }
   echo "--- level $level exit $rc ---"
 done
+if [[ -s "$OUT/truth-failures.txt" ]]; then
+  echo "=== VOLUME LADDER DONE, WITH TRUTH-CAPTURE FAILURES ==="
+  echo "levels needing re-capture (workspaces kept under $OUT/ws-L*):"
+  cat "$OUT/truth-failures.txt"
+  exit 1
+fi
 echo "=== VOLUME LADDER DONE ==="
