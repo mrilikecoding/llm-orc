@@ -12,6 +12,7 @@ from llm_orc.core.execution.phases.agent_execution_coordinator import (
 from llm_orc.core.execution.phases.dependency_resolver import DependencyResolver
 from llm_orc.core.execution.progress_controller import ProgressController
 from llm_orc.core.execution.result_types import AgentResult
+from llm_orc.core.execution.utils import resolve_agent_timeout
 from llm_orc.schemas.agent_config import (
     AgentConfig,
     DynamicDispatchAgentConfig,
@@ -179,12 +180,7 @@ class AgentDispatcher:
     async def _get_agent_timeout(self, agent_config: AgentConfig) -> int:
         """Get timeout for agent execution."""
         enhanced_config = await self._resolve_profile(agent_config)
-        timeout = enhanced_config.get("timeout_seconds")
-        if timeout is not None:
-            return int(timeout)
-        return int(
-            self._performance_config.get("execution", {}).get("default_timeout", 60)
-        )
+        return resolve_agent_timeout(enhanced_config, self._performance_config)
 
     async def _emit_agent_completion_events(
         self, agent_name: str, start_time: float
