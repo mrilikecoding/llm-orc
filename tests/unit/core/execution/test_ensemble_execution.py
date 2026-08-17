@@ -1908,9 +1908,11 @@ class TestEnsembleExecutor:
                 agent_config, input_data
             )
 
-        # Verify that user input detection was performed
-        mock_handler_class.assert_called_once()
-        mock_user_input_detection.requires_user_input.assert_called_once_with(
+        # Verify that user input detection was performed. Asked twice since
+        # #160 — once to decide whether the result may be cached, once to
+        # route — so assert on WHAT was detected, not how many times.
+        assert mock_handler_class.called
+        mock_user_input_detection.requires_user_input.assert_any_call(
             "primitives/user-interaction/get_user_input.py"
         )
 
