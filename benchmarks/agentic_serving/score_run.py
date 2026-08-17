@@ -198,6 +198,7 @@ def _shipped_from_disk(run_dir: Path, turn: int) -> bool | None:
     current = _manifest(run_dir, turn)
     prior_record = _truth_record(run_dir, turn - 1) or {}
     post = prior_record.get("post_manifest")
+    previous: dict[str, str] | None
     if isinstance(post, dict):
         previous = {k: v for k, v in post.items() if isinstance(v, str)}
         contaminated: set[str] = set()

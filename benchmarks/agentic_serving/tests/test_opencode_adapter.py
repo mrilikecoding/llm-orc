@@ -122,7 +122,7 @@ class TestBashTestWiring:
 
 class TestTokensAndWall:
     def test_nonzero_paid_arm_tokens_are_kept(self) -> None:
-        events = [
+        events: list[dict[str, Any]] = [
             {"type": "step_start", "timestamp": 1000, "part": {}},
             {"type": "text", "part": {"text": "done"}},
             {
