@@ -1,171 +1,190 @@
 # #155 — positive completeness downstream of routing (design)
 
-Status: pre-flight. Issue: #155, found during the #152 merge review.
+Status: pre-flight, round 2. Issue: #155, found during the #152 merge
+review. Split into three arcs; only Arc A is ready to build.
 
-## Reachability, which this issue required before any fix
+## What round 1 of this design got wrong
 
-Both gaps are now reproduced through the real nodes, piping real JSON
-into `shape.py`, `form_gate.py` and `emit.py`. Capture:
-`scratchpad/155probe/`.
+Recorded first, because the corrections are the design.
 
-**Gap 2 — a crashed seat's failure envelope ships as the deliverable.**
-Feed `shape` a seat response of `{"success": false, "error": "Script
-timed out after 60 seconds"}` (exactly what the engine emits when a
-script agent dies) with a HEALTHY routing decision:
+**The seat is a `dispatch:` node, not a script agent**
+(`serving.yaml:117-118`). When a dispatch node dies, the dispatcher
+returns `status="failed"` with `response=None`, and
+`_extract_successful_dependency_results` filters dependencies to
+`status == "success"` — so the seat key is **absent** from shape's
+dependencies. There is no failure envelope to recognise. Round 1's
+predicate was aimed at the one death mode that produces JSON and missed
+the two that produce nothing.
+
+**There is no empty-read guard.** Round 1's Known Bounds said "a seat
+that crashes and returns EMPTY is already caught by the empty-read
+guard". That guard does not exist; I asserted it without checking.
+`ast.parse("")` succeeds, so form_gate stamps `valid: true`, and
+`serving_ensemble_caller.py:1453-1465` maps any outcome carrying `file`
+and `content` straight to a client Write. **A dead seat writes an empty
+`solution.py` on the client.** The comment immediately below that branch
+records a previous fix for exactly this shape — a "junk empty
+solution.py write" — but only for outcome vocabulary the caller does not
+recognise, not for a recognised outcome that is empty.
+
+**Round 1's reproduction omitted a node that is in the live wiring.**
+`seat_contract` sits between `seat` and `shape`
+(`serving.yaml:125-131`), and every build seat in the corpus declares
+`len(results['seat']['artifacts']) > 0`, which raises on all three dead
+seat shapes. So on a build turn a dead seat is ALREADY refused with
+`Seat contract not met: ...`. Gap 2 as demonstrated needs **two**
+faults: a dead seat and an unreadable `seat_contract`.
+
+**The engine envelope quoted was the wrong one.** Serving nodes always
+take the `ScriptAgentInput` path, so they route to
+`execute_with_schema_json`, whose blanket `except Exception` produces a
+FOUR-key wrap:
 
 ```
-form_gate valid  : True
-form_gate file   : solution.py
-form_gate content: '{"success": false, "error": "Script timed out after 60 seconds"}'
-EMIT -> {"finish": false, "file": "solution.py",
-         "content": "{\"success\": false, \"error\": \"Script timed out...\"}"}
+{"success": false, "data": null,
+ "error": "Schema JSON execution failed: Command '['/Users/.../python3',
+           '/Users/.../classify.py']' returned non-zero exit status 1.",
+ "agent_requests": []}
 ```
 
-A build turn writes `solution.py` whose contents are an error envelope,
-and the form gate stamps it `valid: True` — because a JSON object
-literal IS a valid Python expression, so `ast.parse` accepts it.
+not the two-key `{"success": false, "error": "Script timed out after 60
+seconds"}` from `ScriptAgent.execute()`, which serving never takes. Any
+fixture built on the quoted shape would test something the engine does
+not emit here. It also means the path leak is **universal, not
+occasional**: every engine-wrapped node failure puts the interpreter
+path and the script path — hence the username and home directory — on
+the wire.
 
-**Gap 1 — a crashed shape or form_gate finishes silently.** Feed either
-node's failure envelope downstream:
+## The real mechanism
 
-```
-form_gate CRASHED -> EMIT -> {"finish": true, "content": ""}
-shape     CRASHED -> EMIT -> {"finish": true, "content": ""}
-```
-
-A successful-looking empty answer. The client cannot tell this from "the
-model had nothing to say".
-
-**#157 changed the reachability argument.** The issue recorded gap 2 as
-"live reachability unproven". That was written when script-agent
-timeouts were defeated — #157 found BOTH bounds broken independently, so
-a seat could not time out at all. It can now. `Script timed out after
-60 seconds` is a newly reachable envelope, which is why this stops being
-theoretical.
-
-## Mechanism: the permissive fallback
-
-Every one of these is the same line, written three times:
+One line, written in several places:
 
 ```python
 try:
     gated = json.loads(_response(deps.get("form_gate", {})))
 except json.JSONDecodeError:
-    gated = {}          # <- "I could not read my input" becomes "nothing to do"
+    gated = {}          # "I could not read my input" -> "nothing to do"
 ```
 
-`{}` then defaults every field: `build=False`, `content=""`,
-`valid=True`, no refusal reason — and emit's non-build branch prints
-`{"finish": true, "content": ""}`. The failure is not merely unhandled;
-it is actively converted into a well-formed success.
+`{}` answers every subsequent question plausibly: `build=False`,
+`content=""`, `valid=True`, no refusal reason — and emit prints
+`{"finish": true, "content": ""}`. The failure is not unhandled; it is
+converted into a well-formed success.
 
-Gap 2 is the same shape one level out. `shape._envelope_deliverable`
-returns `None` for anything without a `"status"` key, and shape then
-does `deliverable = seat_terminal.strip()` — the raw-terminal degrade,
-which exists so a seat returning plain prose still works. A failure
-envelope has no `"status"`, so it takes the prose path.
+The same family, one level out, is `shape._seat_verdict`: a crashed
+`seat_contract` parses as JSON, carries no `seat_admitted`, and so
+returns `(None, "")` — which emit reads as "no per-seat gate ran"
+rather than "the gate died".
 
-## Change
+## Arc A — pipeline integrity (READY)
 
-Apply #152's fail-closed pattern to the three remaining seams: a node
-must POSITIVELY recognise its upstream input, and anything it cannot
-recognise refuses rather than degrades.
+Three seams where a node cannot read its own input. No content
+judgement, no interaction with the delegation seams beyond being first.
+This is where the single-fault silent-empty-success actually lives.
 
-1. **`shape` recognises a dead seat.** A seat terminal that is the
-   engine's script-wrap failure envelope (a JSON object with
-   `success: false` or a truthy `error`, and no ADR-024 `status`) is not
-   a deliverable. Shape sets `seat_failed` and emits no content.
-2. **`form_gate` recognises an unreadable `shape`.** Today it degrades
-   to `build: false` and reports `valid: true`, which is how a crashed
-   shape becomes an empty success. It sets `node_failed` instead and
-   threads it.
-3. **`emit` recognises an unreadable `form_gate`.** Checked BEFORE any
-   field is read off `gated`, since the whole problem is that `{}`
-   answers every question plausibly.
+1. **`form_gate` recognises `shape`.** A shape output always carries
+   `build` and `content` (verified: one `print(json.dumps(...))`, no
+   early return). Anything else sets `node_failed` and threads it.
+2. **`emit` recognises `form_gate`.** A form_gate output always carries
+   `valid` (same verification). Checked BEFORE any field is read off
+   `gated`, since the whole problem is that `{}` answers everything.
+3. **`shape` recognises `seat_contract`.** A `seat_contract` dep that is
+   PRESENT but unreadable is a failure; a dep that is ABSENT is
+   legitimately "no gate configured" — the explain path has no
+   `seat_contract` block. That distinction is the whole check.
 
-Refusals use the existing non-minting `TERMINALS["refused"].prefix`, for
-#152's reason: when the pipeline is broken, `is_build_ask` is unknowable,
-and the ledger doctrine is under-report rather than misreport.
+The engine wrap's keys (`success`, `data`, `error`, `agent_requests`)
+are disjoint from both healthy key sets, so positive recognition
+discriminates cleanly without a denylist.
 
-### What "recognisable" means, positively
+`node_failed` refuses FIRST in `_seam_outcome`, alongside
+`routing_failed`, with the non-minting prefix — here the #152 premise
+genuinely holds: if the pipeline is unreadable, `is_build_ask` is
+unknowable.
 
-Each check names a key the healthy producer always emits, not the
-absence of an error:
+### Arc A instruments
 
-- a form_gate output carries `"valid"` (emitted on every path, build and
-  non-build alike);
-- a shape output carries `"build"` and `"content"`;
-- a seat terminal is either an ADR-024 envelope (`"status"`) or prose —
-  and prose that parses as a JSON object with a falsy `success` or a
-  truthy `error` is a failure envelope, not prose.
+1. A crashed `shape` refuses. Red today (`{"finish": true, "content": ""}`).
+2. A crashed `form_gate` refuses. Red today.
+3. A crashed `seat_contract` refuses rather than reading as "no gate".
+4. **A healthy build still ships**, and
+5. **a healthy prose turn still finishes** — the two that stop the
+   change degrading into "refuse everything".
+6. **Every delegation round still delegates**: reads, self-reads, glob,
+   grep, run, not-grounded, recall. Round 1 had no pin here and review
+   showed why it matters (see Arc B).
+7. An ABSENT `seat_contract` still means "no gate", not a refusal — the
+   explain path.
+8. Two existing fixtures in `test_serving_emit.py` are hand-built
+   partial dicts without `valid` and will newly refuse:
+   `test_seat_contract_rejection_uses_the_exported_prefix` and
+   `test_recall_answer_field_emits_the_honest_message`. Updating them is
+   correct. **The trap to avoid**: weakening the check to "missing
+   `valid` AND a `success`/`error` key present" to make them pass, which
+   reinstates the denylist this design exists to remove.
 
-The last one is the only judgement call, and it is the same predicate
-`_reports_failure` already uses in `agent_runner.py` for #159. Mirrored
-rather than imported, per the serving-scripts boundary rule, with a
-drift-pin test.
+## Arc B — the dead seat (NOT READY, needs redesign)
 
-### Folded in from the issue's comment
+Round 1 aimed a predicate at the wrong thing. What Arc B has to handle:
 
-Two producer-drift residuals the #152 round deliberately stopped short
-of, which the issue says to fold in if it graduates to a pipeline-wide
-pass:
+- **The absent dep** (dead dispatch node) — the single-fault reachable
+  mode, which produces `{"finish": false, "file": "solution.py",
+  "content": ""}` and a client-side empty write.
+- **`loop_unwrap`'s degrade**, which prints `{}` on an unreadable loop
+  wrapper and ships a `solution.py` containing `{}`.
+- **The envelope mode**, which needs two faults on a build turn and is
+  therefore the least urgent of the three.
 
-- `{"target": "​"}` passes shape's non-empty-string gate, because
-  `str.strip()` does not remove U+200B (it is not Python whitespace).
-- `{"target": "x", "kind": null}` passes the build/kind PRESENCE check,
-  and the `build` default then fires True. The check is key-presence,
-  not value-validity.
+Three constraints round 1 violated:
 
-### Also: the #152 refusal leaks an absolute server path
+- **Placement.** `seat_failed` must sit on the BUILD branch, after the
+  delegation seams — not first alongside `routing_failed`. The seat is a
+  zero-cost echo on delegation routes; the outcome rides the routing
+  decision. Review demonstrated that an early check turns four working
+  behaviours (`reads`, `glob`, `grep`, `recall`) into refusals.
+- **Prefix.** A dead seat on a build turn currently mints
+  `rejected_contract` via `seat_contract`. Routing succeeded by
+  construction, so `is_build_ask` is KNOWN, and the non-minting prefix
+  would cost a ledger entry the system currently earns. It needs
+  `BUILD_REFUSED_PREFIX`, and the design must say which gate wins when
+  both fire.
+- **False refusals.** An explain turn whose answer IS an error envelope
+  ships today and would be refused. Not hypothetical here: the corpus is
+  agents that emit these envelopes and dogfooding asks about them. The
+  seat check has to be scoped to routes where the seat is expected to
+  deliver an envelope, not applied to the raw-prose degrade path.
 
-The refusal's parenthetical carries the engine wrap's error verbatim,
-which embeds the absolute server-side script path — ops info the client
-should not receive on a misconfigured serve. The reason text gets the
-path stripped.
+Filed as its own issue rather than carried here.
 
-## Invariant
+## Arc C — reason text and decision residuals
 
-A node that cannot positively recognise its upstream input refuses, and
-never produces a finish that is indistinguishable from success.
+- **Sanitize the engine wrap's error** in all four reason builders, not
+  just #152's. Cut the whole `Command '[...]'` clause; the useful
+  residue is the tail (`returned non-zero exit status 1`, `timed out
+  after N seconds`). `turn_trace.py` keeps raw responses server-side, so
+  nothing debuggable is lost.
+- **Zero-width target**: `"​".strip()` is truthy, so it passes
+  shape's non-empty check. Reproduced.
+- **`kind: null`**: passes the presence check, and
+  `decision.get("build", decision.get("kind") != "explanation")`
+  evaluates `None != "explanation"` to True. Reproduced.
 
-Read the bound too: this covers the seams named above. It does not make
-every node crash-proof, and a node that produces WELL-FORMED but wrong
-output is out of scope by construction — that is the accept gate's job,
-not this one's.
+## Invariant (Arc A)
 
-## Regression instruments
+A node that cannot read its upstream input refuses, and never produces a
+finish that is indistinguishable from success.
 
-Unit pins at each consuming node plus endpoint pins with a really-crashed
-node, following the #152 pattern.
-
-1. **A crashed seat refuses** rather than shipping its envelope. Red
-   today — reproduced above.
-2. **A crashed shape refuses.** Red today.
-3. **A crashed form_gate refuses.** Red today.
-4. **A healthy build still ships**, so the fix does not degrade into
-   "refuse everything". The pin that matters most: all three checks
-   above can be satisfied by a node that refuses unconditionally.
-5. **A healthy PROSE turn still finishes**, since prose takes the same
-   raw-terminal path a failure envelope was abusing. This is the pin
-   that stops the seat check from being written as "anything that parses
-   as JSON is a failure".
-6. **A seat returning a JSON object that is NOT a failure** (e.g.
-   `{"answer": 4}`) still ships — the boundary case between 1 and 5.
-7. **A zero-width-only target refuses.**
-8. **`kind: null` refuses.**
-9. **The refusal reason carries no absolute path.**
-10. **Endpoint pin**: a build ask through the real serve with a seat
-    forced to fail, asserting the client sees a refusal rather than a
-    `.py` file containing an envelope.
+The bound: this is about UNREADABLE input only. A node that produces
+well-formed but wrong output is the accept gate's problem, and a node
+that produces nothing at all is Arc B's.
 
 ## Known bounds
 
-- The failure-envelope predicate is mirrored from `agent_runner.py`, so
-  the two can drift. Pinned, as the other mirrored constants are.
-- A seat that crashes and returns EMPTY is already caught by the
-  empty-read guard; this adds nothing there. The gap is specifically the
-  non-empty failure envelope.
-- `form_gate`'s `ast.parse` will still accept a JSON object literal as
-  valid Python. That is correct — it IS valid Python — and fixing it at
-  the gate would be the wrong seam. The fix belongs upstream, where the
-  envelope is recognised as a failure rather than as content.
+- shape/form_gate/emit are deliberately stdlib-only so they still run
+  when the `llm_orc` import is broken — which is #154's failure mode,
+  the one that produced #152. That, not a boundary rule, is why a
+  predicate is mirrored rather than imported. (`seat_contract.py`
+  imports `llm_orc` directly, so no such rule is operating.)
+- Stdout pollution in these nodes becomes a refusal where it used to be
+  a silent degrade. That is the better direction, and these three are
+  stdlib-only, so the exposure is small.
