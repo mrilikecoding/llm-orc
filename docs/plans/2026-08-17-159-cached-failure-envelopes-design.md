@@ -123,11 +123,26 @@ which a timing assertion cannot.
 
 ## Known bounds
 
-- A deterministic domain failure re-executes every time. Accepted: every
-  shipped producer of `success: false` is cheap (json_extract's decode
-  error, read_file/write_file's one filesystem call, the interactive
-  primitives, and two pure-compute library scripts). Nothing shipped
-  that returns `success: false` does network or subprocess work.
+- A deterministic failure re-executes every time. Every shipped producer
+  of `success: false` is cheap (json_extract's decode error,
+  read_file/write_file's one filesystem call, the interactive
+  primitives, two pure-compute library scripts). But the bound a reader
+  actually cares about is what re-executes now, which the ERROR clause
+  dominates — and `web_searcher.py:90` is a network script whose every
+  failure path is `{"error": ..., "backend": ...}`. A repeated failing
+  search on an identical query within one executor now makes N API calls
+  instead of 1. Small in practice, and the alternative is serving a
+  stale rate-limit for an hour.
+- **ADR-024 `status` envelopes are invisible to the predicate**, which
+  never looks at `status`. Correct today only by accident: every
+  envelope builder in the repo hardcodes `"status": "success"`, and the
+  only `"status": "error"` producer is a service-layer response that
+  never enters the script cache. A pin for it would pin the accident.
+- **The `error` clause assumes `error` means "a failure message"**,
+  which is convention rather than contract. A success carrying a truthy
+  non-string `error` — a count, a findings list, a standard-error float
+  in a stats script — stops being cached. Nothing shipped does this;
+  the cost if something did is performance, never correctness.
 - `{"success": "false"}` as a STRING escapes the predicate — a shell
   script doing `echo "{\"success\": \"$ok\"}"` produces it. Low
   probability, not worth machinery.

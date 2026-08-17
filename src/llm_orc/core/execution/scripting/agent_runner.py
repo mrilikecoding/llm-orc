@@ -44,11 +44,26 @@ def _reports_failure(response: Any) -> bool:
       exception envelope exists. NONE of the 33 scripts in
       ``.llm-orc/scripts/agentic_serving/`` emit a boolean ``success``.
 
-    Non-``str`` responses are possible — ``_parse_output`` returns
-    ``json.loads`` verbatim and ``execute`` passes it through unwrapped
-    when it is not a dict — so a script printing ``[1,2,3]`` or ``null``
-    arrives as a ``list`` or ``None``. Those are not failures, and
-    parsing them unguarded would raise.
+    Two shape guards, and only ONE of them is doing real work. The
+    ``isinstance(response, str)`` check is redundant with ``TypeError``
+    in the except below (``json.loads`` raises it for list/None/int/bool),
+    kept for explicitness and for mypy narrowing — removing either alone
+    changes nothing. The ``isinstance(parsed, dict)`` check IS
+    load-bearing: ``execute_with_schema_json`` returns RAW stdout rather
+    than routing through ``_parse_output``, so on the ScriptAgentInput
+    dispatch shape a script printing ``[1,2,3]`` yields a str that parses
+    to a list, and ``.get`` on it raises ``AttributeError`` mid-run.
+    Do not tidy them as a pair; they are not one.
+
+    Known bounds. ADR-024's ``{"status": "error"|"timeout"|"partial"}``
+    envelopes are invisible here — the predicate never looks at
+    ``status`` — which is correct today only because every envelope
+    builder in the repo hardcodes ``"status": "success"``. And the
+    ``error`` clause assumes ``error`` means "a failure message", which
+    is convention rather than contract: a success carrying a truthy
+    non-string ``error`` (a count, a findings list, a standard-error
+    float) stops being cached. Nothing shipped does that; the cost if
+    something did would be performance, never correctness.
     """
     if not isinstance(response, str):
         return False
