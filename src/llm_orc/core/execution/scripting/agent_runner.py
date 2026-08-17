@@ -47,8 +47,9 @@ def _reports_failure(response: Any) -> bool:
     Two shape guards, and only ONE of them is doing real work. The
     ``isinstance(response, str)`` check is redundant with ``TypeError``
     in the except below (``json.loads`` raises it for list/None/int/bool),
-    kept for explicitness and for mypy narrowing — removing either alone
-    changes nothing. The ``isinstance(parsed, dict)`` check IS
+    kept for explicitness alone — mypy needs no narrowing here, since
+    ``response`` is ``Any``, and removing either guard alone changes
+    nothing. The ``isinstance(parsed, dict)`` check IS
     load-bearing: ``execute_with_schema_json`` returns RAW stdout rather
     than routing through ``_parse_output``, so on the ScriptAgentInput
     dispatch shape a script printing ``[1,2,3]`` yields a str that parses
