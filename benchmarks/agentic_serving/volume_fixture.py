@@ -124,6 +124,17 @@ def _level_files(level: int) -> dict[str, str]:
     return {name: _FILES[name] for name in names}
 
 
+def level_manifest(level: int) -> dict[str, str]:
+    """The level's SEEDED ``{path: sha256}`` manifest, without writing
+    anything. Truth capture diffs against this: every level starts from
+    the seed by construction, so a level's baseline is the seed itself,
+    never a prior turn's workspace."""
+    return {
+        name: hashlib.sha256(body.encode()).hexdigest()
+        for name, body in _level_files(level).items()
+    }
+
+
 def write_fixture(dest: Path, level: int) -> dict[str, str]:
     """Materialize the level's workspace at ``dest`` (git repo, one seed
     commit, clean tree) and return its ``{path: sha256}`` manifest."""
@@ -149,9 +160,7 @@ def write_fixture(dest: Path, level: int) -> dict[str, str]:
         ],
     ):
         subprocess.run(command, check=True, capture_output=True)
-    return {
-        name: hashlib.sha256(body.encode()).hexdigest() for name, body in files.items()
-    }
+    return level_manifest(level)
 
 
 def main() -> None:
