@@ -4,6 +4,7 @@ import json
 import os
 import shlex
 import subprocess
+import sys
 import tempfile
 from collections.abc import Callable
 from pathlib import Path
@@ -755,9 +756,27 @@ class ScriptAgent:
         """
         ext = Path(script_path).suffix.lower()
 
+        # A .py script runs under the interpreter running llm-orc, not
+        # whichever python3 the caller's PATH exposes (#154). Serving
+        # scripts import llm_orc and its dependencies; resolving through
+        # PATH let some of them die while stdlib-only scripts in the same
+        # ensemble kept running, which is how a misconfigured serve
+        # produced a half-dead pipeline instead of a clean failure (#152).
+        # Same interpreter plus the inherited environment means an import
+        # that works in-process works in the subprocess.
+        #
+        # Falls back when sys.executable cannot be re-invoked as a python:
+        # empty (embedded), or a frozen bundle, where it points at the
+        # llm-orc CLI itself and would take the script path as argv[1].
+        host_python = (
+            [sys.executable]
+            if sys.executable and not getattr(sys, "frozen", False)
+            else ["python3"]
+        )
+
         interpreters = {
-            ".py": ["python3"],
-            ".python": ["python3"],
+            ".py": host_python,
+            ".python": host_python,
             ".sh": ["bash"],
             ".bash": ["bash"],
             ".js": ["node"],
