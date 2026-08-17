@@ -29,7 +29,7 @@ POSITIVE PROOF, NOT ABSENCE OF FAILURE. Exit 0 is what an interpreter that did
 nothing returns, and `sys.exit(0)` at import (an ordinary `main()` without an
 `if __name__` guard) would otherwise force a pass on every oracle. Each probe
 receives a per-run nonce and must print `PROBE-OK-<nonce>` on its success path;
-`_run_probe` requires that token. Import guards catch BaseException, since
+`run_probe` requires that token. Import guards catch BaseException, since
 SystemExit is not an Exception.
 
 WHAT THE NONCE DOES AND DOES NOT GUARANTEE. It defends against ACCIDENTAL
@@ -84,7 +84,7 @@ class OracleResult:
     detail: str = ""
 
 
-def _run_probe(workspace: Path, program: str) -> OracleResult:
+def run_probe(workspace: Path, program: str) -> OracleResult:
     """Run ``program`` against a throwaway COPY of ``workspace``.
 
     Passes a fresh nonce as ``argv[1]``. The verdict is PASS only when the probe
@@ -551,19 +551,19 @@ raise SystemExit(0)
 def turn1_adds_todo(workspace: Path) -> OracleResult:
     """Turn 1: some public callable adds an item to a list of existing todos,
     whatever the item's representation."""
-    return _run_probe(workspace, _TURN1_PROBE)
+    return run_probe(workspace, _TURN1_PROBE)
 
 
 def turn6_storage_roundtrip(workspace: Path) -> OracleResult:
     """Turn 6: save_todos/load_todos round-trip todos through real JSON on
     disk."""
-    return _run_probe(workspace, _TURN6_PROBE)
+    return run_probe(workspace, _TURN6_PROBE)
 
 
 def turn7_todo_persists(workspace: Path) -> OracleResult:
     """Turn 7: todo.py actually composes with storage.py rather than importing
     it decoratively or reimplementing persistence."""
-    return _run_probe(workspace, _TURN7_PROBE)
+    return run_probe(workspace, _TURN7_PROBE)
 
 
 # Turn 2 is absent by design (see module docstring).

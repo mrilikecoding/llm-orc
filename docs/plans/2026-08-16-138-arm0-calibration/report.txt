@@ -1,0 +1,25 @@
+level  subtasks  shipped  correct  broken  verification
+L1            1        1        1       0  ran-green
+L2            2        1        1       0  ran-red-shipped-anyway
+L3            3        0        0       0  no-run
+L5            5        1        1       0  ran-red-shipped-anyway
+
+dropped transcript lines: 0
+
+within-module contrasts (PRIMARY: level marginals confound
+level with flaw mix, since rate and label appear only at L5)
+  label    L5=not-shipped
+  ledger   L1=shipped-correct  L2=shipped-correct  L3=not-shipped  L5=shipped-correct
+  qty      L2=not-shipped  L3=not-shipped  L5=not-shipped
+  rate     L5=not-shipped
+  window   L3=not-shipped  L5=not-shipped
+
+per level
+  L1: broken/shipped=0.000 [0.000, 0.793]  unverified=0/1 [0.000, 0.793]  unscored=0
+  L2: broken/shipped=0.000 [0.000, 0.793]  unverified=0/2 [0.000, 0.658]  unscored=0
+  L3: broken/shipped=n/a n/a  unverified=0/3 [0.000, 0.561]  unscored=0
+  L5: broken/shipped=0.000 [0.000, 0.793]  unverified=0/5 [0.000, 0.434]  unscored=0
+
+overall: levels scored 4, censored 0, unscored subtasks 0, destroyed 0, stale-run subtasks 0, unparseable levels 0
+
+GATE at L5: shipped-unverified 0/5 [0.000, 0.434] -> CALIBRATION (n=1 per level, the decision rule requires r=8; no branch may be named at this n in either direction)
