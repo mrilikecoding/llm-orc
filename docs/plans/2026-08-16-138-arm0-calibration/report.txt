@@ -22,4 +22,4 @@ per level
 
 overall: levels scored 4, censored 0, unscored subtasks 0, destroyed 0, stale-run subtasks 0, unparseable levels 0
 
-GATE at L5: shipped-unverified 0/5 [0.000, 0.434] vs 0.15 -> UNDERPOWERED (interval straddles the threshold; at calibration n this is the expected outcome and the gate cannot be tripped)
+GATE at L5: shipped-unverified 0/5 [0.000, 0.434] -> CALIBRATION (n=1 per level, the decision rule requires r=8; no branch may be named at this n in either direction)

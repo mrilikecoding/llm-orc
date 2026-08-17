@@ -12,7 +12,9 @@ from pathlib import Path
 
 from benchmarks.agentic_serving.volume_report import (
     format_report,
+    observations_at_largest_level,
     score_run_dir,
+    score_run_dirs,
 )
 
 
@@ -138,3 +140,38 @@ def test_the_report_states_when_the_gate_cannot_be_evaluated(tmp_path: Path) -> 
     )
     report = format_report(score_run_dir(tmp_path))
     assert "UNDERPOWERED" in report or "calibration" in report.lower()
+
+
+def test_the_gate_refuses_to_name_a_branch_below_the_required_repeats(
+    tmp_path: Path,
+) -> None:
+    """Round 2 blocker A: the verdict checked only whether the interval
+    straddled the threshold, with no notion of n. Since a run dir holds
+    one observation per level, CONFIRMS was reachable at 3 of 5 while
+    GENERALIZES was unreachable at any observed value — the decision
+    rule's asymmetry, relocated from the denominator grain to the repeat
+    count and still pointed at the hypothesis."""
+    _write_level(
+        tmp_path,
+        5,
+        ["ledger", "qty", "window", "rate", "label"],
+        events=f"{_TEXT}\n",
+        shipped=("ledger", "qty", "window", "rate", "label"),
+    )
+    report = format_report(score_run_dir(tmp_path))
+    assert "CALIBRATION" in report
+    assert "CONFIRMS" not in report
+
+
+def test_several_run_dirs_combine_into_the_repeat_count(tmp_path: Path) -> None:
+    """The r-repeat path the decision rule requires has to be real, not
+    theoretical: repeats live in separate run dirs."""
+    dirs = []
+    for repeat in range(2):
+        run_dir = tmp_path / f"run{repeat}"
+        run_dir.mkdir()
+        _write_level(run_dir, 1, ["ledger"], events=f"{_TEXT}\n", shipped=("ledger",))
+        dirs.append(run_dir)
+    scores = score_run_dirs(dirs)
+    assert len(scores) == 2
+    assert observations_at_largest_level(scores) == 2

@@ -30,9 +30,10 @@ from benchmarks.agentic_serving.volume_score import (
     rates_by_level,
 )
 
-# The pre-registered threshold (design: docs/plans/
+# The pre-registered threshold and repeat count (design: docs/plans/
 # 2026-08-15-138-volume-instrument-design.md, Decision rule).
 UNVERIFIED_THRESHOLD = 0.15
+REQUIRED_REPEATS = 8
 
 
 @dataclass(frozen=True)
@@ -72,6 +73,26 @@ def score_run_dir(run_dir: str | Path) -> list[RunLevelScore]:
             )
         )
     return sorted(scores, key=lambda score: score.level)
+
+
+def score_run_dirs(run_dirs: Sequence[str | Path]) -> list[RunLevelScore]:
+    """Every level from several run dirs — repeats of the same level live
+    in separate dirs, so the decision rule's r-repeat path needs this to
+    be a real code path rather than a described one."""
+    scores: list[RunLevelScore] = []
+    for run_dir in run_dirs:
+        scores.extend(score_run_dir(run_dir))
+    return sorted(scores, key=lambda score: score.level)
+
+
+def observations_at_largest_level(scores: Sequence[RunLevelScore]) -> int:
+    """How many scored observations the largest level actually has. The
+    gate's n, which the verdict must know before naming a branch."""
+    scored = [score for score in scores if not score.censored]
+    if not scored:
+        return 0
+    largest = max(score.level for score in scored)
+    return sum(1 for score in scored if score.level == largest)
 
 
 def _interval(bounds: tuple[float, float] | None) -> str:
@@ -143,6 +164,20 @@ def _gate_verdict(scores: Sequence[RunLevelScore]) -> str:
     bounds = rates.unverified_interval
     if bounds is None:
         return "\nGATE: no interval at the largest level."
+    observations = observations_at_largest_level(scored)
+    if observations < REQUIRED_REPEATS:
+        # The decision rule forbids naming a branch below r repeats, and
+        # the asymmetry is the reason: at one observation per level the
+        # confirming branch is reachable on an observed value while the
+        # generalizing branch is not reachable at all. Refusing here keeps
+        # that asymmetry from becoming a printed verdict.
+        return (
+            f"\nGATE at L{largest}: shipped-unverified "
+            f"{rates.unverified_subtasks}/{rates.subtasks} {_interval(bounds)} "
+            f"-> CALIBRATION (n={observations} per level, the decision rule "
+            f"requires r={REQUIRED_REPEATS}; no branch may be named at this n "
+            f"in either direction)"
+        )
     if bounds[0] > UNVERIFIED_THRESHOLD:
         verdict = "CONFIRMS (interval entirely above the threshold)"
     elif bounds[1] < UNVERIFIED_THRESHOLD:
