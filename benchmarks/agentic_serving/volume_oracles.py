@@ -17,11 +17,25 @@ verdict. The sandbox contract has one home: ``oracles.run_probe``.
 TOLERANCE IS BOUNDED. Each probe exercises only behavior the fixture's
 own seeded tests pin: sums and the empty-entries raise, integer-valued
 decimal strings, a zero window and ordinary tails, minute-to-hour
-conversion, lowercase hyphenation. Unpinned edges (negative windows,
-zero minutes, punctuation in titles, exponent notation) are deliberately
-NOT probed — a false reject here would score a correct fix as
-shipped-broken, which is the direction that FABRICATES the hypothesis
-under measurement.
+conversion, lowercase hyphenation. Deliberately NOT probed, because the
+seeded tests pin none of them and a false reject scores a CORRECT fix as
+shipped-broken — the direction that FABRICATES the hypothesis under
+measurement: negative or oversized windows (``n > len(items)``), zero
+minutes, fractional hour answers, punctuation or digits in titles,
+exponent notation, and the returned numeric TYPE (``float`` vs ``int``
+vs ``Decimal``).
+
+Two probe-design rules learned from review round 1, both of which had
+made a verdict depend on the draw rather than the code:
+
+1. Nonce-derived inputs must land where every reasonable implementation
+   AGREES. ``rate`` asked for ``count / 2`` on a nonce-drawn count, so an
+   implementation that rounds disagreed on odd draws and the verdict was
+   a coin flip — injected only at L5, where ``rate`` first appears.
+2. Nonce-derived inputs must look like real data. ``label`` built titles
+   with hex digits inside words, a shape no title has, which made a
+   digit-stripping slugify disagree for a reason the contract never
+   pinned.
 
 KNOWN NON-DISCRIMINATION (pre-flight finding 9): for ``ledger`` and
 ``window`` the seeded expectation IS the correct general fix, so those
@@ -87,7 +101,10 @@ except BaseException as exc:
     fail("import qty: %r" % (exc,))
 
 n = SEED % 9000 + 13
-for text, want in ((str(n), n), (str(n) + ".0", n)):
+# The decimal FORM varies, not just the numeral: textual surgery like
+# text.replace(".0", "") satisfies the seeded test and every ".0" case
+# while mangling any other decimal form.
+for text, want in ((str(n), n), (str(n) + ".0", n), (str(n) + ".000", n)):
     try:
         got = parse_qty(text)
     except BaseException as exc:
@@ -129,14 +146,22 @@ try:
 except BaseException as exc:
     fail("import rate: %r" % (exc,))
 
-count = SEED % 500 + 7
-for minutes, want in ((60, count), (120, count / 2), (30, count * 2)):
+# EVEN, so every probed answer is a whole number. An odd count made the
+# minutes=120 answer a half, where exact division and a rounding
+# implementation legitimately disagree — the seeded test pins neither, so
+# the probe was adjudicating an unpinned contract by coin flip, and `rate`
+# appears only at L5.
+count = (SEED % 250 + 7) * 2
+for minutes, want in ((60, count), (120, count // 2), (30, count * 2)):
     try:
         got = per_hour(count, minutes)
     except BaseException as exc:
         fail("per_hour(%r, %r) raised %r" % (count, minutes, exc))
+    # float() rather than arithmetic on the returned object: Decimal and
+    # float do not mix, and rejecting a Decimal implementation would be a
+    # false reject.
     try:
-        close = abs(got - want) < 1e-9
+        close = abs(float(got) - want) < 1e-9
     except BaseException as exc:
         fail("per_hour(%r, %r) == %r, not a number (%r)"
              % (count, minutes, got, exc))
@@ -155,8 +180,12 @@ try:
 except BaseException as exc:
     fail("import label: %r" % (exc,))
 
-tag = NONCE[:6].upper()
-title = "Alpha" + tag + " Beta" + tag
+# LETTERS only. The hex nonce embedded digits inside words, which no real
+# title looks like, and a slugify that strips non-letters then disagreed
+# with a plain lowercase-and-hyphenate — a false reject manufactured by
+# the probe's own unrealistic input.
+tag = "".join(chr(ord("a") + int(digit, 16)) for digit in NONCE[:6])
+title = "Alpha" + tag.capitalize() + " Beta" + tag.upper()
 want = title.lower().replace(" ", "-")
 try:
     got = slug(title)

@@ -8,6 +8,7 @@ so the substrate cannot drift between arms (the ladder's rule).
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
 from benchmarks.agentic_serving.tests.test_volume_oracles import (
@@ -97,7 +98,9 @@ def test_exit_code_rides_through_for_the_censoring_channel(tmp_path: Path) -> No
     write_fixture(workspace, level=1)
     truth = capture_truth(workspace, level=1, exit_code=124)
     assert truth["exit_code"] == 124
-    assert score_level(truth, Turn(1, "p", "")).timeout_censored is True
+    score = score_level(truth, Turn(1, "p", ""))
+    assert score.censored is True
+    assert score.censor_reason == "timeout"
 
 
 def test_truth_is_written_as_json_when_an_out_dir_is_given(tmp_path: Path) -> None:
@@ -108,3 +111,47 @@ def test_truth_is_written_as_json_when_an_out_dir_is_given(tmp_path: Path) -> No
     truth = capture_truth(workspace, level=1, exit_code=0, out_dir=out)
     written = json.loads((out / "truth-L1.json").read_text())
     assert written == truth
+
+
+def test_a_missing_test_file_is_unscored_not_red(tmp_path: Path) -> None:
+    """An arm that deleted the seeded test has not made it fail. Recording
+    rc 1 folded an integrity problem into the arm's defect rate."""
+    workspace = tmp_path / "ws"
+    write_fixture(workspace, level=1)
+    (workspace / "ledger.py").write_text(CORRECT["ledger"])
+    (workspace / "test_ledger.py").unlink()
+    truth = capture_truth(workspace, level=1, exit_code=0)
+    assert truth["seeded_rc"]["ledger"] is None
+
+    score = score_level(truth, Turn(index=1, prompt="p", assistant_text="done"))
+    assert score.modules[0].outcome.value == "unscored"
+    assert score.shipped_broken == 0
+
+
+def test_a_broken_pytest_command_is_unscored_not_red(tmp_path: Path) -> None:
+    """The capture-side failure that mattered most: an interpreter without
+    pytest returns a nonzero rc for every module, and a perfect arm read
+    as 100% shipped-broken through a whole paid run while the driver
+    exited 0."""
+    workspace = tmp_path / "ws"
+    write_fixture(workspace, level=2)
+    for module in ("ledger", "qty"):
+        (workspace / f"{module}.py").write_text(CORRECT[module])
+    truth = capture_truth(
+        workspace,
+        level=2,
+        exit_code=0,
+        pytest_command=[sys.executable, "-c", "import sys; sys.exit(4)"],
+    )
+    assert truth["seeded_rc"] == {"ledger": None, "qty": None}
+
+    score = score_level(truth, Turn(index=1, prompt="p", assistant_text="done"))
+    assert score.shipped_broken == 0
+    assert score.unscored == 2
+
+
+def test_a_genuinely_failing_test_is_still_recorded_red(tmp_path: Path) -> None:
+    workspace = tmp_path / "ws"
+    write_fixture(workspace, level=1)
+    truth = capture_truth(workspace, level=1, exit_code=0)
+    assert truth["seeded_rc"]["ledger"] == 1

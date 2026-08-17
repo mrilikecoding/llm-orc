@@ -179,3 +179,76 @@ def test_probe_verdicts_are_stable_across_runs(tmp_path: Path) -> None:
     nonce would show up as intermittent shipped-broken in a real run."""
     workspace = _workspace(tmp_path, "rate", CORRECT["rate"])
     assert all(run_volume_oracle(workspace, "rate").passed for _ in range(5))
+
+
+# Fixes that are correct but not byte-identical to CORRECT. A probe that
+# rejects any of these manufactures shipped-broken cells out of style.
+REASONABLE_VARIANTS: dict[str, tuple[str, ...]] = {
+    "rate": (
+        # rounds the result; agrees with exact division on integer answers
+        "def per_hour(count, minutes):\n    return round(count * 60 / minutes)\n",
+        # Decimal arithmetic
+        "from decimal import Decimal\n\n"
+        "def per_hour(count, minutes):\n"
+        "    return Decimal(count) * 60 / Decimal(minutes)\n",
+    ),
+    "label": (
+        # the conventional non-alphanumeric slugify
+        "import re\n\n"
+        "def slug(title):\n"
+        '    return re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")\n',
+        # a letters-only slugify: identical on letter-only titles
+        "import re\n\n"
+        "def slug(title):\n"
+        '    return re.sub(r"[^a-z]+", "-", title.lower()).strip("-")\n',
+    ),
+    "qty": ("def parse_qty(text):\n    return int(float(text.strip()))\n",),
+}
+
+_NONCE_SWEEP = 12
+
+
+@pytest.mark.parametrize("module", MODULE_ORDER)
+def test_the_canonical_fix_passes_on_every_nonce(tmp_path: Path, module: str) -> None:
+    """Blocker from review round 1: the rate probe drew its operands from
+    the nonce and asked for count/2, so any implementation that rounds
+    disagreed on odd draws and the verdict was a coin flip. rate appears
+    ONLY at L5, so the noise landed exclusively at the level the gate
+    reads."""
+    workspace = _workspace(tmp_path, module, CORRECT[module])
+    verdicts = [
+        run_volume_oracle(workspace, module).passed for _ in range(_NONCE_SWEEP)
+    ]
+    assert all(verdicts), f"{module}: {verdicts.count(False)}/{_NONCE_SWEEP} failed"
+
+
+@pytest.mark.parametrize(
+    ("module", "index"),
+    [
+        (module, index)
+        for module, bodies in REASONABLE_VARIANTS.items()
+        for index in range(len(bodies))
+    ],
+)
+def test_reasonable_variants_are_not_false_rejects(
+    tmp_path: Path, module: str, index: int
+) -> None:
+    """A false reject is the direction that FABRICATES the hypothesis: a
+    correct fix scored shipped-broken reads as exactly the
+    plausible-but-wrong code the instrument was built to detect."""
+    body = REASONABLE_VARIANTS[module][index]
+    workspace = _workspace(tmp_path, module, body)
+    verdicts = [
+        run_volume_oracle(workspace, module).passed for _ in range(_NONCE_SWEEP)
+    ]
+    assert all(verdicts), f"{module}[{index}]: {verdicts.count(False)} rejects"
+
+
+def test_qty_rejects_a_string_surgery_hack(tmp_path: Path) -> None:
+    """Stripping the decimal textually passes the seeded test and every
+    ".0" case, so the probe must vary the decimal FORM, not just the
+    numeral."""
+    body = 'def parse_qty(text):\n    return int(text.replace(".0", ""))\n'
+    workspace = _workspace(tmp_path, "qty", body)
+    verdicts = [run_volume_oracle(workspace, "qty").passed for _ in range(_NONCE_SWEEP)]
+    assert not any(verdicts)
