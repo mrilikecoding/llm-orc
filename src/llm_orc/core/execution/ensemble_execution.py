@@ -267,6 +267,7 @@ class EnsembleExecutor:
             self._progress_controller,
             self._emit_performance_event,
             self._project_dir,
+            performance_config=self._performance_config,
         )
 
         self._llm_agent_runner = LlmAgentRunner(
