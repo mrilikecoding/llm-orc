@@ -61,6 +61,27 @@ buy-back ledger tracks hosted seats.
 
 ## State (2026-08-17)
 
+**#158 merged 2026-08-17** (64e5667b, no release): script agents run off
+the event loop on a dedicated thread pool, and their DUPLICATE outer
+timeout is retired. Measured 4 x 1s gathered: **4.15s -> 1.03s**, loop
+ticks during a script **0 -> 46,676**; seven phases in the repo already
+carry 2+ script agents. The authoritative bound is untouched — it is the
+inner subprocess timeout #157 wired up, the only one that can reap a
+child; the outer timer could never fire during the one window it
+uniquely covered, and once agents overlap it would charge queue delay
+against an agent's budget. The error contract deliberately does not
+move, pinned end to end because fan_out skips expansion on non-success.
+Five pre-flight rounds plus two merge rounds: rounds 1-4 designed a
+thread-slot gate, round 5 found it deadlocks on the default path (a
+cache hit leaks a permit), and removing the timed region dissolved the
+problem. Merge review found the blocking defect in the INSTRUMENT — the
+pin guarding the result shape passed under a mutation that changed it
+back. Bounds recorded: parent timeouts can now fire mid-script,
+interactive agents can hang on a silent pipe, identical concurrent
+agents no longer dedupe through the cache, no operator concurrency knob.
+
+### Earlier (2026-08-17)
+
 **#157 merged 2026-08-17** (108b2e8, no release): engine-run script
 agents get the timeout the ensemble already resolved. The bug was worse
 than filed — BOTH bounds were defeated independently. The inner one
@@ -184,8 +205,8 @@ exit stays OPEN on the whale — unblockers #106/#151/chunked reads).
 #143 CLOSED as an honest miss (reopen rides #119). Open follow-ups:
 #147 (classifier false positives), #149 (client-side truncation
 flanks), #151 (server-queried window), #155 (pipeline
-positive-completeness), #156 (instrument pins ungated), #158
-(event-loop blocking), #159 (cached failure envelopes). Operating rules:
+positive-completeness), #156 (instrument pins ungated), #159 (cached failure
+envelopes). Operating rules:
 `docs/loop-protocol.md`.
 
 ## Timeline
@@ -349,7 +370,8 @@ dishonest outcome.
 - [x] #152 fail-closed routing merged (readability-gated decisions; the misfire class refuses)
 - [x] #154 interpreter PATH fragility fixed (.py runs under llm-orc's own interpreter; bare-PATH suite 50 failures -> 0)
 - [x] #157 script-agent timeouts fixed (one resolver for inner and outer bounds; six nodes declare their own)
-- [ ] #151 runtime-window detector remainder · #155 pipeline positive-completeness · #156 instrument pins ungated · #158 event-loop blocking · #159 failure envelopes cached · #85 sandbox hardening · #84 gate adversarial harness · #90 llama.cpp · #93 hot path · #95 dead surface · #106 shape home · #110 artifact quality · #114 trace cap · #132 BitNet · #142 reject templates
+- [x] #158 script agents off the event loop (4.15s -> 1.03s; duplicate outer timeout retired)
+- [ ] #151 runtime-window detector remainder · #155 pipeline positive-completeness · #156 instrument pins ungated · #159 failure envelopes cached · #85 sandbox hardening · #84 gate adversarial harness · #90 llama.cpp · #93 hot path · #95 dead surface · #106 shape home · #110 artifact quality · #114 trace cap · #132 BitNet · #142 reject templates
 
 ### epic:off-path
 #80 #65 #30 #66 — parked, not on the north-star path.
