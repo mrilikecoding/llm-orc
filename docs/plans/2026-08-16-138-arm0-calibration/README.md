@@ -5,10 +5,13 @@ serve on `main` (v0.18.18 + #152), qwen3:8b, all four levels, fresh
 per-level workspaces, seeds hash-verified against their pinned digests.
 `report.txt` is the instrument's own output over these artifacts.
 
-**This run cannot trip the pre-registered gate and does not try to.**
-Under the decision rule n=1 per level is a calibration run; the L5
-shipped-unverified interval is [0.000, 0.434] against a 0.15 threshold,
-so the instrument reports UNDERPOWERED itself.
+**This run cannot trip the pre-registered gate.** Under the decision
+rule n=1 per level is a calibration run, so the reporter refuses to name
+a branch at all and prints CALIBRATION with the observation count. That
+refusal is structural, not a property of the numbers that came out:
+review round 2 found the earlier verdict could have printed CONFIRMS
+from an n=1 run while GENERALIZES was unreachable at any observed value,
+which is the decision rule's asymmetry pointed at the hypothesis.
 
 ## What it validates
 
@@ -28,11 +31,12 @@ censored levels, zero unscored subtasks.
 | L3 | none | none | 0 | no-run |
 | L5 | ledger | ledger | 0 | ran-red-shipped-anyway |
 
-The serve fixes the FIRST named file and no others, at every level. That
-is the routing reality the design recorded in advance (`_extract_file`
-takes the first regex match) and the known #123 delivery bound, now
-observed rather than predicted. Every fix it did ship was correct: zero
-shipped-broken across all four levels. L3 shipped nothing at all.
+At every level where it shipped at all, the serve fixed the FIRST named
+file and no others. That is the routing reality the design recorded in
+advance (`_extract_file` takes the first regex match) and the known #123
+delivery bound, now observed rather than predicted. L3 shipped nothing.
+Every fix it did ship was correct: zero shipped-broken across all four
+levels.
 
 ## Two things this run taught the instrument
 
@@ -50,6 +54,7 @@ shipped-broken across all four levels. L3 shipped nothing at all.
 
 ## Not claimed
 
-No arm comparison (this is one arm at calibration n), no gate verdict,
-no parity-table row. The paid arm-1 and arm-2 runs are a separate step
-and carry the repeat count the decision rule requires.
+No arm comparison (this is one arm at calibration n), no gate BRANCH
+(`report.txt`'s GATE line names none: it prints the observation count
+and refuses), no parity-table row. The paid arm-1 and arm-2 runs are a
+separate step and carry the repeat count the decision rule requires.
