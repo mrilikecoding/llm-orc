@@ -795,6 +795,49 @@ class TestCacheIdentity:
         assert not worker.is_alive(), "computing a cache identity hung on a FIFO"
         assert result == [str(fifo)], "a FIFO must yield no digest"
 
+    def test_an_edit_reverted_mid_run_is_a_known_wrong_accept(
+        self, tmp_path: Path
+    ) -> None:
+        """Pins a KNOWN-WRONG behaviour so a future fix has a baseline.
+
+        The mid-run re-read compares before-bytes to after-bytes, so it
+        sees a NET move only. An edit reverted inside the same window is
+        invisible: the run produced B's output, the file is back to A,
+        the identity matches, and A's key is filed with B's output. Two
+        executions then share an entry although they ran different bytes
+        — the invariant this issue exists to establish.
+
+        Closing it properly needs the digest the child ACTUALLY read,
+        which the child does not report. Recorded rather than fixed. If
+        this pin ever goes red because the served value is "one", the
+        hole closed and the pin should become an ordinary assertion.
+        """
+        script = tmp_path / "probe.py"
+        script.write_text(self._emit("one"))
+        cache = ScriptCache(ScriptCacheConfig(enabled=True))
+        runner = self._runner(cache)
+        config = ScriptAgentConfig(name="probe", script=str(script))
+
+        real = runner._execute_without_cache
+
+        async def edit_run_then_revert(agent_config: Any, input_data: str) -> Any:
+            script.write_text(self._emit("two"))
+            result = await real(agent_config, input_data)
+            script.write_text(self._emit("one"))
+            return result
+
+        with patch.object(runner, "_execute_without_cache", new=edit_run_then_revert):
+            first, _, _ = asyncio.run(runner.execute(config, "{}"))
+
+        assert json.loads(first)["v"] == "two", "the child ran the edited bytes"
+
+        second, _, _ = asyncio.run(runner.execute(config, "{}"))
+
+        assert cache.get_stats()["hits"] == 1
+        assert json.loads(second)["v"] == "two", (
+            "KNOWN BOUND: bytes 'one' were served bytes 'two' output"
+        )
+
     def test_an_unchanged_script_still_hits(self, tmp_path: Path) -> None:
         script = tmp_path / "probe.py"
         script.write_text(self._emit("one"))

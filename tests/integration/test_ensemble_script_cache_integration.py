@@ -253,6 +253,11 @@ class TestEnsembleScriptCacheIntegration:
         That is what commenting out the one key under it leaves behind,
         and it used to raise AttributeError out of executor construction,
         killing every invocation rather than just caching.
+
+        Asserts only that construction SURVIVED. An earlier draft also
+        asserted the default, which made it die under the unrelated
+        dataclass-default mutant that the pin two tests above already
+        covers — an over-broad pin hides which defect it is reporting.
         """
         llm_orc_dir = tmp_path / ".llm-orc"
         llm_orc_dir.mkdir()
@@ -263,7 +268,66 @@ class TestEnsembleScriptCacheIntegration:
 
         executor = ExecutorFactory.create_root_executor()
 
-        assert executor._script_cache_config.enabled is False
+        assert isinstance(executor._script_cache_config, ScriptCacheConfig)
+
+    def _executor_with_cache_value(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, body: str
+    ) -> EnsembleExecutor:
+        llm_orc_dir = tmp_path / ".llm-orc"
+        llm_orc_dir.mkdir()
+        (llm_orc_dir / "config.yaml").write_text(f"project:\n  name: odd\n{body}")
+        monkeypatch.chdir(tmp_path)
+        return ExecutorFactory.create_root_executor()
+
+    @pytest.mark.parametrize(
+        ("body", "expected"),
+        [
+            ("performance:\n  script_cache: true\n", True),
+            ("performance:\n  script_cache: false\n", False),
+        ],
+        ids=["bare-true", "bare-false"],
+    )
+    def test_a_bare_bool_is_read_as_the_enabled_flag(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        body: str,
+        expected: bool,
+    ) -> None:
+        """The other half of the crash class, which `or {}` left open.
+
+        Review showed `script_cache: true` still raised AttributeError —
+        the identical "kills every invocation" failure the empty-block fix
+        was named for. Reading a bool as the `enabled` flag it obviously
+        means also closes a latent wrong-accept: under `or {}`,
+        `script_cache: false` silently meant "defaults", which is
+        harmless only while the default is off and would silently ENABLE
+        the cache the moment #161 justifies flipping it back.
+        """
+        executor = self._executor_with_cache_value(tmp_path, monkeypatch, body)
+
+        assert executor._script_cache_config.enabled is expected
+
+    @pytest.mark.parametrize(
+        "body",
+        [
+            "performance:\n  script_cache: nonsense\n",
+            "performance:\n  script_cache: []\n",
+        ],
+        ids=["a-string", "a-list"],
+    )
+    def test_an_uninterpretable_value_falls_back_to_defaults(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, body: str
+    ) -> None:
+        """Computing a cache config must not take down the executor.
+
+        Compared against the dataclass rather than a literal, so flipping
+        the shipped default does not kill this pin — the same
+        over-broadness review flagged on the empty-block pin.
+        """
+        executor = self._executor_with_cache_value(tmp_path, monkeypatch, body)
+
+        assert executor._script_cache_config.enabled is ScriptCacheConfig().enabled
 
     def test_an_explicit_opt_in_still_wins(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
