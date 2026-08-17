@@ -2533,6 +2533,82 @@ def test_a_crashed_seat_contract_does_not_break_a_delegation_route(
     assert call["function"]["name"] == "glob"
 
 
+def test_a_crashed_seat_contract_does_not_refuse_a_prose_finish(
+    serving_project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The `build and` guard, end to end, on the one route that reaches it.
+
+    Review found this unpinned: deleting `build and` from emit's seat-gate
+    branch left all 3977 tests green while converting a healthy prose turn
+    into a MINTING `Build refused:` — a ledger entry on a turn that
+    carried no build ask (#133/#134).
+
+    The unit pin alone was not enough, and neither was the delegation
+    pin: a bare-concept question routes to `need-glob` and exits through
+    `_seam_outcome` before the branch is reached. Getting to `build=False`
+    with no seam takes the full glob -> grep fall-through, which is why
+    this drives all three messages with `seat_contract.py` really dead.
+    """
+    client = _crashed_script_client(serving_project, monkeypatch, "seat_contract.py")
+    resp = client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "ensemble-agent",
+            "messages": [
+                {"role": "user", "content": "explain how recursion works"},
+                {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "id": "call_g1",
+                            "type": "function",
+                            "function": {
+                                "name": "glob",
+                                "arguments": '{"pattern": "**/*{recursion,works}*"}',
+                            },
+                        }
+                    ],
+                },
+                {
+                    "role": "tool",
+                    "tool_call_id": "call_g1",
+                    "content": "/work/notes.md\n/work/README.md",
+                },
+                {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "id": "call_gr1",
+                            "type": "function",
+                            "function": {
+                                "name": "grep",
+                                "arguments": '{"pattern": "recursion", '
+                                '"include": "*.py"}',
+                            },
+                        }
+                    ],
+                },
+                {
+                    "role": "tool",
+                    "tool_call_id": "call_gr1",
+                    "content": "No files found",
+                },
+            ],
+            "tools": [_WRITE_TOOL],
+        },
+    )
+
+    assert resp.status_code == 200
+    choice = resp.json()["choices"][0]
+    assert choice["finish_reason"] == "stop"
+    content = choice["message"]["content"]
+    assert content
+    assert "Build refused" not in content
+    assert "Refused" not in content
+
+
 def test_crashed_resolve_refuses_and_never_writes(
     serving_project: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
