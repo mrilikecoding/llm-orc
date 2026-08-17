@@ -112,6 +112,48 @@ importable top-level module.
    no path argument, which is what `make test` and CI actually run.
    Asserting on `testpaths` config alone would not prove collection.
 
+## Round 3: the shadowing detector is abandoned
+
+Round 2 fixed both guards so they COULD fail in the gate. Round 3 review
+then demonstrated four ways the fixed version failed on a CORRECT tree,
+and one shadow class it still could not see:
+
+- an ordinary `conftest.py` in `tests/unit/serving/` turned the gate red
+  (pytest special-cases conftest; the walk did not);
+- volume-battery arms written anywhere inside a testpath turned it red,
+  including dot-dirs and `build/` that pytest skips via `norecursedirs`;
+- the verdict became test-ORDER dependent, because five suites
+  `sys.path.insert` the serving scripts directory at import time, so one
+  planted file passed alone and failed in a full run;
+- a real namespace-package shadow (`google`, live in this venv) broke
+  collection while the detector reported all clear, since a namespace
+  package has no `origin`;
+- and the fix that made the shadow check work at all was itself pinned
+  by nothing: making `installed_paths` inert left the gate green.
+
+**The detector is deleted.** The cause is structural, not careless: it
+reimplemented pytest's import resolution from outside, and pytest's real
+rules — conftest handling, `norecursedirs`, `--ignore`,
+`collect_ignore`, glob-expanded `testpaths`, namespace packages,
+meta-path finders — are not reconstructible from a directory walk. Three
+rounds, and each fix grew the false-positive surface faster than the
+diagnostic was worth. On a branch arguing "a gate that starts red is not
+a gate", shipping four demonstrated ways to redden a correct tree is
+worse than shipping nothing.
+
+What replaces it is two assertions with no walk and no order dependence:
+`benchmarks.agentic_serving` resolves to the real file, and
+`tests/unit/__init__.py` exists. The second is pinned separately because
+the file is empty and reads like an accident — a tidy of "unused" empty
+files would take the gate with it.
+
+The key realisation, which should have come first: **a shadow of this
+kind already fails the build.** It breaks collection, which is exactly
+how #156 was found. Verified: with `tests/unit/__init__.py` removed, the
+full gate reports 18 collection errors alongside these two pins. A guard
+here cannot add detection, only a name — and once that is the goal, the
+smallest thing that names it correctly wins.
+
 ## Round 2, after review
 
 Both guards shipped in a state where they could not fail in the gate,
@@ -149,10 +191,12 @@ wrong note to end on. Review demonstrated each.
 
 - Wall-clock: `make test` goes from ~26s to ~35s under `-n auto`
   (branch measured at 35.1 / 35.6 / 34.9s; main at 25.9 / 25.8 / 24.9s).
-  Two earlier numbers were recorded, ~39s and ~50s, and they could not
-  both be the measurement; review caught the disagreement. Both sat
-  inside the spread of a noisy box, which is the argument for quoting
-  three runs rather than one.
+  Two earlier numbers were recorded, ~39s and ~50s. An earlier draft
+  said they "could not both be the measurement", which review showed is
+  the wrong argument for the right conclusion: under concurrent load the
+  branch measures 41-50s, so both could well have been measurements, of
+  a loaded box. The actual lesson is to quote three runs on a quiet box
+  rather than one run whenever.
 - The guard covers the `tests/` and `benchmarks/` trees. It does not
   cover a top-level module added elsewhere that collides with something
   in `src/`.
@@ -175,9 +219,13 @@ wrong note to end on. Review demonstrated each.
   `tests/unit/__init__.py` exists.
 - The battery shell scripts are in no gate (no shellcheck).
 - #165's flake did not reproduce during review: ~21 further `-n auto`
-  runs, zero failures. At the observed 1-in-6 that is not a refutation
-  (P(0 in 11) is about 0.13), but it is worth recording that it is
-  unreproduced by a second party on a second checkout.
+  runs, zero failures. An earlier draft called that "not a refutation"
+  while quoting P(0 in 11) = 0.13, which is the arithmetic for a
+  different number of runs; review caught the contradiction. At p=1/6,
+  P(0 in 21) is about 0.02, so 21 clean runs DO argue against a
+  1-in-6 rate on this rig — either the rate is lower than observed or
+  it is environment-dependent. Recorded as unreproduced by a second
+  party on a second checkout, with the rate itself now in doubt.
 - This does not make the instruments CORRECT, only executed. The #84
   fixture-pinning methodology is what argues about their correctness;
   this change only ensures a regression in them fails a build.
