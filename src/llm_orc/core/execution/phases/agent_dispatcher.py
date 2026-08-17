@@ -177,8 +177,23 @@ class AgentDispatcher:
             model_substituted=model_substituted,
         )
 
-    async def _get_agent_timeout(self, agent_config: AgentConfig) -> int:
-        """Get timeout for agent execution."""
+    async def _get_agent_timeout(self, agent_config: AgentConfig) -> int | None:
+        """Seconds this agent may run under the outer ``asyncio.wait_for``,
+        or ``None`` for no outer bound.
+
+        Script agents get ``None`` (#158). That is retiring a DUPLICATE
+        bound, not the bound: the authoritative one is the same number
+        applied to ``subprocess.run`` by ``ScriptAgentRunner``, and it is
+        the only one that can actually reap the child. The outer timer
+        additionally cannot fire during the one window it uniquely covers
+        (script resolution and cache lookup, which is exactly what blocks
+        the loop), and once script agents genuinely run concurrently it
+        would charge queue delay against an agent's budget — producing
+        timeouts an agent never experienced. Measured: 20 agents over 16
+        slots reported timeouts after 10ms of work.
+        """
+        if isinstance(agent_config, ScriptAgentConfig):
+            return None
         enhanced_config = await self._resolve_profile(agent_config)
         return resolve_agent_timeout(enhanced_config, self._performance_config)
 
