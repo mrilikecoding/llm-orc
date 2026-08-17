@@ -59,7 +59,23 @@ layer is the insulation that keeps an eventual hardening cheap, and
 "frozen component" status is the trigger, tracked informally the way the
 buy-back ledger tracks hosted seats.
 
-## State (2026-08-14)
+## State (2026-08-16)
+
+**#138 volume-ladder instrument merged 2026-08-16** (2ea793d, no
+release — benchmarks only): the prerequisite the parity-v2
+pre-registration called "the real cost". Per-level fixtures (only the
+asked modules, hash-pinned), one hidden nonce-varied oracle per module,
+disk-derived shipped with a six-way verification channel, shared
+arm-blind truth capture, level-scaled timeouts, and a reporter that
+refuses to name a gate branch below r=8. Arm-0 calibration recorded
+(`docs/plans/2026-08-16-138-arm0-calibration/`): four levels, all exit
+0, the serve fixing the first named file only (the #123 bound observed),
+every shipped fix correct. Three review rounds, 25 findings; the
+organizing one was that every failure mode fell closed into
+shipped_broken or the gate numerator, and round 2 caught two more that
+round 1's own fixes introduced. Paid arm-1/arm-2 runs await a cost
+decision.
+
 
 | arm / serve version | runs | strict | dishonest | record |
 |---|---|---|---|---|
@@ -170,7 +186,10 @@ Remaining, in order:
   gate met: grep→menu→pick→AST-confirmed grounding); coverage bounds
   ride #153 (offset reads) and the truncated-listing trigger gate;
   #153 filed+fixed (client 50KB read cap refuses honestly)
-- [ ] #141 #138 #63 — parity v2 inputs (CLAUDE.md confound, volume scaling, statistics), then parity table v2 with realism rows
+- [x] #63 slice + #138 INSTRUMENT — statistics (Wilson/Fisher) and the
+  volume-ladder instrument built, merged, and calibrated on arm 0
+- [ ] #138 paid runs (r=8 per level; awaiting practitioner go on cost)
+  and #141 (awaiting go on the None condition), then parity table v2
 - [ ] #126 — long-horizon 30-turn battery (#136 #137 feed the design)
 - [ ] #139 #140 — memory spikes; #127 plexus substrate; #82 remainder (cross-session)
 - [ ] #128 #129 #130 — task shapes toward compose-at-runtime
