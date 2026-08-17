@@ -40,13 +40,16 @@ An unresolvable reference falls back to the reference string rather than
 raising: cache-key computation must not be the thing that reports a
 missing script, and execution a moment later produces the proper error.
 
-The not-a-file test uses `os.path.isfile`. An earlier draft of this
-paragraph claimed it buys two things; measurement during mutation
-verification cut that to one. Inline content longer than `PATH_MAX`
-makes `read_bytes` raise `OSError`, which the `except` already catches,
-so the guard is redundant there. Its one unique contribution is inline
-content carrying a NUL byte, where `read_bytes` raises `ValueError` —
-not an `OSError` — and that escapes and kills the run.
+The not-a-file test uses `os.path.isfile`. This paragraph has been
+wrong twice in opposite directions, so it is now measured. The guard
+buys nothing for inline content longer than `PATH_MAX`: `read_bytes`
+raises `OSError` and the `except` already catches it. It buys three
+things the `except` cannot. Inline content carrying a NUL byte raises
+`ValueError`, not `OSError`, so it escapes and kills the run. A FIFO
+resolves fine and is not a regular file, and `read_bytes` blocks on
+open until a writer appears, so without the guard computing a cache key
+HANGS the agent. A character device such as `/dev/zero` reads unbounded.
+The last two are why this is `isfile` and not `exists`.
 
 Two consequences worth naming rather than discovering. Hyphen and
 underscore forms of a primitive reference (`primitives/file-ops/...` and
@@ -112,6 +115,23 @@ becomes `False`. This repo already sets it false locally, so nothing
 here changes. #161 carries the purity requirement and the opt-in
 mechanism that would justify turning it back on.
 
+**Round 2: the first attempt at that flip was inert, and review caught
+it.** `EnsembleExecutor._load_script_cache_config` restated every
+default rather than reading them off the dataclass, and its copy said
+`cache_config.get("enabled", True)`. So flipping the dataclass changed
+nothing for any project without an explicit opt-out — which is every
+fresh install, since `templates/global-config.yaml` writes no
+`script_cache` block and `load_performance_config` has no such key in
+its defaults. A fresh install still elided writes. The pin was no help
+because it asserted the dataclass field, the one the runtime never
+read; and the inertness is invisible from inside this repo precisely
+because `.llm-orc/config.yaml` sets the key explicitly.
+
+The fix removes the duplicated defaults: `_load_script_cache_config`
+now reads each fallback off `ScriptCacheConfig()`. The lesson is
+narrower than "add a pin" — a restated default is a second source of
+truth, and this one had already drifted.
+
 The key fix lands regardless: it is correct on its own terms, and it is
 a precondition for any future re-enable.
 
@@ -124,6 +144,15 @@ Read the converse too, because the invariant is easy to over-hear:
 sharing a key does NOT mean the cached result is still valid. A script's
 undeclared inputs and side effects sit outside the key by construction
 (#161). This makes the key honest; it does not make a hit safe.
+
+And read "the same script BYTES" narrowly: it means the ENTRY FILE's
+bytes. Review demonstrated the gap that hides in the plural. Sixteen
+scripts in `.llm-orc/scripts/agentic_serving/` import a sibling
+`_helpers` module; editing that sibling leaves the entry file's digest
+unchanged, so the pre-edit result is served for the TTL. That is #160's
+own bug, one file over, and this change does not reach it. Closing it
+means hashing the import closure, which is a different piece of
+machinery than a digest, so it is recorded here rather than attempted.
 
 ## Where the identity is computed
 
@@ -179,14 +208,42 @@ instead.
    `os.path.isfile` guard killed nothing. That is the guard's only
    unique job, per the measurement above.
 
-Mutation-verified: eight mutants, every one killed. The one that matters
-most is finding 7's — building the key-time resolver without
-`project_dir` kills only `test_a_project_relative_reference_is_also_invalidated`,
-so without that pin this change ships inert for every shipped ensemble
-while the other eight stay green. Dropping the digest half and making
-`_cache_identity` a no-op are indistinguishable to the suite (both kill
-the same three), which is the correct signature for "reverted to the
-bug".
+### Round 2, added after review
+
+10. **An interactive agent never reads a NON-interactive alias's entry.**
+    Review found the guard at the `get` was unpinned: with only the
+    `set` guarded nothing is ever written, so instrument 6's `hits == 0`
+    was trivially true and the get-side guard could be deleted with the
+    whole suite green. The alias is live in a shipped install rather
+    than contrived — the resolver's hyphen-to-underscore normalization
+    makes `primitives/user-interaction/get-user-input.py` resolve to the
+    packaged interactive primitive while `requires_user_input()` answers
+    False for it.
+11. **A script edited mid-run does not poison the old bytes**, pinning
+    the re-read described in the bounds below.
+12. **A project with no `script_cache` block gets a DISABLED cache**,
+    through the real `ExecutorFactory`. This is the pin the flip needed
+    and did not have.
+13. **An explicit opt-in still wins**, so reading defaults off the
+    dataclass cannot be mistidied into a constant.
+
+Instrument 8 also gained a second half. Review showed its edit
+assertions passed identically when persistence was broken in EITHER
+direction, because a total persistence failure produces the same
+observation as correct invalidation; it now watches an unchanged script
+hit across a fresh cache too.
+
+Mutation-verified. The one that matters most is instrument 7's —
+building the key-time resolver without `project_dir` kills only
+`test_a_project_relative_reference_is_also_invalidated`. An earlier
+draft said the change would then be inert "for every shipped ensemble";
+review corrected that. `ScriptResolver._get_search_paths` falls back to
+`Path(os.getcwd())`, so with cwd at the project root the fix keeps
+working; it goes inert where cwd differs from `project_dir`, which is
+the serve, nested executors, and tests. The pin still earns its place.
+Dropping the digest half and making `_cache_identity` a no-op are
+indistinguishable to the suite (both kill the same three), which is the
+correct signature for "reverted to the bug".
 
 Note that `test_script_cache.py:74` is already named
 `test_cache_invalidation_on_script_content_change` and passes today,
@@ -203,14 +260,24 @@ as evidence of coverage here.
   only the in-memory OrderedDict; eviction does not delete files. Small
   files and an opt-in setting, but a cleanup is a real follow-up rather
   than a one-time invalidation as an earlier draft claimed.
-- A script edited mid-run stores its new output under the OLD digest,
-  since the digest is taken before the subprocess reads the file. Self-
-  corrects on the next run.
-- One resolution plus one file read per script-agent execution, computed
-  at both `get` and `set`, and now paid on a cache HIT too where the
-  current code does none. The largest script in the repo is ~102KB
-  against a subprocess spawn, so it should not be measurable; recorded
-  as a thing to check rather than assume, and as a deliberate choice
-  rather than an accident.
+- A script edited mid-run used to store its new output under the OLD
+  digest, since the digest is taken before the subprocess opens the
+  file. An earlier draft called that self-correcting on the next run.
+  Review demonstrated it is not: the old-bytes key stays poisoned for
+  the full TTL, and two executions end up sharing an entry although they
+  ran different bytes, which violates the invariant above outright
+  rather than merely serving something stale. Now closed by re-reading
+  the identity after the run and skipping the `set` if the bytes moved.
+  The window is not eliminated, only the wrong entry is.
+- One resolution plus one file read per script-agent execution, and a
+  second on the `set` path only (the mid-run re-read above). An earlier
+  draft said "computed at both `get` and `set`", which was wrong: the
+  identity was computed exactly once per `execute`. Measured rather than
+  assumed, since the draft recorded it as a thing to check: 0.136 ms
+  mean for `classify.py` at 103KB, 0.096 ms for `emit.py`, 0.001 ms for
+  an inline reference, against 20.9 ms for a bare `python -c pass`
+  spawn. Roughly 0.7% of one subprocess spawn. On a cache HIT it is
+  0.14 ms of new work where the old code did none, which is still
+  noise.
 - Still no in-flight deduplication (#158's bound), so N identical
   concurrent agents each miss and each run.

@@ -166,7 +166,18 @@ class ScriptAgentRunner:
         # key across processes. The old entry also carried a hardcoded
         # "success": True that nothing read, on entries that might hold a
         # failure.
-        if cacheable and not _reports_failure(response):
+        # The digest above was taken BEFORE the subprocess opened the file,
+        # so a script edited during its own run produced output from the NEW
+        # bytes and stored it under the OLD bytes' key — two executions
+        # sharing an entry although they ran different bytes, which is the
+        # exact invariant this issue exists to establish, and it persisted
+        # for the full TTL rather than self-correcting. Re-reading here
+        # closes the window: if the bytes moved, this run's output belongs
+        # to no key we can name, so it belongs in no entry.
+        edited_mid_run = cacheable and self._cache_identity(script_content) != (
+            cache_identity
+        )
+        if cacheable and not edited_mid_run and not _reports_failure(response):
             cache_result = {
                 "output": response,
                 "execution_metadata": {"duration_ms": duration_ms},
@@ -197,15 +208,31 @@ class ScriptAgentRunner:
         reports a missing script, and execution a moment later produces
         the real error.
 
-        ``os.path.isfile`` rather than leaning on the try/except below.
-        Measured, because an earlier draft of this docstring claimed more
-        than the guard delivers: for inline content too long for PATH_MAX
-        ``read_bytes`` raises ``OSError``, which the ``except`` already
-        catches, so the guard is redundant there. Its ONE unique
-        contribution is inline content containing a NUL byte, where
-        ``read_bytes`` raises ``ValueError`` and an ``except OSError``
-        would let it escape and kill the run.
+        ``os.path.isfile`` rather than leaning on the try/except below,
+        and it does more than ask whether a file exists. Two drafts of
+        this docstring got its contribution wrong in opposite directions,
+        so what follows is measured. It buys NOTHING for inline content
+        longer than PATH_MAX: ``read_bytes`` raises ``OSError`` there and
+        the ``except`` already catches it. It buys three things the
+        ``except`` cannot:
+
+        - inline content carrying a NUL byte, where ``read_bytes`` raises
+          ``ValueError`` rather than ``OSError``, so it escapes and kills
+          the run;
+        - a FIFO, which resolves fine and is not a regular file;
+          ``read_bytes`` blocks on open until a writer appears, so
+          without the guard computing a cache key HANGS the agent;
+        - a character device such as ``/dev/zero``, which reads
+          unbounded.
+
+        The last two are why this is ``isfile`` and not ``exists``.
         """
+        # A fast path, NOT a correctness guard, and review was right to
+        # flag it as looking like one: resolve_script_path("") returns ""
+        # and os.path.isfile("") is False, so the fall-through returns ""
+        # anyway and removing this line changes no result. It stays
+        # because execute() passes "" for a non-ScriptAgentConfig, and
+        # building a resolver to learn nothing is worse than one branch.
         if not script_ref:
             return script_ref
         try:
