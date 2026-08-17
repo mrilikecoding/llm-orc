@@ -7,6 +7,74 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.19.0] - 2026-08-17
+
+Minor rather than patch because a shipped default changes: the script
+cache is now off unless a project opts in.
+
+### Changed
+- **The script agent cache ships DISABLED** (#160). It assumed every
+  script is a pure function of (bytes, input, parameters), and two of
+  the six registered primitives are not — the two most-used in this
+  repo's ensembles. Measured through the real runner with the previous
+  defaults: a `primitives/file-ops/write_file.py` cache hit reports
+  `{"success": true}` while the file does not exist, so a hit ELIDES A
+  WRITE; and `primitives/file-ops/read_file.py` serves stale content
+  when the file it reads changes. Neither is reachable by any cache
+  key. Projects that want caching set
+  `performance.script_cache.enabled: true`; a bare bool is now accepted
+  there as the flag it obviously means. #161 tracks the purity
+  mechanism that would justify turning it back on.
+- Script agents no longer block the event loop (#158). They run on a
+  dedicated thread pool, and their duplicate outer timeout is retired.
+  Measured on four 1-second script agents gathered concurrently:
+  **4.15s -> 1.03s**, with event-loop ticks during a script going from
+  0 to ~46,000. Seven phases in this repo already carry two or more
+  script agents.
+
+### Fixed
+- Editing a script no longer serves the pre-edit result for the cache
+  TTL (#160). The cache key hashed the script's PATH, so it identified
+  the file's name and never its contents; with `persist_to_artifacts`
+  the stale result crossed processes. A script is now identified by its
+  resolved path AND the sha256 of its bytes. Interactive agents are
+  never cached, at both the read and the write, since the human's
+  answer is not part of the key.
+- A script's own failure is never served from cache (#159). A
+  rate-limited search or a momentary timeout used to be replayed for an
+  hour on the same key, and under `persist_to_artifacts` across a
+  restart. Both failure shapes are caught: an explicit
+  `"success": false` and the bare `{"error": ...}` envelope that
+  `web_searcher` emits while exiting 0.
+- Script agents get the timeout the ensemble already resolved (#157).
+  Both bounds were defeated independently, so an engine-run script
+  agent could run unbounded: `model_dump` always emits
+  `timeout_seconds` and supplies `None` when unset. One rule now
+  resolves the dispatcher's outer bound and the runner's subprocess
+  bound.
+- `.py` script agents run under llm-orc's own interpreter (#154),
+  rather than whatever `python3` resolves to on PATH — which could be
+  an interpreter without the project's dependencies.
+- Routing failures fail closed (#152). A decision that cannot be read
+  as a decision no longer sails through as a plausible-looking route;
+  it refuses with a non-minting prefix, and the emit terminal refuses
+  first.
+- A non-mapping `performance.script_cache` value no longer crashes
+  executor construction (#160). `script_cache:` with no body parses to
+  `None`, and that raised `AttributeError` out of construction, taking
+  every invocation with it rather than just caching.
+
+### Added
+- The 511 measurement instruments under `benchmarks/agentic_serving/`
+  run in `make test` and CI (#156), and `make lint` covers
+  `benchmarks/` for types and style. These decide shipped-correct vs
+  shipped-broken and produce the intervals the parity table carries, so
+  a regression there used to corrupt a run's evidence without failing a
+  build.
+- Volume-ladder instrument for the agentic-serving benchmark (#138):
+  per-level fixtures, hidden oracles, fail-open scoring, and a gate
+  that refuses to report below its repeat count.
+
 ## [0.18.18] - 2026-08-14
 
 ### Added
