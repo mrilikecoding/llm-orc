@@ -769,3 +769,28 @@ def test_a_seat_contract_rejection_outranks_a_dead_seat_gate() -> None:
     )
 
     assert outcome["content"].startswith(SEAT_CONTRACT_REJECT_PREFIX)
+
+
+def test_the_form_gate_reason_outranks_a_dead_seat_gate() -> None:
+    """A form-gate refusal keeps its own computed reason.
+
+    Round 3 moved this branch after the accept gate for exactly this
+    argument and then left it ahead of the form-gate refusal, so a build
+    turn whose deliverable does not parse lost "deliverable for a.py is
+    not valid Python: <SyntaxError>" and got the generic pipeline error.
+    `_reject_kind` carries the reason into the recall templates, so the
+    loss shows up later as "why didn't that ship?".
+    """
+    outcome = _emit(
+        {
+            "valid": False,
+            "build": True,
+            "file": "a.py",
+            "content": "def (",
+            "reason": "deliverable for a.py is not valid Python: invalid syntax",
+            "seat_gate_failed": "the seat contract node returned unreadable output",
+        }
+    )
+
+    assert "not valid Python" in outcome["content"]
+    assert "seat contract" not in outcome["content"]

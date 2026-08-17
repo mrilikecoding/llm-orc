@@ -380,9 +380,16 @@ def test_an_absent_seat_contract_also_fails_closed() -> None:
     with the skeleton's `seat_contract` NODE. `serving.yaml` declares that
     node unconditionally, so it runs on every route and emits
     `seat_admitted: true` vacuously when the route declares no contract.
-    An absent dep therefore means it was filtered out for not succeeding,
-    which is a failure — and it makes the three checks symmetric, since
-    emit and form_gate already fail closed on an absent dep.
+    An earlier version of this docstring then claimed an absent dep
+    "means it was filtered out for not succeeding". That is false in
+    general: `when:`-skipped nodes are routinely absent, and a crashed
+    script agent is always PRESENT with an error envelope, since every
+    failure is caught inside the agent and returned as a
+    `status="success"` response. Measured at zero absences across 658
+    recorded live turns, so this branch is unreachable in the current
+    skeleton and is kept as a deliberate trip-wire: if a future skeleton
+    guards or removes the node, build turns refuse loudly rather than
+    silently losing the gate.
     """
     shaped = _shape_raw(
         {
