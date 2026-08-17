@@ -184,10 +184,30 @@ DEDICATED pool: asyncio.run() returned at +0.50s   (NOT joined)
 
 The symptom moves one layer out and gets harder to attribute: the run
 completes, the CLI prints its result, and then the process sits before
-the shell prompt with nothing on screen to blame. Note B makes this
-RARER, since the outer cancel was the main way to orphan a thread while
-its agent had already reported failure; what remains is Ctrl-C and a
-parent agent's cancellation.
+the shell prompt with nothing on screen to blame.
+
+**Correction from the merge review, because an earlier draft had the
+direction backwards.** This makes orphaning rarer only for a script
+agent's OWN cancellation. One level up it becomes NEWLY reachable: a
+parent's `wait_for` can now fire mid-script, which it could not before,
+because a blocked loop meant a script always ran to completion inside
+its ancestor. Measured:
+
+```
+BRANCH: PARENT TIMED OUT at +1.00s
+        live script threads: ['llm-orc-script_0']
+        subprocess ran to completion anyway: True
+MAIN:   no timeout fired at all
+```
+
+Live in this repo, not theoretical: `build-gated.yaml:22-28` wraps a
+`loop:` in `timeout_seconds: 660` whose body reaches `accept_executor`
+(180s, spawns pytest), and the same shape appears at `serving.yaml:118`,
+`build-round.yaml:22`, `code-seat.yaml:17`, `re-fix.yaml:23`,
+`build-code-round.yaml:19`, `write-tests-round.yaml:25`. Not a
+correctness bug — the orphan is bounded by the inner timeout and cleaned
+at interpreter exit, and concurrency strictly REDUCES a parent's wall
+clock, so parents become less likely to time out, not more.
 
 Verified NOT to compound: `subprocess.run`'s POSIX timeout path does
 `kill()` then `wait()`, not a second `communicate()`, so a grandchild
@@ -288,6 +308,31 @@ this regresses silently.
 - A script agent hanging BEFORE its subprocess (cache lookup, script
   resolution) has no bound. Unchanged from today, where the blocked loop
   prevents the outer timer from firing anyway.
+- **An INTERACTIVE script agent can now hang forever.** The body above
+  celebrates retiring #157's human-pause bound, which is the intended
+  fix on a TTY; the cost belongs here too. `agent_runner.py:284` awaits
+  `run_in_executor(None, input)`, which YIELDS, so the outer timer
+  genuinely fired there before and this change removes the only bound.
+  With stdin closed, `EOFError` is raised and handled; with stdin an
+  open pipe that never delivers (serve, some CI runners), it blocks
+  indefinitely. Reachable configs ship:
+  `.llm-orc/ensembles/testing/user-input-test.yaml`,
+  `validate-all-primitives.yaml:39,47`, and five library ensembles.
+- **Identical concurrent script agents no longer dedupe through the
+  cache.** Serialization was silently collapsing them: 20 agents with
+  the same script, input, and parameters used to produce 1 subprocess
+  run and 19 cache hits; now 20 runs. For cache-identical work that is a
+  wall-clock regression, not a win, and it amplifies the `write_file`
+  default-path race above, since identical nodes that collapsed to one
+  execution now genuinely race. No shipped ensemble hits it (all seven
+  wide phases have differing parameters). Lands in the subsystem #159 is
+  already open against.
+- **No operator control over script concurrency.** `SCRIPT_POOL_SIZE` is
+  a module constant with no config knob, and `max_concurrent_agents`
+  ships as `0`. On a 12-core box that is 16 concurrent script
+  subprocesses; a fan-out of `accept_executor` would run 16 pytest trees
+  at once where it previously ran one. Worth a knob on the 32GB target
+  rig if that shape ever appears.
 - `services/handlers/script_handler.py:154` runs `subprocess.run` inside
   an `async def` on the MCP-facing path; NOT in scope, blocks whichever
   loop serves MCP.
