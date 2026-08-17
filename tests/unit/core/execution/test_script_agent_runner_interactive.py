@@ -422,3 +422,179 @@ class TestScriptAgentsSkipTheOuterTimeout:
         parsed = json.loads(result.response)
         assert parsed["success"] is False
         assert "timed out" in parsed["error"].lower()
+
+
+class TestFailuresAreNotCached:
+    """#159: every result was cached, including failure envelopes, and
+    ScriptCache replays them for a 3600s TTL on the same (script, input,
+    parameters) key. One rate-limited search or one timeout under
+    momentary load poisoned that key for an hour — and with
+    persist_to_artifacts the entry survives a restart, so the worst case
+    is cross-process rather than one in-process hour.
+
+    Asserts on get_stats() rather than wall time: exact, cannot flake,
+    and distinguishes "did not cache" from "cached but the read was
+    slow", which a timing assertion cannot.
+    """
+
+    def _run_twice(self, tmp_path: Path, body: str) -> dict[str, Any]:
+        script = tmp_path / "probe.py"
+        script.write_text(body)
+        cache = ScriptCache(ScriptCacheConfig())  # shipped defaults: ENABLED
+        runner = ScriptAgentRunner(
+            script_cache=cache,
+            usage_collector=UsageCollector(),
+            progress_controller=None,
+            emit_event=lambda name, data: None,
+            project_dir=None,
+            performance_config={"execution": {"default_timeout": 30}},
+        )
+        config = ScriptAgentConfig(name="probe", script=str(script))
+
+        async def _both() -> None:
+            await runner.execute(config, "{}")
+            await runner.execute(config, "{}")
+
+        asyncio.run(_both())
+        stats: dict[str, Any] = cache.get_stats()
+        return stats
+
+    def test_a_failed_script_is_not_cached(self, tmp_path: Path) -> None:
+        """sys.exit(3) rather than a real timeout: instant, same branch."""
+        stats = self._run_twice(tmp_path, "import sys\nsys.exit(3)\n")
+        assert stats["hits"] == 0
+        assert stats["sets"] == 0
+
+    def test_an_error_keyed_response_is_not_cached(self, tmp_path: Path) -> None:
+        """The issue's own motivating example. web_searcher reports every
+        failure as {"error": ...} and exits 0, so no success key and no
+        exception envelope exist — a success-only predicate would leave
+        exactly this poisoned. 0 of 33 serving scripts emit a boolean
+        success at all."""
+        stats = self._run_twice(
+            tmp_path,
+            'import json\nprint(json.dumps({"error": "rate_limited"}))\n',
+        )
+        assert stats["hits"] == 0
+        assert stats["sets"] == 0
+
+    def test_a_successful_script_is_still_cached(self, tmp_path: Path) -> None:
+        stats = self._run_twice(
+            tmp_path, 'import json\nprint(json.dumps({"success": True, "n": 1}))\n'
+        )
+        assert stats["hits"] == 1
+        assert stats["sets"] == 1
+
+    @pytest.mark.parametrize(
+        ("body", "label"),
+        [
+            ('import json\nprint(json.dumps({"n": 1}))\n', "no-success-key"),
+            ("print('plain prose output')\n", "prose"),
+            # ScriptAgentOutput.model_dump() ALWAYS emits error: null, so an
+            # implementer writing `"error" in parsed` instead of a truthiness
+            # check silently stops caching every schema-path success — the
+            # exact mirror of the no-success-key degradation above.
+            (
+                'import json\nprint(json.dumps({"success": True, "error": None}))\n',
+                "benign-null-error",
+            ),
+        ],
+    )
+    def test_responses_without_a_success_key_still_cache(
+        self, tmp_path: Path, body: str, label: str
+    ) -> None:
+        """The pin that matters most, and the one the success-case pin
+        CANNOT provide: an implementer writing `not parsed.get("success")`
+        without the True default stops caching every response lacking the
+        key — all 33 serving scripts, every prose response — while a pin
+        using {"success": true} still passes. That is exactly the "never
+        cache anything" degradation."""
+        stats = self._run_twice(tmp_path, body)
+        assert stats["hits"] == 1, label
+        assert stats["sets"] == 1, label
+
+    def test_a_non_dict_json_response_does_not_raise(self, tmp_path: Path) -> None:
+        """_parse_output returns json.loads verbatim and execute returns it
+        unwrapped when it is not a dict, so a script printing an array
+        yields a list. Parsing that unguarded raises TypeError and would
+        kill a run that works today."""
+        stats = self._run_twice(tmp_path, "print('[1, 2, 3]')\n")
+        assert stats["misses"] >= 1
+
+    def test_the_entry_carries_no_lying_success_field(self, tmp_path: Path) -> None:
+        """The runner wrote a hardcoded success: True that nothing reads,
+        on an entry that might hold a failure."""
+        script = tmp_path / "ok.py"
+        script.write_text('import json\nprint(json.dumps({"success": True}))\n')
+        cache = ScriptCache(ScriptCacheConfig())
+        runner = ScriptAgentRunner(
+            script_cache=cache,
+            usage_collector=UsageCollector(),
+            progress_controller=None,
+            emit_event=lambda name, data: None,
+            project_dir=None,
+            performance_config={"execution": {"default_timeout": 30}},
+        )
+        config = ScriptAgentConfig(name="ok", script=str(script))
+        asyncio.run(runner.execute(config, "{}"))
+
+        entry = cache.get(str(script), {"input_data": "{}", "parameters": {}})
+        assert entry is not None
+        assert "success" not in entry
+
+    def test_a_bare_success_false_is_not_cached(self, tmp_path: Path) -> None:
+        """No error key, so the error clause cannot see it. This is the ONLY
+        pin that dies when the success clause is deleted outright: every
+        other failure in the corpus — including sys.exit(3)'s envelope,
+        which carries "Script failed with exit code 3" — also sets a truthy
+        error, so the error clause alone would catch them."""
+        stats = self._run_twice(
+            tmp_path,
+            'import json\nprint(json.dumps({"success": False, "reason": "no"}))\n',
+        )
+        assert stats["hits"] == 0
+        assert stats["sets"] == 0
+
+    @pytest.mark.parametrize(("literal", "label"), [("0", "zero"), ("null", "null")])
+    def test_a_falsy_non_bool_success_is_not_cached(
+        self, tmp_path: Path, literal: str, label: str
+    ) -> None:
+        """Truthiness rather than `is False`, which is what the predicate's
+        docstring argues for and what nothing else pins: a script emitting
+        {"success": 0} or {"success": null} is reporting failure, and an
+        identity check would cache both."""
+        stats = self._run_twice(tmp_path, f"print('{{\"success\": {literal}}}')\n")
+        assert stats["hits"] == 0, label
+        assert stats["sets"] == 0, label
+
+    def test_a_schema_path_scalar_response_does_not_raise(self, tmp_path: Path) -> None:
+        """execute_with_schema_json returns RAW stdout rather than routing
+        through _parse_output, so on the ScriptAgentInput dispatch shape a
+        script printing an array yields a str that json-parses to a list.
+        Dropping isinstance(parsed, dict) turns that into AttributeError and
+        kills a run that works today — and no other pin catches it, because
+        the non-schema path never produces that shape."""
+        script = tmp_path / "arr.py"
+        script.write_text("print('[1, 2, 3]')\n")
+        cache = ScriptCache(ScriptCacheConfig())
+        runner = ScriptAgentRunner(
+            script_cache=cache,
+            usage_collector=UsageCollector(),
+            progress_controller=None,
+            emit_event=lambda name, data: None,
+            project_dir=None,
+            performance_config={"execution": {"default_timeout": 30}},
+        )
+        config = ScriptAgentConfig(name="arr", script=str(script))
+        schema_input = json.dumps(
+            {
+                "agent_name": "arr",
+                "input_data": "hi",
+                "dependencies": {},
+                "context": {},
+            }
+        )
+        response, _model, _sub = asyncio.run(runner.execute(config, schema_input))
+
+        assert response == "[1, 2, 3]"
+        assert cache.get_stats()["sets"] == 1
