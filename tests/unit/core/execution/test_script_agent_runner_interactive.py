@@ -669,9 +669,17 @@ class TestCacheIdentity:
         assert json.loads(second)["v"] == "two"
 
     def test_the_cross_process_case_is_invalidated(self, tmp_path: Path) -> None:
-        """The worst case the issue names, and the only pin proving the key
-        is a pure function of bytes rather than of process state: a FRESH
-        ScriptCache reading the persisted entry after an edit."""
+        """The worst case the issue names: a FRESH ScriptCache reading the
+        persisted entry after an edit.
+
+        The second half is not decoration. Review showed that the edit
+        assertions alone pass identically when persistence is broken in
+        EITHER direction (never written, or never read), because a total
+        persistence failure produces the same observation as correct
+        invalidation. So the pin has to watch an UNCHANGED script hit
+        across a fresh cache too, or it is only proving that nothing
+        persists at all.
+        """
         script = tmp_path / "probe.py"
         script.write_text(self._emit("one"))
         config = ScriptAgentConfig(name="probe", script=str(script))
@@ -685,6 +693,57 @@ class TestCacheIdentity:
 
         assert json.loads(first)["v"] == "one"
         assert json.loads(second)["v"] == "two"
+
+        # Unchanged from here on, so a third fresh cache MUST hit the entry
+        # the second run persisted.
+        third_cache = ScriptCache(cfg)
+        third, _, _ = asyncio.run(self._runner(third_cache).execute(config, "{}"))
+
+        assert json.loads(third)["v"] == "two"
+        assert third_cache.get_stats()["hits"] == 1, (
+            "nothing crossed the process boundary, so the edit half of this "
+            "pin was passing for the wrong reason"
+        )
+
+    def test_a_script_edited_mid_run_does_not_poison_the_old_bytes(
+        self, tmp_path: Path
+    ) -> None:
+        """The race the digest's placement opens, found by review.
+
+        The digest is taken before the subprocess opens the file, so an edit
+        landing in that window makes the run produce the NEW bytes' output
+        and file it under the OLD bytes' key. The design doc first called
+        this self-correcting on the next run. It is not: the old-bytes key
+        is poisoned for the full TTL, and two executions end up sharing an
+        entry although they ran different bytes, which is a literal
+        violation of this issue's invariant rather than mere staleness.
+        """
+        script = tmp_path / "probe.py"
+        script.write_text(self._emit("one"))
+        cache = ScriptCache(ScriptCacheConfig(enabled=True))
+        runner = self._runner(cache)
+        config = ScriptAgentConfig(name="probe", script=str(script))
+
+        real = runner._execute_without_cache
+
+        async def edit_then_run(agent_config: Any, input_data: str) -> Any:
+            # Lands in the real window: after the identity is computed,
+            # before the child reads the file.
+            script.write_text(self._emit("two"))
+            return await real(agent_config, input_data)
+
+        with patch.object(runner, "_execute_without_cache", new=edit_then_run):
+            first, _, _ = asyncio.run(runner.execute(config, "{}"))
+
+        assert json.loads(first)["v"] == "two", "the child ran the edited bytes"
+
+        # Put the ORIGINAL bytes back. They must not be served the other
+        # version's output.
+        script.write_text(self._emit("one"))
+        second, _, _ = asyncio.run(runner.execute(config, "{}"))
+
+        assert json.loads(second)["v"] == "one"
+        assert cache.get_stats()["hits"] == 0
 
     def test_an_unchanged_script_still_hits(self, tmp_path: Path) -> None:
         script = tmp_path / "probe.py"
@@ -748,15 +807,21 @@ class TestCacheIdentity:
     def test_inline_content_with_a_nul_byte_does_not_raise(
         self, tmp_path: Path
     ) -> None:
-        """The one thing the os.path.isfile guard uniquely buys.
+        """One of three things the os.path.isfile guard uniquely buys.
 
         Written after a mutation run showed that removing that guard killed
-        no pin. Measured: for inline content too long for PATH_MAX,
-        read_bytes raises OSError, which the except below already catches,
-        so the guard is redundant there. For inline content carrying a NUL
-        byte it raises ValueError, which an `except OSError` does NOT
-        catch — that escapes _cache_identity and kills the run before the
-        script is ever executed.
+        no pin. For inline content too long for PATH_MAX, read_bytes raises
+        OSError, which the except below already catches, so the guard is
+        redundant there. For inline content carrying a NUL byte it raises
+        ValueError, which an `except OSError` does NOT catch, so it escapes
+        _cache_identity and kills the run before the script is ever
+        executed.
+
+        Review later found two more, both non-files that resolve fine: a
+        FIFO, where read_bytes blocks on open until a writer appears and so
+        HANGS the agent, and a character device such as /dev/zero, which
+        reads unbounded. Neither is pinned here; a hang is awkward to pin
+        without a watchdog, and this pin already kills the mutant.
         """
         cache = ScriptCache(ScriptCacheConfig(enabled=True))
         runner = self._runner(cache, project_dir=tmp_path)
@@ -765,6 +830,51 @@ class TestCacheIdentity:
         # The point is that this returns rather than raising ValueError;
         # whatever the execution then makes of the reference is its business.
         asyncio.run(runner.execute(config, "{}"))
+
+    def test_an_interactive_agent_never_reads_a_non_interactive_alias_entry(
+        self, tmp_path: Path
+    ) -> None:
+        """The interactive skip at the GET, which nothing else pins.
+
+        Found by review: with only the set guarded, nothing is ever written,
+        so test_an_interactive_agent_is_never_cached's `hits == 0` is
+        trivially true and the get-side guard could be deleted with the whole
+        suite green. This pin makes a NON-interactive agent write the entry,
+        then asks whether the interactive one reads it.
+
+        The alias is live in a shipped install rather than contrived. The
+        resolver normalizes hyphen to underscore, so
+        primitives/user-interaction/get-user-input.py resolves to the packaged
+        interactive primitive and gets the same identity, while
+        ScriptUserInputHandler.requires_user_input() answers False for it.
+        That is the aliasing the byte-identity introduced.
+        """
+        d = tmp_path / ".llm-orc" / "scripts" / "primitives" / "user_interaction"
+        d.mkdir(parents=True)
+        (d / "get_user_input.py").write_text(
+            'import json\nprint(json.dumps({"answer": "FIRST-AGENTS-ANSWER"}))\n'
+        )
+        cache = ScriptCache(ScriptCacheConfig(enabled=True))
+        runner = self._runner(cache, project_dir=tmp_path)
+
+        alias = ScriptAgentConfig(
+            name="alias",
+            script="scripts/primitives/user-interaction/get-user-input.py",
+        )
+        asyncio.run(runner.execute(alias, "{}"))
+        assert cache.get_stats()["sets"] == 1, "the alias should have cached"
+
+        interactive = ScriptAgentConfig(
+            name="ask",
+            script="scripts/primitives/user_interaction/get_user_input.py",
+        )
+        with patch("builtins.input", return_value="typed") as mock_input:
+            asyncio.run(runner.execute(interactive, "{}"))
+
+        assert cache.get_stats()["hits"] == 0, (
+            "an interactive agent was served a non-interactive alias's entry"
+        )
+        assert mock_input.called, "the human was never prompted; cache replayed"
 
     def test_an_interactive_agent_is_never_cached(self, tmp_path: Path) -> None:
         """The human's ANSWER is not part of the key, so a second identical
