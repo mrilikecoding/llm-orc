@@ -440,7 +440,7 @@ class TestFailuresAreNotCached:
     def _run_twice(self, tmp_path: Path, body: str) -> dict[str, Any]:
         script = tmp_path / "probe.py"
         script.write_text(body)
-        cache = ScriptCache(ScriptCacheConfig())  # shipped defaults: ENABLED
+        cache = ScriptCache(ScriptCacheConfig(enabled=True))  # off by default (#160)
         runner = ScriptAgentRunner(
             script_cache=cache,
             usage_collector=UsageCollector(),
@@ -526,7 +526,7 @@ class TestFailuresAreNotCached:
         on an entry that might hold a failure."""
         script = tmp_path / "ok.py"
         script.write_text('import json\nprint(json.dumps({"success": True}))\n')
-        cache = ScriptCache(ScriptCacheConfig())
+        cache = ScriptCache(ScriptCacheConfig(enabled=True))
         runner = ScriptAgentRunner(
             script_cache=cache,
             usage_collector=UsageCollector(),
@@ -578,7 +578,7 @@ class TestFailuresAreNotCached:
         the non-schema path never produces that shape."""
         script = tmp_path / "arr.py"
         script.write_text("print('[1, 2, 3]')\n")
-        cache = ScriptCache(ScriptCacheConfig())
+        cache = ScriptCache(ScriptCacheConfig(enabled=True))
         runner = ScriptAgentRunner(
             script_cache=cache,
             usage_collector=UsageCollector(),
