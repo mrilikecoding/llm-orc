@@ -104,14 +104,34 @@ promising a per-agent `cache: true` key that `extra="forbid"` rejects)
 and **#165** (a pre-existing 1-in-6 `-n auto` flake, undiagnosable
 because both persistence paths swallow their exceptions).
 
-**#156 in review** on `fix/156-instruments-in-the-gate`: the 511
-measurement instruments under `benchmarks/agentic_serving/tests` enter
-`make test` and CI. The obstacle was not the one the issue expected —
-`tests/unit/` had no `__init__.py`, so pytest put it on `sys.path` and
-`tests/unit/benchmarks/` shadowed the real top-level package (18
-collection errors, the same class as #138's `parse.py`). Round 1 review
-found both new shadowing guards shipped unable to go red in the gate;
-fixed and re-reviewing.
+**#156 merged 2026-08-17** (068e703f, no release): the 511 measurement
+instruments under `benchmarks/agentic_serving/tests` run in `make test`
+and CI, and `make lint` plus CI's type check now cover `benchmarks/`.
+Review verified the gate GATES — breaking an oracle, a scorer, and a
+stats function each turns a bare `make test` red. Coverage gate
+unaffected (92.2% either way); cost is `make test` ~26s -> ~35s.
+
+The obstacle was not the one the issue expected. `tests/unit/` had no
+`__init__.py` while `tests/__init__.py` did, so the chain broke there,
+pytest put `tests/unit` on `sys.path`, and `tests/unit/benchmarks/`
+shadowed the real top-level package — 18 collection errors naming the
+module pytest DID find. Same class as #138's `parse.py`.
+
+**Three rounds went into a general shadowing guard before it was
+deleted**, which is the part worth carrying forward. Round 1's could not
+fail in the gate at all. Round 2 fixed that, and round 3 demonstrated
+four ways the fixed version reddened a CORRECT tree (an ordinary
+`conftest.py`; battery arms under any testpath, including dot-dirs
+pytest skips; an order-dependent verdict from suites that
+`sys.path.insert` at import time) while still missing a live
+namespace-package shadow. The cause was structural: it reimplemented
+pytest's import resolution from outside, which a directory walk cannot
+reconstruct. The realisation that should have come first is that a
+shadow of this kind ALREADY fails the build by breaking collection — a
+guard can only add a name, not detection. Two direct assertions
+replaced it. Bounds: the instruments have no coverage floor of their own
+(`runner.py` 40%), the battery shell scripts are ungated, and
+`judge_adequacy`'s tests still live in `tests/unit/benchmarks/`.
 
 ### Earlier (2026-08-17)
 
