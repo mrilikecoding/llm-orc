@@ -61,6 +61,14 @@ buy-back ledger tracks hosted seats.
 
 ## State (2026-08-17)
 
+**Released v0.19.0** (ab8aa7db): PyPI, GitHub release, and the Homebrew
+formula all updated, CI green. Minor rather than patch because a shipped
+default changes — the script agent cache is off unless a project opts
+in. Eight arcs since 0.18.18 (#152, #138, #154, #156, #157, #158, #159,
+#160), none of which had changelog entries; the user-visible ones are
+the cache default, #158's concurrency win, and three fixes where a bound
+or a cache key was not doing what it claimed.
+
 **#160 merged 2026-08-17** (57ae7d7a, no release): a script's cache
 identity is its resolved path AND the sha256 of its bytes, and the cache
 ships DISABLED. Editing a script used to serve the pre-edit result for
