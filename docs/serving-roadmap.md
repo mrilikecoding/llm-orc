@@ -61,6 +61,44 @@ buy-back ledger tracks hosted seats.
 
 ## State (2026-08-17)
 
+### Next up
+
+**#166 is designed and ready to implement**
+(`docs/plans/2026-08-17-166-empty-deliverable-design.md`). A pre-flight
+review was dispatched but its findings were NOT captured before the
+session ended — re-dispatch it rather than implementing straight from
+the doc, because the design leaves one question explicitly open and it
+is the kind this corpus has got wrong twice:
+
+> Is there a reachable build route whose seat has NO `seat_contract:`
+> block? Every contracted build seat asserts
+> `len(results['seat']['artifacts']) > 0`, which raises on a dead seat,
+> so if all build routes carry one then #166 is defence-in-depth rather
+> than single-fault reachable — and the issue and design both currently
+> imply it is reachable.
+
+The other reviewer question worth keeping: a refusal minted at the
+CALLER may be invisible to the ask-outcome ledger, since `_reject_kind`
+parses its prefixes out of `emit.py`.
+
+What IS measured and does not need redoing: the defect reproduces on
+current main through the real chain (absent seat dep, empty response,
+and `loop_unwrap`'s `{}`); it happened in production at trace line 469
+(failed dispatch seat + crashed seat_contract + an empty `solution.py`
+write); and across 136 live turns that produced a file write exactly ONE
+had empty content — the defect itself — so no legitimate empty write
+exists in the corpus.
+
+Also open: **#155 Arc C** (sanitize the engine wrap's error in all four
+reason builders — the path leak is universal, putting the username and
+home directory on the wire — plus the two decision residuals, both
+reproduced), **#161/#162/#163/#165**, and the roadmap items below.
+
+Still blocked on the practitioner: **#138's paid runs** (r=8 per level,
+roughly $10–30 per model, with a cheaper L1-and-L5-only variant) and
+**#141's CLAUDE.md-confound spike**, whose None condition suppresses the
+live `~/.claude/CLAUDE.md` and so needs an explicit go.
+
 **#155 Arc A merged 2026-08-17** (535cebb1, no release): a serving node
 that cannot READ its upstream input refuses. A crashed `shape` or
 `form_gate` used to finish as `{"finish": true, "content": ""}` — an
