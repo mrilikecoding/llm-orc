@@ -351,11 +351,16 @@ _DECISION = {"target": "code-seat", "build": True, "kind": "build"}
 _SEAT = {"status": "success", "primary": "x = 1"}
 
 
-def test_a_crashed_seat_contract_sets_node_failed() -> None:
+def test_a_crashed_seat_contract_is_reported() -> None:
     """#155: `_seat_verdict` returned (None, "") for anything without a
     `seat_admitted` key, so a DEAD seat contract read downstream as "no
     per-seat gate ran" — indistinguishable from a route that has no gate.
-    That permissive fallback is what let a dead seat's output through."""
+
+    Reported as `seat_gate_failed` rather than as a pipeline read failure,
+    because emit must consume it on the BUILD branch only: the seat
+    contract is a vacuous echo on every other route, so refusing there
+    would kill turns its verdict cannot affect.
+    """
     shaped = _shape_raw(
         {
             "classify": {"response": json.dumps(_DECISION)},
@@ -364,13 +369,21 @@ def test_a_crashed_seat_contract_sets_node_failed() -> None:
         }
     )
 
-    assert shaped["node_failed"]
+    assert shaped["seat_gate_failed"]
 
 
-def test_an_absent_seat_contract_is_not_a_failure() -> None:
-    """The distinction the check turns on: the explain path carries no
-    seat_contract block at all, so ABSENT means "no gate configured" while
-    PRESENT-but-unreadable means "the gate died"."""
+def test_an_absent_seat_contract_also_fails_closed() -> None:
+    """Review corrected an earlier draft that failed OPEN here.
+
+    The draft's reason was "the explain path has no seat_contract block",
+    which conflates the ensemble's optional `seat_contract:` YAML block
+    with the skeleton's `seat_contract` NODE. `serving.yaml` declares that
+    node unconditionally, so it runs on every route and emits
+    `seat_admitted: true` vacuously when the route declares no contract.
+    An absent dep therefore means it was filtered out for not succeeding,
+    which is a failure — and it makes the three checks symmetric, since
+    emit and form_gate already fail closed on an absent dep.
+    """
     shaped = _shape_raw(
         {
             "classify": {"response": json.dumps(_DECISION)},
@@ -378,8 +391,7 @@ def test_an_absent_seat_contract_is_not_a_failure() -> None:
         }
     )
 
-    assert not shaped["node_failed"]
-    assert shaped["seat_admitted"] is None
+    assert shaped["seat_gate_failed"]
 
 
 def test_a_healthy_seat_contract_is_not_a_failure() -> None:
@@ -395,5 +407,5 @@ def test_a_healthy_seat_contract_is_not_a_failure() -> None:
         }
     )
 
-    assert not shaped["node_failed"]
+    assert not shaped["seat_gate_failed"]
     assert shaped["seat_admitted"] is True

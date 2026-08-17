@@ -151,14 +151,25 @@ def _seam_outcome(gated: dict) -> dict | None:
     """
     node_failed = str(gated.get("node_failed", ""))
     if node_failed:
-        # #155: an upstream node could not be READ, so nothing downstream
-        # of it is trustworthy. Same non-minting prefix and same reason as
-        # routing_failed below: a broken pipeline makes is_build_ask
-        # unknowable.
+        # #155: the SHAPE node could not be read, so the routing decision,
+        # every delegation request and the deliverable all came from an
+        # unreadable source — nothing this turn is trustworthy. Refuses
+        # before every other outcome, with the same non-minting prefix and
+        # the same reason as routing_failed below: a broken pipeline makes
+        # is_build_ask unknowable.
+        #
+        # Deliberately NOT where the seat-gate failure goes. Review found
+        # that treating them alike refused eight routes the seat contract
+        # has no bearing on: it is a vacuous echo on every non-build route,
+        # so its death cannot change those outcomes but was killing the
+        # turn anyway.
         prefix = TERMINALS["refused"].prefix
         return {
             "finish": True,
-            "content": f"{prefix}serving pipeline error: {node_failed}",
+            "content": (
+                f"{prefix}serving pipeline error: {node_failed}; "
+                f"nothing was built or written"
+            ),
         }
     routing_failed = str(gated.get("routing_failed", ""))
     if routing_failed:
@@ -274,9 +285,29 @@ def main() -> None:
     accept = gated.get("accept")
     seat_admitted = gated.get("seat_admitted")
 
+    seat_gate_failed = str(gated.get("seat_gate_failed", ""))
+
     seam = _seam_outcome(gated)
     if seam is not None:
         outcome = seam
+    elif build and seat_gate_failed:
+        # #155: the seat-side gate died on a turn that actually depends on
+        # it. Placed here rather than ahead of the delegation seams because
+        # the seat contract is a vacuous echo on every other route.
+        #
+        # MINTING prefix, unlike the pipeline failure above: routing
+        # succeeded by construction to reach the build branch, so
+        # is_build_ask is known rather than unknowable — and a dead gate on
+        # a build turn already minted `rejected_contract` before this
+        # change, so a non-minting refusal would COST a ledger entry the
+        # system currently earns.
+        outcome = {
+            "finish": True,
+            "content": (
+                f"{TERMINALS['build_refused'].prefix}serving pipeline error: "
+                f"{seat_gate_failed}; nothing was built or written"
+            ),
+        }
     elif seat_admitted is False:
         # The seat's output did not meet its own seat-owned contract (WP-E8;
         # ADR-046 §2). Refuse before shipping — a distinct, higher-priority gate

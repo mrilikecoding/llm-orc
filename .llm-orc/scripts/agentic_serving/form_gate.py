@@ -124,10 +124,13 @@ def main() -> None:
                 # #152 fail-closed routing: pass through unchanged — emit
                 # refuses on it before every other outcome.
                 "routing_failed": str(shaped.get("routing_failed", "")),
-                # #155: this node's own read of shape, OR shape's read of
-                # seat_contract, whichever failed first. Threaded rather than
+                # #155: this node's own read of shape. Threaded rather than
                 # refused here, because form_gate does not own the terminal.
-                "node_failed": node_failed or str(shaped.get("node_failed", "")),
+                "node_failed": node_failed,
+                # #155: shape's read of the seat-side gate, passed through
+                # unchanged. A different kind of failure from node_failed —
+                # emit consumes it on the BUILD branch only.
+                "seat_gate_failed": str(shaped.get("seat_gate_failed", "")),
             }
         )
     )

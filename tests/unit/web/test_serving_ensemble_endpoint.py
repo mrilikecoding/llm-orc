@@ -2433,6 +2433,106 @@ def _crashed_script_client(
     return TestClient(create_app())
 
 
+# --- #155 Arc A: a crashed marshal node, pinned through the REAL ensemble ---
+#
+# Review found both of this arc's blockers because nothing ran
+# shape -> form_gate -> emit with a fault injected: the unit pins fed each
+# node directly, so form_gate silently dropping shape's threaded signal left
+# all 3973 tests green, and a check that killed eight healthy routes had pins
+# that were green only because no fixture carried the fault.
+
+
+@pytest.mark.parametrize("script", ["shape.py", "form_gate.py"])
+def test_a_crashed_marshal_node_refuses_a_build_and_never_writes(
+    serving_project: Path, monkeypatch: pytest.MonkeyPatch, script: str
+) -> None:
+    """The gap this arc exists to close: a crashed shape or form_gate used
+    to finish as `{"finish": true, "content": ""}` — an empty answer the
+    client cannot distinguish from "the model had nothing to say"."""
+    client = _crashed_script_client(serving_project, monkeypatch, script)
+    resp = client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "ensemble-agent",
+            "messages": [
+                {"role": "user", "content": "write an add function in add.py"}
+            ],
+            "tools": [_WRITE_TOOL],
+        },
+    )
+
+    assert resp.status_code == 200
+    choice = resp.json()["choices"][0]
+    assert choice["finish_reason"] == "stop"
+    assert not choice["message"].get("tool_calls")
+    content = choice["message"]["content"]
+    assert content.startswith("Refused: serving pipeline error")
+    assert "nothing was built or written" in content
+    assert content.strip() != "Refused: serving pipeline error"
+
+
+def test_a_crashed_seat_contract_refuses_a_build_with_the_minting_prefix(
+    serving_project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The seat gate died on a turn that actually depends on it.
+
+    MINTING prefix, unlike the pipeline failures above: routing succeeded
+    by construction to reach the build branch, so `is_build_ask` is known
+    rather than unknowable — and this shape already minted
+    `rejected_contract` before the change, so a non-minting refusal would
+    COST a ledger entry the system currently earns.
+    """
+    client = _crashed_script_client(serving_project, monkeypatch, "seat_contract.py")
+    resp = client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "ensemble-agent",
+            "messages": [
+                {"role": "user", "content": "write an add function in add.py"}
+            ],
+            "tools": [_WRITE_TOOL],
+        },
+    )
+
+    assert resp.status_code == 200
+    choice = resp.json()["choices"][0]
+    assert not choice["message"].get("tool_calls")
+    content = choice["message"]["content"]
+    assert content.startswith("Build refused: ")
+    assert "seat contract" in content
+    assert "nothing was built or written" in content
+
+
+def test_a_crashed_seat_contract_does_not_break_a_delegation_route(
+    serving_project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The blocker review caught, pinned where the unit fixtures could not.
+
+    `seat_contract` is a vacuous echo on every non-build route — only four
+    ensembles declare a `seat_contract:` block, so its verdict cannot
+    change a glob/read/recall outcome. An earlier draft refused on its
+    death ahead of the delegation seams, which killed eight routes it has
+    no bearing on. It is also the node most likely to die: the only one in
+    the marshal chain importing `llm_orc` and `yaml`, doing file I/O, and
+    running `asyncio.run`, on the engine's default timeout.
+    """
+    client = _crashed_script_client(serving_project, monkeypatch, "seat_contract.py")
+    resp = client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "ensemble-agent",
+            "messages": [{"role": "user", "content": "explain how recursion works"}],
+            "tools": [_WRITE_TOOL],
+        },
+    )
+
+    assert resp.status_code == 200
+    choice = resp.json()["choices"][0]
+    assert choice["finish_reason"] == "tool_calls", choice["message"].get("content")
+    call = choice["message"]["tool_calls"][0]
+    assert call["function"]["name"] == "glob"
+
+
 def test_crashed_resolve_refuses_and_never_writes(
     serving_project: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
