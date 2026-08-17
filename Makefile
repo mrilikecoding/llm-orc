@@ -45,15 +45,15 @@ lint:
 	uv run vulture src/ --min-confidence 80
 
 lint-fix:
-	uv run mypy src tests
-	uv run ruff check --fix src tests
-	uv run ruff format src tests
+	uv run mypy src tests benchmarks
+	uv run ruff check --fix src tests benchmarks
+	uv run ruff format src tests benchmarks
 
 lint-check: lint
 
 format:
-	uv run ruff check --fix src tests
-	uv run ruff format src tests
+	uv run ruff check --fix src tests benchmarks
+	uv run ruff format src tests benchmarks
 
 security:
 	@echo "Running security analysis with bandit..."
