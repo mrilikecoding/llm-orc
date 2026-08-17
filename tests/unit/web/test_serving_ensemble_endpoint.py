@@ -2463,6 +2463,11 @@ def test_crashed_resolve_refuses_and_never_writes(
     content = choice["message"]["content"]
     assert content.startswith("Refused: serving pipeline error")
     assert "nothing was built or written" in content
+    # Positive counterpart to the laundering pin's `"(resolve:" not in
+    # content`: if shape.py ever stops emitting that parenthetical or
+    # rewords it, THIS goes red, instead of the laundering pin quietly
+    # going vacuous and re-accepting the degraded path it exists to catch.
+    assert "(resolve:" in content
 
 
 def test_crashed_classify_refuses_instead_of_a_silent_empty_finish(
@@ -2475,12 +2480,16 @@ def test_crashed_classify_refuses_instead_of_a_silent_empty_finish(
     shipped a silent empty prose finish. The non-empty-target gate must
     refuse instead.
 
-    Environment note: the engine runs .py scripts via bare ``python3``
-    (script_agent._get_interpreter), so in a shell whose PATH python3
-    lacks llm_orc the REAL resolve.py dies on import and this test
-    degrades to the resolve-also-crashed refusal path — still red
-    pre-fix and green post-fix, but only a venv-on-PATH run (make test,
-    CI) exercises the laundering path itself."""
+    The assertions distinguish the LAUNDERING refusal from the
+    resolve-also-crashed one, which matters because they are both
+    "Refused: serving pipeline error" and a prefix check passes for
+    either. Until #154 the engine ran .py scripts via bare ``python3``,
+    so from a shell whose python3 lacked llm_orc the real resolve.py died
+    too and this test quietly exercised the wrong path; a prefix-only
+    assertion made that invisible. shape.py appends a ``(<dep>: <error>)``
+    parenthetical only when a decision dep carries an engine error, so
+    its ABSENCE is what pins the laundering form: a healthy resolve that
+    emitted an empty target."""
     client = _crashed_script_client(serving_project, monkeypatch, "classify.py")
     resp = client.post(
         "/v1/chat/completions",
@@ -2502,3 +2511,7 @@ def test_crashed_classify_refuses_instead_of_a_silent_empty_finish(
     assert not choice["message"].get("tool_calls")
     content = choice["message"]["content"]
     assert content.startswith("Refused: serving pipeline error")
+    assert "(resolve:" not in content, (
+        "resolve crashed too, so this exercised the resolve-crashed path "
+        f"rather than the laundering path: {content}"
+    )

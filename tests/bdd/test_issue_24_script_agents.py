@@ -5,6 +5,7 @@ contracts defined in issue-24-script-agents.feature. These steps serve as the
 Red phase of TDD, defining what needs to be implemented.
 """
 
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -301,7 +302,7 @@ def execute_story_generator(bdd_context: dict[str, Any]) -> None:
         env["INPUT_DATA"] = json.dumps(input_data)
 
         result = subprocess.run(
-            ["python", script_path],
+            [sys.executable, script_path],
             env=env,
             capture_output=True,
             text=True,
@@ -620,7 +621,7 @@ def execute_chained_primitives(bdd_context: dict[str, Any]) -> None:
         env["INPUT_DATA"] = json.dumps(read_input)
 
         result = subprocess.run(
-            ["python", read_script],
+            [sys.executable, read_script],
             env=env,
             capture_output=True,
             text=True,
@@ -647,7 +648,7 @@ def execute_chained_primitives(bdd_context: dict[str, Any]) -> None:
         env["INPUT_DATA"] = json.dumps(extract_input)
 
         result = subprocess.run(
-            ["python", extract_script],
+            [sys.executable, extract_script],
             env=env,
             capture_output=True,
             text=True,
@@ -674,7 +675,7 @@ def execute_chained_primitives(bdd_context: dict[str, Any]) -> None:
         env["INPUT_DATA"] = json.dumps(write_input)
 
         result = subprocess.run(
-            ["python", write_script],
+            [sys.executable, write_script],
             env=env,
             capture_output=True,
             text=True,

@@ -1,5 +1,7 @@
 """Tests for primitive composition system (ADR-001)."""
 
+import json
+import os
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -525,3 +527,57 @@ if __name__ == "__main__":
 
                 with pytest.raises(RuntimeError, match="Invalid JSON output"):
                     composer._execute_primitive(primitive, input_data)
+
+
+class TestPrimitiveExecutionInterpreter:
+    """#154 review round 1: routing this site through ``_script_command``
+    had no regression instrument, because this suite mocks
+    ``subprocess.run`` wholesale and never asserts argv — reverting the
+    fix left the suite green.
+
+    This pin runs a REAL packaged primitive unmocked. Every shipped
+    primitive is mode 644, so a bare ``[script_path]`` invocation raises
+    PermissionError, and every one of them imports pydantic, so a PATH
+    python3 without it would fail too. Both hazards, one test.
+    """
+
+    def test_a_packaged_primitive_executes_despite_being_non_executable(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import llm_orc
+
+        packaged = (
+            Path(llm_orc.__file__ or "")
+            / ".."
+            / "primitives"
+            / "data_transform"
+            / "json_extract.py"
+        ).resolve()
+        assert packaged.exists(), packaged
+        assert not os.access(packaged, os.X_OK), (
+            "this pin is only meaningful while the packaged primitive is "
+            "NOT executable; if that changed, the bare-invocation hazard "
+            "it guards has changed too"
+        )
+
+        # This primitive reads AGENT_PARAMETERS (or stdin), while the
+        # composer supplies only INPUT_DATA — a pre-existing mismatch in
+        # this non-production path. Feed it properly so the pin isolates
+        # the interpreter rather than tripping over that.
+        monkeypatch.setenv(
+            "AGENT_PARAMETERS",
+            json.dumps({"json_data": {"a": 1, "b": 2}, "fields": ["a"]}),
+        )
+
+        composer = PrimitiveComposer()
+        result = composer._execute_primitive(
+            {"script": "data_transform/json_extract.py"},
+            ScriptAgentInput(
+                agent_name="probe",
+                input_data="{}",
+                context={},
+                dependencies={},
+            ),
+        )
+
+        assert isinstance(result, dict)

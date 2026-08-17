@@ -3,6 +3,7 @@
 import json
 import os
 import subprocess
+import sys
 import time
 from pathlib import Path
 from typing import Any
@@ -30,6 +31,16 @@ class ScriptNotFoundError(FileNotFoundError):
             message = f"Script not found: {script_ref}"
 
         super().__init__(message)
+
+
+def _script_command(script_path: str) -> list[str]:
+    """The argv for running ``script_path``: python scripts go through
+    the interpreter running llm-orc, everything else runs as-is."""
+    if Path(script_path).suffix.lower() in (".py", ".python"):
+        if sys.executable and not getattr(sys, "frozen", False):
+            return [sys.executable, script_path]
+        return ["python3", script_path]
+    return [script_path]
 
 
 class ScriptResolver:
@@ -309,9 +320,15 @@ class ScriptResolver:
             env = os.environ.copy()
             env["SCRIPT_PARAMS"] = json.dumps(parameters)
 
-            # Execute script
+            # Execute script. A .py script runs under llm-orc's own
+            # interpreter, matching the engine (#154): running it bare
+            # relied on the shebang plus the exec bit, so any script
+            # checked in as mode 644 (every serving script) failed with
+            # Permission denied, and one that did run resolved python
+            # through PATH — the same fragility, in the command users
+            # reach for to debug a script.
             result = subprocess.run(
-                [script_path],
+                _script_command(script_path),
                 capture_output=True,
                 text=True,
                 env=env,
