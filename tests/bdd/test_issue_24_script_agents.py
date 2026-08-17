@@ -887,6 +887,7 @@ def given_script_exists_in_llm_orc(bdd_context: dict[str, Any], tmp_path: Path) 
     script_file = script_dir / "topology.py"
     script_file.write_text("""#!/usr/bin/env python3
 import json
+import sys
 
 # Sample topology analysis script
 if __name__ == "__main__":

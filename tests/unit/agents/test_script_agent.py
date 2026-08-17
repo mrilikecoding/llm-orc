@@ -773,8 +773,8 @@ class TestInterpreterResolution:
         PATH stripped of the venv, the misfire's own condition."""
         script = tmp_path / "needs_llm_orc.py"
         script.write_text(
-            "import json, llm_orc\n"
-            'print(json.dumps({"ok": True, "pkg": llm_orc.__name__}))\n'
+            "import json, sys, llm_orc\n"
+            'print(json.dumps({"ok": True, "exe": sys.executable}))\n'
         )
         monkeypatch.setenv("PATH", "/usr/bin:/bin")
         monkeypatch.delenv("VIRTUAL_ENV", raising=False)
@@ -782,4 +782,10 @@ class TestInterpreterResolution:
         agent = ScriptAgent("t", {"script": str(script), "timeout_seconds": 60})
         result = await agent.execute("{}")
 
-        assert json.loads(result)["ok"] is True
+        parsed = json.loads(result)
+        assert parsed["ok"] is True
+        # Asserting the interpreter identity, not just that the import
+        # worked: on a box where someone pip-installed llm-orc into the
+        # system python, the import alone would succeed pre-fix and this
+        # pin would have no red signal at all.
+        assert parsed["exe"] == sys.executable

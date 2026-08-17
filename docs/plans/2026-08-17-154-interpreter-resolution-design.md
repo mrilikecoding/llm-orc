@@ -153,7 +153,7 @@ child. Console-script installs make this moot.
   subprocess, since mocking the interpreter is what hid this.
 - **The whole suite passes from a shell WITHOUT the venv on PATH.** That
   is the symptom the issue cites, and it is the instrument with teeth:
-  measured baseline 50 failures (all in the serving endpoint suite),
+  measured baseline 50 failures (39 in the serving endpoint suite, 11 in the BDD bare-`python` line),
   and 11 with the fix, with ZERO new failures. The residual 11 are a
   pre-existing unrelated line, `test_adr_006_library_based_primitives.py:97`
   invoking `["python", ...]` when macOS has no `/usr/bin/python`; fixed

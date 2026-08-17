@@ -2463,6 +2463,11 @@ def test_crashed_resolve_refuses_and_never_writes(
     content = choice["message"]["content"]
     assert content.startswith("Refused: serving pipeline error")
     assert "nothing was built or written" in content
+    # Positive counterpart to the laundering pin's `"(resolve:" not in
+    # content`: if shape.py ever stops emitting that parenthetical or
+    # rewords it, THIS goes red, instead of the laundering pin quietly
+    # going vacuous and re-accepting the degraded path it exists to catch.
+    assert "(resolve:" in content
 
 
 def test_crashed_classify_refuses_instead_of_a_silent_empty_finish(
