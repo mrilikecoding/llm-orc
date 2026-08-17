@@ -80,11 +80,37 @@ llm-orchestra-library/            # Orchestrable content
 |--------|-------------|-----------|
 | **Identification** | Has `script` field | Has `model_profile` field |
 | **Execution** | Subprocess with JSON I/O | API call with text I/O |
-| **Determinism** | Fully deterministic | Non-deterministic (unless cached) |
+| **Determinism** | Deterministic only if the script is (see caching below) | Non-deterministic (unless cached) |
 | **Cost** | Free (local execution) | API costs per request |
 | **Capabilities** | File I/O, external tools, user input | Natural language reasoning |
-| **Caching** | Results cached by input hash | Optional response caching |
+| **Caching** | Opt-in, OFF by default (#160) | Optional response caching |
 | **Use Cases** | Data processing, validation, external integration | Analysis, generation, reasoning |
+
+### Caching
+
+Off by default since #160, and opt-in per project rather than per agent:
+
+```yaml
+# .llm-orc/config.yaml
+performance:
+  script_cache:
+    enabled: true
+```
+
+There is no per-agent `cache:` key. Earlier revisions of this document
+showed one; `ScriptAgentConfig` sets `extra="forbid"`, so a config using
+it is rejected outright.
+
+Two things to know before enabling it. The key covers the script's
+resolved path and the sha256 of its bytes, plus the input and
+parameters — so it does NOT cover a script's undeclared inputs or side
+effects. Two of the six registered primitives are affected: a
+`write_file.py` cache hit reports success without writing, and
+`read_file.py` serves stale content when the file it reads changes. That
+is why the default is off; #161 tracks the purity mechanism that would
+make it safe to turn on. The key also covers the entry file only, not
+its imports (#162), so editing a shared helper does not invalidate the
+scripts that import it.
 
 ## System Architecture
 
@@ -462,7 +488,6 @@ agents:
       nodes: 100
       k: 6
       p: 0.1
-    cache: true  # Deterministic results cached
 
   - name: calculate-metrics
     script: primitives/network-science/calculate_centrality.py
@@ -584,16 +609,9 @@ uv run pytest tests/bdd/ -k "adr-001"
 
 ### Caching
 
-Script agents support result caching for deterministic operations:
-
-```yaml
-agents:
-  - name: expensive-calculation
-    script: primitives/research/monte_carlo.py
-    parameters:
-      iterations: 1000000
-    cache: true  # Results cached by input hash
-```
+Off by default and opt-in per project; see [Caching](#caching) above for
+what the key does and does not cover. The example that used to sit here
+showed a per-agent `cache: true`, which does not exist.
 
 ### Parallel Execution
 
