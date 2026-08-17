@@ -631,17 +631,17 @@ def test_a_form_gate_output_missing_valid_refuses() -> None:
     ],
     ids=["reads", "self-reads", "glob", "grep", "run"],
 )
-def test_delegation_still_delegates_with_a_dead_seat(
+def test_delegation_survives_the_new_readability_gate(
     field: str, value: Any, expected: dict[str, Any]
 ) -> None:
-    """#155 pre-flight found this regression before it was written.
+    """The delegation branches still fire once emit's `_readable_gate`
+    check is in front of them.
 
-    The seat is a zero-cost echo on delegation routes — the outcome rides
-    the ROUTING decision, not the seat — so all five of these work today
-    with a crashed seat, and an early seat check would turn them into
-    refusals. `node_failed` deliberately means only "an upstream node
-    could not be READ", never "the seat produced nothing useful"; the
-    latter belongs on the build branch (#166 / Arc B).
+    Renamed after review: an earlier name claimed this covered "a dead
+    seat", which its fixture does not carry — no seat, no seat_contract,
+    no failure of any kind. The route-level regression it was meant to
+    guard is pinned end to end instead, with a really-crashed node, in
+    test_a_crashed_seat_contract_does_not_break_a_delegation_route.
     """
     outcome = _emit({"valid": True, "build": False, "content": "", field: value})
 

@@ -21,8 +21,17 @@ from the tail):
 "accept_reason": "tests pass and are adequate"
 ```
 
-No `node_failed` and no `routing_failed` on the turn, which is the
-positive result: the three new checks all passed on a healthy pipeline.
+`seat_admitted: true` is visible in shape's row, which does evidence the
+seat-gate check passing.
+
+An earlier draft of this record also claimed "no `node_failed` and no
+`routing_failed` on the turn", presented as read off the trace. Review
+showed it is not there: `turn_trace` truncates node responses at 280
+characters and both fields are the LAST keys shape and form_gate emit,
+so neither string appears in the row at all. The conclusion is still
+sound — a build write proves emit did not refuse — but it is inferred
+from the outcome, not read from the trace, and the record now says so.
+That truncation is #114.
 
 Provenance bound, carried over from the #160 live check where review
 caught it: `turns.jsonl` is append-only and carries no opencode

@@ -121,10 +121,20 @@ def _unreadable_seat_contract(deps: dict) -> str:
 
     ``_seat_verdict`` answers ``(None, "")`` for anything without a
     ``seat_admitted`` key, and emit reads ``None`` as "no per-seat gate
-    ran". That is right when the route carries NO seat contract — the
-    explain path has no such block — and wrong when the node ran and
-    died, because a dead gate then reads exactly like an absent one.
-    Present-but-unreadable is the whole distinction.
+    ran" — which is indistinguishable from a gate that ran and died.
+
+    Fails closed on an ABSENT dep too, and review corrected an earlier
+    draft that did not. The draft's reason was that "the explain path has
+    no seat_contract block", which conflates the ensemble's optional
+    ``seat_contract:`` YAML block with the skeleton's ``seat_contract``
+    NODE: ``serving.yaml`` declares that node unconditionally, with no
+    ``when:``, so it runs on every route and emits ``seat_admitted: true``
+    vacuously when the route's ensemble declares no contract. An absent
+    dep therefore does not mean "no gate configured"; it means the node
+    was filtered out for not succeeding, which is a failure. This also
+    makes the three checks symmetric — emit and form_gate already fail
+    closed on an absent dep, because ``deps.get(name, {})`` yields an
+    empty response that cannot be read.
 
     Positive recognition, not a denylist: a healthy ``seat_contract``
     always emits ``seat_admitted``, so anything lacking it is not a
@@ -132,13 +142,12 @@ def _unreadable_seat_contract(deps: dict) -> str:
     dead serving node carries ``success``/``data``/``error``/
     ``agent_requests`` — disjoint from that — so the check discriminates
     without enumerating failure shapes.
+
+    Reported separately from a pipeline read failure, because it is a
+    different KIND of thing: see the placement note in emit.
     """
-    dep = deps.get("seat_contract")
-    if dep is None:
-        return ""
-    raw = _response(dep)
     try:
-        parsed = json.loads(raw)
+        parsed = json.loads(_response(deps.get("seat_contract", {})))
     except (json.JSONDecodeError, TypeError):
         return "the seat contract node returned unreadable output"
     if not isinstance(parsed, dict) or "seat_admitted" not in parsed:
@@ -187,7 +196,7 @@ def main() -> None:
 
     accept, accept_reason = _envelope_verdict(seat_terminal)
     seat_admitted, seat_contract_reason = _seat_verdict(deps.get("seat_contract"))
-    node_failed = _unreadable_seat_contract(deps)
+    seat_gate_failed = _unreadable_seat_contract(deps)
 
     print(
         json.dumps(
@@ -225,10 +234,11 @@ def main() -> None:
                 # #152: non-empty exactly when no readable routing decision
                 # arrived — emit refuses on it before every other outcome.
                 "routing_failed": routing_failed,
-                # #155: non-empty exactly when an upstream node could not be
-                # READ. Distinct from routing_failed, which means the decision
-                # itself was unreadable.
-                "node_failed": node_failed,
+                # #155: non-empty exactly when the seat-side gate could not
+                # be read. NOT a pipeline-read failure — the seat contract has
+                # no bearing on a delegation or prose route, so emit consumes
+                # this on the BUILD branch only.
+                "seat_gate_failed": seat_gate_failed,
             }
         )
     )

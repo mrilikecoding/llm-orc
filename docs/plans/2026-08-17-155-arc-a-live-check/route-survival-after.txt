@@ -1,0 +1,9 @@
+reads         -> {"finish": false, "reads": ["src/foo.py"]}
+self_reads    -> {"finish": false, "self_reads": ["shape.py"]}
+glob          -> {"finish": false, "glob": "foo"}
+grep          -> {"finish": false, "grep": "def foo"}
+run           -> {"finish": false, "run": "pytest -q"}
+recall        -> {"finish": true, "content": "You asked for todo.py first."}
+not_grounded  -> {"finish": true, "content": "No `widget.py` in this session (no successful build or read of it), so I can't explain
+explain       -> {"finish": true, "content": "def f():\n    return 1\n"}
+BUILD         -> {"finish": true, "content": "Build refused: serving pipeline error: the seat contract node returned unreadable outp
