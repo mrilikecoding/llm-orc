@@ -494,3 +494,13 @@ def test_the_false_positives_stay_fixed() -> None:
             _truth(), _turn(ToolCall(name="bash", command=command, result_text=""))
         )
         assert score.verification is Verification.NO_RUN, command
+
+
+def test_an_availability_lookup_is_not_a_test_run() -> None:
+    """Round 3 residual 3: `command -v pytest` runs nothing, it asks
+    whether pytest exists."""
+    for command in ("command -v pytest", "command -V pytest", "which pytest"):
+        score = score_level(
+            _truth(), _turn(ToolCall(name="bash", command=command, result_text=""))
+        )
+        assert score.verification is Verification.NO_RUN, command

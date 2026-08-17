@@ -134,7 +134,10 @@ def format_report(scores: Sequence[RunLevelScore]) -> str:
             f"{'n/a' if rates.broken_rate is None else f'{rates.broken_rate:.3f}'} "
             f"{_interval(rates.broken_rate_interval)}  "
             f"unverified={rates.unverified_subtasks}/{rates.subtasks} "
-            f"{_interval(rates.unverified_interval)}"
+            f"{_interval(rates.unverified_interval)}  "
+            # Complete-case analysis narrows the denominator, which raises
+            # the lower bound; a reader must be able to see by how much.
+            f"unscored={rates.unscored}"
         )
 
     overall = level_rates(scores)
@@ -154,10 +157,25 @@ def _gate_verdict(scores: Sequence[RunLevelScore]) -> str:
     run. The rule is interval-vs-threshold at the largest level; anything
     that does not separate is UNDERPOWERED, which is a reportable
     outcome, not a failure."""
-    scored = [score for score in scores if not score.censored]
+    if not scores:
+        return "\nGATE: no levels — nothing to evaluate."
+    # Anchored to the largest level the RUN attempted, censored or not.
+    # Anchoring to the largest SURVIVING level let a fully-censored L5
+    # move the gate down a rung, and censoring is likeliest at exactly
+    # L5 (longest sessions, most work) — so the rung that drops out is
+    # the one the hypothesis is about, and the rung that survives is
+    # where the skip rate is expected to be lower.
+    largest = max(score.level for score in scores)
+    at_largest = [score for score in scores if score.level == largest]
+    scored = [score for score in at_largest if not score.censored]
     if not scored:
-        return "\nGATE: no scored levels — nothing to evaluate."
-    largest = max(score.level for score in scored)
+        reasons = ", ".join(
+            sorted({score.censor_reason for score in at_largest if score.censor_reason})
+        )
+        return (
+            f"\nGATE at L{largest}: 0 scored observations "
+            f"({len(at_largest)} censored: {reasons}); no gate evaluation."
+        )
     rates = rates_by_level(scored).get(largest)
     if rates is None or not rates.subtasks:
         return "\nGATE: the largest level has no scored subtasks."

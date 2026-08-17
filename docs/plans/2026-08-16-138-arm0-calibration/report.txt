@@ -15,10 +15,10 @@ level with flaw mix, since rate and label appear only at L5)
   window   L3=not-shipped  L5=not-shipped
 
 per level
-  L1: broken/shipped=0.000 [0.000, 0.793]  unverified=0/1 [0.000, 0.793]
-  L2: broken/shipped=0.000 [0.000, 0.793]  unverified=0/2 [0.000, 0.658]
-  L3: broken/shipped=n/a n/a  unverified=0/3 [0.000, 0.561]
-  L5: broken/shipped=0.000 [0.000, 0.793]  unverified=0/5 [0.000, 0.434]
+  L1: broken/shipped=0.000 [0.000, 0.793]  unverified=0/1 [0.000, 0.793]  unscored=0
+  L2: broken/shipped=0.000 [0.000, 0.793]  unverified=0/2 [0.000, 0.658]  unscored=0
+  L3: broken/shipped=n/a n/a  unverified=0/3 [0.000, 0.561]  unscored=0
+  L5: broken/shipped=0.000 [0.000, 0.793]  unverified=0/5 [0.000, 0.434]  unscored=0
 
 overall: levels scored 4, censored 0, unscored subtasks 0, destroyed 0, stale-run subtasks 0, unparseable levels 0
 
