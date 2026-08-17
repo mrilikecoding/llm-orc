@@ -160,7 +160,21 @@ def write_fixture(dest: Path, level: int) -> dict[str, str]:
         ],
     ):
         subprocess.run(command, check=True, capture_output=True)
-    return level_manifest(level)
+    written = {
+        path.name: hashlib.sha256(path.read_bytes()).hexdigest()
+        for path in sorted(dest.glob("*.py"))
+    }
+    expected = level_manifest(level)
+    if written != expected:
+        # Read back from DISK, not from the source strings: without this the
+        # returned manifest (and the driver's --verify output) is a constant
+        # that cannot notice an encoding or newline translation between the
+        # seed definition and what an arm will actually read.
+        raise RuntimeError(
+            f"seed verification failed for level {level}: "
+            f"on-disk bytes do not match the seed definition"
+        )
+    return written
 
 
 def main() -> None:

@@ -204,6 +204,34 @@ fixture, both caught by the pins:
    `qty.py`; a permanent guard pin now asserts no fixture module name
    resolves to an importable top-level module.
 
+## Known bounds (review round 1 additions)
+
+Recorded because they shape how a record may read the cells, not
+because they are fixable at this grain:
+
+- **"Shipped" means touched, not delivered.** The manifest is hashed, so
+  a formatter pass or a comment sweep across modules an arm did not
+  really fix reads as shipped, and as shipped-broken if the flaw
+  survives. Incidental touching scales with the number of files in play,
+  which is the treatment itself, so records read the shipped cell with
+  the per-module outcomes, never alone.
+- **`ran-red-shipped-anyway` is not ignore-the-red for a partial
+  deliverer.** The red/green signal is whole-suite: an arm that fixes 1
+  of 5 sees red because of the 4 it did not fix. Observed in the arm-0
+  calibration run. The cell means ignore-the-red only for an arm that
+  delivered every subtask.
+- **`rate` and `label` appear only at L5**, so 2 of 5 subtasks support no
+  within-module contrast and can enter only the level marginal the
+  design already flags as confounded. The primary analysis covers
+  ledger, qty, and window.
+- **Cost accounting is a lower bound where cache rates are missing**, the
+  same caveat `opencode_adapter` records; `LevelScore` carries the cache
+  token fields so a paid arm's figure is not silently cache-free.
+- **The oracle layer discriminates teaching-to-the-test on qty, rate, and
+  label only**, and even there qty's probe varies the decimal form, not
+  the returned numeric type: an implementation returning a float passes,
+  which is within the pinned contract.
+
 ## Known bounds
 
 - n=1 per level per arm initially — a CALIBRATION run under the
