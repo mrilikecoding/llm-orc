@@ -61,6 +61,26 @@ buy-back ledger tracks hosted seats.
 
 ## State (2026-08-17)
 
+**#157 merged 2026-08-17** (108b2e8, no release): engine-run script
+agents get the timeout the ensemble already resolved. The bug was worse
+than filed — BOTH bounds were defeated independently. The inner one
+because `model_dump` always emits `timeout_seconds` and supplies `None`
+when unset, so `.get(key, 60)` never saw its default and every
+subprocess ran unbounded; the outer `asyncio.wait_for` because the
+blocking subprocess sits in an `async def` and stalls the event loop, so
+that timer never runs (#158). Demonstrated in wall-clock: the unmocked
+pin takes 30.2s pre-fix (the full sleep runs) and ~1-2s with the fix.
+One shared `resolve_agent_timeout` now answers the question for both the
+dispatcher and the script runner. Six nodes declare explicit timeouts
+rather than racing the SHIPPED 60s default, since `accept_executor`'s
+worst case is exactly 60 (45s aggregate + one 15s child, its budget
+check running before each spawn) and `web_searcher`'s default backend is
+third-party-bounded. Follow-ups filed: #158, #159 (failure envelopes
+cached as successes for the hour-long TTL, which this fix makes more
+frequent).
+
+### Earlier (2026-08-17)
+
 **#154 merged 2026-08-17** (cea2607, no release): `.py` script agents
 run under llm-orc's OWN interpreter, not whichever `python3` the
 caller's PATH exposes. This is the root cause behind #152's captured
@@ -164,8 +184,8 @@ exit stays OPEN on the whale — unblockers #106/#151/chunked reads).
 #143 CLOSED as an honest miss (reopen rides #119). Open follow-ups:
 #147 (classifier false positives), #149 (client-side truncation
 flanks), #151 (server-queried window), #155 (pipeline
-positive-completeness), #156 (instrument pins ungated), #157
-(script-agent timeout never applied). Operating rules:
+positive-completeness), #156 (instrument pins ungated), #158
+(event-loop blocking), #159 (cached failure envelopes). Operating rules:
 `docs/loop-protocol.md`.
 
 ## Timeline
@@ -328,7 +348,8 @@ dishonest outcome.
 - [x] #146 v0.18.15 released
 - [x] #152 fail-closed routing merged (readability-gated decisions; the misfire class refuses)
 - [x] #154 interpreter PATH fragility fixed (.py runs under llm-orc's own interpreter; bare-PATH suite 50 failures -> 0)
-- [ ] #151 runtime-window detector remainder · #155 pipeline positive-completeness · #156 instrument pins ungated · #157 script-agent timeout never applied · #85 sandbox hardening · #84 gate adversarial harness · #90 llama.cpp · #93 hot path · #95 dead surface · #106 shape home · #110 artifact quality · #114 trace cap · #132 BitNet · #142 reject templates
+- [x] #157 script-agent timeouts fixed (one resolver for inner and outer bounds; six nodes declare their own)
+- [ ] #151 runtime-window detector remainder · #155 pipeline positive-completeness · #156 instrument pins ungated · #158 event-loop blocking · #159 failure envelopes cached · #85 sandbox hardening · #84 gate adversarial harness · #90 llama.cpp · #93 hot path · #95 dead surface · #106 shape home · #110 artifact quality · #114 trace cap · #132 BitNet · #142 reject templates
 
 ### epic:off-path
 #80 #65 #30 #66 — parked, not on the north-star path.
