@@ -149,11 +149,14 @@ class ScriptAgentRunner:
         # _validate_primitive_output needs it (_normalize_script_ref returns
         # None for an identity string, which would silently disable the
         # primitive schema check on every cache hit).
-        cache_identity = self._cache_identity(script_content) if cacheable else ""
+        # None means "no identity that names this script's bytes" (#163):
+        # neither half of the cache runs, rather than degrading to the
+        # path-only key that IS the #160 bug.
+        cache_identity = self._cache_identity(script_content) if cacheable else None
 
         cached_result = (
             self._script_cache.get(cache_identity, cache_key_params)
-            if cacheable
+            if cache_identity is not None
             else None
         )
         if cached_result is not None:
@@ -182,10 +185,18 @@ class ScriptAgentRunner:
         # for the full TTL rather than self-correcting. Re-reading here
         # closes the window: if the bytes moved, this run's output belongs
         # to no key we can name, so it belongs in no entry.
-        edited_mid_run = cacheable and self._cache_identity(script_content) != (
-            cache_identity
+        # A post-run identity of None (the bytes stopped being digestable
+        # during the run) compares unequal here, so it falls closed with
+        # the edited case rather than sharing an entry (#163).
+        edited_mid_run = (
+            cache_identity is not None
+            and self._cache_identity(script_content) != cache_identity
         )
-        if cacheable and not edited_mid_run and not _reports_failure(response):
+        if (
+            cache_identity is not None
+            and not edited_mid_run
+            and not _reports_failure(response)
+        ):
             cache_result = {
                 "output": response,
                 "execution_metadata": {"duration_ms": duration_ms},
@@ -211,8 +222,9 @@ class ScriptAgentRunner:
         """
         return bool(self._script_cache.config.enabled)
 
-    def _cache_identity(self, script_ref: str) -> str:
-        """What identifies this script for caching (#160).
+    def _cache_identity(self, script_ref: str) -> str | None:
+        """What identifies this script for caching (#160), or ``None`` when
+        nothing does and the run must not be cached at all (#163).
 
         The cache used to key on ``agent_config.script``, a REFERENCE,
         which in every shipped ensemble is a path — so the key named the
@@ -251,6 +263,30 @@ class ScriptAgentRunner:
           unbounded.
 
         The last two are why this is ``isfile`` and not ``exists``.
+
+        Failing to digest is ``None``, not the resolved path (#163). Both
+        no-digest branches used to return the path, which is exactly the
+        key shape #160 exists to eliminate — installed silently, held for
+        the full TTL, and crossing processes under
+        ``persist_to_artifacts``. So the two are separated by whether the
+        reference names something on the filesystem at all:
+
+        - it does, and the bytes are unreadable or not a regular file:
+          there IS a script here and we cannot name it. ``None``.
+        - it does not: inline content, or an unresolvable reference. The
+          reference IS the content, so it names its own bytes and stays
+          cacheable. ``os.path.exists`` answers ``False`` rather than
+          raising for every shape above — NUL byte, longer than
+          PATH_MAX, empty — so the split is safe to make with it.
+
+        The issue's own hypothesis for how the read fails, a script that
+        is executable but not readable, is refuted: ``script_agent.py``
+        runs every extension through an interpreter (``bash`` by
+        default), all of which must read the file, so such a script never
+        executes and #159 never caches its failure. What is reachable is
+        a transient ``OSError`` while execution still succeeds — fd
+        exhaustion, ``EIO``/``ESTALE`` on a network filesystem, an ENOENT
+        race — which #158 made likelier by overlapping script agents.
         """
         # A fast path, NOT a correctness guard, and review was right to
         # flag it as looking like one: resolve_script_path("") returns ""
@@ -267,11 +303,11 @@ class ScriptAgentRunner:
         except Exception:
             return script_ref
         if not os.path.isfile(resolved):
-            return resolved
+            return None if os.path.exists(resolved) else resolved
         try:
             digest = hashlib.sha256(Path(resolved).read_bytes()).hexdigest()
         except OSError:
-            return resolved
+            return None
         return f"{resolved}:{digest}"
 
     async def _execute_without_cache(
