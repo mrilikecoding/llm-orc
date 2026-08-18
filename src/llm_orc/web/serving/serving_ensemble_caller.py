@@ -1391,8 +1391,31 @@ def _glob_pattern(glob_stem: str) -> str | None:
     return f"**/*{{{','.join(parts)}}}*"
 
 
+def _build_refused_prefix(reject_prefixes: _RejectPrefixes) -> str:
+    """The project's own refuse prefix that mints a ``refused`` ledger entry
+    (#166).
+
+    Not a literal here. The whole argument for guarding at the caller is
+    that project scripts rev independently of this installed caller, so
+    hardcoding emit.py's wording would contradict the placement. The
+    vocabulary this module already names — ``mints == _REFUSED`` — selects
+    it instead, exactly as ``_reject_kind`` matches on it.
+
+    Falls back to the plain non-minting idiom when a project's emit.py
+    registers no minting refuse terminal at all: an unrecorded refusal is
+    a worse outcome than a silent write only if it is also a wrong answer,
+    and it is not — the client still gets the honest refusal.
+    """
+    for terminal in reject_prefixes:
+        if terminal.mints == _REFUSED:
+            return terminal.prefix
+    return "Refused: "
+
+
 def _outcome_chunks(
-    outcome: dict[str, Any], tools: Sequence[Any]
+    outcome: dict[str, Any],
+    tools: Sequence[Any],
+    reject_prefixes: _RejectPrefixes = _NO_REJECT_PREFIXES,
 ) -> list[OrchestratorChunk]:
     if outcome.get("finish"):
         return [
@@ -1451,10 +1474,30 @@ def _outcome_chunks(
         )
         return [ClientToolCall(tool_calls=(invocation,))]
     if "file" in outcome and "content" in outcome:
+        path = str(outcome.get("file", "solution.py"))
+        content = str(outcome.get("content", ""))
+        # #166: the seat contract asserts artifact PRESENCE, never
+        # non-emptiness, and ast.parse("") succeeds — so a seat that
+        # SUCCEEDS with an empty artifact clears every upstream gate and
+        # arrives here as a write. Single-fault reachable on two build
+        # routes, and on re-fix the named file is one the client already
+        # has, so the write is a clobber. Empty after strip, because a file
+        # of blank lines is as empty as no file; comment-only content is
+        # deliberately not covered, since telling that from a real file
+        # needs a parser rather than a predicate.
+        if not content.strip():
+            return [
+                ContentDelta(
+                    content=f"{_build_refused_prefix(reject_prefixes)}the build "
+                    f"produced an empty deliverable for {path}, so nothing "
+                    "was written."
+                ),
+                Completion(finish_reason="stop"),
+            ]
         arguments = json.dumps(
             {
-                "filePath": outcome.get("file", "solution.py"),
-                "content": outcome.get("content", ""),
+                "filePath": path,
+                "content": content,
             }
         )
         invocation = ToolCallInvocation(
@@ -1671,7 +1714,7 @@ class ServingEnsembleCaller:
                     self_reads[label] = self._execute_self_read(label)
         else:
             outcome = _self_read_exhausted_outcome()
-        for chunk in _outcome_chunks(outcome, context.tools):
+        for chunk in _outcome_chunks(outcome, context.tools, reject_prefixes):
             yield chunk
 
     async def _serve(
