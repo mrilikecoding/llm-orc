@@ -541,7 +541,10 @@ class TestFailuresAreNotCached:
         asyncio.run(runner.execute(config, "{}"))
 
         # The cache is keyed by identity now (#160), not by the raw path.
+        # A digestable script always has one; None here would mean the
+        # entry could not exist at all (#163).
         identity = runner._cache_identity(str(script))
+        assert identity is not None
         entry = cache.get(identity, {"input_data": "{}", "parameters": {}})
         assert entry is not None
         assert "success" not in entry
@@ -779,12 +782,17 @@ class TestCacheIdentity:
         `isfile` computing a cache key hangs the agent forever — and
         review showed that swap survives the whole suite unpinned. A
         watchdog thread is the cheap way to pin a hang.
+
+        The identity itself is now None rather than the path (#163): a
+        FIFO is a real filesystem object whose bytes we cannot name, and
+        returning the path was the #160 key shape. The hang is what this
+        pin is for and it is unchanged.
         """
         fifo = tmp_path / "piped.sh"
         os.mkfifo(fifo)
         runner = self._runner(ScriptCache(ScriptCacheConfig(enabled=True)))
 
-        result: list[str] = []
+        result: list[str | None] = []
         worker = threading.Thread(
             target=lambda: result.append(runner._cache_identity(str(fifo))),
             daemon=True,
@@ -793,7 +801,7 @@ class TestCacheIdentity:
         worker.join(timeout=5)
 
         assert not worker.is_alive(), "computing a cache identity hung on a FIFO"
-        assert result == [str(fifo)], "a FIFO must yield no digest"
+        assert result == [None], "a FIFO must not be cacheable"
 
     def test_an_edit_reverted_mid_run_is_a_known_wrong_accept(
         self, tmp_path: Path
@@ -996,3 +1004,183 @@ class TestCacheIdentity:
 
         assert cache.get_stats()["sets"] == 0
         assert cache.get_stats()["hits"] == 0
+
+
+class TestUndigestableScriptIsNotCached:
+    """#163: when the bytes cannot be digested, _cache_identity used to drop
+    to path-only — which IS the #160 bug it exists to fix — with no warning
+    and nothing observing the path. Removing the `except OSError` entirely
+    left the whole suite green.
+
+    The trigger the issue named (a script executable but not readable) is
+    refuted: every interpreter in script_agent.py's map must READ the file,
+    so an unreadable script fails to execute and #159 never caches a
+    failure. The reachable trigger is a TRANSIENT OSError while execution
+    still succeeds — fd exhaustion, EIO/ESTALE on a network filesystem, or
+    an ENOENT race — and #158 made overlapping whole-file reads the norm.
+    """
+
+    def _runner(
+        self,
+        cache: ScriptCache,
+        project_dir: Path | None = None,
+    ) -> ScriptAgentRunner:
+        return ScriptAgentRunner(
+            script_cache=cache,
+            usage_collector=UsageCollector(),
+            progress_controller=None,
+            emit_event=lambda name, data: None,
+            project_dir=project_dir,
+            performance_config={"execution": {"default_timeout": 30}},
+        )
+
+    def _emit(self, value: str) -> str:
+        return f'import json\nprint(json.dumps({{"v": "{value}"}}))\n'
+
+    @staticmethod
+    def _raising_read_bytes(target: Path) -> Any:
+        """Path.read_bytes that raises EMFILE for `target` only, so the
+        resolver and everything else in the run still read normally."""
+        real = Path.read_bytes
+
+        def flaky(self: Path, *args: Any, **kwargs: Any) -> bytes:
+            if self == target:
+                raise OSError(24, "Too many open files")
+            return real(self, *args, **kwargs)
+
+        return flaky
+
+    def test_a_transient_read_failure_serves_no_stale_result(
+        self, tmp_path: Path
+    ) -> None:
+        """The issue's reproduction, end to end. Under a transient OSError
+        the identity has no digest in it, so the entry written under it is
+        keyed on the path alone and the EDITED script is served the pre-edit
+        output for the whole TTL."""
+        script = tmp_path / "probe.py"
+        script.write_text(self._emit("one"))
+        cache = ScriptCache(ScriptCacheConfig(enabled=True))
+        runner = self._runner(cache)
+        config = ScriptAgentConfig(name="probe", script=str(script))
+        flaky = self._raising_read_bytes(script)
+
+        with patch.object(Path, "read_bytes", flaky):
+            first, _, _ = asyncio.run(runner.execute(config, "{}"))
+        script.write_text(self._emit("two"))
+        with patch.object(Path, "read_bytes", flaky):
+            second, _, _ = asyncio.run(runner.execute(config, "{}"))
+
+        assert json.loads(first)["v"] == "one"
+        assert json.loads(second)["v"] == "two", "served the pre-edit output"
+        assert cache.get_stats()["hits"] == 0
+
+    def test_nothing_is_written_under_a_digestless_identity(
+        self, tmp_path: Path
+    ) -> None:
+        """The WRITE half of the guard, observed directly.
+
+        Unlike the interactive skip — where the get and the set are
+        genuinely separate decisions, because byte-identity aliases
+        several references onto one key while requires_user_input judges
+        each reference separately (#160) — here both halves read one
+        predicate. So this is not an independence pin; it is the pin that
+        the poisoned entry is never created in the first place, which is
+        the half that outlives the process under persist_to_artifacts.
+        """
+        script = tmp_path / "probe.py"
+        script.write_text(self._emit("one"))
+        cache = ScriptCache(ScriptCacheConfig(enabled=True))
+        runner = self._runner(cache)
+        config = ScriptAgentConfig(name="probe", script=str(script))
+
+        with patch.object(Path, "read_bytes", self._raising_read_bytes(script)):
+            asyncio.run(runner.execute(config, "{}"))
+
+        assert cache.get_stats()["sets"] == 0
+
+    def test_an_existing_entry_is_not_consulted_without_a_digest(
+        self, tmp_path: Path
+    ) -> None:
+        """The READ half, against an entry that really is there: a healthy
+        run writes a real digest entry, then the same script is asked for
+        again while the digest cannot be taken.
+
+        The observation is the CALL, not the stats. A get that still ran
+        would look up the path-only key and simply miss, which is
+        indistinguishable from not looking — the same shape of false
+        green as #160's get-side skip that survived the whole suite.
+        """
+        script = tmp_path / "probe.py"
+        script.write_text(self._emit("one"))
+        cache = ScriptCache(ScriptCacheConfig(enabled=True))
+        runner = self._runner(cache)
+        config = ScriptAgentConfig(name="probe", script=str(script))
+
+        asyncio.run(runner.execute(config, "{}"))
+        assert cache.get_stats()["sets"] == 1, "the healthy run must cache"
+
+        with (
+            patch.object(cache, "get", wraps=cache.get) as spy,
+            patch.object(Path, "read_bytes", self._raising_read_bytes(script)),
+        ):
+            asyncio.run(runner.execute(config, "{}"))
+
+        assert spy.call_count == 0, "the cache was consulted with no digest"
+
+    def test_a_digestable_script_still_caches(self, tmp_path: Path) -> None:
+        """The pin that stops this becoming 'never cache anything' — the
+        degradation #160's review named explicitly. An implementer who
+        returns None on every branch passes every other pin here."""
+        script = tmp_path / "probe.py"
+        script.write_text(self._emit("one"))
+        cache = ScriptCache(ScriptCacheConfig(enabled=True))
+        runner = self._runner(cache)
+        config = ScriptAgentConfig(name="probe", script=str(script))
+
+        asyncio.run(runner.execute(config, "{}"))
+        asyncio.run(runner.execute(config, "{}"))
+
+        assert cache.get_stats()["sets"] == 1
+        assert cache.get_stats()["hits"] == 1
+
+    def test_becoming_undigestable_mid_run_stores_nothing(self, tmp_path: Path) -> None:
+        """edited_mid_run compares the post-run identity to the pre-run one.
+        A run whose bytes become undigestable only AFTER the subprocess has
+        read them must fail closed, not compare equal and store."""
+        script = tmp_path / "probe.py"
+        script.write_text(self._emit("one"))
+        cache = ScriptCache(ScriptCacheConfig(enabled=True))
+        runner = self._runner(cache)
+        config = ScriptAgentConfig(name="probe", script=str(script))
+
+        real = Path.read_bytes
+        calls = {"n": 0}
+
+        def fails_on_the_second_identity(
+            self: Path, *args: Any, **kwargs: Any
+        ) -> bytes:
+            if self == script:
+                calls["n"] += 1
+                if calls["n"] > 1:
+                    raise OSError(5, "Input/output error")
+            return real(self, *args, **kwargs)
+
+        with patch.object(Path, "read_bytes", fails_on_the_second_identity):
+            asyncio.run(runner.execute(config, "{}"))
+
+        assert calls["n"] >= 2, "the post-run identity was never recomputed"
+        assert cache.get_stats()["sets"] == 0
+
+    def test_inline_content_still_caches(self, tmp_path: Path) -> None:
+        """The `exists` split must not swallow the legitimate no-digest row.
+        resolve_script_path returns inline content verbatim, so the
+        reference genuinely IS its own bytes and stays cacheable."""
+        cache = ScriptCache(ScriptCacheConfig(enabled=True))
+        runner = self._runner(cache, project_dir=tmp_path)
+        config = ScriptAgentConfig(name="inline", script='echo \'{"v": "one"}\'')
+
+        asyncio.run(runner.execute(config, "{}"))
+        asyncio.run(runner.execute(config, "{}"))
+
+        assert cache.get_stats()["sets"] == 1
+        assert cache.get_stats()["hits"] == 1
