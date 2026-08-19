@@ -884,3 +884,33 @@ def test_a_decoy_message_line_does_not_displace_the_exception_class() -> None:
 
     assert "AssertionError" in report, report
     assert "Body: not found" not in report, report
+
+
+def test_a_chained_exception_reports_the_one_that_failed() -> None:
+    """Round 7, and the third distinct way this line has been picked wrong.
+
+    A chained traceback has one frame block per link, so returning at the
+    FIRST column-0 line after a frame reported the CAUSE — ordinary
+    `except ValueError: raise RuntimeError(...)` cleanup told the retry loop
+    the wrong exception class and message. Keeping the LAST candidate lands
+    on the exception that actually terminated.
+
+    Asymmetry worth noting: the `test_*`-function branch never had this bug,
+    because `_safe_reason` works on the live exception object rather than on
+    formatted text. Only the TestCase branch parses a traceback.
+    """
+    report = _executor_report(
+        "",
+        tests=(
+            "import unittest\n"
+            "class T(unittest.TestCase):\n"
+            "    def test_cleanup(self):\n"
+            "        try:\n"
+            "            raise ValueError('root cause')\n"
+            "        except ValueError:\n"
+            "            raise RuntimeError('actual failure')\n"
+        ),
+    )
+
+    assert "RuntimeError" in report, report
+    assert "ValueError" not in report, report
