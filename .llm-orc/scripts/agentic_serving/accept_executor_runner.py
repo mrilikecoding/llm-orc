@@ -103,29 +103,43 @@ def _wire_safe(text: str, fallback: str) -> str:
 def _exception_line(trace: str) -> str:
     """The ``Type: message`` line of a traceback, or its last line.
 
-    Found by the traceback's own GRAMMAR: frames are indented, the exception
-    line is the first column-0 line after them. Two shapes defeat the
-    obvious alternatives, and both are ordinary rather than adversarial —
+    Found by the traceback's own GRAMMAR: frames are indented, so an
+    exception line is the first column-0 line after an indented block, and
+    the LAST such line is the exception that actually terminated. Three
+    shapes defeat the obvious alternatives, all ordinary rather than
+    adversarial —
 
-    - taking the LAST line loses the type whenever the message is
+    - taking the last LINE loses the type whenever the message is
       multi-line, which is what ``assertEqual`` produces for any sequence;
     - scanning backward for the first ``identifier:`` line picks a MESSAGE
-      line that happens to read ``Key: value`` over the real type line above
-      it, so ``AssertionError('Response mismatch:\nStatus: 404\nBody: not
-      found')`` reported ``Body: not found`` and dropped the class entirely
-      (#168 review round 6).
+      line reading ``Key: value`` over the real type line above it, so
+      ``AssertionError('Response mismatch:\nStatus: 404\nBody: not found')``
+      reported ``Body: not found`` (#168 review round 6);
+    - taking the FIRST such line reports the CAUSE of a chained exception
+      rather than the one that failed the test, so ordinary
+      ``except ValueError: raise RuntimeError(...)`` cleanup reported
+      ``ValueError`` (#168 review round 7). A chained traceback has one
+      frame block per link, so resetting after each capture and keeping the
+      last lands on the terminating exception — and ``raise ... from None``
+      has one link, so it is unaffected.
+
+    Measured: an ``assertEqual`` diff's continuation lines are all at
+    column 0, so they never look like a frame and cannot start a new
+    candidate.
 
     Falls back to the last line when there are no frames at all, which is
     the shape a bare message has.
     """
     lines = trace.strip().splitlines()
-    seen_frame = False
+    found = ""
+    after_frame = False
     for line in lines:
         if line[:1].isspace():
-            seen_frame = True
-        elif seen_frame:
-            return line.strip()
-    return lines[-1].strip() if lines else ""
+            after_frame = True
+        elif after_frame:
+            found = line.strip()
+            after_frame = False
+    return found or (lines[-1].strip() if lines else "")
 
 
 def _safe_reason(error: BaseException) -> str:
