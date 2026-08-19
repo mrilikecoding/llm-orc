@@ -416,3 +416,62 @@ def test_a_healthy_seat_contract_is_not_a_failure() -> None:
 
     assert not shaped["seat_gate_failed"]
     assert shaped["seat_admitted"] is True
+
+
+_EXECUTOR = REPO / ".llm-orc" / "scripts" / "agentic_serving" / "accept_executor.py"
+
+
+def _executor_verdict(code: str, tests: str) -> dict[str, Any]:
+    payload = json.dumps({"requirement": "r", "code": code, "tests": tests})
+    out = subprocess.run(
+        [sys.executable, str(_EXECUTOR)],
+        input=payload,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    result: dict[str, Any] = json.loads(out)
+    return result
+
+
+def test_a_helper_class_does_not_fail_a_passing_suite() -> None:
+    """#176: `has_cases` matched ANY module-level class, not just TestCase
+    subclasses. A tests file with an ordinary helper class spawned a
+    `__cases__` child, the child found no TestCase, returned n_tests == 0,
+    and `_run_children` appended that as a failure — so a suite whose real
+    tests all passed was rejected, with a reason untrue of the file.
+
+    A wrong-REJECT in the gate that decides whether a build ships, and it
+    biases every measurement taken through the gate in a direction nothing
+    distinguishes from a real reject.
+
+    Pinned at the EXECUTOR, not the runner: the runner never sees the
+    decision. A first version of this pin drove the runner and passed on
+    both sides, which is the layer error rule 17 is about.
+    """
+    verdict = _executor_verdict(
+        "def add(a, b):\n    return a + b\n",
+        "from solution import add\n\n"
+        "class Fixture:\n"
+        "    value = 3\n\n"
+        "def test_add():\n"
+        "    assert add(1, 2) == Fixture.value\n",
+    )
+
+    assert verdict["tests_pass"] is True, verdict["report"]
+
+
+def test_a_real_testcase_still_runs() -> None:
+    """The over-refusal direction: recognising TestCase subclasses must not
+    stop recognising them."""
+    verdict = _executor_verdict(
+        "def add(a, b):\n    return a + b\n",
+        "import unittest\n"
+        "from solution import add\n\n"
+        "class TestAdd(unittest.TestCase):\n"
+        "    def test_it(self):\n"
+        "        self.assertEqual(add(1, 2), 3)\n",
+    )
+
+    assert verdict["tests_pass"] is True, verdict["report"]
+    assert verdict["n_tests"] == 1

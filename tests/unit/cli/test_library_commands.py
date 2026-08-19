@@ -1199,3 +1199,49 @@ class TestLibraryConfigurationIntegration:
             exists = ensemble_exists("nonexistent-ensemble", is_global=False)
 
             assert exists is False
+
+
+class TestLibrarySourceResolution:
+    """#172: an EMPTY `llm-orchestra-library/` was accepted as a library.
+
+    `llm-orchestra-library` is a git submodule, so an empty directory is the
+    normal state after `git clone` without `--recurse-submodules` and after
+    every `git worktree add`. Accepting it shadows a real packaged library:
+    with `LLM_ORC_LIBRARY_SOURCE=local` explicitly requested, priority 2 wins
+    on the empty directory and priority 3 never looks at the package.
+
+    Every other cwd-based resolver in the tree gates on the content-bearing
+    subdirectory instead — `config_manager.get_ensembles_dirs`,
+    `library_handler.get_library_dir` — so this one was the outlier.
+    """
+
+    def test_an_empty_library_directory_is_not_a_source(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from llm_orc.cli_library.library import _get_library_source_config
+
+        (tmp_path / "llm-orchestra-library").mkdir()
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.delenv("LLM_ORC_LIBRARY_PATH", raising=False)
+        monkeypatch.delenv("LLM_ORC_LIBRARY_SOURCE", raising=False)
+
+        _source_type, source_path = _get_library_source_config()
+
+        assert source_path != str(tmp_path / "llm-orchestra-library")
+
+    def test_a_populated_library_directory_is_the_source(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The over-refusal direction: a real library still resolves."""
+        from llm_orc.cli_library.library import _get_library_source_config
+
+        library = tmp_path / "llm-orchestra-library"
+        (library / "ensembles").mkdir(parents=True)
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.delenv("LLM_ORC_LIBRARY_PATH", raising=False)
+        monkeypatch.delenv("LLM_ORC_LIBRARY_SOURCE", raising=False)
+
+        source_type, source_path = _get_library_source_config()
+
+        assert source_type == "local"
+        assert source_path == str(library)

@@ -214,7 +214,9 @@ def _excise_unbound_callable_tests(tests: str, code: str) -> tuple[str, int]:
         and n.name.startswith("test_")
     ]
     doomed = [f for f in test_funcs if _calls_unbound_name(f, bound)]
-    has_cases = any(isinstance(n, ast.ClassDef) for n in tree.body)
+    has_cases = any(
+        isinstance(n, ast.ClassDef) and _is_testcase(n) for n in tree.body
+    )
     if not doomed or (len(doomed) == len(test_funcs) and not has_cases):
         return tests, 0
     lines = tests.splitlines()
@@ -503,6 +505,27 @@ def _aggregate_budget() -> float:
         return _timeout() * _BUDGET_MULTIPLIER
 
 
+def _is_testcase(node: ast.ClassDef) -> bool:
+    """Whether a class is a ``unittest.TestCase`` subclass (#176).
+
+    ``any(isinstance(n, ast.ClassDef))`` matched ANY module-level class, so
+    an ordinary helper — a dataclass, an Enum, a fixture holder — spawned a
+    ``__cases__`` child that could only report "no TestCase classes found"
+    and fail a suite whose real tests passed.
+
+    Positive recognition by base name, the same discipline the serving
+    nodes use. A base this cannot read (an aliased import, a factory) falls
+    to the non-cases path, which runs the ``test_*`` functions and skips a
+    child that would have had nothing to run.
+    """
+    for base in node.bases:
+        if isinstance(base, ast.Name) and base.id == "TestCase":
+            return True
+        if isinstance(base, ast.Attribute) and base.attr == "TestCase":
+            return True
+    return False
+
+
 def _enumerate_tests(tests: str) -> tuple[list[str], bool] | None:
     """(top-level test_* function names, has_testcase_classes), or ``None``
     when the tests don't parse — the caller falls back to one legacy run.
@@ -535,7 +558,9 @@ def _enumerate_tests(tests: str) -> tuple[list[str], bool] | None:
     if nested_exists:
         return None
     names = [n.name for n in top_level_defs]
-    has_cases = any(isinstance(n, ast.ClassDef) for n in tree.body)
+    has_cases = any(
+        isinstance(n, ast.ClassDef) and _is_testcase(n) for n in tree.body
+    )
     return names, has_cases
 
 
