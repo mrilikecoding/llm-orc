@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import errno
 import json
 import os
 import threading
@@ -1218,28 +1219,78 @@ class TestAResolveFailureIsAlsoUndigestable:
 
         return flaky
 
-    def test_a_stat_failure_serves_no_stale_result(self, tmp_path: Path) -> None:
-        """The reviewer's reproduction: identical to the design's own
-        measured stale serve, one call earlier."""
+    def test_a_resolve_failure_is_not_cacheable(self, tmp_path: Path) -> None:
+        """Round 1's site, pinned by MECHANISM (review round 3).
+
+        The end-to-end version could not fail. It scripted the fault at the
+        resolver's first stat only, which leaves the POST-run identity
+        healthy — so `edited_mid_run` suppressed the write for a reason
+        unrelated to the guard, and `sets == 0` was satisfied either way.
+        Reverting the guard to `return script_ref` survived the whole suite.
+
+        A stale handle does not politely retreat after one call, so the
+        honest fault is sustained; asserting the ANSWER rather than a
+        downstream side effect makes the schedule irrelevant.
+        """
         script = tmp_path / "probe.py"
         script.write_text(self._emit("one"))
-        cache = ScriptCache(ScriptCacheConfig(enabled=True))
-        runner = self._runner(cache)
-        config = ScriptAgentConfig(name="probe", script=str(script))
-        # Call 1 is the RESOLVER's own stat inside _cache_identity, which
-        # is the site this pin is about; the identity returns early, so the
-        # execution's later stats are calls 2 and 3 and they succeed. The
-        # mount flaps between naming the script and running it.
-        with patch("os.stat", self._flapping_stat(script, {1})):
-            first, _, _ = asyncio.run(runner.execute(config, "{}"))
-        script.write_text(self._emit("two"))
-        with patch("os.stat", self._flapping_stat(script, {1})):
-            second, _, _ = asyncio.run(runner.execute(config, "{}"))
+        runner = self._runner(ScriptCache(ScriptCacheConfig(enabled=True)))
 
-        assert json.loads(first)["v"] == "one"
-        assert json.loads(second)["v"] == "two", "served the pre-edit output"
-        assert cache.get_stats()["hits"] == 0
-        assert cache.get_stats()["sets"] == 0
+        def estale(self: Path) -> bool:
+            raise OSError(116, "Stale file handle")
+
+        with patch.object(Path, "exists", estale):
+            identity = runner._cache_identity(str(script))
+
+        assert identity is None, f"a failed resolve named the script: {identity!r}"
+
+    def test_an_enoent_after_a_healthy_resolve_is_not_cacheable(
+        self, tmp_path: Path
+    ) -> None:
+        """Review round 3's BLOCKER: the FOURTH site.
+
+        The errno rule kept a reference cacheable on ``ENOENT``, which is
+        right for inline content and wrong for a path the resolver just
+        found a file at — the file vanished between the resolve and the
+        stat, which is one of the three triggers this fix is named for, and
+        the answer was the bare path.
+
+        The rule could not be repaired by trimming the errno set: ``ENOENT``
+        is exactly what made ``script: "echo hello"`` cacheable, so one errno
+        was being asked two questions. The classification moved to the
+        resolver, which is the only thing that knows the answer.
+        """
+        script = tmp_path / "probe.py"
+        script.write_text(self._emit("one"))
+        runner = self._runner(ScriptCache(ScriptCacheConfig(enabled=True)))
+        real_stat = os.stat
+
+        def vanished(path: Any, *args: Any, **kwargs: Any) -> Any:
+            if str(path) == str(script):
+                raise OSError(errno.ENOENT, "No such file or directory")
+            return real_stat(path, *args, **kwargs)
+
+        with (
+            patch.object(Path, "exists", lambda self: True),
+            patch("os.stat", vanished),
+        ):
+            identity = runner._cache_identity(str(script))
+
+        assert identity is None, f"a vanished file was named by path: {identity!r}"
+
+    def test_a_symlinked_script_still_digests(self, tmp_path: Path) -> None:
+        """The over-refusal direction for the stat: a symlink to a real
+        script is a regular file through the link and must stay cacheable."""
+        target = tmp_path / "real.py"
+        target.write_text(self._emit("one"))
+        link = tmp_path / "link.py"
+        link.symlink_to(target)
+        runner = self._runner(ScriptCache(ScriptCacheConfig(enabled=True)))
+
+        identity = runner._cache_identity(str(link))
+
+        assert identity is not None
+        assert ":" in identity
 
     def test_a_stat_failure_after_a_healthy_resolve_is_not_cacheable(
         self, tmp_path: Path
