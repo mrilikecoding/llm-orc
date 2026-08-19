@@ -1412,6 +1412,44 @@ def _build_refused_prefix(reject_prefixes: _RejectPrefixes) -> str:
     return "Refused: "
 
 
+def _empty_deliverable_refusal(
+    path: Any, content: Any, reject_prefixes: _RejectPrefixes
+) -> list[OrchestratorChunk] | None:
+    """The refusal for a build outcome with an empty deliverable, or
+    ``None`` when the deliverable is real and the write may proceed (#166).
+
+    The seat contract asserts artifact PRESENCE, never non-emptiness, and
+    ``ast.parse("")`` succeeds — so a seat that SUCCEEDS with an empty
+    artifact clears every upstream gate and arrives at the caller as a
+    write. Single-fault reachable on two build routes, and on re-fix the
+    named file is one the client already has, so the write is a clobber.
+
+    The RAW value is judged, never a ``str()`` of it. Review round 1: a
+    coercion first would turn a ``content: null`` outcome — the emptiest
+    deliverable there is — into the four non-blank characters ``None`` and
+    write them. Nothing shipped emits a non-str content, but drift is the
+    entire argument for guarding here rather than in the seat contract, so
+    the guard has to survive the drift it exists for.
+
+    Empty after strip, because a file of blank lines is as empty as no
+    file; comment-only content is deliberately not covered, since telling
+    that from a real file needs a parser rather than a predicate. The rule
+    applies to EVERY deliverable path, not only ``.py`` — ``form_gate``
+    returns "ok" unconditionally for a ``.md`` or ``.sh`` deliverable, so
+    for those this is the only guard there is.
+    """
+    if isinstance(content, str) and content.strip():
+        return None
+    named = path if isinstance(path, str) and path.strip() else "the build"
+    return [
+        ContentDelta(
+            content=f"{_build_refused_prefix(reject_prefixes)}the build produced "
+            f"an empty deliverable for {named}, so nothing was written."
+        ),
+        Completion(finish_reason="stop"),
+    ]
+
+
 def _outcome_chunks(
     outcome: dict[str, Any],
     tools: Sequence[Any],
@@ -1474,26 +1512,11 @@ def _outcome_chunks(
         )
         return [ClientToolCall(tool_calls=(invocation,))]
     if "file" in outcome and "content" in outcome:
-        path = str(outcome.get("file", "solution.py"))
-        content = str(outcome.get("content", ""))
-        # #166: the seat contract asserts artifact PRESENCE, never
-        # non-emptiness, and ast.parse("") succeeds — so a seat that
-        # SUCCEEDS with an empty artifact clears every upstream gate and
-        # arrives here as a write. Single-fault reachable on two build
-        # routes, and on re-fix the named file is one the client already
-        # has, so the write is a clobber. Empty after strip, because a file
-        # of blank lines is as empty as no file; comment-only content is
-        # deliberately not covered, since telling that from a real file
-        # needs a parser rather than a predicate.
-        if not content.strip():
-            return [
-                ContentDelta(
-                    content=f"{_build_refused_prefix(reject_prefixes)}the build "
-                    f"produced an empty deliverable for {path}, so nothing "
-                    "was written."
-                ),
-                Completion(finish_reason="stop"),
-            ]
+        content = outcome.get("content")
+        path = outcome.get("file")
+        empty = _empty_deliverable_refusal(path, content, reject_prefixes)
+        if empty is not None:
+            return empty
         arguments = json.dumps(
             {
                 "filePath": path,

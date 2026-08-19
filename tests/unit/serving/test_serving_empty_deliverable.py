@@ -19,11 +19,14 @@ hand-feeding a verdict, which is how the original reproduction went wrong.
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 import sys
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
+
+import pytest
 
 REPO = Path(__file__).resolve().parents[3]
 SCRIPTS = REPO / ".llm-orc" / "scripts" / "agentic_serving"
@@ -31,12 +34,21 @@ SCRIPTS = REPO / ".llm-orc" / "scripts" / "agentic_serving"
 sys.path.insert(0, str(SCRIPTS))
 from emit import TERMINALS  # type: ignore  # noqa: E402
 
-from llm_orc.web.serving.chunks import ClientToolCall  # noqa: E402
+from llm_orc.core.session.registry import (  # noqa: E402
+    SessionIdentity,
+    SessionState,
+)
+from llm_orc.web.serving.chunks import ClientToolCall, Completion  # noqa: E402
 from llm_orc.web.serving.serving_ensemble_caller import (  # noqa: E402
+    ServingEnsembleCaller,
     _outcome_chunks,
     _reject_kind,
     _RejectPrefixes,
     _RejectTerminal,
+)
+from llm_orc.web.serving.session_start import (  # noqa: E402
+    ChatMessage,
+    SessionContext,
 )
 
 # The same derivation the caller's own _load_emit_reject_prefixes uses: a
@@ -187,13 +199,26 @@ class TestAnEmptyDeliverableIsNeverAClientWrite:
         code, including none. One faulty node output — an empty fence from
         model_edit — and the accept gate is satisfied with nothing in hand.
         The named file is one the client already has, so the write clobbers
-        it."""
-        envelope = _refix_envelope("Here is the corrected file:\n\n```python\n```\n")
+        it.
 
-        assert envelope["diagnostics"]["accept"] is True, (
-            "the smoke test must still be satisfied, or this pins the wrong thing"
+        The real producer builds the empty artifact; ``accept`` is then set
+        here rather than taken from it. #169 closes this at source, so the
+        SHIPPED refix_envelope now rejects an empty candidate — and this
+        guard must not depend on that, because the caller is guarding
+        against producers it does not control. Taking the producer's verdict
+        would make this pin vacuous the moment #169 lands, which is exactly
+        the version-skew case the placement is argued from.
+        """
+        produced = _refix_envelope("Here is the corrected file:\n\n```python\n```\n")
+
+        assert produced["artifacts"][0]["content"] == "", (
+            "the producer must still yield an empty artifact, or this pins "
+            "the wrong thing"
         )
-        assert envelope["artifacts"][0]["content"] == ""
+        envelope = {
+            **produced,
+            "diagnostics": {**produced["diagnostics"], "accept": True},
+        }
 
         outcome = _serving_tail("re-fix", _seat_wire(envelope), "calc.py")
         chunks = _chunks(outcome)
@@ -291,3 +316,120 @@ class TestTheGuardDoesNotRefuseHealthyBuilds:
         call = chunks[0]
         assert isinstance(call, ClientToolCall)
         assert json.loads(call.tool_calls[0].arguments)["content"] == "x"
+
+
+# --- the production path: run() must thread the project's own prefix --------
+
+
+_WRITE_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "write",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "filePath": {"type": "string"},
+                "content": {"type": "string"},
+            },
+            "required": ["filePath", "content"],
+        },
+    },
+}
+
+
+def _caller_over(project: Path) -> ServingEnsembleCaller:
+    """A caller whose project carries the REAL emit.py, so the prefixes it
+    loads are the shipped registry rather than a fixture's idea of it."""
+    scripts = project / "scripts" / "agentic_serving"
+    scripts.mkdir(parents=True)
+    shutil.copy(SCRIPTS / "emit.py", scripts / "emit.py")
+    return ServingEnsembleCaller(project_dir=project, trace_root=project / ".trace")
+
+
+def _context(text: str) -> SessionContext:
+    return SessionContext(
+        messages=[ChatMessage(role="user", content=text)],
+        tools=[_WRITE_TOOL],
+        state=SessionState(identity=SessionIdentity(value="x", method="user_field")),
+    )
+
+
+@pytest.mark.asyncio
+async def test_the_serve_path_mints_a_refused_entry(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Review round 1 BLOCKER. The ledger half of the invariant rides on ONE
+    argument at the production call site, and dropping it left the whole
+    suite green — the refusal then falls back to the non-minting "Refused: "
+    idiom and a refused build ask records no outcome at all.
+
+    Every other pin here hands the prefixes to ``_outcome_chunks`` itself, so
+    none of them can see the wiring. This one drives ``run()``, which is the
+    only place that threading happens.
+
+    Same structural failure the roadmap records from #155 round 3 — a middle
+    node dropping a threaded signal leaves the suite green — recurring
+    inside its own fix.
+    """
+    caller = _caller_over(tmp_path / "proj")
+
+    async def _empty_deliverable(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+        return {"finish": False, "file": "solution.py", "content": ""}
+
+    monkeypatch.setattr(caller, "_serve", _empty_deliverable)
+
+    chunks = [chunk async for chunk in caller.run(_context("write add in add.py"))]
+    text = _text(chunks)
+    message = SimpleNamespace(role="assistant", content=text, tool_calls=None)
+
+    assert not any(isinstance(chunk, ClientToolCall) for chunk in chunks)
+    kind, reason = _reject_kind(message, _PREFIXES)
+    assert kind == "refused", f"the serve path minted no ledger entry: {text!r}"
+    assert reason
+
+
+def test_a_null_deliverable_is_not_coerced_into_a_write() -> None:
+    """Review round 1. Judging ``str(content)`` would turn the emptiest
+    deliverable there is into the four non-blank characters "None" and write
+    them. Nothing shipped emits a non-str content — but drift is the entire
+    argument for guarding at the caller rather than in the seat contract, so
+    the guard has to survive the drift it exists for."""
+    for content in (None, {"code": "x = 1"}, 0):
+        chunks = _chunks({"finish": False, "file": "a.py", "content": content})
+
+        assert not any(isinstance(chunk, ClientToolCall) for chunk in chunks), content
+
+
+def test_a_non_python_deliverable_is_guarded_too() -> None:
+    """Review round 1. Every capture used a .py path, so nothing pinned that
+    the rule is universal. It has to be: form_gate returns "ok"
+    unconditionally for anything that is not .py or .json, and classify's
+    file regex accepts md/sh/go/rs/ts and more — so for a .md deliverable
+    this guard is the only guard there is."""
+    for path in ("README.md", "deploy.sh", "config.yaml"):
+        chunks = _chunks({"finish": False, "file": path, "content": "\n\n"})
+
+        assert not any(isinstance(chunk, ClientToolCall) for chunk in chunks), path
+        assert path in _text(chunks)
+
+
+def test_the_refusal_is_a_stated_refusal_not_an_empty_stream() -> None:
+    """Review round 1: the whitespace pin asserted only the ABSENCE of a
+    write, so returning [] — or dropping the stream terminator — passed it.
+    Its sibling one function over asserts the text; this one now matches."""
+    chunks = _chunks({"finish": False, "file": "a.py", "content": "  \n\t\n "})
+
+    assert _text(chunks), "the refusal produced no text at all"
+    assert any(isinstance(chunk, Completion) for chunk in chunks)
+
+
+def test_a_project_with_no_readable_emit_still_refuses() -> None:
+    """Review round 1. `_load_emit_reject_prefixes` swallows every exception
+    and returns () for a missing emit.py, a syntax error, or a malformed
+    TERMINALS — which is the version-skew scenario this placement is
+    justified by. The refusal must still happen; only its ledger entry is
+    lost, and that is the right direction to fail."""
+    chunks = _outcome_chunks({"finish": False, "file": "a.py", "content": ""}, [], ())
+
+    assert not any(isinstance(chunk, ClientToolCall) for chunk in chunks)
+    assert "empty deliverable" in _text(chunks)
