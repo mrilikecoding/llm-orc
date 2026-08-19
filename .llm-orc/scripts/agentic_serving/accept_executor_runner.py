@@ -93,11 +93,11 @@ def run_tests(code: str, tests: str, only: str | None = None) -> tuple[bool, str
     try:
         exec(compile(code, "solution.py", "exec"), namespace)
     except Exception as error:  # noqa: BLE001 - executing produced code
-        return False, f"code failed to load: {error!r}", 0
+        return False, f"code failed to load: {type(error).__name__}", 0
     try:
         exec(compile(tests, "test_solution.py", "exec"), namespace)
     except Exception as error:  # noqa: BLE001
-        return False, f"tests failed to load: {error!r}", 0
+        return False, f"tests failed to load: {type(error).__name__}", 0
 
     test_fns = [
         (name, fn)

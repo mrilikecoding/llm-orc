@@ -2734,6 +2734,8 @@ def test_a_crashed_routing_node_refuses_without_naming_a_path(
     assert home.rsplit("/", 1)[-1] not in content, content
     assert "Command '[" not in content, content
     assert "serving pipeline error" in content
+    # Direction guards, not leak pins: green on main, and here so the
+    # sanitiser cannot degrade into "say nothing".
     if script == "resolve.py":
         # Not just deleted: the refusal still says which node and what
         # happened to it. Only asserted for resolve, because shape's
@@ -2766,4 +2768,13 @@ def test_the_unsanitised_engine_error_is_still_recorded_server_side(
 
     raw = (serving_project / ".serve-trace" / "turns.jsonl").read_text()
 
+    # Review round 1: asserting the wrap's PREFIX proved nothing — it is the
+    # first 28 characters, and the residue the sanitiser removed from the
+    # wire was clipped off the trace by the 280-char snippet on every node
+    # (the wrap runs 302-310 chars on a real checkout). The pin was green
+    # while the operator had LESS than the client used to. Assert the
+    # residue itself, which is what has to survive for the sanitising to be
+    # defensible at all.
     assert "Schema JSON execution failed" in raw
+    assert "returned non-zero exit status 1" in raw
+    assert "Command '[" in raw, "the argv is what the operator debugs from"

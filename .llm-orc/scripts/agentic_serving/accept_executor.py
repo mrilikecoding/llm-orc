@@ -588,12 +588,15 @@ def _run_one(
         except subprocess.TimeoutExpired:
             return False, f"timeout after {timeout:g}s", 0
     if completed.returncode != 0:
-        detail = (completed.stderr.strip() or completed.stdout.strip())[:200]
-        return False, f"runner crashed: {detail}", 0
+        # #168 review round 1: the child's stderr is a TRACEBACK naming the
+        # runner's absolute path, and refix_envelope binds this report
+        # straight to accept_reason, which emit ships to the client. The
+        # exit code is the actionable part and cannot carry a path.
+        return False, f"runner crashed (exit {completed.returncode})", 0
     try:
         verdict = json.loads(completed.stdout)
     except json.JSONDecodeError:
-        return False, f"unreadable runner output: {completed.stdout[:200]!r}", 0
+        return False, "unreadable runner output", 0
     return (
         bool(verdict.get("tests_pass", False)),
         str(verdict.get("report", "")),

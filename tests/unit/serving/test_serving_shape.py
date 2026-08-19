@@ -10,10 +10,13 @@ real common I/O envelope"; ADR-046 §1).
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
 from typing import Any
+
+import pytest
 
 REPO = Path(__file__).resolve().parents[3]
 SHAPE = REPO / ".llm-orc" / "scripts" / "agentic_serving" / "shape.py"
@@ -478,7 +481,10 @@ def test_an_unrecognized_error_shape_leaks_nothing_either() -> None:
 
 
 def test_the_exit_status_tail_survives() -> None:
-    """Not just deleting the reason: the actionable residue is kept."""
+    """Not just deleting the reason: the actionable residue is kept.
+
+    A DIRECTION GUARD, not a leak pin — it is green on main, and exists so
+    the sanitiser cannot degrade into "say nothing"."""
     reason = _routing_reason(
         f"Schema JSON execution failed: Command {_ARGV} "
         "returned non-zero exit status 3."
@@ -502,7 +508,9 @@ def test_the_timeout_tail_survives() -> None:
 
 
 def test_the_failing_node_is_still_named() -> None:
-    """The part of the reason an operator routes on: which node died."""
+    """The part of the reason an operator routes on: which node died.
+
+    Also a direction guard, green on main."""
     error = (
         f"Schema JSON execution failed: Command {_ARGV} "
         "returned non-zero exit status 1."
@@ -527,3 +535,99 @@ def test_a_readable_routing_decision_is_unaffected() -> None:
     )
 
     assert not shaped.get("routing_failed")
+
+
+# --- #168 review round 1: the executor's report is a wire channel too -------
+#
+# refix_envelope binds `accept_reason` straight to the executor's report
+# (unlike build_gated_envelope, which uses accept_gate's own constants), and
+# emit ships it as "Another round needed: {reason}". The design recorded the
+# `runner crashed` branch as "not reached by any measured path"; review
+# demonstrated it reached, with the runner's absolute path in a traceback.
+
+_EXECUTOR = REPO / ".llm-orc" / "scripts" / "agentic_serving" / "accept_executor.py"
+_SMOKE_TEST = "def test_refix_candidate_loads_cleanly():\n    pass\n"
+
+
+def _executor_report(code: str) -> str:
+    payload = json.dumps(
+        {
+            "requirement": "fix calc.py",
+            "code": code,
+            "tests": _SMOKE_TEST,
+            "target_file": "calc.py",
+        }
+    )
+    out = subprocess.run(
+        [sys.executable, str(_EXECUTOR)],
+        input=payload,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    return str(json.loads(out)["report"])
+
+
+def test_no_error_text_can_survive_the_summary() -> None:
+    r"""The property the whole design rests on: both recognised residues are
+    NUMERIC, so neither can carry a path by construction.
+
+    Nothing pinned that, and review found a mutant that survived every other
+    pin — widening the timeout capture from ``([\d.]+)`` to ``(.+?)``, a
+    plausible edit to "support 1.5s or word units", re-opens a verbatim
+    channel. This asserts the OUTPUT SHAPE rather than any particular input,
+    so a widened capture fails here whatever it manages to capture.
+    """
+    leak = f"{_HOME}/secret/path"
+    hostile = [
+        f"Schema JSON execution failed: Command {_ARGV} "
+        "returned non-zero exit status 1.",
+        f"Schema JSON execution failed: Command {_ARGV} timed out after 45 seconds",
+        f"timed out after {leak} 30 seconds",
+        f"returned non-zero exit status {leak} 1",
+        f"Schema JSON execution failed: [Errno 2] No such file or directory: '{leak}'",
+        f"failed with exit code 1 at {leak}",
+        leak,
+        "",
+    ]
+    allowed = re.compile(
+        r"^(exited non-zero, status \d+|timed out after [\d.]+ seconds|failed)$"
+    )
+
+    for error in hostile:
+        reason = _routing_reason(error)
+        clause = re.search(r"\(resolve: (.*?)\);", reason)
+        # No clause at all means no verbatim text reached the wire, which
+        # satisfies the property trivially (the empty error takes that path).
+        if clause is None:
+            assert _HOME not in reason, f"{error!r} -> {reason!r}"
+            continue
+
+        assert allowed.fullmatch(clause.group(1)), f"{error!r} -> {clause.group(1)!r}"
+
+
+@pytest.mark.parametrize(
+    ("label", "code"),
+    [
+        # A produced module whose exception message names a path. The repr
+        # used to be interpolated whole.
+        ("raises with a path", f"raise RuntimeError('missing {_HOME}/app.cfg')\n"),
+        # SyntaxError's repr carries a filename tuple.
+        ("syntax error", "def f(:\n"),
+        # A module that kills the runner mid-write: stderr is a TRACEBACK
+        # naming the runner's own absolute path, and it was echoed verbatim.
+        ("runner dies", "import sys\nsys.stdout.close()\n"),
+    ],
+)
+def test_the_executor_report_names_no_path_or_user(label: str, code: str) -> None:
+    report = _executor_report(code)
+
+    assert _HOME not in report, f"{label}: {report!r}"
+    assert _USER not in report, f"{label}: {report!r}"
+
+
+def test_the_executor_report_still_says_what_happened() -> None:
+    """The direction guard: the class of failure is the actionable part and
+    it survives. Green on main."""
+    assert "SyntaxError" in _executor_report("def f(:\n")
+    assert "exit 1" in _executor_report("import sys\nsys.stdout.close()\n")

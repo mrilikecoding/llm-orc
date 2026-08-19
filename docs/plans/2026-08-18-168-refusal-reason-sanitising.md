@@ -24,7 +24,24 @@ shape — lines 150, 153, 469, 574 and others, across `shape`, `resolve` and
 pre-#154 era; the script path leaks the home directory and username either
 way.
 
-**One reader, not four.** #155 Arc C says "all four reason builders", but
+**The engine wrap is not the only wire channel** (review round 1). The first
+draft recorded `accept_executor._run_one`'s `runner crashed: <stderr>` branch
+as "not reached by any measured path". It is reached: a produced module that
+kills the runner mid-write puts a TRACEBACK naming the runner's absolute path
+into stderr, and `refix_envelope` binds the executor report straight to
+`accept_reason` (unlike `build_gated_envelope`, which uses `accept_gate`'s own
+constants), which emit ships as `Another round needed: {reason}`. `re-fix` is
+a live wired route. Two sibling channels leak the same way:
+`code failed to load: {error!r}` and `tests failed to load: {error!r}` carry
+any path inside an exception message, and a `SyntaxError` repr carries its
+filename tuple.
+
+All three are closed here rather than recorded as bounds, because the stated
+invariant is about the wire and not about one producer. Same rule as the
+engine wrap: emit what cannot carry a path — the exception CLASS name (a
+Python identifier) and the exit code (a number) — and nothing verbatim.
+
+**One reader of the ENGINE WRAP, not four.** #155 Arc C says "all four reason builders", but
 `.get("error")` has exactly one call site in the serving scripts:
 `shape._routing_failure_reason`. Arc A's reason strings are static literals,
 `accept_gate`'s reason is composed from its own constants, and the executor's
@@ -87,7 +104,12 @@ whatever the node failure looked like.
    because one regex covering both is how a family gets silently dropped.
 4. **The failing node is still named** (`resolve` vs `classify`), which is
    the part of the reason an operator routes on.
-5. **`turn_trace` still records the unsanitised text server-side.**
+5. **`turn_trace` still records the unsanitised text server-side** — asserting
+   the RESIDUE that was removed from the wire, not the wrap's prefix. Review
+   round 1: the prefix is the first 28 characters, and the 280-char snippet
+   clipped the residue off every node (the wrap runs 302-310 chars on a real
+   checkout), so the pin was green while the operator had LESS than the client
+   used to. `turn_trace` now records the wrap's `error` whole.
 6. **A healthy turn is unaffected** — the over-refusal direction. Labelled
    as such: it cannot fail under deletion of the sanitiser.
 
@@ -95,10 +117,10 @@ whatever the node failure looked like.
 
 - Says nothing about reject-template machinery text (#142); this is only the
   engine wrap's error.
-- `accept_executor._run_one`'s `runner crashed: <stderr>` branch would put
-  stderr on the wire verbatim if it fired, and stderr can name paths. Not
-  reached by any measured path — the load-failure and test-failure reports
-  are both clean — so it is recorded rather than fixed here.
+- The "numeric by construction" safety argument now has its own pin, over
+  the OUTPUT SHAPE rather than any input. Review found a mutant that survived
+  every other pin: widening the timeout capture to `(.+?)` re-opens a
+  verbatim channel, and a shape assertion catches it whatever it captures.
 - The sanitiser is in `shape.py`, which is deliberately stdlib-only so it
   still runs when the `llm_orc` import is broken (#154's failure mode). Only
   `re` is added, which is stdlib.
