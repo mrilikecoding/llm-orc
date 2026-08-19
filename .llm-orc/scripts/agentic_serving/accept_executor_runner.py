@@ -84,7 +84,20 @@ def _wire_safe(text: str, fallback: str) -> str:
     and a property asserted about an input says nothing about a derivation
     of it.
     """
-    return text if _path_free(text) else fallback
+    if _path_free(text):
+        return text
+    # Round 4: the FALLBACK was unchecked, and a caller built one by
+    # interpolating a produced-code-controlled test name — the guard's own
+    # output escaped the property the guard exists to enforce, which is
+    # round 3's defect one level down.
+    #
+    # Every caller now passes a fallback built from already-checked pieces
+    # or a constant, so no shipped path reaches the second check. It stays
+    # because this is the function's POSTCONDITION: what it returns is
+    # path-free, full stop. A postcondition that holds only while callers
+    # are careful is the thing this arc keeps being bitten by, and it is
+    # not pinnable precisely because the callers are correct.
+    return fallback if _path_free(fallback) else "failed"
 
 
 def _safe_reason(error: BaseException) -> str:
@@ -105,8 +118,10 @@ def _safe_reason(error: BaseException) -> str:
             where += f", column {offset}"
         return name + where
     message = str(error).strip()
+    # `name` is already checked and the separator is not in ": ", so a
+    # further check on the join would be dead (round 4). One guard, once.
     if message and _path_free(message):
-        return _wire_safe(f"{name}: {message}", name)
+        return f"{name}: {message}"
     return name
 
 
@@ -140,10 +155,18 @@ def _run_test_fns(test_fns: list, tests: str) -> tuple[int, list[str]]:
             # interpreter path — hence the operator's home and username — in
             # the repr, with no cooperation from the client. The class name
             # says what happened and cannot carry a path.
-            detail = f"{name}: {_safe_reason(error)}"
-            if line:
+            # Each PIECE is checked as it enters the string (round 4).
+            # Checking only the whole discarded the class name and the
+            # message whenever the source echo happened to name a RELATIVE
+            # path — `assert os.path.exists('data/out.txt')` reduced an
+            # ordinary failing test to "failed", which is the evidence loss
+            # round 2 paid to avoid and which also feeds the next round's
+            # retry prompt.
+            safe_name = _wire_safe(name, "test")
+            detail = f"{safe_name}: {_safe_reason(error)}"
+            if line and _path_free(line):
                 detail += f" at: {line}"
-            failures.append(_wire_safe(detail, f"{name}: failed"))
+            failures.append(_wire_safe(detail, f"{safe_name}: failed"))
     return n_tests, failures
 
 
@@ -221,10 +244,11 @@ def run_tests(code: str, tests: str, only: str | None = None) -> tuple[bool, str
             failures.append(_wire_safe(f"{test}: {last}", "test failed"))
 
     if n_tests == 0:
-        detail = (
+        detail = _wire_safe(
             f"no test named {only!r} found"
             if only and only != "__cases__"
-            else ("no test_* functions or TestCase classes found")
+            else ("no test_* functions or TestCase classes found"),
+            "no tests found",
         )
         return False, detail, 0
     if failures:
