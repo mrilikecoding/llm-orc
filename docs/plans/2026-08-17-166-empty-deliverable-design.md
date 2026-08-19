@@ -221,26 +221,38 @@ passed off as an invariant pin.
     non-str deliverable gets its own wording, because a refusal that
     misdescribes its cause is what this corpus refuses to ship.
 
+11. **A project with no readable `emit.py` still refuses** — the
+    version-skew scenario the placement is argued from. Only its ledger
+    entry is lost, which is the right direction to fail.
+
 **Over-refusal pins — these CANNOT fail under deletion of the guard. They
 exist so the fix does not become "refuse every build":**
 
-11. A healthy build still writes.
-12. A one-character deliverable still writes, pinning that the rule is
+12. A healthy build still writes.
+13. A one-character deliverable still writes, pinning that the rule is
     emptiness and not a length heuristic.
 
-13. **A project with no readable `emit.py` still refuses** — the
-    version-skew scenario the placement is argued from. Only its ledger
-    entry is lost, which is the right direction to fail.
-14. **The fallback prefix is the plain non-minting idiom**, not a hardcoded
-    copy of emit's wording. `_build_refused_prefix`'s docstring says the
-    wording is never hardcoded, and a mutant hardcoding it passed the whole
-    suite until this pin existed.
+**Guard-independent:**
 
-The count above is the count `pytest --collect-only` reports. Review round 2
-blocked on this section listing seven instruments against a shipped suite of
-twelve, and round 3 caught the corrected version still miscounting itself at
-twelve against fourteen — the same defect one layer up. If a pin is added
-here, this number moves with it.
+14. **The fallback prefix is the plain non-minting idiom**, not a hardcoded
+    copy of emit's wording. It calls `_build_refused_prefix` directly and so
+    is untouched by the guard either way. `_build_refused_prefix`'s docstring
+    says the wording is never hardcoded, and a mutant hardcoding it passed
+    the whole suite until this pin existed.
+
+The three groups above are MEASURED, not asserted: with
+`_empty_deliverable_refusal` stubbed to return `None`, 11 of these 14 go red
+and exactly items 12, 13 and 14 stay green. The count is the count
+`pytest --collect-only` reports.
+
+This section has now been wrong three ways, which is why it says how it was
+checked. Round 2 blocked on it listing seven instruments against a shipped
+twelve. Round 3 caught the corrected version still miscounting itself at
+twelve against fourteen. Round 4 caught the count fix REGRESSING the
+categorisation — folding the two auxiliary pins into the numbered list put
+one of them under the "cannot fail" heading when it demonstrably can. A pin
+added here moves the number, and its group is settled by running the
+deletion, not by where it happens to sit.
 
 ## Known bounds
 
