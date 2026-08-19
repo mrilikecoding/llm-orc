@@ -55,18 +55,15 @@ Three branches, one rule:
 | it denotes a file and ANYTHING goes wrong — resolve, stat (any errno), non-regular, unreadable | `None` |
 | the reference is empty (a non-script agent) | `None` |
 
-Three rows, because after the classification there is only one question left.
+Four rows, because after the classification there is only one question left
+about a path, and the empty reference is not a reference to anything.
 A NUL byte, a string longer than PATH_MAX and `echo hello` are all inline by
 the same rule and never reach the filesystem; a FIFO, a vanished file, a
 stale mount and an unreadable file are all "a file we cannot name".
 
-The last row is not a fallback: `resolve_script_path` returns inline content
-verbatim, so `script: "echo hello"` genuinely IS its own bytes, and an
-unresolvable reference must not have its missing-script error reported by the
-cache-key path. `os.path.exists` is what separates that row from the
-non-regular-file row; it is safe on every shape the current docstring worries
-about (NUL byte, longer than PATH_MAX, empty) — measured, all return `False`
-rather than raising.
+The inline row is not a fallback: `resolve_script_path` returns inline
+content verbatim, so `script: "echo hello"` genuinely IS its own bytes. The
+resolver decides which row a reference is in, before any filesystem call.
 
 **The RESOLVER classifies; the identity only names bytes** (review round 3).
 The errno rule that round 2 introduced opened a fourth site: `ENOENT` at the
@@ -90,11 +87,10 @@ drafts asked "which call threw" and so moved landing sites twice: round 1
 moved it from `read_bytes` to the resolve, and round 2 found a third site
 four lines below — `os.path.isfile`/`os.path.exists` are `genericpath`, which
 SWALLOWS `OSError` and answers `False`, so an `EIO`/`ESTALE` stat fell
-straight through to the bare path. The shape now asks "did we establish that
-this is a regular file we can name": ONE `os.stat`, with the errno deciding
-whether nothing is there (inline content, a missing script) or something is
-there that we failed to look at. One stat also removes the isfile/exists
-TOCTOU.
+straight through to the bare path. The shape asked "did we establish that this is a
+regular file we can name" via ONE `os.stat` with the errno deciding — which
+round 3 then replaced again, because an errno cannot tell inline content
+from a vanished file.
 
 **The resolve boundary is inside the rule too** (review round 1). The fix
 first landed only at `read_bytes`, but `resolve_script_path` stats the file
@@ -156,13 +152,30 @@ failure in this corpus is a pin that cannot fail (#156, #160 round 2).
    stat fail. Counting calls would not do — reinstating the genericpath
    prelude ADDS stats and shifts the numbering, which is how that mutant
    survived a first attempt at this pin.
-10. **A resolve failure is not cacheable.** Round 1's site, pinned by
+10. **An empty reference never touches the cache** — a non-script agent has
+    no script and so no bytes to name, and the cache used to be consulted
+    under a constant `""`.
+11. **A bare name that IS a file serves no stale result**, end to end. Round
+    4's blocker and a regression round 3 introduced: `ScriptAgent`
+    classifies file-vs-inline with `os.path.exists`, so a reference the
+    resolver calls content can be EXECUTED as a file. Failed closed here,
+    tracked as #177. End to end rather than a unit pin, because the unit
+    answer looks fine in isolation, which is what let it through.
+12. **A symlinked script digests its TARGET's bytes**, asserted against the
+    real sha256 rather than the presence of a colon.
+13. **A resolve failure is not cacheable.** Round 1's site, pinned by
     mechanism after round 3 showed the end-to-end version could not fail:
     scripting the fault at the resolver's first stat left the POST-run
     identity healthy, so `edited_mid_run` suppressed the write for an
     unrelated reason and reverting the guard survived the whole suite.
     Asserting the ANSWER rather than a downstream side effect makes the
     schedule irrelevant.
+
+The thirteen above are ten pins in the two new classes plus three
+pre-existing ones this arc modified, which is what
+`pytest --collect-only` reports for those classes plus a grep for the three.
+The list has been off by one for three rounds running, so it says how it was
+counted; a pin added here moves the number with it.
 
 ## Known bounds
 

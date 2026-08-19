@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import errno
+import hashlib
 import json
 import os
 import threading
@@ -673,6 +674,13 @@ class TestCacheIdentity:
 
         assert json.loads(first)["v"] == "one"
         assert json.loads(second)["v"] == "two"
+        # Review round 4: without this the pin stopped discriminating its own
+        # named mutant. Dropping project_dir now yields None rather than the
+        # reference, so nothing caches, both runs execute fresh, and the
+        # edit assertions are satisfied by the cache being ABSENT rather than
+        # by invalidation working. Same inoculation
+        # test_the_cross_process_case_is_invalidated already carries.
+        assert cache.get_stats()["sets"] == 2, "nothing was cached at all"
 
     def test_the_cross_process_case_is_invalidated(self, tmp_path: Path) -> None:
         """The worst case the issue names: a FRESH ScriptCache reading the
@@ -776,13 +784,14 @@ class TestCacheIdentity:
         assert spy.call_count == 0
 
     def test_a_fifo_reference_does_not_hang_the_agent(self, tmp_path: Path) -> None:
-        """Why the guard is os.path.isfile and not os.path.exists.
+        """Why the guard tests the file TYPE and not mere existence.
 
         A FIFO resolves fine and is not a regular file. read_bytes blocks
-        on open until a writer appears, so with `exists` in place of
-        `isfile` computing a cache key hangs the agent forever — and
-        review showed that swap survives the whole suite unpinned. A
-        watchdog thread is the cheap way to pin a hang.
+        on open until a writer appears, so a guard that asked only whether
+        something is THERE would hang the agent forever — and review showed
+        that swap surviving the whole suite unpinned. The guard is now
+        `stat.S_ISREG` on a single stat; the hazard and this pin are
+        unchanged by that. A watchdog thread is the cheap way to pin a hang.
 
         The identity itself is now None rather than the path (#163): a
         FIFO is a real filesystem object whose bytes we cannot name, and
@@ -909,21 +918,22 @@ class TestCacheIdentity:
     def test_inline_content_with_a_nul_byte_does_not_raise(
         self, tmp_path: Path
     ) -> None:
-        """One of three things the os.path.isfile guard uniquely buys.
+        """Inline content never reaches the filesystem at all.
 
-        Written after a mutation run showed that removing that guard killed
-        no pin. For inline content too long for PATH_MAX, read_bytes raises
-        OSError, which the except below already catches, so the guard is
-        redundant there. For inline content carrying a NUL byte it raises
-        ValueError, which an `except OSError` does NOT catch, so it escapes
-        _cache_identity and kills the run before the script is ever
-        executed.
+        Written when the guard was `os.path.isfile`, to pin the one thing
+        that guard uniquely bought: a NUL byte makes `read_bytes` raise
+        ValueError, which an `except OSError` does NOT catch, so it escaped
+        and killed the run before the script was ever executed.
 
-        Review later found two more, both non-files that resolve fine: a
-        FIFO, where read_bytes blocks on open until a writer appears and so
-        HANGS the agent, and a character device such as /dev/zero, which
-        reads unbounded. Neither is pinned here; a hang is awkward to pin
-        without a watchdog, and this pin already kills the mutant.
+        The mechanism has moved twice since. The resolver now classifies
+        inline content BEFORE any filesystem call (#163 review round 3), so
+        a NUL byte, a string longer than PATH_MAX and `echo hello` are all
+        answered without a stat and the ValueError cannot arise. What this
+        pin now holds is that property — inline content is returned, not
+        probed. Note it does NOT discriminate the classification itself:
+        deleting the inline short-circuit leaves it green, because the
+        `except Exception` below swallows what the stat then raises.
+        `test_inline_content_still_caches` is the pin for that.
         """
         cache = ScriptCache(ScriptCacheConfig(enabled=True))
         runner = self._runner(cache, project_dir=tmp_path)
@@ -1278,6 +1288,39 @@ class TestAResolveFailureIsAlsoUndigestable:
 
         assert identity is None, f"a vanished file was named by path: {identity!r}"
 
+    def test_a_bare_name_that_is_a_file_serves_no_stale_result(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Review round 4's BLOCKER, and a regression round 3 introduced.
+
+        Round 3's premise was that the resolver is the only thing that knows
+        which references it treats as content. True of ``ScriptResolver``,
+        false of the system: ``ScriptAgent`` decides file-vs-inline with
+        ``os.path.exists`` at three sites, so a bare name that names a file
+        in the process CWD is EXECUTED as a file while the identity called it
+        content and named the reference — the #160 key.
+
+        End to end rather than a unit assertion, because the unit answer
+        (the reference verbatim) looks perfectly fine in isolation. That is
+        what let it through. The disagreement itself is #177.
+        """
+        monkeypatch.chdir(tmp_path)
+        script = tmp_path / "probe"
+        script.write_text('#!/bin/bash\necho \'{"v": "one"}\'\n')
+        script.chmod(0o755)
+        cache = ScriptCache(ScriptCacheConfig(enabled=True))
+        runner = self._runner(cache)
+        config = ScriptAgentConfig(name="probe", script="probe")
+
+        first, _, _ = asyncio.run(runner.execute(config, "{}"))
+        script.write_text('#!/bin/bash\necho \'{"v": "two"}\'\n')
+        script.chmod(0o755)
+        second, _, _ = asyncio.run(runner.execute(config, "{}"))
+
+        assert json.loads(first)["v"] == "one"
+        assert json.loads(second)["v"] == "two", "served the pre-edit output"
+        assert cache.get_stats()["hits"] == 0
+
     def test_a_symlinked_script_still_digests(self, tmp_path: Path) -> None:
         """The over-refusal direction for the stat: a symlink to a real
         script is a regular file through the link and must stay cacheable."""
@@ -1289,8 +1332,9 @@ class TestAResolveFailureIsAlsoUndigestable:
 
         identity = runner._cache_identity(str(link))
 
+        expected = hashlib.sha256(target.read_bytes()).hexdigest()
         assert identity is not None
-        assert ":" in identity
+        assert identity.endswith(f":{expected}"), identity
 
     def test_a_stat_failure_after_a_healthy_resolve_is_not_cacheable(
         self, tmp_path: Path
