@@ -56,8 +56,20 @@ def main() -> None:
     # before it can clobber the original. A candidate that fails either gate
     # is rejected here -> honest-red terminal, original preserved.
     tests_pass, report = _executor_verdict(deps)
-    accept = tests_pass
-    if smoke_only:
+    # #169: an EMPTY candidate is never a fix, and the executor cannot say
+    # so. The injected smoke test's body is `pass`, which passes against any
+    # code including none, so an empty model_edit used to report accept:true
+    # over nothing — and since the target is a file the client already has,
+    # the resulting write was a clobber rather than an empty new file.
+    #
+    # Not scoped to smoke_only: measured, a VISIBLE test that does not
+    # reference the target module passes against an empty candidate too, and
+    # rung 1.5's visible test is whatever test_<stem>.py was found.
+    candidate_present = bool(code.strip())
+    accept = tests_pass and candidate_present
+    if not candidate_present:
+        reason = "re-fix candidate is empty; the original is unchanged"
+    elif smoke_only:
         reason = (
             "candidate loads cleanly; no visible test, the client run verifies"
             if accept
