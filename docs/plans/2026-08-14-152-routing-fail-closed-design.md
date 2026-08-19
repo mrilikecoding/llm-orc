@@ -123,8 +123,9 @@ omitted.
   `target: ""` (documents the laundering handoff shape refuses on).
 - shape: existing target-less test decisions updated to carry `target`
   (they now mirror the real wire; both producers always emit it). The
-  existing `test_unreadable_routing_decision_fails_closed_to_prose`
-  strengthens from prose-passthrough to refusal.
+  existing prose-passthrough pin strengthens to a refusal, and was renamed
+  with it — it is now
+  `test_unreadable_routing_decision_fails_closed_to_refusal`.
 - form_gate: `routing_failed` passthrough.
 - emit: `routing_failed` → `{"finish": true}` with the plain
   `Refused: ` prefix; asserts no `file` key (never a write).

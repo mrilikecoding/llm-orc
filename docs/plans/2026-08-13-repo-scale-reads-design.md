@@ -212,8 +212,8 @@ classify.py under budget is ~1.574; PEM's 5% margin needs ~1.584 — about
 a 1% gap. `src/llm_orc/web/serving/token_estimate.py` implements and
 validates v2 as a standalone module (green, tested, dated ground truth)
 but it is **not wired into the live budget** — `serving_ensemble_caller.py`
-still runs v1. `test_classify_py_sanity_constraint_conflict_is_open` pins
-the conflict as a known, open fact so it fails loudly (not silently) the
+still runs v1. A sanity pin held the conflict as a known, open fact so it
+would fail loudly (not silently) the
 moment either number changes. Options for the lead: raise the budget
 past 34,341 (eats into the generation-margin reasoning the 34,000 figure
 was itself derived from); accept less than 5% margin specifically for
@@ -238,9 +238,15 @@ size) — admitted with real (>1%) margin, not a hairline pass.
 `serving_ensemble_caller._projected_tokens` (v1 retired); classify.py's
 mirror constant follows to 35,000, drift-asserted; the over-budget
 refusal now speaks in plain terms ("the session read budget") instead of
-surfacing the raw figure. `test_classify_py_sanity_constraint_conflict_is_open`
-is re-pointed to `test_classify_py_projects_under_budget_with_real_margin`,
-asserting the RESOLVED fact so it fails loudly if either number regresses.
+surfacing the raw figure. The sanity pin was re-pointed to assert the
+RESOLVED fact so it would fail loudly if either number regressed.
+
+Both pins have since been removed; neither name resolves today. The budget
+behaviour they covered is now pinned by
+`test_read_token_budget_mirror_stays_in_sync` and
+`test_over_budget_read_attempt_refuses_naming_the_budget_and_held_files` in
+`tests/unit/serving/test_serving_classify.py`, which is not the same
+assertion — recorded as drift rather than as an equivalence.
 (**Superseded by round 3 below**: this admission check measured RAW
 SOURCE TEXT, not the rendered block the guard actually charges — the
 34,341 figure above and that test no longer exist in this form; see the
