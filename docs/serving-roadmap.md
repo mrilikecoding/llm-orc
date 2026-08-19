@@ -561,7 +561,7 @@ dishonest outcome.
 - [x] #156 the 511 measurement instruments run in `make test` and CI (a regression in them used to corrupt evidence without failing a build)
 - [x] #164 script-agent-architecture documents the cache that exists (the per-agent `cache:` key it showed is rejected by `extra="forbid"`)
 - [x] #155 Arc A — a node that cannot READ its input refuses (crashed shape/form_gate finished as an empty success); Arcs B/C still open
-- [ ] #151 runtime-window detector remainder · #155 Arcs B/C · #168 refusal reasons leak server paths + username · #161 cache purity · #162 cache misses imports · #163 identity degrades silently · #165 `-n auto` flake · #166 empty deliverable written to the client · #85 sandbox hardening · #84 gate adversarial harness · #90 llama.cpp · #93 hot path · #95 dead surface · #106 shape home · #110 artifact quality · #114 trace cap · #132 BitNet · #142 reject templates
+- [ ] #151 runtime-window detector remainder · #155 Arcs B/C · #168 refusal reasons leak server paths + username · #174 a dead seat ships the engine envelope as the answer · #161 cache purity · #162 cache misses imports · #163 identity degrades silently · #165 `-n auto` flake · #166 empty deliverable written to the client · #85 sandbox hardening · #84 gate adversarial harness · #90 llama.cpp · #93 hot path · #95 dead surface · #106 shape home · #110 artifact quality · #114 trace cap · #132 BitNet · #142 reject templates
 
 ### epic:off-path
 #80 #65 #30 #66 — parked, not on the north-star path.
