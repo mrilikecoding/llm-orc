@@ -138,10 +138,16 @@ class ScriptResolver:
     def is_inline_content(self, script_ref: str) -> bool:
         """Whether this reference is inline script content rather than a path.
 
-        The resolver is the only thing that knows which references it treats
-        as content, so it answers the question rather than having callers
-        re-derive it (#163 review round 3). ``_resolve_uncached`` below uses
-        this same predicate, so the two cannot drift.
+        This answers what the RESOLVER will do with a reference, so callers
+        do not re-derive it (#163 review round 3). ``_resolve_uncached``
+        below uses the same predicate, so those two cannot drift.
+
+        It is NOT the last word on file-vs-inline for the system.
+        ``ScriptAgent`` decides that separately with ``os.path.exists``, and
+        the two disagree for a bare name that happens to name a file in the
+        process CWD — the resolver says content, the agent executes a file.
+        #177 carries unifying them; callers that care must handle the
+        disagreement themselves until it lands.
 
         A reference that is NOT inline content is one the resolver will look
         for on the filesystem: it either finds a file or raises. That is what

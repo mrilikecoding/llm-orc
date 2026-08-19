@@ -46,24 +46,25 @@ TTL, and under `persist_to_artifacts` it crosses processes.
 identity that names the script's bytes", and the run is then neither read
 from nor written to the cache.
 
-Three branches, one rule:
+Five rows. MEASURED, by spying `os.path.exists`/`os.stat` through
+`_cache_identity` for each shape rather than reading the code:
 
-| reference | identity |
-|---|---|
-| the resolver calls it inline content (no separator, no script extension) | `script_ref` |
-| it denotes a file, stats as regular, and digests | `f"{resolved}:{digest}"` |
-| it denotes a file and ANYTHING goes wrong — resolve, stat (any errno), non-regular, unreadable | `None` |
-| the reference is empty (a non-script agent) | `None` |
+| reference | identity | filesystem calls |
+|---|---|---|
+| the resolver calls it inline content AND it names nothing in the CWD | `script_ref` | one `exists` |
+| the resolver calls it inline content BUT it names a CWD entry | `None` | one `exists` |
+| it denotes a file that stats regular and digests | `f"{resolved}:{digest}"` | two `stat` |
+| it denotes a file and ANYTHING goes wrong — resolve, stat (any errno), non-regular, unreadable | `None` | one or two `stat` |
+| the reference is empty (a non-script agent) | `None` | none |
 
-Four rows, because after the classification there is only one question left
-about a path, and the empty reference is not a reference to anything.
-A NUL byte, a string longer than PATH_MAX and `echo hello` are all inline by
-the same rule and never reach the filesystem; a FIFO, a vanished file, a
-stale mount and an unreadable file are all "a file we cannot name".
+The classification is syntactic and happens before any filesystem call. The
+ANSWER for inline content still costs one `exists`, because of the
+disagreement below — an earlier draft of this section claimed these shapes
+"never reach the filesystem", which was false in the same commit that made it
+false.
 
 The inline row is not a fallback: `resolve_script_path` returns inline
-content verbatim, so `script: "echo hello"` genuinely IS its own bytes. The
-resolver decides which row a reference is in, before any filesystem call.
+content verbatim, so `script: "echo hello"` genuinely IS its own bytes.
 
 **The RESOLVER classifies; the identity only names bytes** (review round 3).
 The errno rule that round 2 introduced opened a fourth site: `ENOENT` at the
@@ -123,59 +124,59 @@ script's bytes. When the bytes cannot be named, the run is not cached.
 
 ## Regression instruments
 
-Every one must go RED under deletion of the guard it pins — the recurring
-failure in this corpus is a pin that cannot fail (#156, #160 round 2).
+Fifteen, named by test. The previous version had item 8 and item 12 pointing
+at the same test, item 2 covering two, item 3 naming none, and a note whose
+account of the composition was wrong — the count came out right because two
+of those errors cancelled.
 
-1. **A transient `OSError` at hash time serves no stale result.** The
-   reproduction above, as a test: raise from `read_bytes`, run, edit, run —
-   the second run returns the new bytes' output and `hits == 0`.
-2. **The skip at the GET is pinned separately from the skip at the SET.**
-   #160's round 2 found a get-side skip that was deletable with the whole
-   suite green; two clauses need two pins.
-3. **A digestable script still caches.** The pin that stops this becoming
-   "never cache anything" — the degradation #160's review named explicitly.
-4. **An identity that becomes undigestable MID-RUN is not stored.**
-   `edited_mid_run` compares the post-run identity to the pre-run one; a
-   `None` on the second call must fail closed rather than compare equal.
-5. **Inline content still caches**, so the `exists` split does not swallow
-   the legitimate no-digest row.
-6. **A FIFO still does not hang, and now does not cache.** The existing pin's
-   watchdog is kept; its identity assertion changes.
-7. **A vanished file after a HEALTHY resolve is not cacheable** — round 3's
-   blocker, the `ENOENT` race the design names as a trigger.
-8. **A symlink to a real script still digests**, the over-refusal direction
-   for the stat.
-9. **A stat failure after a HEALTHY resolve is not cacheable** (round 2's
-   blocker). Isolated by MECHANISM, not by call order or caller name: the
-   resolver checks with `Path.exists`, the identity stats with `os.stat`, so
-   patching them apart makes the resolve succeed and only the identity's own
-   stat fail. Counting calls would not do — reinstating the genericpath
-   prelude ADDS stats and shifts the numbering, which is how that mutant
-   survived a first attempt at this pin.
-10. **An empty reference never touches the cache** — a non-script agent has
-    no script and so no bytes to name, and the cache used to be consulted
-    under a constant `""`.
-11. **A bare name that IS a file serves no stale result**, end to end. Round
-    4's blocker and a regression round 3 introduced: `ScriptAgent`
-    classifies file-vs-inline with `os.path.exists`, so a reference the
-    resolver calls content can be EXECUTED as a file. Failed closed here,
-    tracked as #177. End to end rather than a unit pin, because the unit
-    answer looks fine in isolation, which is what let it through.
-12. **A symlinked script digests its TARGET's bytes**, asserted against the
-    real sha256 rather than the presence of a colon.
-13. **A resolve failure is not cacheable.** Round 1's site, pinned by
-    mechanism after round 3 showed the end-to-end version could not fail:
-    scripting the fault at the resolver's first stat left the POST-run
-    identity healthy, so `edited_mid_run` suppressed the write for an
-    unrelated reason and reverting the guard survived the whole suite.
-    Asserting the ANSWER rather than a downstream side effect makes the
-    schedule irrelevant.
+Reconciling with the collector: `pytest --collect-only` reports **18** across
+the three new classes, because item 11 is parametrized over eight cases. So
+10 single tests + 1 parametrized instrument = 11 new, plus 4 pre-existing
+tests this arc modified (`git diff main...HEAD`) = 15. Naming each one is
+what makes that checkable; a count alone has been wrong in four consecutive
+rounds, on this branch and on #166's.
 
-The thirteen above are ten pins in the two new classes plus three
-pre-existing ones this arc modified, which is what
-`pytest --collect-only` reports for those classes plus a grep for the three.
-The list has been off by one for three rounds running, so it says how it was
-counted; a pin added here moves the number with it.
+**New (`TestUndigestableScriptIsNotCached`, `TestAResolveFailureIsAlsoUndigestable`, `TestIsInlineContent`):**
+
+1. `test_a_transient_read_failure_serves_no_stale_result` — the issue's
+   reproduction, end to end: a transient `OSError` at hash time used to
+   install a path-only key and serve the pre-edit output.
+2. `test_nothing_is_written_under_a_digestless_identity` — the WRITE half.
+3. `test_an_existing_entry_is_not_consulted_without_a_digest` — the READ
+   half, observed as the CALL, since a get that ran would simply miss.
+4. `test_becoming_undigestable_mid_run_stores_nothing` — a post-run `None`
+   must fail closed rather than compare equal.
+5. `test_a_resolve_failure_is_not_cacheable` — round 1's site, by mechanism
+   after round 3 showed the end-to-end version could not fail.
+6. `test_an_enoent_after_a_healthy_resolve_is_not_cacheable` — round 3's
+   blocker, the ENOENT race the design names as a trigger.
+7. `test_a_stat_failure_after_a_healthy_resolve_is_not_cacheable` — round
+   2's blocker, isolated by mechanism because counting calls does not
+   survive a mutant that adds stats.
+8. `test_a_bare_name_that_is_a_file_serves_no_stale_result` — round 4's
+   blocker and a regression round 3 introduced. End to end, because the
+   unit answer looks fine in isolation.
+9. `test_a_symlinked_script_still_digests` — the over-refusal direction for
+   the stat, asserted against the target's real sha256.
+10. `test_an_empty_reference_never_touches_the_cache` — a non-script agent
+    has no bytes to name.
+11. `TestIsInlineContent::test_the_classification` — eight cases over the
+    predicate the whole fix now rests on. Round 5: its `"/"` clause was
+    deletable with 3992 tests green.
+
+**Pre-existing, modified by this arc:**
+
+12. `test_a_fifo_reference_does_not_hang_the_agent` — the watchdog is the
+    point and is unchanged; its identity assertion moved to `None`.
+13. `test_inline_content_still_caches` — the pin that stops this becoming
+    "never cache anything", and the one that discriminates the inline
+    classification.
+14. `test_a_project_relative_reference_is_also_invalidated` — round 4 added
+    `sets == 2`, because dropping `project_dir` now yields `None` and the
+    edit assertions were being satisfied by an ABSENT cache.
+15. `test_inline_content_with_a_nul_byte_does_not_raise` — retitled in round
+    5; the property is that `os.path.exists` answers for the awkward shapes
+    rather than raising, not that they stay off the filesystem.
 
 ## Known bounds
 
@@ -186,6 +187,13 @@ counted; a pin added here moves the number with it.
   execution fails first. The guard covers it anyway rather than relying on
   that coincidence holding.
 - Says nothing about what the digest covers (#161, #162).
+- **A legitimately inline reference that collides with a CWD entry is
+  silently uncacheable.** The cost of failing closed on the #177
+  disagreement. It can only refuse, never serve wrong, and no shipped
+  `script:` value can hit it — every one in the repo's YAML is a `.py`
+  reference carrying a separator — but a project using a bare-word inline
+  script in a directory that happens to contain a file of that name loses
+  caching with no error. A debug log names it.
 - **The whole change is inert on a default install.** `ScriptCacheConfig`
   ships `enabled = False` (#160), and `cacheable` gates the identity
   computation entirely, so none of this runs until a project opts in. The
