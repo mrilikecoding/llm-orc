@@ -170,6 +170,26 @@ def _top_level_usage(result_dict: dict[str, Any]) -> dict[str, Any]:
     return agents if isinstance(agents, dict) else {}
 
 
+def _engine_failure_error(response: Any) -> str:
+    """The engine wrap's whole ``error`` string, or ``""`` when the response
+    is not a failure wrap (#168).
+
+    Recognised positively by the wrap's own key — a dict carrying a
+    non-empty string ``error`` — not by matching text. Every other response
+    shape keeps the snippet and nothing else.
+    """
+    if not isinstance(response, str):
+        return ""
+    try:
+        parsed = json.loads(response)
+    except (json.JSONDecodeError, TypeError):
+        return ""
+    if not isinstance(parsed, dict):
+        return ""
+    error = parsed.get("error")
+    return error if isinstance(error, str) and error else ""
+
+
 def _node_entry(name: str, node: Any, top_usage: dict[str, Any]) -> dict[str, Any]:
     """One top-level node's trace entry, plus (C2, #145) its own
     prompt_eval_count/eval_count from ``top_usage`` and — when the node is
@@ -181,6 +201,15 @@ def _node_entry(name: str, node: Any, top_usage: dict[str, Any]) -> dict[str, An
         "status": node.get("status", "ok") if isinstance(node, dict) else "?",
         "response": _snippet(response),
     }
+    # #168 review round 1: sanitising the wire is only defensible because the
+    # operator keeps the full text here — and it did not. The engine's failure
+    # wrap runs 302-310 characters on a real checkout, so the 280-char snippet
+    # clipped the residue ("returned non-zero exit status 1") off EVERY node,
+    # leaving the operator with less than the client used to get. The error
+    # field is recorded whole; the snippet still governs everything else.
+    failure = _engine_failure_error(response)
+    if failure:
+        entry["error"] = failure
     entry.update(_usage_counts(top_usage.get(name)))
     child = _child_results(response)
     if child is not None:
