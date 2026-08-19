@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import sys
 import threading
 from pathlib import Path
 from typing import Any
@@ -16,6 +17,7 @@ from llm_orc.agents.script_agent import ScriptAgent
 from llm_orc.core.execution.progress_controller import NoOpProgressController
 from llm_orc.core.execution.scripting.agent_runner import ScriptAgentRunner
 from llm_orc.core.execution.scripting.cache import ScriptCache, ScriptCacheConfig
+from llm_orc.core.execution.scripting.resolver import ScriptResolver
 from llm_orc.core.execution.usage_collector import UsageCollector
 from llm_orc.schemas.agent_config import ScriptAgentConfig
 
@@ -1127,22 +1129,6 @@ class TestUndigestableScriptIsNotCached:
 
         assert spy.call_count == 0, "the cache was consulted with no digest"
 
-    def test_a_digestable_script_still_caches(self, tmp_path: Path) -> None:
-        """The pin that stops this becoming 'never cache anything' — the
-        degradation #160's review named explicitly. An implementer who
-        returns None on every branch passes every other pin here."""
-        script = tmp_path / "probe.py"
-        script.write_text(self._emit("one"))
-        cache = ScriptCache(ScriptCacheConfig(enabled=True))
-        runner = self._runner(cache)
-        config = ScriptAgentConfig(name="probe", script=str(script))
-
-        asyncio.run(runner.execute(config, "{}"))
-        asyncio.run(runner.execute(config, "{}"))
-
-        assert cache.get_stats()["sets"] == 1
-        assert cache.get_stats()["hits"] == 1
-
     def test_becoming_undigestable_mid_run_stores_nothing(self, tmp_path: Path) -> None:
         """edited_mid_run compares the post-run identity to the pre-run one.
         A run whose bytes become undigestable only AFTER the subprocess has
@@ -1171,16 +1157,87 @@ class TestUndigestableScriptIsNotCached:
         assert calls["n"] >= 2, "the post-run identity was never recomputed"
         assert cache.get_stats()["sets"] == 0
 
-    def test_inline_content_still_caches(self, tmp_path: Path) -> None:
-        """The `exists` split must not swallow the legitimate no-digest row.
-        resolve_script_path returns inline content verbatim, so the
-        reference genuinely IS its own bytes and stays cacheable."""
+
+class TestAResolveFailureIsAlsoUndigestable:
+    """#163 review round 1 BLOCKER. The fix landed at ``read_bytes``, but
+    ``resolve_script_path`` stats the file FIRST, and ``Path.exists()``
+    swallows only ENOENT/ENOTDIR/EBADF/ELOOP — ``EIO``/``ESTALE``
+    propagate. They landed in the untouched ``except Exception: return
+    script_ref``, which is the #160 path-only key again.
+
+    Two of the three triggers the design names reach ``stat`` before they
+    reach ``read_bytes``, so the fix was shaped to the landing site rather
+    than to the invariant.
+
+    Refusing to cache a reference that did not RESOLVE costs nothing:
+    execution resolves through the same resolver a moment later, so a
+    resolution failure is a run failure, and #159 declines to cache those.
+    An earlier draft special-cased ``ScriptNotFoundError`` to keep such a
+    reference cacheable; the distinction is unobservable, and the pin
+    written for it could not fail.
+    """
+
+    def _runner(self, cache: ScriptCache) -> ScriptAgentRunner:
+        return ScriptAgentRunner(
+            script_cache=cache,
+            usage_collector=UsageCollector(),
+            progress_controller=None,
+            emit_event=lambda name, data: None,
+            project_dir=None,
+            performance_config={"execution": {"default_timeout": 30}},
+        )
+
+    def _emit(self, value: str) -> str:
+        return f'import json\nprint(json.dumps({{"v": "{value}"}}))\n'
+
+    @staticmethod
+    def _flapping_resolver(target: Path) -> Any:
+        """resolve_script_path that raises ESTALE only when _cache_identity
+        is the caller.
+
+        The CHILD still runs — the mount flaps between the identity
+        computation and the subprocess's own resolve — and that is what
+        makes this a STALE SERVE rather than a failed run. A mock that
+        failed both would prove nothing: the execution would die and #159
+        would decline to cache the failure anyway.
+        """
+        real = ScriptResolver.resolve_script_path
+
+        def flaky(self: ScriptResolver, script_ref: str) -> str:
+            caller = sys._getframe(1).f_code.co_name
+            if script_ref == str(target) and caller == "_cache_identity":
+                raise OSError(116, "Stale file handle")
+            return real(self, script_ref)
+
+        return flaky
+
+    def test_a_stat_failure_serves_no_stale_result(self, tmp_path: Path) -> None:
+        """The reviewer's reproduction: identical to the design's own
+        measured stale serve, one call earlier."""
+        script = tmp_path / "probe.py"
+        script.write_text(self._emit("one"))
         cache = ScriptCache(ScriptCacheConfig(enabled=True))
-        runner = self._runner(cache, project_dir=tmp_path)
-        config = ScriptAgentConfig(name="inline", script='echo \'{"v": "one"}\'')
+        runner = self._runner(cache)
+        config = ScriptAgentConfig(name="probe", script=str(script))
+        flaky = self._flapping_resolver(script)
 
-        asyncio.run(runner.execute(config, "{}"))
-        asyncio.run(runner.execute(config, "{}"))
+        with patch.object(ScriptResolver, "resolve_script_path", flaky):
+            first, _, _ = asyncio.run(runner.execute(config, "{}"))
+        script.write_text(self._emit("two"))
+        with patch.object(ScriptResolver, "resolve_script_path", flaky):
+            second, _, _ = asyncio.run(runner.execute(config, "{}"))
 
-        assert cache.get_stats()["sets"] == 1
-        assert cache.get_stats()["hits"] == 1
+        assert json.loads(first)["v"] == "one"
+        assert json.loads(second)["v"] == "two", "served the pre-edit output"
+        assert cache.get_stats()["hits"] == 0
+        assert cache.get_stats()["sets"] == 0
+
+    def test_an_empty_reference_never_touches_the_cache(self, tmp_path: Path) -> None:
+        """#163 review round 1. The fast path returned "" — a constant
+        identity naming no bytes — which passed the not-None check, so the
+        cache was consulted under it. Nothing can ever write there, but the
+        invariant says the cache is READ only under an identity that names
+        the script's bytes."""
+        runner = self._runner(ScriptCache(ScriptCacheConfig(enabled=True)))
+
+        assert runner._cache_identity("") is None

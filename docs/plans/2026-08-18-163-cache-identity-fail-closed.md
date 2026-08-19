@@ -48,12 +48,13 @@ from nor written to the cache.
 
 Three branches, one rule:
 
-| reference resolves to | identity |
+| reference | identity |
 |---|---|
-| a regular file that digests | `f"{resolved}:{digest}"` |
-| a regular file that raises on read | `None` |
-| an existing non-regular file (FIFO, device, directory) | `None` |
-| nothing on the filesystem (inline content, unresolvable) | `resolved` |
+| resolves to a regular file that digests | `f"{resolved}:{digest}"` |
+| resolves to a regular file that raises on read | `None` |
+| resolves to an existing non-regular file (FIFO, device, dir) | `None` |
+| fails to RESOLVE at all | `None` |
+| resolves to nothing on the filesystem (inline content) | `resolved` |
 
 The last row is not a fallback: `resolve_script_path` returns inline content
 verbatim, so `script: "echo hello"` genuinely IS its own bytes, and an
@@ -62,6 +63,17 @@ cache-key path. `os.path.exists` is what separates that row from the
 non-regular-file row; it is safe on every shape the current docstring worries
 about (NUL byte, longer than PATH_MAX, empty) — measured, all return `False`
 rather than raising.
+
+**The resolve boundary is inside the rule too** (review round 1). The fix
+first landed only at `read_bytes`, but `resolve_script_path` stats the file
+BEFORE the read and `Path.exists()` swallows only
+ENOENT/ENOTDIR/EBADF/ELOOP — `EIO` and `ESTALE` propagate. Two of the three
+triggers named above therefore land at the resolve, not the read, where
+`except Exception: return script_ref` was the #160 key again. Review
+demonstrated it as a live stale serve with the same numbers as the
+reproduction above. Refusing to cache an unresolvable reference costs
+nothing: execution resolves through the SAME resolver a moment later, so a
+resolution failure is a run failure and #159 already declines to cache those.
 
 **Scope decision, deliberate.** The issue asks only about the `read_bytes`
 raise. The non-regular-file row is included because it degrades identically

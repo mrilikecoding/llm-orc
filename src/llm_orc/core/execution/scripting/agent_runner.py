@@ -279,6 +279,17 @@ class ScriptAgentRunner:
           raising for every shape above — NUL byte, longer than
           PATH_MAX, empty — so the split is safe to make with it.
 
+        The RESOLVE is inside the same rule (#163 review round 1). It runs
+        before the read and it stats the file, and ``Path.exists()``
+        swallows only ENOENT/ENOTDIR/EBADF/ELOOP — ``EIO``/``ESTALE``
+        propagate. Two of the three reachable triggers below therefore
+        land here rather than at ``read_bytes``, and returning the
+        reference was the #160 key again, demonstrated as a live stale
+        serve. Nothing is lost by refusing to cache a reference that did
+        not resolve: execution resolves through the SAME resolver a moment
+        later, so a resolution failure is a run failure, and #159 declines
+        to cache those anyway.
+
         The issue's own hypothesis for how the read fails, a script that
         is executable but not readable, is refuted: ``script_agent.py``
         runs every extension through an interpreter (``bash`` by
@@ -288,20 +299,19 @@ class ScriptAgentRunner:
         exhaustion, ``EIO``/``ESTALE`` on a network filesystem, an ENOENT
         race — which #158 made likelier by overlapping script agents.
         """
-        # A fast path, NOT a correctness guard, and review was right to
-        # flag it as looking like one: resolve_script_path("") returns ""
-        # and os.path.isfile("") is False, so the fall-through returns ""
-        # anyway and removing this line changes no result. It stays
-        # because execute() passes "" for a non-ScriptAgentConfig, and
-        # building a resolver to learn nothing is worse than one branch.
+        # execute() passes "" for a non-ScriptAgentConfig, which has no
+        # script and therefore no bytes to name. It used to return "" here
+        # — a constant identity naming nothing, which the cache was then
+        # consulted under (#163 review round 1). Nothing can ever write
+        # there, but the invariant is about the READ too.
         if not script_ref:
-            return script_ref
+            return None
         try:
             resolved = ScriptResolver(
                 project_dir=self._project_dir
             ).resolve_script_path(script_ref)
         except Exception:
-            return script_ref
+            return None
         if not os.path.isfile(resolved):
             return None if os.path.exists(resolved) else resolved
         try:
