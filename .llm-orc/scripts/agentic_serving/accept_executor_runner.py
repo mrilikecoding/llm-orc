@@ -52,6 +52,49 @@ def _failing_line(error: Exception, tests: str) -> str:
     return ""
 
 
+# #168 review round 2. An exception MESSAGE is the wire channel: a
+# CalledProcessError carries the full argv (the serve's own interpreter, so
+# the operator's home and username), and OSError's __str__ adds the filename
+# its repr hides. But dropping messages wholesale destroyed "DID NOT RAISE",
+# which a pre-existing pin holds precisely because losing it "starved the
+# retry round of evidence".
+#
+# So the rule is a PROPERTY of the output, not a list of bad producers: a
+# message may pass only if it contains no path separator. Every absolute
+# path on either platform contains one, so this cannot pass a path — and it
+# keeps every message that is genuinely about the test rather than the
+# filesystem. Same discipline as shape.py's summary, checked on what is
+# emitted rather than on what produced it.
+_SEPARATORS = ("/", "\\")
+
+
+def _path_free(text: str) -> bool:
+    return not any(sep in text for sep in _SEPARATORS)
+
+
+def _safe_reason(error: BaseException) -> str:
+    """What a test failure may say on the wire (#168).
+
+    The class name always; the message only when it names no path. A
+    ``SyntaxError``'s line and column ride along regardless — they are
+    integers, and they are the part a developer actually uses, while the
+    executor's report is clipped server-side by the trace snippet, so the
+    class name alone would be the only surviving record anywhere.
+    """
+    name = type(error).__name__
+    lineno = getattr(error, "lineno", None)
+    if isinstance(lineno, int):
+        offset = getattr(error, "offset", None)
+        where = f" at line {lineno}"
+        if isinstance(offset, int):
+            where += f", column {offset}"
+        return name + where
+    message = str(error).strip()
+    if message and _path_free(message):
+        return f"{name}: {message}"
+    return name
+
+
 def _run_test_fns(test_fns: list, tests: str) -> tuple[int, list[str]]:
     """Execute each test_* function; return count and failures list."""
     import asyncio
@@ -74,7 +117,15 @@ def _run_test_fns(test_fns: list, tests: str) -> tuple[int, list[str]]:
             # BaseException and must report as a clean per-test failure,
             # not crash the runner child (validation replay 2026-07-10)
             line = _failing_line(error, tests)
-            detail = f"{name}: {error!r}"
+            # #168 review round 2: `{error!r}` here was the FOURTH wire
+            # channel and the most reachable — a failing test is the ordinary
+            # outcome of a re-fix round, and refix_envelope binds this report
+            # straight to accept_reason, which emit ships. A produced module
+            # that shells out to sys.executable and fails puts the serve's own
+            # interpreter path — hence the operator's home and username — in
+            # the repr, with no cooperation from the client. The class name
+            # says what happened and cannot carry a path.
+            detail = f"{name}: {_safe_reason(error)}"
             if line:
                 detail += f" at: {line}"
             failures.append(detail)
@@ -93,11 +144,11 @@ def run_tests(code: str, tests: str, only: str | None = None) -> tuple[bool, str
     try:
         exec(compile(code, "solution.py", "exec"), namespace)
     except Exception as error:  # noqa: BLE001 - executing produced code
-        return False, f"code failed to load: {type(error).__name__}", 0
+        return False, f"code failed to load: {_safe_reason(error)}", 0
     try:
         exec(compile(tests, "test_solution.py", "exec"), namespace)
     except Exception as error:  # noqa: BLE001
-        return False, f"tests failed to load: {type(error).__name__}", 0
+        return False, f"tests failed to load: {_safe_reason(error)}", 0
 
     test_fns = [
         (name, fn)
@@ -130,7 +181,15 @@ def run_tests(code: str, tests: str, only: str | None = None) -> tuple[bool, str
         suite.run(result)
         n_tests += result.testsRun
         for test, trace in result.failures + result.errors:
-            failures.append(f"{test}: {trace.strip().splitlines()[-1]}")
+            # The last traceback line is "Type: {str(exc)}", and OSError's
+            # __str__ includes the filename its repr hides (#168 round 2).
+            # Keep the type, drop the message.
+            # The last traceback line is "Type: {str(exc)}"; the same
+            # property check applies, and the type survives either way.
+            last = trace.strip().splitlines()[-1]
+            if not _path_free(last):
+                last = last.split(":", 1)[0].strip()
+            failures.append(f"{test}: {last}")
 
     if n_tests == 0:
         detail = (

@@ -36,8 +36,20 @@ a live wired route. Two sibling channels leak the same way:
 any path inside an exception message, and a `SyntaxError` repr carries its
 filename tuple.
 
-All three are closed here rather than recorded as bounds, because the stated
-invariant is about the wire and not about one producer. Same rule as the
+**Four, not three** (review round 2). The first pass sanitised the two load
+failures and the runner crash and missed `_run_test_fns`, twenty lines above
+— the FAILING-TEST path, which is the ordinary outcome of a re-fix round
+rather than an exotic crash. Produced code that shells out to
+`sys.executable` (the serve's own interpreter inside the sandbox) puts the
+home directory and username in a `CalledProcessError` repr with no
+cooperation from the client. The `unittest.TestCase` dialect is a fifth: its
+last traceback line is `Type: {str(exc)}`, and `OSError.__str__` includes the
+filename its `repr` hides.
+
+All of them are closed here rather than recorded as bounds, because the
+stated invariant is about the wire and not about one producer — and the
+first pass proved that sanitising producer-by-producer is how one gets
+missed. Same rule as the
 engine wrap: emit what cannot carry a path — the exception CLASS name (a
 Python identifier) and the exit code (a number) — and nothing verbatim.
 
@@ -117,6 +129,24 @@ whatever the node failure looked like.
 
 - Says nothing about reject-template machinery text (#142); this is only the
   engine wrap's error.
+- A `SyntaxError`'s line and column are KEPT. Dropping them made the trade
+  worse than it needed to be: they are integers so they cannot carry a path,
+  the compile filename is the literal `solution.py`, and the executor's
+  report is clipped server-side by the trace snippet — so the class name
+  alone would have been the only surviving record anywhere.
+- **A dead SEAT is not covered, and it is a real leak.** On a non-build route
+  `shape._envelope_deliverable` does not recognise the engine's failure
+  envelope, falls back to the raw terminal, and emit ships the wrap — with
+  its traceback and script path — as the assistant's ANSWER. Not a refusal
+  reason, which is why this issue's sweep did not reach it. Filed as **#174**,
+  with the observation that the build routes are safe only because they all
+  declare `seat_contract:` blocks.
+- The design said serving nodes always route through
+  `execute_with_schema_json`. True only for TOP-LEVEL nodes: sub-ensemble
+  script nodes take `ScriptAgent.execute`, whose envelope puts the payload in
+  `stderr` rather than `error`. `_engine_failure_summary` handles that
+  family's `error` by accident of the `failed with exit code` alternative;
+  nothing scrubs or retains its `stderr`. Carried on #174.
 - The "numeric by construction" safety argument now has its own pin, over
   the OUTPUT SHAPE rather than any input. Review found a mutant that survived
   every other pin: widening the timeout capture to `(.+?)` re-opens a

@@ -549,12 +549,12 @@ _EXECUTOR = REPO / ".llm-orc" / "scripts" / "agentic_serving" / "accept_executor
 _SMOKE_TEST = "def test_refix_candidate_loads_cleanly():\n    pass\n"
 
 
-def _executor_report(code: str) -> str:
+def _executor_report(code: str, tests: str = _SMOKE_TEST) -> str:
     payload = json.dumps(
         {
             "requirement": "fix calc.py",
             "code": code,
-            "tests": _SMOKE_TEST,
+            "tests": tests,
             "target_file": "calc.py",
         }
     )
@@ -626,8 +626,100 @@ def test_the_executor_report_names_no_path_or_user(label: str, code: str) -> Non
     assert _USER not in report, f"{label}: {report!r}"
 
 
+def test_a_failing_test_names_no_path_or_user() -> None:
+    """Review round 2 BLOCKER, and the most reachable channel of the four: a
+    FAILING TEST is the ordinary outcome of a re-fix round, not a crash, and
+    `refix_envelope` binds the report straight to `accept_reason`.
+
+    The produced code shells out to `sys.executable`, which inside the
+    sandbox is the serve's own interpreter — so `CalledProcessError`'s repr
+    carried the operator's home directory and username with no cooperation
+    from the client at all.
+    """
+    report = _executor_report(
+        "def run_check():\n"
+        "    import subprocess, sys\n"
+        "    subprocess.run(\n"
+        '        [sys.executable, "-c", "raise SystemExit(1)"], check=True\n'
+        "    )\n",
+        tests=(
+            "from solution import run_check\ndef test_run_check():\n    run_check()\n"
+        ),
+    )
+
+    assert _HOME not in report, report
+    assert _USER not in report, report
+    assert "CalledProcessError" in report, "the failure class is the residue"
+
+
+def test_a_unittest_failure_names_no_path_or_user() -> None:
+    """The TestCase dialect is a separate channel: the last traceback line is
+    ``Type: {str(exc)}``, and OSError's __str__ includes the filename its
+    repr hides."""
+    report = _executor_report(
+        "",
+        tests=(
+            "import unittest\n"
+            "class T(unittest.TestCase):\n"
+            "    def test_load(self):\n"
+            '        open("/private/var/folders/zz/secret_cfg.json")\n'
+        ),
+    )
+
+    assert "/private/var/folders" not in report, report
+    assert "FileNotFoundError" in report
+
+
+def test_a_tests_module_that_raises_names_no_path_or_user() -> None:
+    """The tests-load path had no pin at all — reverting it to `{error!r}`
+    left the whole serving and endpoint suite green (review round 2). The
+    three cases above all take the CODE load path or the runner-crash path.
+    """
+    report = _executor_report(
+        "def add(a, b):\n    return a + b\n",
+        tests=f'raise RuntimeError("missing {_HOME}/app.cfg")\n',
+    )
+
+    assert _HOME not in report, report
+    assert "RuntimeError" in report
+
+
+def test_a_syntax_error_keeps_its_line_and_column() -> None:
+    """Review round 2: dropping these made the sanitising a worse trade than
+    it needed to be. They are integers, so they cannot carry a path, and the
+    compile filename is the literal "solution.py" — while the operator's
+    server-side copy of this report is clipped by the trace snippet, so the
+    class name alone would be the ONLY surviving record."""
+    report = _executor_report("def add(a, b:\n    return a + b\n")
+
+    assert "SyntaxError" in report
+    assert "line 1" in report, report
+
+
 def test_the_executor_report_still_says_what_happened() -> None:
     """The direction guard: the class of failure is the actionable part and
     it survives. Green on main."""
     assert "SyntaxError" in _executor_report("def f(:\n")
     assert "exit 1" in _executor_report("import sys\nsys.stdout.close()\n")
+
+
+def test_a_path_free_failure_message_survives() -> None:
+    """The tension this rule exists to hold. Sanitising by class name alone
+    destroyed "DID NOT RAISE", which a pre-existing pin
+    (test_pytest_raises_did_not_raise_reports_as_failure_not_crash) holds
+    precisely because losing it "starved the retry round of evidence".
+
+    So the rule is a property of the OUTPUT — a message passes only if it
+    names no path — rather than a list of producers to distrust. A message
+    genuinely about the test survives; one about the filesystem does not.
+    """
+    report = _executor_report(
+        "def add(a, b):\n    return a + b\n",
+        tests=(
+            "def test_add():\n"
+            "    assert add(1, 2) == 4, 'add is off by one somewhere'\n"
+        ),
+    )
+
+    assert "off by one somewhere" in report, report
+    assert _HOME not in report
