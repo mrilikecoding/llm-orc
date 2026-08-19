@@ -159,6 +159,16 @@ is that it is not closed and is not closeable by this rule.
   inside the runner. Pre-existing, deliberate intent required, and it
   belongs to #85's containment surface; recorded so the next sweep does not
   rediscover it as new.
+- **The `TestCase` branch parses a formatted traceback, and that has been
+  wrong three ways** — the last line loses the type on any multi-line
+  message, a backward `identifier:` scan picks a message line, a forward
+  scan reports a chained exception's CAUSE. The current version keeps the
+  last candidate per frame block and is verified across nine shapes, but it
+  is still a parser for a format Python does not promise. The sibling
+  `test_*` branch has had none of them, because it passes the live exception
+  OBJECT to `_safe_reason`. **#178** carries routing both branches that way
+  and deleting the parser; it is not done here because this arc's seven
+  review rounds are against the current code.
 - The property is enforced on what is EMITTED, at every emission point, and
   on each PIECE as it enters the string, in BOTH failure branches. Checking
   only the composed string discarded the class name and the message whenever
