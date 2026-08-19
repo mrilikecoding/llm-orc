@@ -284,18 +284,41 @@ agents:
                 assert "concept mapping" in ensembles[0]["description"].lower()
                 assert ensembles[0]["path"] == "idea-exploration/concept-mapper.yaml"
 
-    def test_complete_library_ensemble_paths_uses_dynamic_fetching(self) -> None:
-        """Should complete ensemble paths using dynamic GitHub API fetching."""
+    def test_complete_library_ensemble_paths_uses_dynamic_fetching(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Should complete ensemble paths using dynamic GitHub API fetching.
+
+        Both lookups are mocked and the test runs from an empty directory
+        (#170). ``complete_library_ensemble_paths`` calls
+        ``get_library_categories`` FIRST and gates on it, and that resolves
+        its source from the AMBIENT working directory: a
+        ``llm-orchestra-library/`` in cwd wins as a "local" source, so the
+        result depended on whether the submodule happened to be populated
+        where pytest ran. In a ``git worktree`` — where the submodule
+        directory exists but is empty — it returned ``[]``, the category
+        gate short-circuited, the mocked call below was never reached, and
+        `make test` was red for the whole checkout. Mocking one of a pair
+        where the other is a filesystem probe is the shape to avoid.
+        """
 
         from llm_orc.cli_completion import complete_library_ensemble_paths
+
+        monkeypatch.chdir(tmp_path)
 
         # Mock click context and parameter
         ctx = click.Context(click.Command("test"))
         param = click.Argument(["test"])
 
-        with patch(
-            "llm_orc.cli_library.library.get_category_ensembles"
-        ) as mock_get_ensembles:
+        with (
+            patch(
+                "llm_orc.cli_library.library.get_library_categories",
+                return_value=["idea-exploration"],
+            ),
+            patch(
+                "llm_orc.cli_library.library.get_category_ensembles"
+            ) as mock_get_ensembles,
+        ):
             mock_get_ensembles.return_value = [
                 {
                     "name": "concept-mapper",
