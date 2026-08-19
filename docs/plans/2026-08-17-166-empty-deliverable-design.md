@@ -37,7 +37,7 @@ declarations that is exactly three shapes — `build-gated`, `write-tests`,
 `len(results['seat']['artifacts']) > 0`. (`gen-review` is unreachable: no
 step and no `_DERIVED` entry produces the `review` intent.)
 
-**The real fault is a LIVE seat with an EMPTY artifact.** The seat contract
+**The reachable fault here is a LIVE seat with an EMPTY artifact.** The seat contract
 asserts artifact PRESENCE, never non-emptiness; `ast.parse("")` succeeds so
 the form gate passes honestly; and `serving_ensemble_caller.py` maps any
 outcome carrying `file` and `content` to a client Write. All three envelope
@@ -47,7 +47,10 @@ extraction — their `summary` fallbacks (`"code deliverable"`,
 knew empty content arrives there.
 
 `diagnostics.accept` is the only thing between that and the client. It is
-defeated on two routes:
+defeated on two routes — and note before the detail that the mechanism which
+defeats it is **indifferent to emptiness**: the same two routes ship `x = 1`
+or `# TODO` just as readily, which is #171 and not this issue. What follows
+is the empty slice.
 
 **`re-fix` — single fault, deterministic, and DESTRUCTIVE.**
 `refix_select.py` substitutes `_SMOKE_TEST` whenever rung 1.5 found no
@@ -170,36 +173,65 @@ ledger.
 
 ## Regression instruments
 
-Each is labelled by what it can actually catch. The recurring defect in this
-corpus is a pin that cannot fail (#156 round 1, #160 round 2, #155's four
-rounds), so a pin that guards the over-refusal direction is named as such
-rather than passed off as an invariant pin.
+Twelve tests in `tests/unit/serving/test_serving_empty_deliverable.py`, each
+labelled by what it can actually catch. The recurring defect in this corpus
+is a pin that cannot fail (#156 round 1, #160 round 2, #155's four rounds),
+so a pin guarding the over-refusal direction is named as such rather than
+passed off as an invariant pin.
 
-**Invariant pins — must go RED under deletion of the guard:**
+**Invariant pins — each goes RED under deletion of the guard it names:**
 
-1. **The `re-fix` capture.** Smoke-only test, empty candidate, `accept: true`
-   — end to end through `ServingEnsembleCaller`, asserting no `tool_calls` on
-   the response. Red today. This is the destructive case.
-2. **The `build-gated` capture.** Workspace-satisfied tests with
-   `target_file` naming a different file, empty deliverable, `accept: true`.
-   Red today, and a distinct route from 1.
-3. **Whitespace-only content refuses too**, which kills a `== ""`
-   implementation.
-4. **The refusal mints a `refused` ledger entry** through `_reject_kind`
-   against the project's real `emit.py`. Red today by construction, since
-   there is no refusal at all. This is the finding-3 pin and it is separate
-   from `test_every_build_reachable_emit_terminal_mints_a_ledger_entry`,
-   which iterates emit's `TERMINALS` and is structurally blind to a
+1. **The `re-fix` capture.** Smoke-only test, empty candidate — the real
+   `refix_gather -> refix_select -> accept_executor -> refix_envelope` chain
+   builds the envelope, and the real
+   `seat_contract -> shape -> form_gate -> emit` chain carries it to the
+   outcome, which then goes through `_outcome_chunks`. This is the
+   destructive case: the named file is one the client already has.
+   It drives the real NODES, not `ServingEnsembleCaller` — the production
+   call site is pinned separately by instrument 4, which is the distinction
+   round 1 blocked on.
+2. **The `build-gated` capture.** Workspace-satisfied tests with the target
+   naming a different file, empty deliverable, `accept: true`. A distinct
+   route and a distinct mechanism from 1.
+3. **Whitespace-only content refuses**, which kills a `== ""` implementation.
+4. **The serve path mints a `refused` ledger entry.** Drives
+   `ServingEnsembleCaller.run()` over a project carrying the real `emit.py`,
+   with `_serve` returning an empty deliverable, and asserts `_reject_kind`
+   mints `refused`. Round 1's BLOCKER: the ledger half of the invariant rode
+   on one argument at the production call site and dropping it left the whole
+   suite green, because every other pin hands the prefixes to
+   `_outcome_chunks` itself and so cannot see the wiring.
+5. **The refusal mints through `_reject_kind`** against the project's real
+   `emit.py` — separate from
+   `test_every_build_reachable_emit_terminal_mints_a_ledger_entry`, which
+   iterates emit's own `TERMINALS` and is structurally blind to a
    caller-side terminal.
-5. **The prefix is not hardcoded**: with a project `emit.py` whose refused
-   terminal carries different wording, the refusal uses that wording.
+6. **The prefix is not hardcoded**: a project whose refused terminal carries
+   different wording gets that wording.
+7. **A null deliverable is not coerced into a write.** Judging
+   `str(content)` turned `content: null` into the four non-blank characters
+   `None` and wrote them. Covers `None`, a dict, and `0`.
+8. **Non-`.py` deliverables are guarded too.** `form_gate` returns "ok"
+   unconditionally for anything that is not `.py` or `.json`, so for a
+   `.md`, `.sh` or `.yaml` deliverable this is the only guard there is.
+9. **The refusal is a stated refusal, not an empty stream.** The whitespace
+   pin asserted only the ABSENCE of a write, so returning `[]` — or dropping
+   the stream terminator — passed it.
+10. **A malformed deliverable is not called empty** (review round 2): a
+    non-str deliverable gets its own wording, because a refusal that
+    misdescribes its cause is what this corpus refuses to ship.
 
-**Over-refusal pins — cannot fail under guard deletion, and are here to stop
-the fix becoming "refuse every build":**
+**Over-refusal pins — these CANNOT fail under deletion of the guard. They
+exist so the fix does not become "refuse every build":**
 
-6. A healthy build still writes.
-7. A one-character deliverable still writes, pinning that the rule is
-   emptiness and not a length heuristic.
+11. A healthy build still writes.
+12. A one-character deliverable still writes, pinning that the rule is
+    emptiness and not a length heuristic.
+
+**Also pinned, without an invariant of its own:** the no-readable-`emit.py`
+fallback still refuses (the version-skew scenario the placement is argued
+from), and its prefix is the plain non-minting idiom rather than a hardcoded
+copy of emit's wording.
 
 ## Known bounds
 
@@ -216,3 +248,29 @@ the fix becoming "refuse every build":**
   latent second source of the same fault if a seat ever diverges.
 - The `re-fix` smoke test cannot detect an empty candidate at its source;
   this guard papers over it. Filed as #169, with the clobber framing.
+- **The fault is not really about emptiness, and this closes only that
+  slice.** Measured on both routes with the same producer chains the
+  captures use:
+
+  ```
+  re-fix (calc.py exists client-side)   build-gated (target != tested module)
+    empty        -> refused               empty        -> refused
+    '# nothing'  -> CLIENT WRITE          '# TODO'     -> CLIENT WRITE
+    'x = 1'      -> CLIENT WRITE          'x = 1'      -> CLIENT WRITE
+  ```
+
+  The accept gate's ground truth never touches the deliverable, so junk
+  clobbers exactly as empty did. Filed as **#171**. Deliberately NOT widened
+  here: "refuse a deliverable that looks unhelpful" is a quality judgment,
+  and doctrine 9 puts those behind a gate rather than a predicate.
+- A legitimately empty file is now refused. `create an empty __init__.py` is
+  a routable build ask (`_FILE_RE` matches, `_BUILD_RE` matches), and
+  `__init__.py`, `py.typed` and `.gitkeep` all refuse. The census justifies
+  the trade — 52 writes, one empty, and that one the defect — but it is a
+  real cost, not a free one.
+- The caller infers build-ness from the outcome SHAPE (`file` + `content`
+  both present) rather than from `is_build_ask`, which it never sees, and
+  then stamps the build-scoped prefix. True for today's emit, where only the
+  build-and-valid terminal emits both, and any outcome carrying both is a
+  build-shaped action regardless. It is the version-skew exposure of the
+  placement the design is argued from, so it is named rather than assumed.
