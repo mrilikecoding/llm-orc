@@ -11,6 +11,23 @@ import yaml
 from llm_orc.core.config.config_manager import ConfigurationManager
 
 
+def _is_library(path: Path) -> bool:
+    """Whether ``path`` is a populated library, not just a directory (#172).
+
+    ``llm-orchestra-library`` is a git SUBMODULE, so an empty directory is
+    the normal state after ``git clone`` without ``--recurse-submodules``
+    and after every ``git worktree add``. Accepting one shadows a real
+    library: with ``LLM_ORC_LIBRARY_SOURCE=local`` explicitly requested, an
+    empty directory in the cwd won priority 2 and the packaged library at
+    priority 3 was never looked at.
+
+    Gating on the content-bearing subdirectory is what every other
+    cwd-based resolver in the tree already does — ``get_ensembles_dirs``,
+    ``get_library_dir`` — so this was the outlier rather than a new rule.
+    """
+    return (path / "ensembles").exists()
+
+
 def _get_library_source_config() -> tuple[str, str]:
     """Get library source configuration from environment or defaults.
 
@@ -32,7 +49,7 @@ def _get_library_source_config() -> tuple[str, str]:
 
     # Priority 2: Check current working directory first (for tests and local usage)
     cwd_library = Path.cwd() / "llm-orchestra-library"
-    if cwd_library.exists():
+    if _is_library(cwd_library):
         return "local", str(cwd_library)
 
     # Priority 3: Check package submodule only if LLM_ORC_LIBRARY_SOURCE=local
@@ -42,7 +59,7 @@ def _get_library_source_config() -> tuple[str, str]:
         # Explicitly requested local - check package-relative path
         current_dir = Path(__file__).parent.parent.parent.parent
         local_path = current_dir / "llm-orchestra-library"
-        if local_path.exists():
+        if _is_library(local_path):
             return "local", str(local_path)
         # Local explicitly requested but not found - return empty path
         return "local", ""
