@@ -160,11 +160,15 @@ is that it is not closed and is not closeable by this rule.
   belongs to #85's containment surface; recorded so the next sweep does not
   rediscover it as new.
 - The property is enforced on what is EMITTED, at every emission point, and
-  on each PIECE as it enters the string (rounds 3 and 4). Checking only the
-  composed string discarded the class name and the message whenever the
-  source echo named a RELATIVE path, reducing an ordinary failing test to
+  on each PIECE as it enters the string, in BOTH failure branches. Checking
+  only the composed string discarded the class name and the message whenever
+  the text named a RELATIVE path, reducing an ordinary failing test to
   "failed" — the evidence loss round 2 paid to avoid, and it feeds the retry
-  prompt too. `_wire_safe` is also total in its return: a caller cannot
+  prompt too. Rounds 3 to 5: the discipline reached `_run_test_fns` in round
+  4 and the `unittest.TestCase` branch only in round 5, and this sentence
+  claimed it as universal in between, which is how the second half went
+  unnoticed. An `assertEqual` over a sequence containing a path is enough to
+  trigger it, since the diff is multi-line and its last line carries no type. `_wire_safe` is also total in its return: a caller cannot
   reintroduce the hole by choosing a fallback built from unchecked values,
   which is exactly how the seventh channel appeared. It is dead with respect
   to the suite — every caller passes a fallback built from checked pieces or
