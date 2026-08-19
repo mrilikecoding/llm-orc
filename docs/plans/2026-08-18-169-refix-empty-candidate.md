@@ -70,8 +70,9 @@ A re-fix candidate that is empty after `.strip()` is never accepted.
 ## Regression instruments
 
 1. **An empty candidate on the smoke-only path is rejected.** Red today.
-2. **The reject reason names emptiness**, not "failed to load", so the two
-   gates stay distinguishable.
+2. **The reject reason names emptiness and the file**, not "failed to load",
+   so the two gates stay distinguishable and #166's capture — which asserts
+   the file is named — keeps working whichever branch lands second.
 3. **An empty candidate with a VISIBLE test is rejected too**, pinning that
    the rule is not scoped to the smoke-only path.
 4. **A whitespace-only candidate is rejected**, which kills a `== ""`
@@ -92,5 +93,13 @@ Over-refusal pins, which cannot fail under deletion of the guard:
 
 - Does not make the smoke test meaningful. A candidate that is non-empty but
   useless still passes a `pass` body; only emptiness is closed here.
-- Comment-only candidates are not covered, matching #166's choice for the
-  same reason: telling "only comments" from "a real file" needs a parser.
+- Comment-only candidates are not covered, and review was right that the
+  original justification was wrong: `ast` is already imported by the sibling
+  `_helpers.py`, `form_gate.py` re-parses this same string one node later,
+  and `not ast.parse(code).body` is one line. So it is a scope choice, not a
+  capability the route lacks. Measured, `# TODO: implement the fix` clears
+  this guard, clears `ast.parse`, clears #166's caller guard, and clobbers
+  the target. It stays open because the same boundary holds on #166 and
+  moving one without the other is how the two guards drift apart; closing it
+  belongs with a decision about docstring-only candidates too, which
+  `ast.parse(...).body` does NOT catch.

@@ -22,7 +22,17 @@ from typing import Any
 REPO = Path(__file__).resolve().parents[3]
 SCRIPTS = REPO / ".llm-orc" / "scripts" / "agentic_serving"
 
-_SMOKE = "def test_refix_candidate_loads_cleanly():\n    pass\n"
+# _SMOKE below is the PRODUCTION constant, not a copy. Review round 1: a
+# frozen copy left the whole suite green when refix_select._SMOKE_TEST was
+# replaced with an always-failing test or emptied outright — so every pin
+# here could go green for a different reason and `candidate_present` become
+# silently deletable. #169's own issue lists "make the smoke test assert
+# something about the candidate" as the alternative fix, which is exactly
+# that edit.
+sys.path.insert(0, str(SCRIPTS))
+
+from refix_select import _SMOKE_TEST as _SMOKE  # type: ignore  # noqa: E402
+
 # A visible test that does NOT reference the target module. Realistic: rung
 # 1.5's "visible test" is whatever test_<stem>.py was found, and a suite
 # routinely contains cases that do not touch the module under repair. With an
@@ -49,9 +59,13 @@ def _dep(value: Any) -> dict[str, str]:
 
 
 def _envelope(code: str, *, visible_test: str = "") -> dict[str, Any]:
-    """select -> executor -> envelope, all real. ``code`` is the candidate
-    and the only fault; the smoke test is select's own injection when no
-    visible test is passed."""
+    """executor -> envelope, both real, over a SYNTHESIZED select output.
+
+    ``refix_select.py`` is not run here — the dict below is built to the
+    shape it emits, verified key-for-key against the real node — so the
+    smoke test comes from the production constant rather than from select
+    having injected it. ``code`` is the candidate and the only fault.
+    """
     selected = {
         "requirement": "fix calc.py so restock adds one",
         "code": code,
@@ -61,10 +75,16 @@ def _envelope(code: str, *, visible_test: str = "") -> dict[str, Any]:
         "smoke_only": not visible_test,
     }
     executor = _node("accept_executor.py", {"select": _dep(selected)})
-    return _node(
+    envelope = _node(
         "refix_envelope.py",
         {"select": _dep(selected), "executor": _dep(executor)},
     )
+    # The premise: the executor's verdict is NOT what stops an empty
+    # candidate. If the smoke test ever starts failing on nothing, these
+    # pins would go green for a reason that has nothing to do with the
+    # guard, and the guard would be deletable (review round 1).
+    envelope["_tests_pass"] = executor["tests_pass"]
+    return envelope
 
 
 class TestAnEmptyCandidateIsNeverAccepted:
@@ -75,6 +95,10 @@ class TestAnEmptyCandidateIsNeverAccepted:
         code, so the executor's verdict is not what stops this."""
         envelope = _envelope("")
 
+        assert envelope["_tests_pass"] is True, (
+            "the smoke test must still pass against no code, or this pins "
+            "the wrong thing"
+        )
         assert envelope["diagnostics"]["accept"] is False
 
     def test_the_reject_reason_names_emptiness(self) -> None:
@@ -82,8 +106,10 @@ class TestAnEmptyCandidateIsNeverAccepted:
         load, or the candidate was empty — and they call for different
         operator responses. The reason has to tell them apart."""
         envelope = _envelope("")
+        reason = envelope["diagnostics"]["accept_reason"]
 
-        assert "empty" in envelope["diagnostics"]["accept_reason"].lower()
+        assert "empty" in reason.lower()
+        assert "calc.py" in reason, "the refusal must name what was not written"
 
     def test_an_empty_candidate_with_a_visible_test_is_rejected_too(self) -> None:
         """The rule is not scoped to the smoke-only path, and this pin can
@@ -93,6 +119,10 @@ class TestAnEmptyCandidateIsNeverAccepted:
         leave that open."""
         envelope = _envelope("", visible_test=_VISIBLE_TEST)
 
+        assert envelope["_tests_pass"] is True, (
+            "the visible test must still pass against no code, or this pins "
+            "the wrong thing"
+        )
         assert envelope["diagnostics"]["accept"] is False
 
     def test_a_whitespace_only_candidate_is_rejected(self) -> None:
