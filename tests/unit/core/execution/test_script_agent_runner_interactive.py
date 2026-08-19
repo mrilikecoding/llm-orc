@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-import sys
 import threading
 from pathlib import Path
 from typing import Any
@@ -17,7 +16,6 @@ from llm_orc.agents.script_agent import ScriptAgent
 from llm_orc.core.execution.progress_controller import NoOpProgressController
 from llm_orc.core.execution.scripting.agent_runner import ScriptAgentRunner
 from llm_orc.core.execution.scripting.cache import ScriptCache, ScriptCacheConfig
-from llm_orc.core.execution.scripting.resolver import ScriptResolver
 from llm_orc.core.execution.usage_collector import UsageCollector
 from llm_orc.schemas.agent_config import ScriptAgentConfig
 
@@ -1191,23 +1189,32 @@ class TestAResolveFailureIsAlsoUndigestable:
         return f'import json\nprint(json.dumps({{"v": "{value}"}}))\n'
 
     @staticmethod
-    def _flapping_resolver(target: Path) -> Any:
-        """resolve_script_path that raises ESTALE only when _cache_identity
-        is the caller.
+    def _flapping_stat(target: Path, failing: set[int]) -> Any:
+        """os.stat that raises ESTALE for `target` on the numbered calls in
+        ``failing``, counting from 1.
 
-        The CHILD still runs — the mount flaps between the identity
-        computation and the subprocess's own resolve — and that is what
-        makes this a STALE SERVE rather than a failed run. A mock that
-        failed both would prove nothing: the execution would die and #159
-        would decline to cache the failure anyway.
+        Scripted by CALL ORDER rather than by caller (review round 2): the
+        earlier version read ``sys._getframe(1).f_code.co_name`` and so was
+        pinned to a method name — a behavior-preserving extraction of the
+        resolve into a helper turned it red with a message pointing nowhere
+        near the cause, in a repo whose commit discipline encourages exactly
+        that kind of refactor.
+
+        Both versions spend an oracle the OS would not give; call order is
+        the cheaper coupling. The CHILD still runs, which is what makes this
+        a STALE SERVE rather than a failed run — a mock that failed
+        everything would prove nothing, since the execution would die and
+        #159 declines to cache a failure anyway.
         """
-        real = ScriptResolver.resolve_script_path
+        real = os.stat
+        seen = [0]
 
-        def flaky(self: ScriptResolver, script_ref: str) -> str:
-            caller = sys._getframe(1).f_code.co_name
-            if script_ref == str(target) and caller == "_cache_identity":
-                raise OSError(116, "Stale file handle")
-            return real(self, script_ref)
+        def flaky(path: Any, *args: Any, **kwargs: Any) -> Any:
+            if str(path) == str(target):
+                seen[0] += 1
+                if seen[0] in failing:
+                    raise OSError(116, "Stale file handle")
+            return real(path, *args, **kwargs)
 
         return flaky
 
@@ -1219,18 +1226,62 @@ class TestAResolveFailureIsAlsoUndigestable:
         cache = ScriptCache(ScriptCacheConfig(enabled=True))
         runner = self._runner(cache)
         config = ScriptAgentConfig(name="probe", script=str(script))
-        flaky = self._flapping_resolver(script)
-
-        with patch.object(ScriptResolver, "resolve_script_path", flaky):
+        # Call 1 is the RESOLVER's own stat inside _cache_identity, which
+        # is the site this pin is about; the identity returns early, so the
+        # execution's later stats are calls 2 and 3 and they succeed. The
+        # mount flaps between naming the script and running it.
+        with patch("os.stat", self._flapping_stat(script, {1})):
             first, _, _ = asyncio.run(runner.execute(config, "{}"))
         script.write_text(self._emit("two"))
-        with patch.object(ScriptResolver, "resolve_script_path", flaky):
+        with patch("os.stat", self._flapping_stat(script, {1})):
             second, _, _ = asyncio.run(runner.execute(config, "{}"))
 
         assert json.loads(first)["v"] == "one"
         assert json.loads(second)["v"] == "two", "served the pre-edit output"
         assert cache.get_stats()["hits"] == 0
         assert cache.get_stats()["sets"] == 0
+
+    def test_a_stat_failure_after_a_healthy_resolve_is_not_cacheable(
+        self, tmp_path: Path
+    ) -> None:
+        """Review round 2 BLOCKER: the THIRD landing site.
+
+        Round 1 moved the guard from ``read_bytes`` to the resolve because
+        ``Path.exists()`` PROPAGATES ``EIO``/``ESTALE``. The next line then
+        called ``os.path.isfile`` and ``os.path.exists``, which are
+        ``genericpath`` — they SWALLOW ``OSError`` and answer ``False``. So
+        the same fault, one call later, fell through to
+        ``return ... else resolved``: the #160 path-only key again, four
+        lines below the line round 1 fixed.
+
+        Isolated by MECHANISM rather than by call order or caller name. The
+        resolver checks with ``Path.exists``; the identity stats with
+        ``os.stat``. Patching them apart makes the resolve succeed and only
+        the identity's own stat fail, and — unlike counting calls — it stays
+        honest under a mutant that ADDS stats, which is exactly what
+        reinstating the genericpath prelude does.
+
+        A unit pin because the end-to-end consequence is already pinned for
+        the sibling site by the stale-serve test above; what is unpinned
+        here is which ANSWER this site gives.
+        """
+        script = tmp_path / "probe.py"
+        script.write_text(self._emit("one"))
+        runner = self._runner(ScriptCache(ScriptCacheConfig(enabled=True)))
+        real_stat = os.stat
+
+        def estale(path: Any, *args: Any, **kwargs: Any) -> Any:
+            if str(path) == str(script):
+                raise OSError(116, "Stale file handle")
+            return real_stat(path, *args, **kwargs)
+
+        with (
+            patch.object(Path, "exists", lambda self: True),
+            patch("os.stat", estale),
+        ):
+            identity = runner._cache_identity(str(script))
+
+        assert identity is None, f"a failed stat named the script by path: {identity!r}"
 
     def test_an_empty_reference_never_touches_the_cache(self, tmp_path: Path) -> None:
         """#163 review round 1. The fast path returned "" — a constant

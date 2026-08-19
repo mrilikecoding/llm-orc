@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+import errno
 import hashlib
 import json
 import logging
 import os
+import stat
 import subprocess
 import time
 from collections.abc import Callable
@@ -29,6 +31,12 @@ from llm_orc.models.base import ModelInterface
 from llm_orc.schemas.agent_config import AgentConfig, ScriptAgentConfig
 
 logger = logging.getLogger(__name__)
+
+# The errnos that mean "nothing is at this path", as opposed to "something is
+# there and the stat failed" (#163). Only these keep a reference cacheable;
+# everything else — EIO, ESTALE, EACCES, ELOOP — is a filesystem object we
+# could not name, and naming it by path alone is the #160 bug.
+_ABSENT_ERRNOS = frozenset({errno.ENOENT, errno.ENOTDIR, errno.ENAMETOOLONG})
 
 
 def _reports_failure(response: Any) -> bool:
@@ -312,8 +320,27 @@ class ScriptAgentRunner:
             ).resolve_script_path(script_ref)
         except Exception:
             return None
-        if not os.path.isfile(resolved):
-            return None if os.path.exists(resolved) else resolved
+        # ONE stat, and the question it answers is "did we establish that
+        # this is a regular file we can name", not "which call threw"
+        # (#163 review round 2). The previous shape asked the second
+        # question and so moved landing sites twice: os.path.isfile and
+        # os.path.exists are genericpath, which SWALLOWS OSError and answers
+        # False, so an EIO/ESTALE stat fell straight through to the bare
+        # path — the #160 key, four lines below the line round 1 fixed.
+        # One stat also removes the isfile/exists TOCTOU.
+        try:
+            info = os.stat(resolved)
+        except ValueError:
+            # A NUL byte cannot be a path at all, so this is inline content
+            # and the reference IS its own bytes.
+            return resolved
+        except OSError as error:
+            # Nothing is there: inline content, or a reference whose missing
+            # script execution will report a moment later. Any OTHER errno
+            # means something IS there and we failed to look at it.
+            return resolved if error.errno in _ABSENT_ERRNOS else None
+        if not stat.S_ISREG(info.st_mode):
+            return None
         try:
             digest = hashlib.sha256(Path(resolved).read_bytes()).hexdigest()
         except OSError:

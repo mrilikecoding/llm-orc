@@ -50,11 +50,14 @@ Three branches, one rule:
 
 | reference | identity |
 |---|---|
-| resolves to a regular file that digests | `f"{resolved}:{digest}"` |
-| resolves to a regular file that raises on read | `None` |
-| resolves to an existing non-regular file (FIFO, device, dir) | `None` |
+| stats as a regular file and digests | `f"{resolved}:{digest}"` |
+| stats as a regular file, raises on read | `None` |
+| stats as a non-regular file (FIFO, device, dir) | `None` |
+| stat fails with a NOT-absent errno (`EIO`, `ESTALE`, `EACCES`, `ELOOP`) | `None` |
+| stat fails with an absent errno (`ENOENT`, `ENOTDIR`, `ENAMETOOLONG`) | `resolved` |
+| stat raises `ValueError` (a NUL byte — not a path at all) | `resolved` |
 | fails to RESOLVE at all | `None` |
-| resolves to nothing on the filesystem (inline content) | `resolved` |
+| the reference is empty (a non-script agent) | `None` |
 
 The last row is not a fallback: `resolve_script_path` returns inline content
 verbatim, so `script: "echo hello"` genuinely IS its own bytes, and an
@@ -63,6 +66,17 @@ cache-key path. `os.path.exists` is what separates that row from the
 non-regular-file row; it is safe on every shape the current docstring worries
 about (NUL byte, longer than PATH_MAX, empty) — measured, all return `False`
 rather than raising.
+
+**The guard asks one question, at one site** (review round 2). The first two
+drafts asked "which call threw" and so moved landing sites twice: round 1
+moved it from `read_bytes` to the resolve, and round 2 found a third site
+four lines below — `os.path.isfile`/`os.path.exists` are `genericpath`, which
+SWALLOWS `OSError` and answers `False`, so an `EIO`/`ESTALE` stat fell
+straight through to the bare path. The shape now asks "did we establish that
+this is a regular file we can name": ONE `os.stat`, with the errno deciding
+whether nothing is there (inline content, a missing script) or something is
+there that we failed to look at. One stat also removes the isfile/exists
+TOCTOU.
 
 **The resolve boundary is inside the rule too** (review round 1). The fix
 first landed only at `read_bytes`, but `resolve_script_path` stats the file
@@ -113,6 +127,17 @@ failure in this corpus is a pin that cannot fail (#156, #160 round 2).
    the legitimate no-digest row.
 6. **A FIFO still does not hang, and now does not cache.** The existing pin's
    watchdog is kept; its identity assertion changes.
+7. **A stat failure after a HEALTHY resolve is not cacheable** (round 2's
+   blocker). Isolated by MECHANISM, not by call order or caller name: the
+   resolver checks with `Path.exists`, the identity stats with `os.stat`, so
+   patching them apart makes the resolve succeed and only the identity's own
+   stat fail. Counting calls would not do — reinstating the genericpath
+   prelude ADDS stats and shifts the numbering, which is how that mutant
+   survived a first attempt at this pin.
+8. **A resolve failure serves no stale result**, end to end. Round 1's pin,
+   with its caller-name mock replaced: `sys._getframe(1).f_code.co_name`
+   coupled it to a method name, so a behavior-preserving extraction turned it
+   red with a message pointing nowhere near the cause.
 
 ## Known bounds
 
@@ -123,3 +148,15 @@ failure in this corpus is a pin that cannot fail (#156, #160 round 2).
   execution fails first. The guard covers it anyway rather than relying on
   that coincidence holding.
 - Says nothing about what the digest covers (#161, #162).
+- **The whole change is inert on a default install.** `ScriptCacheConfig`
+  ships `enabled = False` (#160), and `cacheable` gates the identity
+  computation entirely, so none of this runs until a project opts in. The
+  severity above — a bad key held for the TTL, crossing processes under
+  `persist_to_artifacts` — is real only for those projects.
+- The `ScriptNotFoundError` special case was dropped for a better reason
+  than the docstring first gave. "A resolution failure is a run failure" is
+  falsified by this branch's own pin, where the run succeeds while the
+  identity's resolve failed. The real argument: `ScriptNotFoundError`
+  subclasses `FileNotFoundError` and is what the resolver raises during an
+  ENOENT race — one of the three named triggers — so keeping such a
+  reference cacheable would have re-opened the path-only key for it.
