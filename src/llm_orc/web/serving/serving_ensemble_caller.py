@@ -1391,8 +1391,75 @@ def _glob_pattern(glob_stem: str) -> str | None:
     return f"**/*{{{','.join(parts)}}}*"
 
 
+def _build_refused_prefix(reject_prefixes: _RejectPrefixes) -> str:
+    """The project's own refuse prefix that mints a ``refused`` ledger entry
+    (#166).
+
+    Not a literal here. The whole argument for guarding at the caller is
+    that project scripts rev independently of this installed caller, so
+    hardcoding emit.py's wording would contradict the placement. The
+    vocabulary this module already names — ``mints == _REFUSED`` — selects
+    it instead, exactly as ``_reject_kind`` matches on it.
+
+    Falls back to the plain non-minting idiom when a project's emit.py
+    registers no minting refuse terminal at all: an unrecorded refusal is
+    a worse outcome than a silent write only if it is also a wrong answer,
+    and it is not — the client still gets the honest refusal.
+    """
+    for terminal in reject_prefixes:
+        if terminal.mints == _REFUSED:
+            return terminal.prefix
+    return "Refused: "
+
+
+def _empty_deliverable_refusal(
+    path: Any, content: Any, reject_prefixes: _RejectPrefixes
+) -> list[OrchestratorChunk] | None:
+    """The refusal for a build outcome with an empty deliverable, or
+    ``None`` when the deliverable is real and the write may proceed (#166).
+
+    The seat contract asserts artifact PRESENCE, never non-emptiness, and
+    ``ast.parse("")`` succeeds — so a seat that SUCCEEDS with an empty
+    artifact clears every upstream gate and arrives at the caller as a
+    write. Single-fault reachable on two build routes, and on re-fix the
+    named file is one the client already has, so the write is a clobber.
+
+    The RAW value is judged, never a ``str()`` of it. Review round 1: a
+    coercion first would turn a ``content: null`` outcome — the emptiest
+    deliverable there is — into the four non-blank characters ``None`` and
+    write them. Nothing shipped emits a non-str content, but drift is the
+    entire argument for guarding here rather than in the seat contract, so
+    the guard has to survive the drift it exists for.
+
+    Empty after strip, because a file of blank lines is as empty as no
+    file; comment-only content is deliberately not covered, since telling
+    that from a real file needs a parser rather than a predicate. The rule
+    applies to EVERY deliverable path, not only ``.py`` — ``form_gate``
+    returns "ok" unconditionally for a ``.md`` or ``.sh`` deliverable, so
+    for those this is the only guard there is.
+    """
+    if isinstance(content, str) and content.strip():
+        return None
+    named = path if isinstance(path, str) and path.strip() else "the build"
+    # Review round 2: a non-str deliverable is MALFORMED, not empty, and
+    # saying "empty" about it would misdescribe the failure — in exactly the
+    # producer-drift condition this guard exists for. This corpus is strict
+    # about kind-specific refusals (emit.py never attributes a contract miss
+    # to the accept gate), so the two get their own wording.
+    what = "an empty" if isinstance(content, str) else "a malformed"
+    return [
+        ContentDelta(
+            content=f"{_build_refused_prefix(reject_prefixes)}the build produced "
+            f"{what} deliverable for {named}, so nothing was written."
+        ),
+        Completion(finish_reason="stop"),
+    ]
+
+
 def _outcome_chunks(
-    outcome: dict[str, Any], tools: Sequence[Any]
+    outcome: dict[str, Any],
+    tools: Sequence[Any],
+    reject_prefixes: _RejectPrefixes = _NO_REJECT_PREFIXES,
 ) -> list[OrchestratorChunk]:
     if outcome.get("finish"):
         return [
@@ -1451,10 +1518,15 @@ def _outcome_chunks(
         )
         return [ClientToolCall(tool_calls=(invocation,))]
     if "file" in outcome and "content" in outcome:
+        content = outcome.get("content")
+        path = outcome.get("file")
+        empty = _empty_deliverable_refusal(path, content, reject_prefixes)
+        if empty is not None:
+            return empty
         arguments = json.dumps(
             {
-                "filePath": outcome.get("file", "solution.py"),
-                "content": outcome.get("content", ""),
+                "filePath": path,
+                "content": content,
             }
         )
         invocation = ToolCallInvocation(
@@ -1671,7 +1743,7 @@ class ServingEnsembleCaller:
                     self_reads[label] = self._execute_self_read(label)
         else:
             outcome = _self_read_exhausted_outcome()
-        for chunk in _outcome_chunks(outcome, context.tools):
+        for chunk in _outcome_chunks(outcome, context.tools, reject_prefixes):
             yield chunk
 
     async def _serve(
