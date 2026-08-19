@@ -100,6 +100,24 @@ def _wire_safe(text: str, fallback: str) -> str:
     return fallback if _path_free(fallback) else "failed"
 
 
+def _exception_line(trace: str) -> str:
+    """The ``Type: message`` line of a traceback, or its last line.
+
+    Not simply the last line (#168 round 5): a multi-line exception message
+    — which is what ``assertEqual`` produces for any sequence — puts diff
+    fragments after it, so the last line carries no type at all and the
+    salvage below had nothing to keep. Scanning back for the line whose head
+    is an identifier followed by a colon finds the type wherever the message
+    ends.
+    """
+    lines = trace.strip().splitlines()
+    for line in reversed(lines):
+        head = line.split(":", 1)[0].strip()
+        if head and head.isidentifier() and line.strip() != head:
+            return line.strip()
+    return lines[-1].strip() if lines else ""
+
+
 def _safe_reason(error: BaseException) -> str:
     """What a test failure may say on the wire (#168).
 
@@ -233,15 +251,20 @@ def run_tests(code: str, tests: str, only: str | None = None) -> tuple[bool, str
         suite.run(result)
         n_tests += result.testsRun
         for test, trace in result.failures + result.errors:
-            # The last traceback line is "Type: {str(exc)}", and OSError's
-            # __str__ includes the filename its repr hides (#168 round 2).
-            # Keep the type, drop the message.
-            # The last traceback line is "Type: {str(exc)}"; the same
-            # property check applies, and the type survives either way.
-            last = trace.strip().splitlines()[-1]
-            if not _path_free(last):
-                last = last.split(":", 1)[0].strip()
-            failures.append(_wire_safe(f"{test}: {last}", "test failed"))
+            # Same piece-by-piece discipline as _run_test_fns (#168 round 5).
+            # Checking only the composed string lost the test name, the
+            # exception class and the message together on an ordinary
+            # `assertEqual` over a sequence containing a relative path: the
+            # diff is multi-line, its LAST line is a diff fragment with no
+            # colon, the type salvage returned it unchanged, and everything
+            # went. `test failed` is what the client and the retry prompt
+            # both got for a real, ordinary failure.
+            detail = _exception_line(trace)
+            if not _path_free(detail):
+                detail = detail.split(":", 1)[0].strip()
+            failures.append(
+                f"{_wire_safe(str(test), 'test')}: {_wire_safe(detail, 'failed')}"
+            )
 
     if n_tests == 0:
         detail = _wire_safe(

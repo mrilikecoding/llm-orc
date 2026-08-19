@@ -763,6 +763,12 @@ _HOSTILE_CORPUS = [
     ),
     # A load failure whose message names a path.
     ("", f'raise RuntimeError("missing {_HOME}/app.cfg")\n'),
+    # Round 5: the produced tests SOURCE naming an absolute path is the only
+    # input that exercises the `at:` echo's guard in the leak direction.
+    (
+        "import os\n",
+        f'import os\ndef test_save():\n    assert os.path.exists("{_HOME}/out.txt")\n',
+    ),
     # Round 4's seventh channel: the TEST NAME is produced-code-controlled
     # and was interpolated into the guard's own fallback. The nested test_*
     # def forces _enumerate_tests to give up and take the legacy single run,
@@ -822,3 +828,30 @@ def test_a_relative_path_in_the_source_echo_keeps_the_evidence() -> None:
 
     assert "AssertionError" in report, report
     assert "data/out.txt" not in report, report
+
+
+def test_a_unittest_diff_over_relative_paths_keeps_the_evidence() -> None:
+    """Round 5. The piece-by-piece discipline reached `_run_test_fns` and not
+    the `TestCase` branch 75 lines below, so an ordinary `assertEqual` over a
+    sequence containing a relative path lost the test name, the exception
+    class and the message together — `test failed`, in the client's reason
+    AND in the retry prompt, for a real and unremarkable failure.
+
+    The cause is that an `assertEqual` diff is MULTI-LINE: its last line is a
+    diff fragment with no colon, so the type salvage had nothing to keep.
+    `_exception_line` scans back for the type wherever the message ends.
+    """
+    report = _executor_report(
+        'def listing():\n    return ["src/a.py"]\n',
+        tests=(
+            "import unittest\n"
+            "from solution import listing\n"
+            "class T(unittest.TestCase):\n"
+            "    def test_l(self):\n"
+            '        self.assertEqual(listing(), ["src/b.py"])\n'
+        ),
+    )
+
+    assert "AssertionError" in report, report
+    assert "test_l" in report, report
+    assert "src/a.py" not in report, report

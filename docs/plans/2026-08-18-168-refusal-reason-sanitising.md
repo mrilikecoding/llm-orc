@@ -166,7 +166,11 @@ is that it is not closed and is not closeable by this rule.
   "failed" — the evidence loss round 2 paid to avoid, and it feeds the retry
   prompt too. `_wire_safe` is also total in its return: a caller cannot
   reintroduce the hole by choosing a fallback built from unchecked values,
-  which is exactly how the seventh channel appeared. Round 2 introduced
+  which is exactly how the seventh channel appeared. It is dead with respect
+  to the suite — every caller passes a fallback built from checked pieces or
+  a constant — and it stays because `_safe_reason`'s collapsed second check
+  and the `"; ".join(failures)` are both sound only if the return is
+  path-free by POSTCONDITION rather than by caller care. Round 2 introduced
   the rule but checked it at the producer, and that leaked twice through
   derived strings: a multi-line message whose last traceback line has no
   colon, and a class name produced code controls.
