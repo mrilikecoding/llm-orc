@@ -144,11 +144,29 @@ is that it is not closed and is not closeable by this rule.
   report is clipped server-side by the trace snippet once it exceeds 280
   characters — so for a long report the class name alone would have been the
   only surviving record anywhere. Short reports are retained whole.
-- **A bare username or hostname still reaches the wire.** Named in the
-  invariant above rather than buried here, because the first draft claimed
-  otherwise. Not closeable by a separator rule.
-- The property is enforced on what is EMITTED, at every emission point, not
-  on the values inspected to build it (review round 3). Round 2 introduced
+- **Any path-free string produced code can read server-side still reaches
+  the wire** — a username, a hostname, and (the reason it is not merely
+  cosmetic) an environment value, since the sandbox inherits the parent
+  environment. Named in the invariant above rather than buried here, because
+  the first draft claimed otherwise. Not closeable by a separator rule: a
+  bare identifier has no structure to recognise, and enumerating what is
+  sensitive is the denylist this issue was paid twice to avoid. Filed as
+  **#175**, which also carries the environment-scrubbing direction.
+- **The executor trusts the runner's stdout.** `_run_one` parses the child's
+  JSON and takes `report` and `tests_pass` on trust, so produced code can
+  write that JSON itself and `os._exit(0)` — forging a leak, or an accept.
+  That is the boundary of the wire property as written: it is enforced
+  inside the runner. Pre-existing, deliberate intent required, and it
+  belongs to #85's containment surface; recorded so the next sweep does not
+  rediscover it as new.
+- The property is enforced on what is EMITTED, at every emission point, and
+  on each PIECE as it enters the string (rounds 3 and 4). Checking only the
+  composed string discarded the class name and the message whenever the
+  source echo named a RELATIVE path, reducing an ordinary failing test to
+  "failed" — the evidence loss round 2 paid to avoid, and it feeds the retry
+  prompt too. `_wire_safe` is also total in its return: a caller cannot
+  reintroduce the hole by choosing a fallback built from unchecked values,
+  which is exactly how the seventh channel appeared. Round 2 introduced
   the rule but checked it at the producer, and that leaked twice through
   derived strings: a multi-line message whose last traceback line has no
   colon, and a class name produced code controls.

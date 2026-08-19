@@ -763,6 +763,20 @@ _HOSTILE_CORPUS = [
     ),
     # A load failure whose message names a path.
     ("", f'raise RuntimeError("missing {_HOME}/app.cfg")\n'),
+    # Round 4's seventh channel: the TEST NAME is produced-code-controlled
+    # and was interpolated into the guard's own fallback. The nested test_*
+    # def forces _enumerate_tests to give up and take the legacy single run,
+    # which is where the dynamic name reaches the report.
+    (
+        "",
+        "import pathlib\n"
+        "class TestFoo:\n"
+        "    def test_nested(self):\n"
+        "        pass\n"
+        "def _t():\n"
+        "    raise AssertionError('boom')\n"
+        "globals()['test_' + str(pathlib.Path.home())] = _t\n",
+    ),
     # The class name is produced-code-controlled on the LOAD path too, which
     # is a different emission point from the test path above.
     (
@@ -788,3 +802,23 @@ def test_no_report_can_name_a_path(code: str, tests: str) -> None:
 
     assert "/" not in report, report
     assert "\\" not in report, report
+
+
+def test_a_relative_path_in_the_source_echo_keeps_the_evidence() -> None:
+    """Round 4: checking only the COMPOSED detail discarded the class name
+    and the message along with the dirty ``at:`` echo, because the separator
+    rule catches relative paths too. An ordinary failing test reduced to
+    "failed" — the evidence loss round 2 paid to avoid, and it also feeds the
+    next round's retry prompt, so the model gets nothing to act on.
+
+    Each piece is checked as it enters the string instead.
+    """
+    report = _executor_report(
+        "import os\n",
+        tests=(
+            "import os\ndef test_save():\n    assert os.path.exists('data/out.txt')\n"
+        ),
+    )
+
+    assert "AssertionError" in report, report
+    assert "data/out.txt" not in report, report
