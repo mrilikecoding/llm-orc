@@ -18,6 +18,7 @@ from llm_orc.agents.script_agent import ScriptAgent
 from llm_orc.core.execution.progress_controller import NoOpProgressController
 from llm_orc.core.execution.scripting.agent_runner import ScriptAgentRunner
 from llm_orc.core.execution.scripting.cache import ScriptCache, ScriptCacheConfig
+from llm_orc.core.execution.scripting.resolver import ScriptResolver
 from llm_orc.core.execution.usage_collector import UsageCollector
 from llm_orc.schemas.agent_config import ScriptAgentConfig
 
@@ -918,21 +919,25 @@ class TestCacheIdentity:
     def test_inline_content_with_a_nul_byte_does_not_raise(
         self, tmp_path: Path
     ) -> None:
-        """Inline content never reaches the filesystem at all.
+        """An awkward inline reference answers rather than raising.
 
         Written when the guard was `os.path.isfile`, to pin the one thing
         that guard uniquely bought: a NUL byte makes `read_bytes` raise
         ValueError, which an `except OSError` does NOT catch, so it escaped
         and killed the run before the script was ever executed.
 
-        The mechanism has moved twice since. The resolver now classifies
-        inline content BEFORE any filesystem call (#163 review round 3), so
-        a NUL byte, a string longer than PATH_MAX and `echo hello` are all
-        answered without a stat and the ValueError cannot arise. What this
-        pin now holds is that property — inline content is returned, not
-        probed. Note it does NOT discriminate the classification itself:
-        deleting the inline short-circuit leaves it green, because the
-        `except Exception` below swallows what the stat then raises.
+        The mechanism has moved twice since, and the property is narrower
+        than a previous version of this docstring claimed. Inline content is
+        classified syntactically, but it still costs one `os.path.exists`
+        (#163 review round 4's fail-closed), so it is NOT true that these
+        shapes stay off the filesystem — measured, `echo hello`, a NUL byte
+        and a 5000-character string each take one `exists` and the `os.stat`
+        inside it. What holds is that `os.path.exists` ANSWERS for all three
+        rather than raising, so the run reaches the script.
+
+        It does NOT discriminate the classification: deleting the inline
+        short-circuit leaves it green, because the `except Exception` below
+        swallows what the stat then raises.
         `test_inline_content_still_caches` is the pin for that.
         """
         cache = ScriptCache(ScriptCacheConfig(enabled=True))
@@ -1268,7 +1273,9 @@ class TestAResolveFailureIsAlsoUndigestable:
         The rule could not be repaired by trimming the errno set: ``ENOENT``
         is exactly what made ``script: "echo hello"`` cacheable, so one errno
         was being asked two questions. The classification moved to the
-        resolver, which is the only thing that knows the answer.
+        resolver, which answers what IT will do with the reference — not
+        what the system does with it, which is the distinction round 4 then
+        had to add (see the bare-name pin below, and #177).
         """
         script = tmp_path / "probe.py"
         script.write_text(self._emit("one"))
@@ -1387,3 +1394,33 @@ class TestAResolveFailureIsAlsoUndigestable:
         runner = self._runner(ScriptCache(ScriptCacheConfig(enabled=True)))
 
         assert runner._cache_identity("") is None
+
+
+class TestIsInlineContent:
+    """#163 review round 5. This arc promoted a local `is_path` variable to
+    a public predicate with a second consumer, and the cache identity now
+    depends on it — but one of its three clauses was deletable with the
+    whole suite green. Dropping the `"/"` clause makes a relative
+    extensionless reference (`scripts/mytool`) stop resolving through the
+    search paths and get handed to bash as content.
+
+    It is not a #163 hole: the identity and ScriptAgent go through the same
+    predicate there, so they stay consistent and no stale serve follows. It
+    is an unpinned clause of a predicate the fix rests on.
+    """
+
+    @pytest.mark.parametrize(
+        ("ref", "inline", "why"),
+        [
+            ("echo hello", True, "no separator, no script extension"),
+            ("echo", True, "a bare word is content"),
+            ("scripts/mytool", False, "the slash clause"),
+            ("scripts\\mytool", False, "the backslash clause"),
+            ("mytool.py", False, "the script-extension clause"),
+            ("mytool.sh", False, "the script-extension clause"),
+            ("/abs/tool", False, "absolute paths carry a separator"),
+            ("", True, "vacuously, and the caller short-circuits first"),
+        ],
+    )
+    def test_the_classification(self, ref: str, inline: bool, why: str) -> None:
+        assert ScriptResolver(project_dir=None).is_inline_content(ref) is inline, why
