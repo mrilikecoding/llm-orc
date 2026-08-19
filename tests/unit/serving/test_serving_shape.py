@@ -153,7 +153,13 @@ def test_failed_resolve_dep_fails_closed_to_a_routing_refusal() -> None:
         }
     )
     assert shaped["build"] is False
-    assert "Script failed with exit code 1" in shaped["routing_failed"]
+    # The reason carries what happened to the node, normalized (#168): this
+    # envelope's wording and the blanket except's "returned non-zero exit
+    # status 1" are the same FACT from two producers, and the client sees
+    # one vocabulary for it. Asserting the residue rather than the
+    # producer's literal keeps this pin on its own subject — that a crashed
+    # routing node refuses with a reason, not that it echoes engine text.
+    assert "status 1" in shaped["routing_failed"]
 
 
 def test_empty_target_decision_is_unreadable_and_refuses() -> None:
@@ -416,3 +422,108 @@ def test_a_healthy_seat_contract_is_not_a_failure() -> None:
 
     assert not shaped["seat_gate_failed"]
     assert shaped["seat_admitted"] is True
+
+
+# --- #168: a refusal reason names no filesystem path -------------------------
+#
+# The engine's four-key wrap embeds the subprocess argv, so every wrapped node
+# failure used to put the interpreter path, the script path, and hence the
+# operator's home directory and username on the wire. Ten captures in
+# .llm-orc/.serve-trace/turns.jsonl carry the shape (lines 150, 153, 469, 574,
+# across shape/resolve/seat_contract).
+
+_HOME = str(Path.home())
+_USER = _HOME.rsplit("/", 1)[-1]
+_ARGV = f"'['{sys.executable}', '{REPO}/.llm-orc/scripts/agentic_serving/classify.py']'"
+
+
+def _wrapped(error: str) -> dict[str, Any]:
+    """The engine's wrap for a dead serving node — the four keys
+    ScriptAgentOutput emits from execute_with_schema_json's blanket except."""
+    return {"success": False, "data": None, "error": error, "agent_requests": []}
+
+
+def _routing_reason(error: str) -> str:
+    shaped = _shape_raw({"resolve": {"response": json.dumps(_wrapped(error))}})
+    return str(shaped.get("routing_failed", ""))
+
+
+def test_a_wrapped_exit_status_reason_names_no_path_or_user() -> None:
+    """The captured shape, and the reason this issue exists."""
+    reason = _routing_reason(
+        f"Schema JSON execution failed: Command {_ARGV} "
+        "returned non-zero exit status 1."
+    )
+
+    assert _HOME not in reason
+    assert _USER not in reason
+    assert "Command '[" not in reason
+
+
+def test_an_unrecognized_error_shape_leaks_nothing_either() -> None:
+    """The pin that separates positive extraction from a denylist, and the
+    one the issue's own proposed fix would fail.
+
+    #168 proposed cutting "the whole Command '[...]' clause". A
+    FileNotFoundError from the same blanket except carries an absolute path
+    and NO Command clause, so a clause-strip passes it through verbatim.
+    """
+    reason = _routing_reason(
+        "Schema JSON execution failed: [Errno 2] No such file or directory: "
+        f"'{REPO}/.llm-orc/scripts/agentic_serving/classify.py'"
+    )
+
+    assert _HOME not in reason
+    assert _USER not in reason
+
+
+def test_the_exit_status_tail_survives() -> None:
+    """Not just deleting the reason: the actionable residue is kept."""
+    reason = _routing_reason(
+        f"Schema JSON execution failed: Command {_ARGV} "
+        "returned non-zero exit status 3."
+    )
+
+    assert "3" in reason
+    assert "non-zero" in reason
+
+
+def test_the_timeout_tail_survives() -> None:
+    """Named separately from the exit-status family. One regex covering both
+    is how a family gets silently dropped — and a timeout is the failure an
+    operator most needs to tell apart from a crash."""
+    reason = _routing_reason(
+        f"Schema JSON execution failed: Command {_ARGV} timed out after 45 seconds"
+    )
+
+    assert "timed out" in reason
+    assert "45" in reason
+    assert _HOME not in reason
+
+
+def test_the_failing_node_is_still_named() -> None:
+    """The part of the reason an operator routes on: which node died."""
+    error = (
+        f"Schema JSON execution failed: Command {_ARGV} "
+        "returned non-zero exit status 1."
+    )
+    shaped = _shape_raw({"classify": {"response": json.dumps(_wrapped(error))}})
+
+    assert "classify" in str(shaped.get("routing_failed", ""))
+
+
+def test_a_readable_routing_decision_is_unaffected() -> None:
+    """The over-refusal direction. This CANNOT fail under deletion of the
+    sanitiser — it is here so the fix does not become "refuse everything"."""
+    shaped = _shape_raw(
+        {
+            "resolve": {
+                "response": json.dumps(
+                    {"target": "explainer", "kind": "explanation", "build": False}
+                )
+            },
+            "seat": {"response": "some prose"},
+        }
+    )
+
+    assert not shaped.get("routing_failed")
