@@ -50,14 +50,15 @@ Three branches, one rule:
 
 | reference | identity |
 |---|---|
-| stats as a regular file and digests | `f"{resolved}:{digest}"` |
-| stats as a regular file, raises on read | `None` |
-| stats as a non-regular file (FIFO, device, dir) | `None` |
-| stat fails with a NOT-absent errno (`EIO`, `ESTALE`, `EACCES`, `ELOOP`) | `None` |
-| stat fails with an absent errno (`ENOENT`, `ENOTDIR`, `ENAMETOOLONG`) | `resolved` |
-| stat raises `ValueError` (a NUL byte — not a path at all) | `resolved` |
-| fails to RESOLVE at all | `None` |
+| the resolver calls it inline content (no separator, no script extension) | `script_ref` |
+| it denotes a file, stats as regular, and digests | `f"{resolved}:{digest}"` |
+| it denotes a file and ANYTHING goes wrong — resolve, stat (any errno), non-regular, unreadable | `None` |
 | the reference is empty (a non-script agent) | `None` |
+
+Three rows, because after the classification there is only one question left.
+A NUL byte, a string longer than PATH_MAX and `echo hello` are all inline by
+the same rule and never reach the filesystem; a FIFO, a vanished file, a
+stale mount and an unreadable file are all "a file we cannot name".
 
 The last row is not a fallback: `resolve_script_path` returns inline content
 verbatim, so `script: "echo hello"` genuinely IS its own bytes, and an
@@ -66,6 +67,23 @@ cache-key path. `os.path.exists` is what separates that row from the
 non-regular-file row; it is safe on every shape the current docstring worries
 about (NUL byte, longer than PATH_MAX, empty) — measured, all return `False`
 rather than raising.
+
+**The RESOLVER classifies; the identity only names bytes** (review round 3).
+The errno rule that round 2 introduced opened a fourth site: `ENOENT` at the
+identity's own stat, after a healthy resolve, answered the bare path for a
+file that had just vanished — one of the three triggers this fix is named
+for. It could not be repaired by trimming the errno set, because `ENOENT` is
+also exactly what makes `script: "echo hello"` cacheable. One errno was being
+asked two questions, and it cannot answer both.
+
+The information lives one level up. `ScriptResolver` returns a reference
+verbatim only through its final fall-through; every other successful return
+is a file it found. So the resolver now answers `is_inline_content`, the
+identity asks it BEFORE touching the filesystem, and from that point there is
+no classification left to get wrong: the reference denotes a file, so the
+resolve, the stat and the read all answer `None` and only a regular file that
+digests produces an identity. `_ABSENT_ERRNOS` and the `ValueError` branch
+are gone with it.
 
 **The guard asks one question, at one site** (review round 2). The first two
 drafts asked "which call threw" and so moved landing sites twice: round 1
@@ -127,17 +145,24 @@ failure in this corpus is a pin that cannot fail (#156, #160 round 2).
    the legitimate no-digest row.
 6. **A FIFO still does not hang, and now does not cache.** The existing pin's
    watchdog is kept; its identity assertion changes.
-7. **A stat failure after a HEALTHY resolve is not cacheable** (round 2's
+7. **A vanished file after a HEALTHY resolve is not cacheable** — round 3's
+   blocker, the `ENOENT` race the design names as a trigger.
+8. **A symlink to a real script still digests**, the over-refusal direction
+   for the stat.
+9. **A stat failure after a HEALTHY resolve is not cacheable** (round 2's
    blocker). Isolated by MECHANISM, not by call order or caller name: the
    resolver checks with `Path.exists`, the identity stats with `os.stat`, so
    patching them apart makes the resolve succeed and only the identity's own
    stat fail. Counting calls would not do — reinstating the genericpath
    prelude ADDS stats and shifts the numbering, which is how that mutant
    survived a first attempt at this pin.
-8. **A resolve failure serves no stale result**, end to end. Round 1's pin,
-   with its caller-name mock replaced: `sys._getframe(1).f_code.co_name`
-   coupled it to a method name, so a behavior-preserving extraction turned it
-   red with a message pointing nowhere near the cause.
+10. **A resolve failure is not cacheable.** Round 1's site, pinned by
+    mechanism after round 3 showed the end-to-end version could not fail:
+    scripting the fault at the resolver's first stat left the POST-run
+    identity healthy, so `edited_mid_run` suppressed the write for an
+    unrelated reason and reverting the guard survived the whole suite.
+    Asserting the ANSWER rather than a downstream side effect makes the
+    schedule irrelevant.
 
 ## Known bounds
 

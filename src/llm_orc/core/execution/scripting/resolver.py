@@ -135,6 +135,34 @@ class ScriptResolver:
         self._cache[script_ref] = resolved
         return resolved
 
+    def is_inline_content(self, script_ref: str) -> bool:
+        """Whether this reference is inline script content rather than a path.
+
+        The resolver is the only thing that knows which references it treats
+        as content, so it answers the question rather than having callers
+        re-derive it (#163 review round 3). ``_resolve_uncached`` below uses
+        this same predicate, so the two cannot drift.
+
+        A reference that is NOT inline content is one the resolver will look
+        for on the filesystem: it either finds a file or raises. That is what
+        lets the cache identity tell "nothing is there, and the reference IS
+        its own bytes" from "a file is there and we failed to name it" —
+        a distinction an errno cannot make, because ``ENOENT`` is both the
+        answer for inline content and the answer for a file that vanished.
+        """
+        # Contains a separator, or ends in a script extension: it looks like
+        # a path, so the resolver will go looking for one.
+        #
+        # No separate absolute-path check: every absolute path contains a
+        # separator on either platform, so one would be dead. Review round 3
+        # caught its removal surviving the whole suite, which is what dead
+        # defensive code looks like from the outside.
+        return not (
+            "/" in script_ref
+            or "\\" in script_ref
+            or script_ref.endswith(self.SCRIPT_EXTENSIONS)
+        )
+
     def _resolve_uncached(self, script_ref: str) -> str:
         """Resolve script reference without using cache."""
         # Check if it's an absolute path
@@ -144,14 +172,7 @@ class ScriptResolver:
                 return str(path)
             raise ScriptNotFoundError(script_ref)
 
-        # Check if it looks like a path (contains / or \ or has script extension)
-        is_path = (
-            "/" in script_ref
-            or "\\" in script_ref
-            or script_ref.endswith(self.SCRIPT_EXTENSIONS)
-        )
-
-        if is_path:
+        if not self.is_inline_content(script_ref):
             # Try to resolve using library-aware search paths
             resolved = self._try_resolve_with_search_paths(script_ref)
             if resolved:

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import errno
 import hashlib
 import json
 import logging
@@ -31,12 +30,6 @@ from llm_orc.models.base import ModelInterface
 from llm_orc.schemas.agent_config import AgentConfig, ScriptAgentConfig
 
 logger = logging.getLogger(__name__)
-
-# The errnos that mean "nothing is at this path", as opposed to "something is
-# there and the stat failed" (#163). Only these keep a reference cacheable;
-# everything else — EIO, ESTALE, EACCES, ELOOP — is a filesystem object we
-# could not name, and naming it by path alone is the #160 bug.
-_ABSENT_ERRNOS = frozenset({errno.ENOENT, errno.ENOTDIR, errno.ENAMETOOLONG})
 
 
 def _reports_failure(response: Any) -> bool:
@@ -314,36 +307,28 @@ class ScriptAgentRunner:
         # there, but the invariant is about the READ too.
         if not script_ref:
             return None
+        resolver = ScriptResolver(project_dir=self._project_dir)
+        # The RESOLVER classifies, because it is the only thing that knows
+        # which references it treats as content (#163 review round 3). That
+        # split has to happen BEFORE any filesystem call: an errno cannot
+        # make it, because ENOENT is both "this is inline content" and "the
+        # file vanished between the resolve and the stat", and the previous
+        # shape answered the bare path for the second — the #160 key,
+        # reachable by one of the three triggers this fix is named for.
+        if resolver.is_inline_content(script_ref):
+            return script_ref
+        # From here the reference denotes a file the resolver will go and
+        # find, so ANYTHING that stops us naming its bytes is a refusal.
+        # There is no "which call threw" left to get wrong: the resolve, the
+        # stat and the read all answer None, and only a regular file that
+        # digests produces an identity.
         try:
-            resolved = ScriptResolver(
-                project_dir=self._project_dir
-            ).resolve_script_path(script_ref)
-        except Exception:
-            return None
-        # ONE stat, and the question it answers is "did we establish that
-        # this is a regular file we can name", not "which call threw"
-        # (#163 review round 2). The previous shape asked the second
-        # question and so moved landing sites twice: os.path.isfile and
-        # os.path.exists are genericpath, which SWALLOWS OSError and answers
-        # False, so an EIO/ESTALE stat fell straight through to the bare
-        # path — the #160 key, four lines below the line round 1 fixed.
-        # One stat also removes the isfile/exists TOCTOU.
-        try:
+            resolved = resolver.resolve_script_path(script_ref)
             info = os.stat(resolved)
-        except ValueError:
-            # A NUL byte cannot be a path at all, so this is inline content
-            # and the reference IS its own bytes.
-            return resolved
-        except OSError as error:
-            # Nothing is there: inline content, or a reference whose missing
-            # script execution will report a moment later. Any OTHER errno
-            # means something IS there and we failed to look at it.
-            return resolved if error.errno in _ABSENT_ERRNOS else None
-        if not stat.S_ISREG(info.st_mode):
-            return None
-        try:
+            if not stat.S_ISREG(info.st_mode):
+                return None
             digest = hashlib.sha256(Path(resolved).read_bytes()).hexdigest()
-        except OSError:
+        except Exception:
             return None
         return f"{resolved}:{digest}"
 
