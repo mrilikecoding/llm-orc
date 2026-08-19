@@ -103,17 +103,27 @@ def _wire_safe(text: str, fallback: str) -> str:
 def _exception_line(trace: str) -> str:
     """The ``Type: message`` line of a traceback, or its last line.
 
-    Not simply the last line (#168 round 5): a multi-line exception message
-    — which is what ``assertEqual`` produces for any sequence — puts diff
-    fragments after it, so the last line carries no type at all and the
-    salvage below had nothing to keep. Scanning back for the line whose head
-    is an identifier followed by a colon finds the type wherever the message
-    ends.
+    Found by the traceback's own GRAMMAR: frames are indented, the exception
+    line is the first column-0 line after them. Two shapes defeat the
+    obvious alternatives, and both are ordinary rather than adversarial —
+
+    - taking the LAST line loses the type whenever the message is
+      multi-line, which is what ``assertEqual`` produces for any sequence;
+    - scanning backward for the first ``identifier:`` line picks a MESSAGE
+      line that happens to read ``Key: value`` over the real type line above
+      it, so ``AssertionError('Response mismatch:\nStatus: 404\nBody: not
+      found')`` reported ``Body: not found`` and dropped the class entirely
+      (#168 review round 6).
+
+    Falls back to the last line when there are no frames at all, which is
+    the shape a bare message has.
     """
     lines = trace.strip().splitlines()
-    for line in reversed(lines):
-        head = line.split(":", 1)[0].strip()
-        if head and head.isidentifier() and line.strip() != head:
+    seen_frame = False
+    for line in lines:
+        if line[:1].isspace():
+            seen_frame = True
+        elif seen_frame:
             return line.strip()
     return lines[-1].strip() if lines else ""
 

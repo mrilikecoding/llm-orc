@@ -855,3 +855,32 @@ def test_a_unittest_diff_over_relative_paths_keeps_the_evidence() -> None:
     assert "AssertionError" in report, report
     assert "test_l" in report, report
     assert "src/a.py" not in report, report
+
+
+def test_a_decoy_message_line_does_not_displace_the_exception_class() -> None:
+    """Round 6. `_exception_line` scanned BACKWARD for the first line whose
+    head is an identifier followed by a colon, so a message line that happens
+    to read ``Key: value`` won over the real type line above it:
+
+        AssertionError('Response mismatch:\\nStatus: 404\\nBody: not found')
+        -> 'test_response: Body: not found'    the class dropped entirely
+
+    Not a leak — the caller's checks still hold — but it is the same
+    evidence loss this arc has re-fixed in rounds 2, 3, 4 and 5, wearing
+    "wrong match" instead of "no match". The traceback's own grammar settles
+    it: frames are indented, the exception line is the first column-0 line
+    after them.
+    """
+    report = _executor_report(
+        "",
+        tests=(
+            "import unittest\n"
+            "class T(unittest.TestCase):\n"
+            "    def test_response(self):\n"
+            '        raise AssertionError("Response mismatch:'
+            '\\nStatus: 404\\nBody: not found")\n'
+        ),
+    )
+
+    assert "AssertionError" in report, report
+    assert "Body: not found" not in report, report
