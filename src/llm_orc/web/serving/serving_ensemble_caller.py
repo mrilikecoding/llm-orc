@@ -1441,10 +1441,16 @@ def _empty_deliverable_refusal(
     if isinstance(content, str) and content.strip():
         return None
     named = path if isinstance(path, str) and path.strip() else "the build"
+    # Review round 2: a non-str deliverable is MALFORMED, not empty, and
+    # saying "empty" about it would misdescribe the failure — in exactly the
+    # producer-drift condition this guard exists for. This corpus is strict
+    # about kind-specific refusals (emit.py never attributes a contract miss
+    # to the accept gate), so the two get their own wording.
+    what = "an empty" if isinstance(content, str) else "a malformed"
     return [
         ContentDelta(
             content=f"{_build_refused_prefix(reject_prefixes)}the build produced "
-            f"an empty deliverable for {named}, so nothing was written."
+            f"{what} deliverable for {named}, so nothing was written."
         ),
         Completion(finish_reason="stop"),
     ]

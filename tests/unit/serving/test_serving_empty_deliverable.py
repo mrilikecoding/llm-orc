@@ -41,6 +41,7 @@ from llm_orc.core.session.registry import (  # noqa: E402
 from llm_orc.web.serving.chunks import ClientToolCall, Completion  # noqa: E402
 from llm_orc.web.serving.serving_ensemble_caller import (  # noqa: E402
     ServingEnsembleCaller,
+    _build_refused_prefix,
     _outcome_chunks,
     _reject_kind,
     _RejectPrefixes,
@@ -433,3 +434,27 @@ def test_a_project_with_no_readable_emit_still_refuses() -> None:
 
     assert not any(isinstance(chunk, ClientToolCall) for chunk in chunks)
     assert "empty deliverable" in _text(chunks)
+
+
+def test_a_malformed_deliverable_is_not_called_empty() -> None:
+    """Review round 2. A non-str deliverable is malformed, not empty, and
+    this corpus does not let a refusal misdescribe its own cause — emit.py
+    never attributes a contract miss to the accept gate either. The drift
+    condition this guard exists for is precisely where the wrong word would
+    be shipped."""
+    empty = _text(_chunks({"finish": False, "file": "a.py", "content": ""}))
+    malformed = _text(
+        _chunks({"finish": False, "file": "a.py", "content": {"code": "x = 1"}})
+    )
+
+    assert "empty deliverable" in empty
+    assert "malformed deliverable" in malformed
+
+
+def test_the_fallback_prefix_is_the_non_minting_idiom() -> None:
+    """Review round 2: `_build_refused_prefix`'s docstring says the wording
+    is never hardcoded, and a mutant hardcoding "Build refused: " in the
+    fallback passed the whole suite. With no minting terminal registered the
+    plain idiom is correct — an unrecorded refusal, which the docstring
+    argues is the right direction to fail — but nothing held it there."""
+    assert _build_refused_prefix(()) == "Refused: "
