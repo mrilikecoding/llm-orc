@@ -46,22 +46,33 @@ TTL, and under `persist_to_artifacts` it crosses processes.
 identity that names the script's bytes", and the run is then neither read
 from nor written to the cache.
 
-Five rows. MEASURED, by spying `os.path.exists`/`os.stat` through
-`_cache_identity` for each shape rather than reading the code:
+Five rows:
 
-| reference | identity | filesystem calls |
-|---|---|---|
-| the resolver calls it inline content AND it names nothing in the CWD | `script_ref` | one `exists` |
-| the resolver calls it inline content BUT it names a CWD entry | `None` | one `exists` |
-| it denotes a file that stats regular and digests | `f"{resolved}:{digest}"` | two `stat` |
-| it denotes a file and ANYTHING goes wrong — resolve, stat (any errno), non-regular, unreadable | `None` | one or two `stat` |
-| the reference is empty (a non-script agent) | `None` | none |
+| reference | identity |
+|---|---|
+| the resolver calls it inline content AND it names nothing in the CWD | `script_ref` |
+| the resolver calls it inline content BUT it names a CWD entry | `None` |
+| it denotes a file that stats regular and digests | `f"{resolved}:{digest}"` |
+| it denotes a file and ANYTHING goes wrong — resolve, stat (any errno), non-regular, unreadable | `None` |
+| the reference is empty (a non-script agent) | `None` |
 
-The classification is syntactic and happens before any filesystem call. The
-ANSWER for inline content still costs one `exists`, because of the
-disagreement below — an earlier draft of this section claimed these shapes
-"never reach the filesystem", which was false in the same commit that made it
-false.
+An earlier draft carried a per-row "filesystem calls" column, added to show
+the table had been measured. Review round 6 found two of its five numbers
+wrong: they were measured against ABSOLUTE references and stated as each
+row's general answer, while the shape every shipped ensemble uses is
+project-relative. Re-measured — an absolute hit costs 2 stats, a
+project-relative hit 5, and an unresolvable project-relative reference 10,
+because `_get_search_paths` probes before the search begins. That count is a
+property of the resolver's search walk and of how a project is configured,
+not of the identity rule, so stating it per row could only ever be an
+instance presented as a rule. The column is gone; what it was really there
+to record is the next paragraph.
+
+**Inline content costs one `os.path.exists`** (measured: one `exists` and the
+one `stat` inside it, for `echo hello`, a NUL byte and a 5000-character
+string alike). The CLASSIFICATION is syntactic and pre-filesystem; the ANSWER
+is not, because of the #177 disagreement below. A draft claimed these shapes
+"never reach the filesystem", in the same commit that made that false.
 
 The inline row is not a fallback: `resolve_script_path` returns inline
 content verbatim, so `script: "echo hello"` genuinely IS its own bytes.
@@ -132,9 +143,17 @@ of those errors cancelled.
 Reconciling with the collector: `pytest --collect-only` reports **18** across
 the three new classes, because item 11 is parametrized over eight cases. So
 10 single tests + 1 parametrized instrument = 11 new, plus 4 pre-existing
-tests this arc modified (`git diff main...HEAD`) = 15. Naming each one is
-what makes that checkable; a count alone has been wrong in four consecutive
-rounds, on this branch and on #166's.
+tests this arc modified = 15.
+
+The pre-existing four are the ones `git diff main...HEAD` shows a body change
+for, mapped hunk by hunk to the enclosing test. Round 5 also said four and
+got the SET wrong: it listed `test_inline_content_still_caches`, which is
+byte-identical to main, and omitted
+`test_the_entry_carries_no_lying_success_field`, which gained an assertion.
+One swap, not one addition — round 6 read it as a missing fifth because two
+of the diff's hunks fall inside the same test. The count survives only
+because the errors cancel again, which is exactly why this list is named by
+test and mapped to hunks rather than counted.
 
 **New (`TestUndigestableScriptIsNotCached`, `TestAResolveFailureIsAlsoUndigestable`, `TestIsInlineContent`):**
 
@@ -168,15 +187,21 @@ rounds, on this branch and on #166's.
 
 12. `test_a_fifo_reference_does_not_hang_the_agent` — the watchdog is the
     point and is unchanged; its identity assertion moved to `None`.
-13. `test_inline_content_still_caches` — the pin that stops this becoming
-    "never cache anything", and the one that discriminates the inline
-    classification.
-14. `test_a_project_relative_reference_is_also_invalidated` — round 4 added
+13. `test_a_project_relative_reference_is_also_invalidated` — round 4 added
     `sets == 2`, because dropping `project_dir` now yields `None` and the
     edit assertions were being satisfied by an ABSENT cache.
-15. `test_inline_content_with_a_nul_byte_does_not_raise` — retitled in round
+14. `test_inline_content_with_a_nul_byte_does_not_raise` — retitled in round
     5; the property is that `os.path.exists` answers for the awkward shapes
     rather than raising, not that they stay off the filesystem.
+15. `test_the_entry_carries_no_lying_success_field` — gained
+    `assert identity is not None`, since the identity is now nullable and a
+    `None` would make the entry it looks up impossible rather than absent.
+
+`test_inline_content_still_caches` is NOT in this list. Round 5 put it here;
+its body is byte-identical to main. It is load-bearing for this arc — it is
+what discriminates the inline classification — but it is a pre-existing pin
+this arc relies on rather than one it changed, and the list is about the
+latter.
 
 ## Known bounds
 
