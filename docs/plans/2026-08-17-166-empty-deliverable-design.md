@@ -173,7 +173,7 @@ ledger.
 
 ## Regression instruments
 
-Twelve tests in `tests/unit/serving/test_serving_empty_deliverable.py`, each
+Fourteen tests in `tests/unit/serving/test_serving_empty_deliverable.py`, each
 labelled by what it can actually catch. The recurring defect in this corpus
 is a pin that cannot fail (#156 round 1, #160 round 2, #155's four rounds),
 so a pin guarding the over-refusal direction is named as such rather than
@@ -228,10 +228,19 @@ exist so the fix does not become "refuse every build":**
 12. A one-character deliverable still writes, pinning that the rule is
     emptiness and not a length heuristic.
 
-**Also pinned, without an invariant of its own:** the no-readable-`emit.py`
-fallback still refuses (the version-skew scenario the placement is argued
-from), and its prefix is the plain non-minting idiom rather than a hardcoded
-copy of emit's wording.
+13. **A project with no readable `emit.py` still refuses** — the
+    version-skew scenario the placement is argued from. Only its ledger
+    entry is lost, which is the right direction to fail.
+14. **The fallback prefix is the plain non-minting idiom**, not a hardcoded
+    copy of emit's wording. `_build_refused_prefix`'s docstring says the
+    wording is never hardcoded, and a mutant hardcoding it passed the whole
+    suite until this pin existed.
+
+The count above is the count `pytest --collect-only` reports. Review round 2
+blocked on this section listing seven instruments against a shipped suite of
+twelve, and round 3 caught the corrected version still miscounting itself at
+twelve against fourteen — the same defect one layer up. If a pin is added
+here, this number moves with it.
 
 ## Known bounds
 
