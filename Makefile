@@ -43,6 +43,7 @@ lint:
 	uv run complexipy --max-complexity-allowed 15 src
 	uv run bandit -r src/ --quiet --severity-level medium 2>&1 | grep -v "WARNING" || true
 	uv run vulture src/ --min-confidence 80
+	uv run python scripts/check_doc_drift.py
 
 lint-fix:
 	uv run mypy src tests benchmarks

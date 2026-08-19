@@ -12,7 +12,7 @@ with full traces (`LLM_ORC_SERVE_TRACE_SNIPPET=6000`):
 - **"write a function that adds a todo item to a list in todo.py"** —
   round 1: tests call `add`, code named it differently (`NameError`).
   Round 2 (held tests) defined `add` correctly and STILL rejected:
-  `test_add_multiple_todo_items` asserts `len(todos) == 2` after an
+  the generated test_add_multiple_todo_items asserts `len(todos) == 2` after an
   earlier test already appended — module-global state leaking across
   tests in one run.
 - **"create storage.py with save_todos and load_todos using json"** —
