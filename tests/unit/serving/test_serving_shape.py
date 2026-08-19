@@ -709,17 +709,82 @@ def test_a_path_free_failure_message_survives() -> None:
     (test_pytest_raises_did_not_raise_reports_as_failure_not_crash) holds
     precisely because losing it "starved the retry round of evidence".
 
-    So the rule is a property of the OUTPUT — a message passes only if it
-    names no path — rather than a list of producers to distrust. A message
-    genuinely about the test survives; one about the filesystem does not.
+    The message is raised from the CODE module, not from an inline assert.
+    Review round 3 caught the first version passing vacuously: an
+    ``assert x, 'literal'`` in the tests source is echoed back by
+    ``_failing_line``'s ``at: <source line>``, so the assertion was
+    satisfied by the source echo rather than by the message pass-through it
+    claimed to test, and it stayed green under a class-name-only mutant.
     """
     report = _executor_report(
-        "def add(a, b):\n    return a + b\n",
-        tests=(
-            "def test_add():\n"
-            "    assert add(1, 2) == 4, 'add is off by one somewhere'\n"
-        ),
+        "def add(a, b):\n    raise ValueError('off by one somewhere')\n",
+        tests="from solution import add\ndef test_add():\n    add(1, 2)\n",
     )
 
     assert "off by one somewhere" in report, report
     assert _HOME not in report
+
+
+_HOSTILE_CORPUS = [
+    # Review round 3's capture: a MULTI-LINE message. The last traceback line
+    # has no colon, so the `split(":", 1)[0]` fallback returned it unchanged.
+    (
+        "",
+        "import pathlib, unittest\n"
+        "class T(unittest.TestCase):\n"
+        "    def test_files(self):\n"
+        "        entries = sorted(str(p) for p in pathlib.Path.home().glob('.T*'))\n"
+        "        joined = '\\n'.join(entries)\n"
+        "        raise AssertionError('unexpected entries:\\n' + joined)\n",
+    ),
+    # The class NAME is produced-code-controlled and was emitted unchecked.
+    (
+        f"class {'E'}(Exception):\n    pass\n"
+        f"E.__name__ = '{_HOME}/leak'\n"
+        "def go():\n    raise E()\n",
+        "from solution import go\ndef test_go():\n    go()\n",
+    ),
+    # The ordinary repr leak round 2 closed, kept so the corpus covers it.
+    (
+        "def run_check():\n"
+        "    import subprocess, sys\n"
+        "    subprocess.run(\n"
+        '        [sys.executable, "-c", "raise SystemExit(1)"], check=True\n'
+        "    )\n",
+        "from solution import run_check\ndef test_run_check():\n    run_check()\n",
+    ),
+    # An OSError whose __str__ carries the filename its repr hides.
+    (
+        "",
+        "import unittest\n"
+        "class T(unittest.TestCase):\n"
+        "    def test_load(self):\n"
+        '        open("/private/var/folders/zz/secret_cfg.json")\n',
+    ),
+    # A load failure whose message names a path.
+    ("", f'raise RuntimeError("missing {_HOME}/app.cfg")\n'),
+    # The class name is produced-code-controlled on the LOAD path too, which
+    # is a different emission point from the test path above.
+    (
+        f"class E(Exception):\n    pass\nE.__name__ = '{_HOME}/leak'\nraise E()\n",
+        "def test_x():\n    assert True\n",
+    ),
+]
+
+
+@pytest.mark.parametrize(("code", "tests"), _HOSTILE_CORPUS)
+def test_no_report_can_name_a_path(code: str, tests: str) -> None:
+    """The runner's analogue of test_no_error_text_can_survive_the_summary,
+    and the pin whose absence let a sixth channel through.
+
+    Review round 3: the shape.py half of this issue got an OUTPUT-shape
+    assertion while the runner half got only "this particular input does not
+    leak" — producer-by-producer testing wearing a property's clothes. Every
+    runner leak so far has been a DERIVED string that no input-side check
+    covered, so this asserts the property on the report itself and will fail
+    on the seventh producer as readily as on the sixth.
+    """
+    report = _executor_report(code, tests=tests)
+
+    assert "/" not in report, report
+    assert "\\" not in report, report

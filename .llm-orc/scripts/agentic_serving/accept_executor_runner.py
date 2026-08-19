@@ -72,6 +72,21 @@ def _path_free(text: str) -> bool:
     return not any(sep in text for sep in _SEPARATORS)
 
 
+def _wire_safe(text: str, fallback: str) -> str:
+    """``text`` if it names no path, else ``fallback`` (#168 round 3).
+
+    Checked on what is EMITTED, never merely on what was inspected. Round
+    2 introduced the property rule but enforced it at the producer, and
+    that gap leaked twice: an exception whose message is MULTI-LINE has a
+    last traceback line with no colon, so the ``split(":", 1)[0]`` fallback
+    returned it unchanged; and ``type(error).__name__`` was emitted with no
+    check at all, which produced code controls. Both are derived strings,
+    and a property asserted about an input says nothing about a derivation
+    of it.
+    """
+    return text if _path_free(text) else fallback
+
+
 def _safe_reason(error: BaseException) -> str:
     """What a test failure may say on the wire (#168).
 
@@ -81,7 +96,7 @@ def _safe_reason(error: BaseException) -> str:
     executor's report is clipped server-side by the trace snippet, so the
     class name alone would be the only surviving record anywhere.
     """
-    name = type(error).__name__
+    name = _wire_safe(type(error).__name__, "error")
     lineno = getattr(error, "lineno", None)
     if isinstance(lineno, int):
         offset = getattr(error, "offset", None)
@@ -91,7 +106,7 @@ def _safe_reason(error: BaseException) -> str:
         return name + where
     message = str(error).strip()
     if message and _path_free(message):
-        return f"{name}: {message}"
+        return _wire_safe(f"{name}: {message}", name)
     return name
 
 
@@ -128,7 +143,7 @@ def _run_test_fns(test_fns: list, tests: str) -> tuple[int, list[str]]:
             detail = f"{name}: {_safe_reason(error)}"
             if line:
                 detail += f" at: {line}"
-            failures.append(detail)
+            failures.append(_wire_safe(detail, f"{name}: failed"))
     return n_tests, failures
 
 
@@ -144,11 +159,25 @@ def run_tests(code: str, tests: str, only: str | None = None) -> tuple[bool, str
     try:
         exec(compile(code, "solution.py", "exec"), namespace)
     except Exception as error:  # noqa: BLE001 - executing produced code
-        return False, f"code failed to load: {_safe_reason(error)}", 0
+        return (
+            False,
+            _wire_safe(
+                f"code failed to load: {_safe_reason(error)}",
+                "code failed to load",
+            ),
+            0,
+        )
     try:
         exec(compile(tests, "test_solution.py", "exec"), namespace)
     except Exception as error:  # noqa: BLE001
-        return False, f"tests failed to load: {_safe_reason(error)}", 0
+        return (
+            False,
+            _wire_safe(
+                f"tests failed to load: {_safe_reason(error)}",
+                "tests failed to load",
+            ),
+            0,
+        )
 
     test_fns = [
         (name, fn)
@@ -189,7 +218,7 @@ def run_tests(code: str, tests: str, only: str | None = None) -> tuple[bool, str
             last = trace.strip().splitlines()[-1]
             if not _path_free(last):
                 last = last.split(":", 1)[0].strip()
-            failures.append(f"{test}: {last}")
+            failures.append(_wire_safe(f"{test}: {last}", "test failed"))
 
     if n_tests == 0:
         detail = (

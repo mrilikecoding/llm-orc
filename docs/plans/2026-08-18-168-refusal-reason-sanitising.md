@@ -97,8 +97,17 @@ loses nothing; the client stops receiving the filesystem layout.
 
 ## Invariant
 
-A refusal reason on the wire contains no absolute path and no username,
-whatever the node failure looked like.
+A refusal reason on the wire contains no ABSOLUTE PATH, whatever the node
+failure looked like.
+
+Scoped to paths deliberately (review round 3). The separator rule is a real
+property — every absolute path on either platform contains one, so it cannot
+pass a path — but it delivers only that half. A bare username has no
+structure to recognise, and an ordinary-looking produced test closes over
+one: `assert whoami() == 'appsvc', 'service runs as ' + whoami()` reaches the
+wire intact, as does `socket.gethostname()`. Stating the invariant over
+usernames would assert something a two-line test refutes; the honest position
+is that it is not closed and is not closeable by this rule.
 
 ## Regression instruments
 
@@ -132,8 +141,17 @@ whatever the node failure looked like.
 - A `SyntaxError`'s line and column are KEPT. Dropping them made the trade
   worse than it needed to be: they are integers so they cannot carry a path,
   the compile filename is the literal `solution.py`, and the executor's
-  report is clipped server-side by the trace snippet — so the class name
-  alone would have been the only surviving record anywhere.
+  report is clipped server-side by the trace snippet once it exceeds 280
+  characters — so for a long report the class name alone would have been the
+  only surviving record anywhere. Short reports are retained whole.
+- **A bare username or hostname still reaches the wire.** Named in the
+  invariant above rather than buried here, because the first draft claimed
+  otherwise. Not closeable by a separator rule.
+- The property is enforced on what is EMITTED, at every emission point, not
+  on the values inspected to build it (review round 3). Round 2 introduced
+  the rule but checked it at the producer, and that leaked twice through
+  derived strings: a multi-line message whose last traceback line has no
+  colon, and a class name produced code controls.
 - **A dead SEAT is not covered, and it is a real leak.** On a non-build route
   `shape._envelope_deliverable` does not recognise the engine's failure
   envelope, falls back to the raw terminal, and emit ships the wrap — with
