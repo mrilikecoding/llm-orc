@@ -8,7 +8,10 @@ PRESENCE, ``ast.parse("")`` succeeds, and the caller writes any outcome
 carrying ``file`` and ``content``. The target file is one the client already
 has, so the write is a clobber.
 
-Driven via subprocess exactly as the L0 engine runs a script node.
+Driven via subprocess the way the L0 engine runs a script node — the payload
+carries ``input_data`` and ``dependencies``, which is what these nodes read,
+not the engine's full four-key envelope. Same shape as every sibling harness
+in this directory.
 """
 
 from __future__ import annotations
@@ -22,13 +25,17 @@ from typing import Any
 REPO = Path(__file__).resolve().parents[3]
 SCRIPTS = REPO / ".llm-orc" / "scripts" / "agentic_serving"
 
-# _SMOKE below is the PRODUCTION constant, not a copy. Review round 1: a
-# frozen copy left the whole suite green when refix_select._SMOKE_TEST was
-# replaced with an always-failing test or emptied outright — so every pin
-# here could go green for a different reason and `candidate_present` become
-# silently deletable. #169's own issue lists "make the smoke test assert
-# something about the candidate" as the alternative fix, which is exactly
-# that edit.
+# _SMOKE below is the PRODUCTION constant, not a copy, so the pins in THIS
+# file cannot go green for a reason unrelated to the guard if the smoke test
+# changes. #169's own issue lists "make the smoke test assert something about
+# the candidate" as the alternative fix, so that edit is likely.
+#
+# Round 1 justified this with a measurement that review round 2 falsified:
+# it claimed the whole suite stayed green when refix_select._SMOKE_TEST was
+# emptied or made always-failing. It did not — pre-existing pins in
+# test_serving_refix_select.py and test_serving_ensemble_endpoint.py catch
+# both. What the import actually buys is local: these pins stop depending on
+# a copy that could silently diverge from the constant they are about.
 sys.path.insert(0, str(SCRIPTS))
 
 from refix_select import _SMOKE_TEST as _SMOKE  # type: ignore  # noqa: E402
@@ -129,6 +136,10 @@ class TestAnEmptyCandidateIsNeverAccepted:
         """Kills a ``== ""`` implementation."""
         envelope = _envelope("   \n\t\n")
 
+        assert envelope["_tests_pass"] is True, (
+            "the smoke test must still pass against whitespace, or this pins "
+            "the wrong thing"
+        )
         assert envelope["diagnostics"]["accept"] is False
 
 
@@ -184,7 +195,15 @@ def test_an_empty_candidate_reaches_the_client_as_a_rejection() -> None:
     envelope goes through the real marshal nodes rather than being read
     directly.
     """
-    outcome = _serving_tail(_envelope(""))
+    envelope = _envelope("")
+    assert envelope["_tests_pass"] is True, (
+        "the smoke test must still pass against no code, or this pins the wrong thing"
+    )
+    # The premise key is stripped before the marshal runs: driving the real
+    # chain with a shape production never emits is the habit #155's lesson is
+    # about, even when the extra key is inert (measured: emit's output is
+    # byte-identical either way).
+    outcome = _serving_tail({k: v for k, v in envelope.items() if k != "_tests_pass"})
 
     assert outcome.get("finish") is True, outcome
     assert "file" not in outcome, "an empty candidate reached the client as a write"
