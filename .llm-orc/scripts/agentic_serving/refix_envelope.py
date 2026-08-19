@@ -68,7 +68,12 @@ def main() -> None:
     candidate_present = bool(code.strip())
     accept = tests_pass and candidate_present
     if not candidate_present:
-        reason = "re-fix candidate is empty; the original is unchanged"
+        # Names the target (review round 1): #166's caller guard names the
+        # file it declined to write, and a refusal the client cannot map to
+        # a file is worth less. The target comes from select, which took it
+        # from gather's own extraction — never from a path on this server.
+        target = str(selected.get("target_file", "")) or "the file"
+        reason = f"re-fix candidate for {target} is empty; the original is unchanged"
     elif smoke_only:
         reason = (
             "candidate loads cleanly; no visible test, the client run verifies"
