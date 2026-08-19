@@ -56,8 +56,25 @@ def main() -> None:
     # before it can clobber the original. A candidate that fails either gate
     # is rejected here -> honest-red terminal, original preserved.
     tests_pass, report = _executor_verdict(deps)
-    accept = tests_pass
-    if smoke_only:
+    # #169: an EMPTY candidate is never a fix, and the executor cannot say
+    # so. The injected smoke test's body is `pass`, which passes against any
+    # code including none, so an empty model_edit used to report accept:true
+    # over nothing — and since the target is a file the client already has,
+    # the resulting write was a clobber rather than an empty new file.
+    #
+    # Not scoped to smoke_only: measured, a VISIBLE test that does not
+    # reference the target module passes against an empty candidate too, and
+    # rung 1.5's visible test is whatever test_<stem>.py was found.
+    candidate_present = bool(code.strip())
+    accept = tests_pass and candidate_present
+    if not candidate_present:
+        # Names the target (review round 1): #166's caller guard names the
+        # file it declined to write, and a refusal the client cannot map to
+        # a file is worth less. The target comes from select, which took it
+        # from gather's own extraction — never from a path on this server.
+        target = str(selected.get("target_file", "")) or "the file"
+        reason = f"re-fix candidate for {target} is empty; the original is unchanged"
+    elif smoke_only:
         reason = (
             "candidate loads cleanly; no visible test, the client run verifies"
             if accept
