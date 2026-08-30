@@ -59,329 +59,140 @@ layer is the insulation that keeps an eventual hardening cheap, and
 "frozen component" status is the trigger, tracked informally the way the
 buy-back ledger tracks hosted seats.
 
-## State (2026-08-17)
+## State (2026-08-30)
 
 ### Next up
 
-**#166 is designed and ready to implement**
-(`docs/plans/2026-08-17-166-empty-deliverable-design.md`). A pre-flight
-review was dispatched but its findings were NOT captured before the
-session ended — re-dispatch it rather than implementing straight from
-the doc, because the design leaves one question explicitly open and it
-is the kind this corpus has got wrong twice:
+Nothing is pushed. Four merges sit on local `main`, three branches wait, and
+the two long arcs need one confirmation round each — resume there.
 
-> Is there a reachable build route whose seat has NO `seat_contract:`
-> block? Every contracted build seat asserts
-> `len(results['seat']['artifacts']) > 0`, which raises on a dead seat,
-> so if all build routes carry one then #166 is defence-in-depth rather
-> than single-fault reachable — and the issue and design both currently
-> imply it is reachable.
+**Merged to main, unpushed** (`git log origin/main..main`, 16 commits):
 
-The other reviewer question worth keeping: a refusal minted at the
-CALLER may be invisible to the ask-outcome ledger, since `_reject_kind`
-parses its prefixes out of `emit.py`.
+- **#166** — an empty build deliverable is never a client write. The design
+  named the wrong fault and pre-flight falsified it on all nine cells: with
+  the real `seat_contract` node running rather than a hand-fed verdict, a
+  dead seat refuses on all three build routes. The reachable fault is a LIVE
+  seat with an empty artifact, single-fault on `re-fix` (the injected smoke
+  test's `pass` body is satisfied by no code, and the target is a file the
+  client already has, so the write is a clobber) and on `build-gated` (the
+  executor's ground truth is satisfied by the materialized workspace when the
+  target is not the tested module). Corrected with it: line 469 is a
+  #152-class incident, not this fault; the near-misses are trace lines
+  38/81/97/98; the write census is 52, not 136.
+- **#169** — a re-fix candidate that is empty is never accepted, at source.
+  Complementary to #166 rather than duplicate: that guard stops the write,
+  this makes the verdict correct, so the turn records as rejected instead of
+  shipped-then-refused.
+- **#170** — `make test` no longer depends on the working directory. It was
+  red in every git worktree and green in the main checkout on the same
+  commit, so the merge gate said one thing to authors and another to the
+  independent reviewers rule 4 requires. Not the network: the library is a
+  submodule, `worktree add` leaves it empty, and an empty directory was
+  accepted as a local source.
+- **Loop-protocol rules 13-19** and `scripts/check_doc_drift.py`, now gating
+  `make lint`. See §Process below.
 
-What IS measured and does not need redoing: the defect reproduces on
-current main through the real chain (absent seat dep, empty response,
-and `loop_unwrap`'s `{}`); it happened in production at trace line 469
-(failed dispatch seat + crashed seat_contract + an empty `solution.py`
-write); and across 136 live turns that produced a file write exactly ONE
-had empty content — the defect itself — so no legitimate empty write
-exists in the corpus.
+**In the gate, green, one confirmation round short** — both branches pass
+`make lint` and `make test` on their own tree (#163: 4001; #168: 4014):
 
-Also open: **#168** (the engine wrap's error reaches the client with the
-server's absolute paths and username — universal, not
-misconfiguration-only; split out of #155 Arc C), the two decision
-residuals still on **#155**, **#161/#162/#163/#165**, and the roadmap
-items below.
+- **#163** `fix/163-cache-identity-fail-closed`, 8 commits, 6 review rounds.
+  Round 6 found no sixth landing site and blocked on prose only; that is
+  fixed (`836bd705`) and unverified. An undigestable script is never cached:
+  the resolver classifies inline-vs-path before any filesystem call, and a
+  reference that denotes a file yields an identity only when it stats regular
+  and digests.
+- **#168** `fix/168-refusal-reason-path-leak`, 12 commits, 7 review rounds.
+  Round 7 found no eighth leak channel and blocked on the chained-exception
+  line; that is fixed (`ded66e1b`) and unverified. A refusal reason names no
+  absolute path: positive extraction for the engine wrap, and a
+  path-separator property enforced on every emitted string in the executor.
 
-Still blocked on the practitioner: **#167** (the volume paid runs — r=8
-per level, roughly $10–30 per model, with a cheaper L1-and-L5-only
-variant) and **#141's CLAUDE.md-confound spike**, whose None condition
-suppresses the live `~/.claude/CLAUDE.md` and so needs an explicit go.
+  **`fix/168` conflicts with main on one line** — the ws9-platform epic list,
+  because #169 merged its own additions there. Main's copy is the union and
+  is the correct resolution.
 
-**#155 Arc A merged 2026-08-17** (535cebb1, no release): a serving node
-that cannot READ its upstream input refuses. A crashed `shape` or
-`form_gate` used to finish as `{"finish": true, "content": ""}` — an
-empty answer indistinguishable from "the model had nothing to say" —
-and a dead `seat_contract` read as "no per-seat gate ran", which is
-indistinguishable from a route that has no gate. Positive recognition
-rather than a denylist: each check names a key the healthy producer
-always emits, and the engine's failure wrap carries a disjoint key set.
+**Built, unreviewed**: `fix/172-176-small-fixes`, 1 commit. #172 (an empty
+submodule directory shadowed a real packaged library — measured, 0 categories
+where the package serves 9) and #176 (any module-level helper class failed a
+passing suite, a wrong-REJECT in the gate that decides whether a build ships).
+Both mutation-verified; neither has had an author-independent review.
 
-**Four review rounds, and the placement took all four.** The signal is
-two signals, because the axis that matters is not HOW a node failed but
-whether its death bears on this route. `node_failed` refuses first,
-non-minting; `seat_gate_failed` refuses only on a build turn that would
-otherwise SHIP, minting. Round 1 put it first and killed eight routes
-the seat contract cannot affect; round 2 moved it ahead of the accept
-gate, discarding a real verdict and its retry invitation; round 3 left
-it ahead of the form-gate refusal, losing a SyntaxError to a generic
-pipeline error. Every one was caught because a pin could not fail, and
-the structural cause took three rounds to see: every pin fed one node
-directly, so nothing ran the chain with a fault injected and a middle
-node dropping a threaded signal left the whole suite green.
+### Process
 
-Pre-flight review is what made this arc tractable, and it falsified most
-of the first design: the seat is a `dispatch:` node so its most
-reachable death leaves the dep ABSENT rather than carrying an envelope;
-the reproduction omitted `seat_contract`, which already refuses a dead
-seat on build turns; the quoted engine envelope came from a code path
-serving never takes; and the design claimed an "empty-read guard" that
-does not exist. That last one is **#166**, the single-fault case: a dead
-seat writes an EMPTY `solution.py` on the client, since `ast.parse("")`
-succeeds and the caller writes any outcome carrying `file` and
-`content`. Arc B is largely subsumed by it; Arc C (reason-text
-sanitising, decision residuals) remains.
+The two long arcs cost 6 and 7 review rounds. Every round after the first
+found something the previous fix introduced or missed, and twice the new
+defect sat inside the function written to close the previous one. The rounds
+were not waste — each moved a guard from an instance to an invariant, and the
+final rounds of both found no defect of the kind the arc was about — but the
+cost is the signal, and the general fixes are #175, #177 and #178 rather than
+either arc.
 
-**Released v0.19.0** (ab8aa7db): PyPI, GitHub release, and the Homebrew
-formula all updated, CI green. Minor rather than patch because a shipped
-default changes — the script agent cache is off unless a project opts
-in. Eight arcs since 0.18.18 (#152, #138, #154, #156, #157, #158, #159,
-#160), none of which had changelog entries; the user-visible ones are
-the cache default, #158's concurrency win, and three fixes where a bound
-or a cache key was not doing what it claimed.
+Rules 13-19 in `docs/loop-protocol.md` encode what those rounds bought.
+Rule 19 is the mechanical half: `check_doc_drift.py` resolves every
+backticked `test_*` name in `docs/plans` against every `test_*` token in
+code, and found four stale names in the existing corpus on its first run.
 
-**#160 merged 2026-08-17** (57ae7d7a, no release): a script's cache
-identity is its resolved path AND the sha256 of its bytes, and the cache
-ships DISABLED. Editing a script used to serve the pre-edit result for
-the TTL — a stale SUCCESS #159's predicate could not catch — and under
-`persist_to_artifacts` it crossed processes. Interactive agents now skip
-the cache at both the get and the set, because the byte-identity aliases
-several references onto one key (the resolver's hyphen-to-underscore
-normalization is enough) while `requires_user_input` still judges each
-reference separately.
+The standing risk this session demonstrated, for whoever picks it up: prose
+written from intent rather than from the code passes every gate. One design
+section was wrong in four consecutive rounds; each correction restated what
+the author meant the code to do. Rule 15 exists for that, and rule 19 checks
+the one part of it a machine can.
 
-The default flip was NOT the mitigation an earlier draft argued it was.
-Pre-flight falsified that by demonstration: two of the six registered
-primitives are not pure functions of (bytes, input, parameters), and
-they are the two most-used here. A `write_file.py` hit reports
-`{"success": true}` with the file absent — a hit ELIDES A WRITE — and
-`read_file.py` serves stale content when its input changes. Fixing the
-key does not reach either. #161 carries the purity mechanism.
+### Open, and which are small
 
-**Five review rounds, and every one found something that survived the
-entire suite.** Round 1's flip was INERT (the config loader restated
-every default and its copy had drifted to `True`, so a fresh install
-still elided writes; the pin asserted a field the runtime never reads).
-Round 2's skip at the *get* was unpinned and deletable with 3431 tests
-green. Round 3 found `persist_to_artifacts` was the one default with no
-pin — the same defect class recurring inside its own fix — plus an empty
-`script_cache:` block crashing executor construction and a disabled
-cache still hashing each whole script twice per execution. Round 4 found
-the `or {}` fix closed only the falsy half and that a count assertion
-had become a trap aimed at #161. Seventeen instruments, all
-mutation-verified.
+Filed from review findings this session, none previously tracked. Rule 13
+says the small ones get fixed rather than queued; these are sorted by that
+judgement rather than by number.
 
-Three of my own "measured" claims were falsified and corrected: the
-`os.path.isfile` guard's contribution (wrong twice, opposite
-directions), "computed at both get and set" (once), and the identity's
-cost (0.19% of a ~49ms execution, not "the expensive part"). Bounds
-recorded rather than closed: the identity covers the entry file, not its
-imports (**#162**); an edit reverted mid-run still files B's output
-under A's key, pinned as known-wrong; the identity degrades silently
-when `read_bytes` raises (**#163**). Also filed: **#164** (a doc
-promising a per-agent `cache: true` key that `extra="forbid"` rejects)
-and **#165** (a pre-existing 1-in-6 `-n auto` flake, undiagnosable
-because both persistence paths swallow their exceptions).
+Small enough to fix directly, and not yet done:
 
-**#156 merged 2026-08-17** (068e703f, no release): the 511 measurement
-instruments under `benchmarks/agentic_serving/tests` run in `make test`
-and CI, and `make lint` plus CI's type check now cover `benchmarks/`.
-Review verified the gate GATES — breaking an oracle, a scorer, and a
-stats function each turns a bare `make test` red. Coverage gate
-unaffected (92.2% either way); cost is `make test` ~26s -> ~35s.
+- **#173** — `re-fix` accepts a comment-only or docstring-only candidate and
+  clobbers the client's file. The guard's boundary is one `#` character wide.
+  `not ast.parse(code).body` closes the comment-only half in one line;
+  docstring-only needs a second decision.
+- **#175** — a refusal reason can still carry any path-free string produced
+  code reads server-side, including environment values, because the sandbox
+  inherits the environment. The env-scrub direction is small; the closed
+  report vocabulary is not.
+- **#178** — the `TestCase` branch parses formatted tracebacks, which
+  produced three wrong-exception defects in three rounds. A `TestResult`
+  subclass keeps the live exception object and both branches share one path.
+  Attempted at round 7 and reverted, on the reasoning that it would
+  invalidate the review so far — which rule 13 now names as a non-reason.
 
-The obstacle was not the one the issue expected. `tests/unit/` had no
-`__init__.py` while `tests/__init__.py` did, so the chain broke there,
-pytest put `tests/unit` on `sys.path`, and `tests/unit/benchmarks/`
-shadowed the real top-level package — 18 collection errors naming the
-module pytest DID find. Same class as #138's `parse.py`.
+Arc-sized, genuinely:
 
-**Three rounds went into a general shadowing guard before it was
-deleted**, which is the part worth carrying forward. Round 1's could not
-fail in the gate at all. Round 2 fixed that, and round 3 demonstrated
-four ways the fixed version reddened a CORRECT tree (an ordinary
-`conftest.py`; battery arms under any testpath, including dot-dirs
-pytest skips; an order-dependent verdict from suites that
-`sys.path.insert` at import time) while still missing a live
-namespace-package shadow. The cause was structural: it reimplemented
-pytest's import resolution from outside, which a directory walk cannot
-reconstruct. The realisation that should have come first is that a
-shadow of this kind ALREADY fails the build by breaking collection — a
-guard can only add a name, not detection. Two direct assertions
-replaced it. Bounds: the instruments have no coverage floor of their own
-(`runner.py` 40%), the battery shell scripts are ungated, and
-`judge_adequacy`'s tests still live in `tests/unit/benchmarks/`.
+- **#171** — the accept gate can be satisfied without the deliverable
+  participating: workspace-satisfied tests accept any content, so `x = 1` and
+  `# TODO` clobber exactly as `""` did on both build routes. This is what
+  #166 and #169 close only the empty slice of.
+- **#174** — a dead seat on a non-build route ships the engine's failure
+  envelope as the ANSWER, traceback and script path included. #155 Arc B's
+  shape, on the routes Arc A did not reach; the build routes are safe only
+  because they all declare `seat_contract:` blocks.
+- **#177** — file-vs-inline is decided in three places by two rules, and they
+  disagree. #163 fails closed on the disagreement; unifying the predicates
+  changes what gets EXECUTED.
 
-### Earlier (2026-08-17)
+Also open and untouched this session: **#165** (the `-n auto` flake — two
+hypotheses refuted by reading, `ArtifactManager.__init__` does no filesystem
+work and all twelve `persist_to_artifacts` tests pass explicit directories;
+a reproduction loop was started and stopped rather than run across a merge),
+the two decision residuals on **#155**, and **#161/#162**.
 
-**#159 merged 2026-08-17** (b9949c53, no release): a script's own failure
-is never served from cache. Reproduced before the fix — a timing-out
-agent returned 1.01s then 0.00s from cache, and with
-`persist_to_artifacts` the entry survives a restart, so the worst case
-was cross-process rather than one in-process hour. The predicate needed
-TWO clauses: a success-only rule would have missed the case the issue is
-named after, since `web_searcher` reports failures as `{"error": ...}`
-and exits 0, and NONE of the 33 serving scripts emit a boolean `success`
-at all. Twelve pins on `get_stats()` rather than wall time. Merge review
-ran the full mutation table and falsified the commit's own claim that
-each clause had a killing pin; four survivors now each turn exactly one
-pin red, including a real `AttributeError` crash path on the schema
-dispatch shape. Mitigation, not the subsystem fix: **#160** carries the
-deeper hazard — the cache key hashes the script PATH rather than its
-bytes, so editing a script serves the pre-edit result for the TTL, a
-stale SUCCESS no failure-skipping predicate can catch.
+Still blocked on the practitioner: **#167** (the volume paid runs — r=8 per
+level, roughly $10-30 per model, with a cheaper L1-and-L5-only variant) and
+**#141's CLAUDE.md-confound spike**, whose None condition suppresses the live
+`~/.claude/CLAUDE.md` and so needs an explicit go.
 
-### Earlier (2026-08-17)
+### Queued, not skipped
 
-**#158 merged 2026-08-17** (64e5667b, no release): script agents run off
-the event loop on a dedicated thread pool, and their DUPLICATE outer
-timeout is retired. Measured 4 x 1s gathered: **4.15s -> 1.03s**, loop
-ticks during a script **0 -> 46,676**; seven phases in the repo already
-carry 2+ script agents. The authoritative bound is untouched — it is the
-inner subprocess timeout #157 wired up, the only one that can reap a
-child; the outer timer could never fire during the one window it
-uniquely covered, and once agents overlap it would charge queue delay
-against an agent's budget. The error contract deliberately does not
-move, pinned end to end because fan_out skips expansion on non-success.
-Five pre-flight rounds plus two merge rounds: rounds 1-4 designed a
-thread-slot gate, round 5 found it deadlocks on the default path (a
-cache hit leaks a permit), and removing the timed region dissolved the
-problem. Merge review found the blocking defect in the INSTRUMENT — the
-pin guarding the result shape passed under a mutation that changed it
-back. Bounds recorded: parent timeouts can now fire mid-script,
-interactive agents can hang on a silent pipe, identical concurrent
-agents no longer dedupe through the cache, no operator concurrency knob.
-
-### Earlier (2026-08-17)
-
-**#157 merged 2026-08-17** (108b2e8, no release): engine-run script
-agents get the timeout the ensemble already resolved. The bug was worse
-than filed — BOTH bounds were defeated independently. The inner one
-because `model_dump` always emits `timeout_seconds` and supplies `None`
-when unset, so `.get(key, 60)` never saw its default and every
-subprocess ran unbounded; the outer `asyncio.wait_for` because the
-blocking subprocess sits in an `async def` and stalls the event loop, so
-that timer never runs (#158). Demonstrated in wall-clock: the unmocked
-pin takes 30.2s pre-fix (the full sleep runs) and ~1-2s with the fix.
-One shared `resolve_agent_timeout` now answers the question for both the
-dispatcher and the script runner. Six nodes declare explicit timeouts
-rather than racing the SHIPPED 60s default, since `accept_executor`'s
-worst case is exactly 60 (45s aggregate + one 15s child, its budget
-check running before each spawn) and `web_searcher`'s default backend is
-third-party-bounded. Follow-ups filed: #158, #159 (failure envelopes
-cached as successes for the hour-long TTL, which this fix makes more
-frequent).
-
-### Earlier (2026-08-17)
-
-**#154 merged 2026-08-17** (cea2607, no release): `.py` script agents
-run under llm-orc's OWN interpreter, not whichever `python3` the
-caller's PATH exposes. This is the root cause behind #152's captured
-misfire, where serving scripts importing `llm_orc` died while
-stdlib-only scripts in the same ensemble kept running, producing a
-half-dead pipeline rather than a clean failure. Measured: from a shell
-with no venv on PATH the suite went from **50 failures to 0** (3395
-passing); in the environment where CI runs it is a no-op, since
-`python3` and `sys.executable` are the same binary there. The live gate
-inverts #152's — a bad-PATH serve now answers and builds (positive
-control recorded, and a build ask included because a non-build ask
-cannot observe `seat_contract.py`). `llm-orc scripts test` and the
-primitive composer/registry were routed the same way. Two review
-rounds: round 1 caught a defect I introduced in a BDD fixture plus a
-misattributed baseline in my own record; round 2 approved and caught
-that the newly routed sites had no regression instrument. Follow-up
-filed: #157 (engine-run script agents have NO timeout — `model_dump`
-always supplies the key as None, so the 60s default never applies).
-
-### Earlier (2026-08-16)
-
-**#138 volume-ladder instrument merged 2026-08-16** (2ea793d, no
-release — benchmarks only): the prerequisite the parity-v2
-pre-registration called "the real cost". Per-level fixtures (only the
-asked modules, hash-pinned), one hidden nonce-varied oracle per module,
-disk-derived shipped with a six-way verification channel, shared
-arm-blind truth capture, level-scaled timeouts, and a reporter that
-refuses to name a gate branch below r=8. Arm-0 calibration recorded
-(`docs/plans/2026-08-16-138-arm0-calibration/`): four levels, all exit
-0, the serve fixing the first named file only (the #123 bound observed),
-every shipped fix correct. Three review rounds, 25 findings; the
-organizing one was that every failure mode fell closed into
-shipped_broken or the gate numerator, and round 2 caught two more that
-round 1's own fixes introduced. Paid arm-1/arm-2 runs await a cost
-decision.
-
-
-| arm / serve version | runs | strict | dishonest | record |
-|---|---|---|---|---|
-| Arm 0 pre-fix (v0.18.14) | 2/3/4 | 25/39 | 3 (one per run) | `docs/plans/2026-07-1{4,5}-arm0-runs/` |
-| Arm 0 post-fix (v0.18.15) | 5 | 11/13 | 0 | `docs/plans/2026-08-12-arm0-run5/` |
-| Arm 1a Haiku 4.5 (paid, OpenCode Go) | 1, 2, 3 | 38/39 | 0 | `docs/plans/2026-08-12-arm1-runs/` |
-| Arm 1b Sonnet (paid, OpenCode Go) | 1, 2, 3 | 39/39 | 0 | `docs/plans/2026-08-12-arm1-runs/` |
-| Arm 2a Haiku 4.5 | 1, 2, 3 | 35/39 | 4 | `docs/plans/2026-07-15-arm2-runs/`, `2026-08-12-arm2-runs/` |
-| Arm 2b Sonnet | 1, 2, 3 | 39/39 | 0 | `docs/plans/2026-07-15-arm2-runs/`, `2026-08-12-arm2-runs/` |
-
-All Arm-1/Arm-2 scores independently J-scored against the frozen rubric.
-Arm-1 headline: same Haiku, 4 dishonest behind Claude Code vs 0 behind
-OpenCode — the honesty split between model tiers is harness-sensitive;
-discretionary verification reproduced in every scorer's notes. Column
-cost ≈ $2.75 total; 3 instrument flags all REFUTED as one classifier
-false-positive family (#147). Versions differ across rows; do not pool.
-Caveats: parity table v1 (`docs/plans/2026-07-15-first-parity-table.md`)
-plus host-CLAUDE.md leakage observed on Arm-1 Sonnet runs (#141).
-
-**#152 merged 2026-08-14** (57315bc, no release — serving scripts only):
-fail-closed routing. shape accepts a decision only when it parses to a
-dict with a non-empty string `target` and `build`/`kind` present;
-anything else (the captured crash envelope, the classify-crash launder
-through resolve's `target: ""`, out-of-set decider, drifted-producer
-shapes) refuses FIRST at emit with the non-minting `Refused: serving
-pipeline error` terminal — never a write, never silent empty prose. The
-2026-08-13 misfire conditions replayed through real OpenCode refuse
-honestly (live gate record); run-10 battery row 13/13, 0 dishonest,
-zero routing refusals on a healthy serve (oracle 0/0/3 — two accept-gate
-rejections plus their cascade, the recurring qwen3:8b variance class).
-Two-round adversarial review APPROVE with four mutation-verified gate
-pins. Follow-ups: #154 (bare-python3 interpreter fragility — the
-misfire's environmental trigger, also explains the checkout-shell
-endpoint failures), #155 (downstream positive-completeness analogues).
-**v0.18.18 released 2026-08-14** (PyPI + Homebrew): #153
-offset-continuation reads — client-capped reads continue at the
-trailer-named offset and stitch whole-or-refuse (call-count bound with
-offset monotonicity; POSITIVE end-of-file completeness with the total-N
-crosscheck; same-turn-segment parts). Live gate: the 80KB serving
-caller itself grounds via a 2-part stitch — the #121 coverage bound
-CONVERTED; run 9 regression row 13/13, 0 dishonest, oracle 2/0/1,
-fastest wall of the family, seam inert on the ladder. Two-round
-adversarial review (round 1: a budget first-read-wins ordering
-regression and a lone-offset-part wrong-accept, both fixed with
-mutation-verified pins) → APPROVE. Remaining on #153: the 2000-line-cap
-trailer wording (fails closed until captured), the per-line 2000-char
-silent truncation (#149 family). **v0.18.17 released 2026-08-14**: the #121
-content-grep rung, slice A — def-anchored one-round content search,
-deterministic identifier menu over verified definition sites, guarded
-closed-menu pick (abstention falls open), AST-verified grounding
-attribution keyed on a structural this-turn read signal. Exit gate MET
-live (grounded answer citing turn_trace.py's real constants; re-passed
-first-try post-fix); arm-0 run 8 regression row 13/13, 0 dishonest,
-oracle 2/1/0 (best row), grep path inert on the ladder. Three design
-review rounds (v1 REDESIGN with measured blockers; ground truth via
-`opencode debug rg search`) and three implementation rounds (round-2
-BLOCKER: rendered-order keying livelocked the pick; fixed
-structurally). The gates DISCOVERED #153: OpenCode caps read output at
-50KB inside the serve's 96KB window — fixed (capped reads refuse
-honestly); offset-continuation reads are the named recovery, and the
-80KB caller attracting picks then refusing at the cap is the recorded
-coverage bound. **v0.18.16 released 2026-08-13**: #148, #145+#150,
-and the #144 self-reference slice (its literal "answers grounded"
-exit stays OPEN on the whale — unblockers #106/#151/chunked reads).
-#143 CLOSED as an honest miss (reopen rides #119). Open follow-ups:
-#147 (classifier false positives), #149 (client-side truncation
-flanks), #151 (server-queried window), #155 (pipeline
-positive-completeness), #156 (instrument pins ungated), #160 (cache keys on path,
-not bytes). Operating rules:
-`docs/loop-protocol.md`.
+No live real-OpenCode validation ran this session, and three of the merged
+arcs change client-visible behaviour. The delegation contract ends a
+capability arc with a live battery row; that row is owed for #166, #169 and
+(on merge) #168. Ollama is up on the rig; the serve is not running. Dogfood
+entry 9 is the exact refusal message #168 sanitises, which makes it the
+natural gate.
 
 ## Timeline
 
@@ -438,9 +249,15 @@ Remaining, in order:
 - [ ] #128 #129 #130 — task shapes toward compose-at-runtime
 - [ ] #125 — Rust gate; #119 #135 — seat ladder on-signal
 - [ ] #85 #84 #90 #93 #95 #106 #110 #114 #132 #142 — platform hardening as gates demand
-- [ ] #161 #162 #163 #165 #166 #168 — script-cache purity/imports/degrade,
-  the -n auto flake, the empty-deliverable write, and the refusal-reason
-  path leak; #155 Arcs B/C remainder
+- [x] #166 #169 #170 merged (empty deliverable never written; empty re-fix
+  candidate never accepted; `make test` independent of the working
+  directory), plus loop-protocol 13-19 and the doc-drift check
+- [ ] #163 #168 — green and one confirmation round short; then
+  `fix/172-176-small-fixes` (#172 #176) needs its first review
+- [ ] #173 #175 #178 — small, fix rather than queue (rule 13)
+- [ ] #171 #174 #177 — the general fixes the two long arcs circled
+- [ ] #161 #162 #165 — script-cache purity/imports and the -n auto flake;
+  #155 Arcs B/C remainder
 - [ ] North star: parity on real work, honesty column held at zero
 
 ## Doctrine (what we learned, made binding)
@@ -560,8 +377,12 @@ dishonest outcome.
 - [x] #160 cache identity is the script's BYTES, and the cache ships DISABLED (two of six primitives are impure; a hit elided a write) — v0.19.0
 - [x] #156 the 511 measurement instruments run in `make test` and CI (a regression in them used to corrupt evidence without failing a build)
 - [x] #164 script-agent-architecture documents the cache that exists (the per-agent `cache:` key it showed is rejected by `extra="forbid"`)
+- [x] #166 an empty build deliverable is never a client write (the fault was
+  a LIVE seat with an empty artifact, not the dead seat the issue named)
+- [x] #169 an empty re-fix candidate is never accepted, at source
+- [x] #170 `make test` no longer depends on the ambient working directory
 - [x] #155 Arc A — a node that cannot READ its input refuses (crashed shape/form_gate finished as an empty success); Arcs B/C still open
-- [ ] #151 runtime-window detector remainder · #155 Arcs B/C · #168 refusal reasons leak server paths + username · #169 re-fix accepts an empty candidate · #173 re-fix accepts a comment-only candidate (clobbers) · #161 cache purity · #162 cache misses imports · #163 identity degrades silently · #165 `-n auto` flake · #166 empty deliverable written to the client · #85 sandbox hardening · #84 gate adversarial harness · #90 llama.cpp · #93 hot path · #95 dead surface · #106 shape home · #110 artifact quality · #114 trace cap · #132 BitNet · #142 reject templates
+- [ ] #151 runtime-window detector remainder · #155 Arcs B/C · #163 an undigestable script is cached under a path-only key · #168 refusal reasons leak server paths + username · #173 re-fix accepts a comment-only candidate (clobbers) · #174 a dead seat ships the engine envelope as the answer · #175 path-free strings still reach the wire · #176 a helper class fails a passing suite · #177 three file-vs-inline classifiers · #178 the TestCase branch parses tracebacks · #161 cache purity · #162 cache misses imports · #165 `-n auto` flake · #85 sandbox hardening · #84 gate adversarial harness · #90 llama.cpp · #93 hot path · #95 dead surface · #106 shape home · #110 artifact quality · #114 trace cap · #132 BitNet · #142 reject templates
 
 ### epic:off-path
 #80 #65 #30 #66 — parked, not on the north-star path.
@@ -606,6 +427,14 @@ Superseded by epic labels: `gh issue list --label epic:<name>`. Closed
 2026-07-11: #31 #78 #79 #64. Closed since: #83 #98 #99 #100 #104 #105
 #107–#109 #111–#113 #115 #116 #118 #120 #133 #134 #138 #139 #145 #152
 #153 #154 #156 #157 #158 #159 #160 #164.
+
+**#166 #169 #170 are merged on local main and still OPEN on GitHub**, because
+nothing is pushed. They close when the push lands, not before — the roadmap
+said "closed" here first, which is the kind of claim rule 15 exists for.
+
+Filed 2026-08-30 from review findings, all measured, none previously
+tracked: #171 #172 #173 #174 #175 #176 #177 #178. #172 and #176 are fixed on
+`fix/172-176-small-fixes` and await review.
 
 Two closed issues gate work that is tracked elsewhere: **#138**
 (instrument shipped; the paid runs are #167) and **#139** (curve
