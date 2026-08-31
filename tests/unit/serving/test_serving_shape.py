@@ -1056,3 +1056,82 @@ def test_an_exception_whose_str_raises_still_reports_the_test() -> None:
 
     assert "Weird" in report, report
     assert "runner crashed" not in report, report
+
+
+def _executor_verdict(code: str, tests: str) -> dict[str, Any]:
+    payload = json.dumps({"requirement": "r", "code": code, "tests": tests})
+    out = subprocess.run(
+        [sys.executable, str(_EXECUTOR)],
+        input=payload,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    result: dict[str, Any] = json.loads(out)
+    return result
+
+
+def test_a_helper_class_does_not_fail_a_passing_suite() -> None:
+    """#176: `has_cases` matched ANY module-level class, not just TestCase
+    subclasses. A tests file with an ordinary helper class spawned a
+    `__cases__` child, the child found no TestCase, returned n_tests == 0,
+    and `_run_children` appended that as a failure — so a suite whose real
+    tests all passed was rejected, with a reason untrue of the file.
+
+    A wrong-REJECT in the gate that decides whether a build ships, and it
+    biases every measurement taken through the gate in a direction nothing
+    distinguishes from a real reject.
+
+    Pinned at the EXECUTOR, not the runner: the runner never sees the
+    decision. A first version of this pin drove the runner and passed on
+    both sides, which is the layer error rule 17 is about.
+    """
+    verdict = _executor_verdict(
+        "def add(a, b):\n    return a + b\n",
+        "from solution import add\n\n"
+        "class Fixture:\n"
+        "    value = 3\n\n"
+        "def test_add():\n"
+        "    assert add(1, 2) == Fixture.value\n",
+    )
+
+    assert verdict["tests_pass"] is True, verdict["report"]
+
+
+def test_a_real_testcase_still_runs() -> None:
+    """The over-refusal direction: recognising TestCase subclasses must not
+    stop recognising them.
+
+    #176 F2 (review round 1): the original version of this pin used a
+    method named `test_it` — a nested `test_*` def, so `_enumerate_tests`
+    took the legacy whole-run fallback and `has_cases` was never consulted
+    at all; the pin stayed green even with `has_cases` hard-coded to
+    `False`. The method was renamed to `testAdd` (no underscore) to dodge
+    that fallback, but with zero top-level names the empty-vs-populated
+    `names` list ALSO decides which branch runs — with `has_cases`
+    mutated to `False`, `_run_sandboxed`'s "nothing enumerable" check
+    (`not names and not has_cases`) is true either way, so it falls to the
+    SAME legacy whole-run branch, which does real TestCase detection
+    unconditionally and passes regardless. Still vacuous (#176 review
+    round 2, N-2).
+
+    Fixed by adding a top-level `test_top`, so `names` is non-empty
+    regardless of `has_cases` and the isolated per-test path is taken
+    either way — but only a correct `has_cases=True` spawns the
+    `__cases__` child that runs `testAdd`. `n_tests == 2` (`test_top` +
+    `testAdd`) only when both run; a `has_cases=False` mutant contributes
+    only `test_top`, giving `n_tests == 1`.
+    """
+    verdict = _executor_verdict(
+        "def add(a, b):\n    return a + b\n",
+        "import unittest\n"
+        "from solution import add\n\n"
+        "def test_top():\n"
+        "    assert True\n\n\n"
+        "class TestAdd(unittest.TestCase):\n"
+        "    def testAdd(self):\n"
+        "        self.assertEqual(add(1, 2), 3)\n",
+    )
+
+    assert verdict["tests_pass"] is True, verdict["report"]
+    assert verdict["n_tests"] == 2
