@@ -63,16 +63,27 @@ buy-back ledger tracks hosted seats.
 
 ### Next up
 
-One branch remains in the gate: `fix/172-176-small-fixes` (#172 #176), tip
-`c8892e9c`, round-2 review running after a four-blocker first review and a
-full rework. On its APPROVE it merges; then **#175** (held deliberately —
-both touch the executor); then the arc-sized trio below.
+The gate is empty: every branch this session opened or inherited is merged.
+Next: **#175** (env-scrub slice), then the arc-sized trio below, then the
+owed live-battery rows.
 
-Nothing is pushed. 52 commits / 8 merge units sit on local `main`
-(`git log --oneline origin/main..main`). The push — and the GitHub
-issue-closing that rides on it — awaits the practitioner's explicit go.
-CI has never seen the drift checker; #179 fixed the latent red that would
-have surfaced on first push.
+Nothing is pushed (`git log --oneline origin/main..main` for the count; 10
+merge units). The push — and the GitHub issue-closing that rides on it —
+awaits the practitioner's explicit go. CI has never seen the drift checker;
+#179 fixed the latent red that would have surfaced on first push.
+
+**#172 #176 merged** after four review rounds (first review: four blockers,
+including the #176 heuristic converting wrong-REJECT into wrong-ACCEPT;
+round 2: the fix went structural — the runner's real namespace decides, not
+AST guesses; round 3 caught the scan wrong-REJECTing produced-code classes
+with `test_*`-named production methods; round 4 confirmed the code-name
+snapshot fix on fresh probes). The merge into main was semantic — #168
+rewrote the same runner functions — and every emitted string kept #168's
+`_wire_safe` discipline; cross-arc probes on the merged tree confirm the
+leak refusal and both load-error paths stay path-free. The round-4
+confirmation was lead-run on fresh inputs after the reviewer's session hit
+its model limit mid-round; that same reviewer had already pre-verified the
+identical patch on its 46-shape matrix in round 3.
 
 **Merged to local main this session, each with an author-independent
 APPROVE after a wrong-accept hunt:**
@@ -133,8 +144,8 @@ fix rule 18 had been pointing at since round 6.
 
 ### Queued, not skipped
 
-Live real-OpenCode validation rows are owed for **#166 #169 #168 #173**
-(and #172/#176 on merge) — every one changes client-visible behaviour.
+Live real-OpenCode validation rows are owed for **#166 #169 #168 #173
+#172 #176** — every one changes client-visible behaviour.
 Dogfood entry 9 is the exact refusal message #168 sanitises, still the
 natural gate. The serve was not started this session; batteries run
 detached (nohup + Monitor tail) per §Environments.
@@ -200,9 +211,10 @@ Remaining, in order:
 - [x] #163 #168 merged after confirmation rounds (#178 taken in-arc:
   the parser is deleted); #173 merged (inert class closed 15/15); #179
   filed+fixed+merged (drift check works in worktrees)
-- [ ] `fix/172-176-small-fixes` (#172 #176) — reworked after a
-  four-blocker first review; round-2 review running
-- [ ] #175 — small, fix rather than queue (rule 13); next after #172/#176
+- [x] #172 #176 merged after four rounds (runner-namespace judgment, library
+  source resolution rebuilt: explicit env path trusted on existence, cwd and
+  packaged candidates content-gated non-empty, `("local","")` never escapes)
+- [ ] #175 — small, fix rather than queue (rule 13); env-scrub slice next
 - [ ] #171 #174 #177 — the general fixes the two long arcs circled
 - [ ] #161 #162 #165 — script-cache purity/imports and the -n auto flake;
   #155 Arcs B/C remainder
@@ -335,7 +347,9 @@ dishonest outcome.
   #178 taken in-arc — the TestCase branch no longer parses tracebacks)
 - [x] #173 an inert re-fix candidate is never accepted (closed AST whitelist)
 - [x] #179 the doc-drift check knows its names inside agent worktrees
-- [ ] #151 runtime-window detector remainder · #155 Arcs B/C · #172 #176 in round-2 review · #174 a dead seat ships the engine envelope as the answer · #175 path-free strings still reach the wire · #177 three file-vs-inline classifiers · #180 the accept report is unbounded · #161 cache purity · #162 cache misses imports · #165 `-n auto` flake · #85 sandbox hardening · #84 gate adversarial harness · #90 llama.cpp · #93 hot path · #95 dead surface · #106 shape home · #110 artifact quality · #114 trace cap · #132 BitNet · #142 reject templates
+- [x] #172 #176 — an empty submodule is not a library; the gate's verdict
+  comes only from tests the runner executes (four rounds)
+- [ ] #151 runtime-window detector remainder · #155 Arcs B/C · #174 a dead seat ships the engine envelope as the answer · #175 path-free strings still reach the wire · #177 three file-vs-inline classifiers · #180 the accept report is unbounded · #161 cache purity · #162 cache misses imports · #165 `-n auto` flake · #85 sandbox hardening · #84 gate adversarial harness · #90 llama.cpp · #93 hot path · #95 dead surface · #106 shape home · #110 artifact quality · #114 trace cap · #132 BitNet · #142 reject templates
 
 ### epic:off-path
 #80 #65 #30 #66 — parked, not on the north-star path.
