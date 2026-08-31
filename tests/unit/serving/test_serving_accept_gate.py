@@ -179,10 +179,13 @@ def test_produced_code_cannot_read_the_operators_environment_marker() -> None:
     assert "scrubbed" in result["report"]
 
 
-def test_produced_code_cannot_read_home() -> None:
+def test_produced_code_cannot_read_the_home_env_var() -> None:
     """The concrete case #175 names: HOME is a completely ordinary env var
     no denylist would flag, and the operator's real value must not reach
-    the wire.
+    the wire through the ENVIRONMENT. The env VAR is the whole claim:
+    the home directory itself stays reachable via expanduser/pwd (POSIX
+    falls back to the password database when HOME is unset), which is the
+    vocabulary half of #175 and is pinned as a bound below.
 
     HOME's value is itself path-shaped, so #168's separator rule already
     redacts it by accident today (the message is stripped to the bare
@@ -238,6 +241,68 @@ def test_scrubbed_env_still_supports_stdlib_and_pytest_and_asyncio() -> None:
     result = _executor("stdlib+pytest+asyncio under scrubbed env", code, tests)
     assert result["tests_pass"] is True, result["report"]
     assert result["n_tests"] == 3
+
+
+def test_scrubbed_env_still_reads_non_ascii_files() -> None:
+    """Pins the portability argument, not just the mechanism (#175 review).
+    With LC_CTYPE absent from the passed env, PEP 538/540 coercion
+    auto-enables UTF-8 Mode in the child — which is why an env-less child
+    reads non-ASCII files correctly even on CI's C-locale runners. The
+    sibling control pin round-trips ASCII JSON only and would stay green
+    if that coercion ever stopped firing; this one would not."""
+    code = (
+        "def write_and_read():\n"
+        "    with open('caf\\u00e9.txt', 'w') as f:\n"
+        "        f.write('ni\\u00f1o caf\\u00e9 \\u4f60\\u597d')\n"
+        "    with open('caf\\u00e9.txt') as f:\n"
+        "        return f.read()\n"
+    )
+    tests = (
+        "def test_non_ascii_roundtrip():\n"
+        "    assert write_and_read() == 'ni\\u00f1o caf\\u00e9 \\u4f60\\u597d'\n"
+    )
+    result = _executor("non-ascii under scrubbed env", code, tests)
+    assert result["tests_pass"] is True, result["report"]
+
+
+def test_the_childs_environment_is_only_the_platform_injected_set() -> None:
+    """#175 review F1: `env={}` is not the env the child SEES. CPython's
+    PEP 538 coercion re-injects LC_CTYPE, and macOS CoreFoundation adds
+    __CF_USER_TEXT_ENCODING (whose first field is the operator's UID in
+    hex). Both are startup injections below `subprocess.run`, unreachable
+    by the scrub. This pin holds the census to exactly that
+    platform-injected set, so any NEW entry — a future harness variable,
+    a platform addition, a regression of the scrub itself — trips it."""
+    tests = (
+        "import os\n"
+        "def test_env_census():\n"
+        "    allowed = {'LC_CTYPE', '__CF_USER_TEXT_ENCODING'}\n"
+        "    extras = sorted(set(os.environ) - allowed)\n"
+        "    assert not extras, 'unexpected env entries: ' + ','.join(extras)\n"
+    )
+    result = _executor("child env census", "", tests)
+    assert result["tests_pass"] is True, result["report"]
+
+
+def test_the_username_still_reaches_the_wire_by_the_pwd_route() -> None:
+    """#175's instrument 2, pinned as the ACCEPTED BOUND rather than left
+    implicit: the env scrub closes the environment route only. POSIX
+    `getpass.getuser()` falls back to the password database, so produced
+    code still resolves the operator's username with no env at all, and a
+    path-free username passes #168's separator rule onto the wire. This
+    pin goes red the day the vocabulary half (#180/#142) closes the
+    route — which is the desired signal, not a regression."""
+    import getpass
+
+    username = getpass.getuser()
+    tests = (
+        "import getpass\n"
+        "def test_leak_user():\n"
+        "    raise AssertionError('user is ' + getpass.getuser())\n"
+    )
+    result = _executor("username bound probe", "", tests)
+    assert result["tests_pass"] is False
+    assert username in result["report"], result["report"]
 
 
 # --- gate: accept = tests_pass AND tests_adequate (orthogonal catches) ---
