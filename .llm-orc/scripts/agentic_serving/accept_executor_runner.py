@@ -81,7 +81,9 @@ def _run_test_fns(test_fns: list, tests: str) -> tuple[int, list[str]]:
     return n_tests, failures
 
 
-def _leaked_test_classes(namespace: dict[str, object], testcase: type) -> list[str]:
+def _leaked_test_classes(
+    namespace: dict[str, object], testcase: type, code_names: set[str]
+) -> list[str]:
     """Names of module-level classes, in the REAL post-exec namespace, that
     carry a callable ``test_*`` attribute and are NOT ``testcase``
     subclasses — the pytest ``class TestFoo: def test_x(self): ...``
@@ -99,14 +101,39 @@ def _leaked_test_classes(namespace: dict[str, object], testcase: type) -> list[s
     count, and every one of those three shapes evaded it — the truth
     only exists in the namespace after both files have actually loaded,
     so the judgment moves here.
+
+    ``code_names`` (review round 3, R-1 — a regression this scan
+    introduced): the runner execs the produced CODE into the SAME
+    namespace before the tests exec, so an ordinary deliverable class
+    with a production method that happens to be named ``test_*``
+    (``class Database: def test_connection(self): ...``) was wrongly
+    caught by this scan too — a wrong-REJECT of a clean suite, with a
+    reason untrue of the file (the class lives in the code, not the
+    tests). A class whose bound NAME was already present right after the
+    code exec (snapshotted before the tests exec ever ran) is a code-side
+    name and is skipped. Bound, stated honestly: this skips by NAME, not
+    identity — a tests file that REDEFINES a code class's name with its
+    own class carrying a ``test_*`` attribute slips this scan too. The
+    cost of the snapshot approach.
+
+    ``dir(obj)`` is wrapped (review round 3, R-2): a class whose metaclass
+    makes ``dir()`` raise used to crash the runner child with a raw
+    traceback instead of a clean verdict; such a class is skipped
+    instead.
     """
     leaked = []
     for name, obj in namespace.items():
+        if name in code_names:
+            continue
         if not isinstance(obj, type) or issubclass(obj, testcase):
+            continue
+        try:
+            attrs = dir(obj)
+        except Exception:  # noqa: BLE001 - a hostile metaclass must not crash the runner
             continue
         if any(
             attr.startswith("test_") and callable(getattr(obj, attr, None))
-            for attr in dir(obj)
+            for attr in attrs
         ):
             leaked.append(name)
     return leaked
@@ -132,6 +159,9 @@ def run_tests(
         exec(compile(code, "solution.py", "exec"), namespace)
     except Exception as error:  # noqa: BLE001 - executing produced code
         return False, f"code failed to load: {error!r}", 0, []
+    # snapshot BEFORE the tests exec: names the code bound are code-side,
+    # never candidates for the tests-only leak scan below (R-1)
+    code_names = set(namespace)
     try:
         exec(compile(tests, "test_solution.py", "exec"), namespace)
     except Exception as error:  # noqa: BLE001
@@ -154,7 +184,7 @@ def run_tests(
         and issubclass(obj, unittest.TestCase)
         and obj is not unittest.TestCase
     ]
-    leaked_classes = _leaked_test_classes(namespace, unittest.TestCase)
+    leaked_classes = _leaked_test_classes(namespace, unittest.TestCase, code_names)
 
     test_fns, case_classes = _filter_by_only(test_fns, case_classes, only)
 
