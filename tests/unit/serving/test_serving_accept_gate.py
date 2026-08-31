@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import os
+import secrets
 import subprocess
 import sys
 import time
@@ -141,6 +142,102 @@ def test_executor_passes_the_contract_through_for_the_judge() -> None:
     assert r["requirement"] == "the requirement"
     assert r["code"] == CORRECT
     assert r["tests"] == REAL_TESTS
+
+
+# --- #175 env slice: the runner child's environment is scrubbed, so an
+# env value produced code reads server-side (no path separator, so #168's
+# wire rule cannot catch it) never reaches the report. ---
+
+
+def test_produced_code_cannot_read_the_operators_environment_marker() -> None:
+    """The residual #168 named: a value with no path separator passes the
+    wire rule untouched. Produced code reading an arbitrary env var and
+    embedding its VALUE in an exception message must see nothing — the
+    marker's real value must never reach the report, and the "scrubbed"
+    sentinel default must, proving the child looked and found nothing
+    rather than the check never firing."""
+    # `value = ...get(...)` on its own line, then `raise AssertionError(value)`
+    # on the next: the failing line echoed into the report (`_failing_line`)
+    # must be the raise line, never the line holding the literal fallback
+    # text, or the pin would pass by echoing source instead of observing
+    # the child's actual runtime value (rule 17 — probed against
+    # accept_executor.py directly before trusting this shape).
+    marker = f"hunter2-{secrets.token_hex(8)}"
+    tests = (
+        "import os\n"
+        "def test_leak():\n"
+        "    value = os.environ.get('LLM_ORC_TEST_SECRET_MARKER', 'scrubbed')\n"
+        "    raise AssertionError(value)\n"
+    )
+    result = _executor(
+        "leak probe",
+        "",
+        tests,
+        env_overrides={"LLM_ORC_TEST_SECRET_MARKER": marker},
+    )
+    assert marker not in result["report"]
+    assert "scrubbed" in result["report"]
+
+
+def test_produced_code_cannot_read_home() -> None:
+    """The concrete case #175 names: HOME is a completely ordinary env var
+    no denylist would flag, and the operator's real value must not reach
+    the wire.
+
+    HOME's value is itself path-shaped, so #168's separator rule already
+    redacts it by accident today (the message is stripped to the bare
+    class name, carrying neither the real value nor "scrubbed"). That is
+    why this pin checks for the SENTINEL, not just the real value's
+    absence: absence alone would pass today for the wrong reason. Only
+    once the child's env is genuinely scrubbed does `os.environ.get`
+    evaluate its default and put the path-free "scrubbed" on the wire."""
+    real_home = os.environ.get("HOME", "")
+    assert real_home, "test environment has no HOME to prove is scrubbed"
+    tests = (
+        "import os\n"
+        "def test_leak_home():\n"
+        "    value = os.environ.get('HOME', 'scrubbed')\n"
+        "    raise AssertionError(value)\n"
+    )
+    result = _executor("home leak probe", "", tests)
+    assert real_home not in result["report"]
+    assert "scrubbed" in result["report"]
+
+
+def test_scrubbed_env_still_supports_stdlib_and_pytest_and_asyncio() -> None:
+    """Control pin: the scrubbed child env is not merely good enough for a
+    trivial assert. json, tempfile, pytest.raises, and asyncio (import
+    machinery, filesystem, exception plumbing, the event loop) all still
+    work with the minimal env — the evidence that the chosen minimal env
+    is genuinely sufficient for the interpreter rather than accidentally
+    sufficient for one shape of test."""
+    code = (
+        "import json\n"
+        "import os\n"
+        "import tempfile\n\n"
+        "def write_and_read():\n"
+        "    with tempfile.TemporaryDirectory() as d:\n"
+        "        p = os.path.join(d, 'x.json')\n"
+        "        with open(p, 'w') as f:\n"
+        "            json.dump({'a': 1}, f)\n"
+        "        with open(p) as f:\n"
+        "            return json.load(f)\n"
+    )
+    tests = (
+        "import pytest\n"
+        "import asyncio\n\n"
+        "def test_tempfile_roundtrip():\n"
+        "    assert write_and_read() == {'a': 1}\n\n"
+        "def test_raises():\n"
+        "    with pytest.raises(ZeroDivisionError):\n"
+        "        1 / 0\n\n"
+        "async def test_async():\n"
+        "    await asyncio.sleep(0)\n"
+        "    assert True\n"
+    )
+    result = _executor("stdlib+pytest+asyncio under scrubbed env", code, tests)
+    assert result["tests_pass"] is True, result["report"]
+    assert result["n_tests"] == 3
 
 
 # --- gate: accept = tests_pass AND tests_adequate (orthogonal catches) ---
