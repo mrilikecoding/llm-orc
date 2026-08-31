@@ -17,12 +17,78 @@ pytest re-run remains the semantic verifier once a loadable fix ships.
 
 from __future__ import annotations
 
+import ast
 import json
 import sys
 
 from _helpers import deps as _deps
 from _helpers import payload as _payload
 from _helpers import response as _response
+
+# #173 review round 1's adjudicated predicate: a closed whitelist of node
+# types that can bind no name and call nothing. Structure (Module, Pass, If,
+# While, the operator/context base classes) plus constant-only expression
+# forms (Constant, JoinedStr/FormattedValue for f-strings, BinOp/UnaryOp/
+# BoolOp/Compare/IfExp over constants, and the constant-literal containers).
+# Anything outside this set — Name, Call, Attribute, Subscript, any def/
+# class/assign/import, Raise, Assert, With, Try, ... — means NOT inert, and
+# the candidate is judged by the load gate and tests exactly as before.
+_INERT_NODE_TYPES: tuple[type[ast.AST], ...] = (
+    ast.Module,
+    ast.Pass,
+    ast.Expr,
+    ast.Constant,
+    ast.JoinedStr,
+    ast.FormattedValue,
+    ast.BinOp,
+    ast.UnaryOp,
+    ast.BoolOp,
+    ast.Compare,
+    ast.IfExp,
+    ast.Tuple,
+    ast.List,
+    ast.Dict,
+    ast.Set,
+    ast.If,
+    ast.While,
+    ast.operator,
+    ast.unaryop,
+    ast.boolop,
+    ast.cmpop,
+    ast.expr_context,
+)
+
+
+def _is_inert(code: str) -> bool:
+    """True when every node in the parsed candidate is drawn from the closed
+    whitelist above (#173 review round 1's adjudicated predicate, replacing
+    round 1's "every statement is a bare string" — which implemented a
+    narrower rule than its own docstring claimed). A subtree built only from
+    structure and constants can bind no name and call nothing, so it cannot
+    make the injected smoke test — or any test — pass for a real reason; a
+    real fix always binds (assignment, def, import, ...) or calls.
+
+    Measured through the real chain to clobber under round 1's predicate: a
+    bare ``pass``, a bare ``...``, a bare numeric/None/bool constant, an
+    f-string (with or without a placeholder), a ``BinOp`` of two constants
+    (``"a" + "b"``), a bytes literal, ``if False: pass``, ``while False:
+    pass``, a docstring followed by ``pass``, a comment followed by ``pass``,
+    and ``pass; pass`` — 15 members, this whitelist catches all of them.
+
+    A bare Name (``x``) is NOT in the whitelist and stays not-inert — it
+    fails honestly at load with a NameError (measured), a real reason, not a
+    hole in this guard.
+
+    A candidate that fails to parse is not inert by this check either — the
+    executor's load gate (compile/exec, #169's mechanism) already rejects
+    it via ``tests_pass=False``. If ``ast.parse`` here raises anyway, fail
+    closed (treat as inert) rather than let the exception escape this node.
+    """
+    try:
+        tree = ast.parse(code)
+    except SyntaxError:
+        return True
+    return all(isinstance(node, _INERT_NODE_TYPES) for node in ast.walk(tree))
 
 
 def _executor_verdict(deps: dict[str, object]) -> tuple[bool, str]:
@@ -66,14 +132,24 @@ def main() -> None:
     # reference the target module passes against an empty candidate too, and
     # rung 1.5's visible test is whatever test_<stem>.py was found.
     candidate_present = bool(code.strip())
-    accept = tests_pass and candidate_present
+    # #173: a candidate that parses but binds nothing and calls nothing
+    # (structure and constants only — see _is_inert) is never a fix either.
+    # Only checked when something survived .strip(), so this cannot change
+    # the emptiness branch below.
+    inert = candidate_present and _is_inert(code)
+    accept = tests_pass and candidate_present and not inert
+    # Names the target (review round 1): #166's caller guard names the file
+    # it declined to write, and a refusal the client cannot map to a file is
+    # worth less. The target comes from select, which took it from gather's
+    # own extraction — never from a path on this server.
+    target = str(selected.get("target_file", "")) or "the file"
     if not candidate_present:
-        # Names the target (review round 1): #166's caller guard names the
-        # file it declined to write, and a refusal the client cannot map to
-        # a file is worth less. The target comes from select, which took it
-        # from gather's own extraction — never from a path on this server.
-        target = str(selected.get("target_file", "")) or "the file"
         reason = f"re-fix candidate for {target} is empty; the original is unchanged"
+    elif inert:
+        reason = (
+            f"re-fix candidate for {target} has no executable statement; "
+            "the original is unchanged"
+        )
     elif smoke_only:
         reason = (
             "candidate loads cleanly; no visible test, the client run verifies"
