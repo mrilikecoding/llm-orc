@@ -195,8 +195,14 @@ def _excise_unbound_callable_tests(tests: str, code: str) -> tuple[str, int]:
     os.path.exists``) would risk changing intent. Scope: top-level
     ``test_*`` functions (per-test isolation's unit). Bounded: if excision
     would drop ALL test units, the suite is returned unchanged so the
-    round rejects on the real NameError. The echoed (shipped) tests are
-    the excised suite, per the v0.18.7 repair convention.
+    round rejects on the real NameError — regardless of whether a class is
+    ALSO present in the file (#176 review round 1, F5): this function has
+    no way to verify at analysis time whether that class will contribute
+    anything runnable (a plain helper never will), and guessing wrong
+    would destroy the only evidence of the real failure with nothing to
+    replace it. Declining costs nothing — a doomed test NameErrors for
+    real either way, class or no class. The echoed (shipped) tests are the
+    excised suite, per the v0.18.7 repair convention.
     """
     try:
         tree = ast.parse(tests)
@@ -214,10 +220,7 @@ def _excise_unbound_callable_tests(tests: str, code: str) -> tuple[str, int]:
         and n.name.startswith("test_")
     ]
     doomed = [f for f in test_funcs if _calls_unbound_name(f, bound)]
-    has_cases = any(
-        isinstance(n, ast.ClassDef) and _is_testcase(n) for n in tree.body
-    )
-    if not doomed or (len(doomed) == len(test_funcs) and not has_cases):
+    if not doomed or len(doomed) == len(test_funcs):
         return tests, 0
     lines = tests.splitlines()
     for func in sorted(doomed, key=lambda f: f.lineno, reverse=True):
@@ -505,30 +508,22 @@ def _aggregate_budget() -> float:
         return _timeout() * _BUDGET_MULTIPLIER
 
 
-def _is_testcase(node: ast.ClassDef) -> bool:
-    """Whether a class is a ``unittest.TestCase`` subclass (#176).
-
-    ``any(isinstance(n, ast.ClassDef))`` matched ANY module-level class, so
-    an ordinary helper — a dataclass, an Enum, a fixture holder — spawned a
-    ``__cases__`` child that could only report "no TestCase classes found"
-    and fail a suite whose real tests passed.
-
-    Positive recognition by base name, the same discipline the serving
-    nodes use. A base this cannot read (an aliased import, a factory) falls
-    to the non-cases path, which runs the ``test_*`` functions and skips a
-    child that would have had nothing to run.
-    """
-    for base in node.bases:
-        if isinstance(base, ast.Name) and base.id == "TestCase":
-            return True
-        if isinstance(base, ast.Attribute) and base.attr == "TestCase":
-            return True
-    return False
-
-
 def _enumerate_tests(tests: str) -> tuple[list[str], bool] | None:
-    """(top-level test_* function names, has_testcase_classes), or ``None``
-    when the tests don't parse — the caller falls back to one legacy run.
+    """(top-level test_* function names, has_cases), or ``None`` when the
+    tests don't parse — the caller falls back to one legacy run.
+
+    ``has_cases`` is the presence of ANY module-level class (#176 review
+    round 1): guessing TestCase-ness from base names (aliased imports,
+    locally-derived bases, a local class that just happens to be named
+    ``TestCase``) was demonstrated wrong in both directions — under a
+    real TestCase reached through an unrecognised base (wrong ACCEPT: the
+    failing test never runs) and over a helper whose base merely LOOKS
+    like TestCase by name (wrong REJECT). The guess is not needed: the
+    runner decides what actually executes via a real
+    ``issubclass(obj, unittest.TestCase)`` check, and the caller (
+    ``_run_children`` / ``_run_sandboxed``) treats an empty ``__cases__``
+    dispatch as informationless rather than as a failure, so a false
+    positive here costs nothing but one wasted child run.
 
     Completeness invariant: per-test isolation only ever runs the names
     returned here, but only ``tree.body`` is visible to the caller's child
@@ -558,10 +553,51 @@ def _enumerate_tests(tests: str) -> tuple[list[str], bool] | None:
     if nested_exists:
         return None
     names = [n.name for n in top_level_defs]
-    has_cases = any(
-        isinstance(n, ast.ClassDef) and _is_testcase(n) for n in tree.body
-    )
+    has_cases = any(isinstance(n, ast.ClassDef) for n in tree.body)
     return names, has_cases
+
+
+def _pytest_style_candidates(tests: str) -> list[str]:
+    """Names of module-level classes that define at least one method of
+    their own starting with ``test_`` — the pytest ``class TestFoo: def
+    test_x(self): ...`` dialect the runner has no mechanism to execute
+    (#176 F8). Requires an actual ``test_*`` method, not just a
+    Test-prefixed class name: a name-only match would misfire on an inert
+    local double like ``class TestCase: pass`` used purely as a base for
+    an unrelated helper (#176 W10) — that class has nothing to silently
+    skip, so flagging it would be a false refusal, not an honest one.
+    """
+    try:
+        tree = ast.parse(tests)
+    except SyntaxError:
+        return []
+    return [
+        node.name
+        for node in tree.body
+        if isinstance(node, ast.ClassDef)
+        and any(
+            isinstance(m, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and m.name.startswith("test_")
+            for m in node.body
+        )
+    ]
+
+
+def _top_level_test_count(tests: str) -> int:
+    """Count of module-level ``test_*`` function defs — the same set the
+    runner's own ``test_fns`` collects, computed statically so #176 F8 can
+    tell whether a pytest-style candidate class actually contributed
+    anything to the run beyond them."""
+    try:
+        tree = ast.parse(tests)
+    except SyntaxError:
+        return 0
+    return sum(
+        1
+        for n in tree.body
+        if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and n.name.startswith("test_")
+    )
 
 
 def _materialize(
@@ -640,7 +676,16 @@ def _run_children(
     children × per-child timeout is too much blocking time for an
     interactive serve). The budget check happens before spawning each
     child, not after, so the real worst case is budget + at most one
-    per-child timeout (check-before-spawn slack), not the budget alone."""
+    per-child timeout (check-before-spawn slack), not the budget alone.
+
+    A ``__cases__`` child that ran and found zero real TestCase tests is
+    NOT a failure (#176 review round 1): ``has_cases`` only means "a class
+    exists in the file", not "it is a TestCase" — the runner's own real
+    ``issubclass`` check makes that call, and an empty result just means
+    this file's classes are not TestCase subclasses. The verdict comes
+    from the tests that actually ran; ``_run_sandboxed`` separately
+    refuses when NOTHING ran at all.
+    """
     budget = _aggregate_budget()
     start = time.monotonic()
     n = len(children)
@@ -658,7 +703,8 @@ def _run_children(
             code, tests, workspace, target_file, only, timeout
         )
         total += n_tests
-        if not ok:
+        empty_cases_child = only == "__cases__" and n_tests == 0
+        if not ok and not empty_cases_child:
             failures.append(report)
     return failures, total
 
@@ -673,25 +719,51 @@ def _run_sandboxed(
     enumerated = _enumerate_tests(tests)
     if enumerated is None or (not enumerated[0] and not enumerated[1]):
         # unparseable or nothing enumerable: one legacy run reports it
-        return _run_one(code, tests, workspace, target_file, None, timeout)
+        ok, report, n_tests = _run_one(code, tests, workspace, target_file, None, timeout)
+    else:
+        names, has_cases = enumerated
+        capped = len(names) > _MAX_ISOLATED_TESTS
+        children: list[str | None] = list(names[:_MAX_ISOLATED_TESTS])
+        if has_cases:
+            children.append("__cases__")
 
-    names, has_cases = enumerated
-    capped = len(names) > _MAX_ISOLATED_TESTS
-    children: list[str | None] = list(names[:_MAX_ISOLATED_TESTS])
-    if has_cases:
-        children.append("__cases__")
+        failures, total = _run_children(
+            code, tests, workspace, target_file, timeout, children
+        )
+        if capped:
+            failures.append(f"…capped at {_MAX_ISOLATED_TESTS} isolated tests")
 
-    failures, total = _run_children(
-        code, tests, workspace, target_file, timeout, children
-    )
-    if capped:
-        failures.append(f"…capped at {_MAX_ISOLATED_TESTS} isolated tests")
+        # a load failure repeats identically in every child — report it once
+        deduped = list(dict.fromkeys(failures))
+        if deduped:
+            ok, report, n_tests = False, "; ".join(deduped), total
+        elif total == 0:
+            # #176 review round 1 INVARIANT: a file whose classes yield no
+            # runnable tests is judged by its remaining tests (handled
+            # above); a file with no runnable tests AT ALL refuses, same
+            # reason the legacy path already gives.
+            ok, report, n_tests = (
+                False,
+                "no test_* functions or TestCase classes found",
+                0,
+            )
+        else:
+            ok, report, n_tests = True, "all passed", total
 
-    # a load failure repeats identically in every child — report it once
-    deduped = list(dict.fromkeys(failures))
-    if deduped:
-        return False, "; ".join(deduped), total
-    return True, "all passed", total
+    if ok:
+        # #176 F8: a pytest-style class (name or methods, no TestCase) that
+        # contributed nothing beyond the top-level test_* functions was
+        # about to accept silently — the runner has no mechanism to
+        # execute that dialect this arc, so refuse honestly instead.
+        candidates = _pytest_style_candidates(tests)
+        if candidates and n_tests == _top_level_test_count(tests):
+            return (
+                False,
+                "tests define a class-based suite the runner cannot "
+                f"execute: {', '.join(candidates)}",
+                n_tests,
+            )
+    return ok, report, n_tests
 
 
 def main() -> None:

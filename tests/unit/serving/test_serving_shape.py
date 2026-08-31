@@ -463,15 +463,27 @@ def test_a_helper_class_does_not_fail_a_passing_suite() -> None:
 
 def test_a_real_testcase_still_runs() -> None:
     """The over-refusal direction: recognising TestCase subclasses must not
-    stop recognising them."""
+    stop recognising them.
+
+    #176 F2 (review round 1): the original version of this pin used a
+    method named `test_it` — a nested `test_*` def, so `_enumerate_tests`
+    took the legacy whole-run fallback and `has_cases` was never consulted
+    at all; the pin stayed green even with `has_cases` hard-coded to
+    `False`. Reconstructed to actually drive the `__cases__` dispatch: the
+    method is named `testAdd` (no underscore), so it doesn't trip the
+    nested-test-def fallback, `_enumerate_tests` returns `has_cases=True`
+    with zero top-level names, and only the `__cases__` child can produce
+    a pass.
+    """
     verdict = _executor_verdict(
         "def add(a, b):\n    return a + b\n",
         "import unittest\n"
         "from solution import add\n\n"
         "class TestAdd(unittest.TestCase):\n"
-        "    def test_it(self):\n"
+        "    def testAdd(self):\n"
         "        self.assertEqual(add(1, 2), 3)\n",
     )
 
     assert verdict["tests_pass"] is True, verdict["report"]
+    assert verdict["n_tests"] == 1
     assert verdict["n_tests"] == 1
