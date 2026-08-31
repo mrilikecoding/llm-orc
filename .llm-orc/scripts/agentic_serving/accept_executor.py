@@ -31,6 +31,33 @@ from pathlib import Path
 RUNNER = Path(__file__).with_name("accept_executor_runner.py")
 DEFAULT_TIMEOUT = 15.0
 
+# #175 env slice: the runner child used to inherit this process's full
+# environment, so produced code could read HOME, USER, an API key, or
+# anything else via `os.environ` and embed the VALUE (not a path) in an
+# exception message — the shape #168's wire rule cannot catch, since that
+# rule only rejects strings containing a path separator. Measured, not
+# guessed (control suite: tests/unit/serving/test_serving_accept_gate.py
+# run against a child spawned with exactly this env): the runner is
+# invoked by RUNNER's absolute path via `sys.executable`, itself already
+# absolute, so PATH resolves nothing for this spawn and an empty
+# environment runs the full suite (stdlib imports, tempfile, pytest.raises,
+# asyncio, unicode) identically to an inherited one. No entry is present
+# on the strength of "might be needed".
+#
+# What the child actually SEES is not empty (#175 review F1, derived by
+# printing the child's own census): CPython's PEP 538 coercion re-injects
+# LC_CTYPE=C.UTF-8 at startup — which also auto-enables UTF-8 Mode, the
+# reason an env-less child reads non-ASCII files correctly on the C-locale
+# CI runners — and macOS CoreFoundation adds __CF_USER_TEXT_ENCODING,
+# whose first field is the operator's UID in hex. The census pin asserts
+# the child's keys stay within exactly that platform-injected set, so any
+# NEW entry trips it. Also deliberate, recorded not fixed: TMPDIR is gone,
+# so tempfile falls back to /tmp rather than the per-user dir (#85's
+# containment surface); and the env var is the only route scrubbed —
+# expanduser/pwd/getpass still resolve the home directory and username
+# (#175's vocabulary half, riding #180/#142).
+_CHILD_ENV: dict[str, str] = {}
+
 # per-test isolation (seat-quality design 2026-07-09): each test function
 # runs in its own subprocess with its own fresh materialized directory, so
 # module globals and written files cannot leak across tests. Bounded and
@@ -600,6 +627,7 @@ def _run_one(
                 timeout=timeout,
                 cwd=tmp,
                 check=False,
+                env=_CHILD_ENV,
             )
         except subprocess.TimeoutExpired:
             return False, f"timeout after {timeout:g}s", 0, []
