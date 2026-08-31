@@ -14,24 +14,38 @@ from llm_orc.core.config.config_manager import ConfigurationManager
 def _is_library(path: Path) -> bool:
     """Whether ``path`` is a populated library, not just a directory (#172).
 
+    Gates the two IMPLICIT candidates (the cwd checkout, the packaged
+    copy) — not the explicit ``LLM_ORC_LIBRARY_PATH`` env var, which is
+    existence-gated on its own terms (review round 2, N-4: an explicit
+    user path is trusted on its own existence, not required to carry
+    ensembles content — a profiles-only env library is still a real,
+    intentional configuration).
+
     ``llm-orchestra-library`` is a git SUBMODULE, so an empty directory is
     the normal state after ``git clone`` without ``--recurse-submodules``
     and after every ``git worktree add``. Accepting one shadows a real
     library: with the cwd checkout empty, a real library elsewhere (the
     packaged copy) went unlooked-at.
 
-    Gating on the content-bearing subdirectory, and requiring it to be a
-    DIRECTORY rather than merely existing (review round 1, F6: a FILE
+    Requires ``ensembles/`` to be a DIRECTORY (review round 1, F6: a FILE
     named ``ensembles`` used to be accepted, and browse died with
-    ``NotADirectoryError`` trying to iterate it), is what every other
-    content-checking resolver in the tree already does —
-    ``config_manager.get_ensembles_dirs`` and
+    ``NotADirectoryError`` trying to iterate it) AND non-empty (review
+    round 2, N-5: an EMPTY ``ensembles/`` directory — the normal
+    post-`git worktree add` state, not merely a hypothetical — was still
+    accepted and still shadowed a populated packaged copy; issue #172's
+    own invariant is that an empty directory is never a source, with no
+    carve-out for "empty but present"). Gating on the content-bearing
+    subdirectory is what every other content-checking resolver in the
+    tree already does — ``config_manager.get_ensembles_dirs`` and
     ``library_handler._browse_ensembles`` both check for it (unlike
     ``library_handler.get_library_dir``, which returns a bare directory
     path with no content check at all, per F7) — so this was the outlier
     rather than a new rule.
     """
-    return (path / "ensembles").is_dir()
+    ensembles_dir = path / "ensembles"
+    if not ensembles_dir.is_dir():
+        return False
+    return any(ensembles_dir.iterdir())
 
 
 def _packaged_library_path() -> Path:
@@ -53,16 +67,23 @@ def _get_library_source_config() -> tuple[str, str]:
     """Get library source configuration from environment or defaults.
 
     Priority order:
-    1. ``LLM_ORC_LIBRARY_PATH`` env var, when it points at a populated
-       library (``_is_library``) — a custom location.
+    1. ``LLM_ORC_LIBRARY_PATH`` env var, when it is a directory. Gated on
+       ``.is_dir()`` ONLY, not ``_is_library`` (review round 2, N-4): this
+       is an EXPLICIT user configuration, not an implicit candidate the
+       resolver is guessing about — a profiles-only or templates-only
+       library (no ``ensembles/`` at all) is still a real, intentional
+       config, and requiring ensembles content here silently discarded it
+       in favor of whatever the packaged copy happened to hold instead.
     2. ``LLM_ORC_LIBRARY_SOURCE=remote``, explicit: remote GitHub.
     3. The current working directory's ``llm-orchestra-library/``, when
-       populated — a local checkout (the submodule, or a test fixture).
+       populated (``_is_library``) — a local checkout (the submodule, or
+       a test fixture).
     4. The library packaged with this install (``_packaged_library_path``),
-       when populated. Checked UNCONDITIONALLY now (review round 1, F4):
-       it used to run only when ``LLM_ORC_LIBRARY_SOURCE=local`` was
-       explicitly set, so a caller who set no library env var at all —
-       the common case — skipped it entirely and fell straight to (5).
+       when populated (``_is_library``). Checked UNCONDITIONALLY now
+       (review round 1, F4): it used to run only when
+       ``LLM_ORC_LIBRARY_SOURCE=local`` was explicitly set, so a caller
+       who set no library env var at all — the common case — skipped it
+       entirely and fell straight to (5).
     5. Nothing resolved anywhere: ``("local", "")``. Every function below
        that calls this treats an empty local path as "no library" and
        returns nothing of its own accord — it never falls back to remote,
@@ -77,14 +98,20 @@ def _get_library_source_config() -> tuple[str, str]:
        the code never took) — an implicit default would mean every user
        who never configured a library starts making network calls.
 
+    Priorities 3 and 4 (the IMPLICIT candidates) require ``ensembles/`` to
+    be non-empty (``_is_library``, N-5); priority 1 (the EXPLICIT env
+    path) does not — see the note on (1) above.
+
     Returns:
         Tuple of (source_type, source_path) where source_type is 'local' or 'remote'
     """
-    # Priority 1: Custom library path from environment
+    # Priority 1: Custom library path from environment — an explicit user
+    # configuration is trusted on its own existence, not required to carry
+    # ensembles content (N-4).
     library_path_env = os.environ.get("LLM_ORC_LIBRARY_PATH")
     if library_path_env:
         library_path = Path(library_path_env)
-        if _is_library(library_path):
+        if library_path.is_dir():
             return "local", str(library_path)
 
     # Priority 2: Explicit remote request
