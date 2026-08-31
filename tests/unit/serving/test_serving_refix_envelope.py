@@ -22,6 +22,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 REPO = Path(__file__).resolve().parents[3]
 SCRIPTS = REPO / ".llm-orc" / "scripts" / "agentic_serving"
 
@@ -46,6 +48,29 @@ from refix_select import _SMOKE_TEST as _SMOKE  # type: ignore  # noqa: E402
 # empty candidate this passes, which is what makes the pin below able to fail.
 _VISIBLE_TEST = "def test_unrelated():\n    assert 1 + 1 == 2\n"
 _REAL = "def restock(n):\n    return n + 1\n"
+
+# #173 review round 1: measured through the real chain, all 15 clobber under
+# the pre-round-2 predicate ("every statement is a bare string"). Each binds
+# no name and calls nothing, so none can make the smoke test pass for a real
+# reason. Distinct from ``test_a_bare_numeric_constant_supersedes_the_one_
+# character_pin`` below, which documents the #169 pin this class of fix
+# supersedes rather than sweeping it into this list.
+_INERT_MEMBERS: list[tuple[str, str]] = [
+    ("pass-only", "pass\n"),
+    ("ellipsis-only", "...\n"),
+    ("bare-int", "42\n"),
+    ("bare-none", "None\n"),
+    ("bare-bool", "True\n"),
+    ("f-string-no-placeholder", 'f"a"\n'),
+    ("f-string-with-placeholder", 'f"{1}"\n'),
+    ("string-concat", '"a" + "b"\n'),
+    ("bytes-literal", 'b"x"\n'),
+    ("if-false-pass", "if False:\n    pass\n"),
+    ("while-false-pass", "while False:\n    pass\n"),
+    ("docstring-then-pass", '"""doc"""\npass\n'),
+    ("comment-then-pass", "# nope\npass\n"),
+    ("pass-semicolon-pass", "pass; pass\n"),
+]
 
 
 def _node(script: str, deps: dict[str, Any], input_data: str = "") -> dict[str, Any]:
@@ -153,14 +178,6 @@ class TestTheGuardDoesNotRejectRealCandidates:
         assert envelope["diagnostics"]["accept"] is True
         assert envelope["artifacts"][0]["content"] == _REAL
 
-    def test_a_one_character_candidate_still_accepts(self) -> None:
-        """The rule is emptiness, not a length heuristic. ``0`` rather than
-        ``x``: a bare name raises NameError at module exec, so it fails the
-        load gate for a real reason and would pin nothing here."""
-        envelope = _envelope("0\n")
-
-        assert envelope["diagnostics"]["accept"] is True
-
     def test_a_one_line_real_fix_still_accepts(self) -> None:
         """#173's scope is inert candidates only — real code carrying any
         statement (assignment, import, def...) is untouched, even a single
@@ -222,6 +239,40 @@ class TestAnInertCandidateIsNeverAccepted:
         )
         assert envelope["diagnostics"]["accept"] is False
 
+    def test_a_bare_numeric_constant_supersedes_the_one_character_pin(self) -> None:
+        """Supersedes #169's ``test_a_one_character_candidate_still_accepts``,
+        which pinned ``_envelope("0\\n")`` as accept=True with the rationale
+        "the rule is emptiness, not a length heuristic." That rationale was
+        correct against a length heuristic and is superseded by #173's
+        effect-based rule: a bare ``0`` binds no name and calls nothing, so
+        it can satisfy the smoke test for no reason at all. It now rejects."""
+        envelope = _envelope("0\n")
+
+        assert envelope["_tests_pass"] is True, (
+            "the smoke test must still pass against a bare constant, or "
+            "this pins the wrong thing"
+        )
+        assert envelope["diagnostics"]["accept"] is False
+
+    @pytest.mark.parametrize(
+        "code",
+        [code for _, code in _INERT_MEMBERS],
+        ids=[label for label, _ in _INERT_MEMBERS],
+    )
+    def test_a_structurally_inert_candidate_is_rejected(self, code: str) -> None:
+        """#173 review round 1: the emptiness-plus-bare-string-literal
+        predicate implemented "every statement is a bare string" while its
+        own docstring claimed "no statement does anything" — a 15-member
+        gap, measured through the real chain to clobber. This sweep pins
+        the members not already covered by a dedicated test above."""
+        envelope = _envelope(code)
+
+        assert envelope["_tests_pass"] is True, (
+            "the smoke test must still pass against this candidate, or "
+            "this pins the wrong thing"
+        )
+        assert envelope["diagnostics"]["accept"] is False
+
 
 def _serving_tail(envelope: dict[str, Any]) -> dict[str, Any]:
     """seat_contract -> shape -> form_gate -> emit, all real, with the
@@ -269,3 +320,23 @@ def test_an_empty_candidate_reaches_the_client_as_a_rejection() -> None:
     assert outcome.get("finish") is True, outcome
     assert "file" not in outcome, "an empty candidate reached the client as a write"
     assert "empty" in str(outcome.get("content", "")).lower()
+
+
+def test_an_inert_candidate_reaches_the_client_as_a_rejection() -> None:
+    """#173 review round 1, F2 / the issue's instrument 5: a node-level pin
+    does not prove the chain (#155's lesson), so a ``pass``-only candidate —
+    the headline case, literally the injected smoke test's own body — goes
+    through the real marshal nodes rather than being read directly. Same
+    shape as ``test_an_empty_candidate_reaches_the_client_as_a_rejection``
+    above, for the inert rather than the empty case.
+    """
+    envelope = _envelope("pass\n")
+    assert envelope["_tests_pass"] is True, (
+        "the smoke test must still pass against a pass-only candidate, or "
+        "this pins the wrong thing"
+    )
+    outcome = _serving_tail({k: v for k, v in envelope.items() if k != "_tests_pass"})
+
+    assert outcome.get("finish") is True, outcome
+    assert "file" not in outcome, "an inert candidate reached the client as a write"
+    assert "executable" in str(outcome.get("content", "")).lower()
