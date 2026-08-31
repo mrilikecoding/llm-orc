@@ -804,3 +804,156 @@ def test_lambda_parameters_are_bound_names_for_excision() -> None:
     result = _executor("square", wrong_code, tests)
     assert result["tests_excised"] == 0
     assert result["tests_pass"] is False
+
+
+# --- #176 review round 1: has_cases must not guess TestCase-ness from a
+# class's base name; the runner's real issubclass check decides what runs,
+# and the outcome (not the guess) decides the verdict ---
+
+
+def test_a_locally_subclassed_testcase_base_still_runs() -> None:
+    """W8: the committed `_is_testcase` recognised only a base literally
+    named `TestCase` / `*.TestCase`. A tests-file class that subclasses a
+    project-defined TestCase subclass instead — `class TestBad(SharedCases):
+    pass`, where `SharedCases` (defined in the solution code) derives
+    `unittest.TestCase` and carries a failing test — never matched that
+    heuristic: no `__cases__` child was spawned, the failing inherited test
+    never ran, and the gate wrongly ACCEPTED. Fixed by no longer guessing:
+    `has_cases` is the presence of ANY class, and the runner's real
+    `issubclass` check finds `TestBad` regardless of its base's name."""
+    code = (
+        "import unittest\n\n\n"
+        "class SharedCases(unittest.TestCase):\n"
+        "    def test_inherited(self):\n"
+        "        assert False, 'should fail'\n"
+    )
+    tests = (
+        "def test_ok():\n    assert True\n\n\nclass TestBad(SharedCases):\n    pass\n"
+    )
+    verdict = _executor("shared cases", code, tests)
+    assert verdict["tests_pass"] is False, verdict["report"]
+
+
+def test_an_aliased_testcase_import_still_runs() -> None:
+    """W7: `from unittest import TestCase as TC` defeats the same
+    base-name heuristic as W8 — an aliased import, not a locally-derived
+    base, but the same failure to recognise the base as TestCase by
+    reading its literal name. The method is named `testFails` (no
+    underscore) so the nested-test-def legacy fallback never masks the
+    dispatch decision, matching the F2 vacuity fix."""
+    tests = (
+        "from unittest import TestCase as TC\n\n\n"
+        "def test_ok():\n"
+        "    assert True\n\n\n"
+        "class TestBad(TC):\n"
+        "    def testFails(self):\n"
+        "        assert False, 'should fail'\n"
+    )
+    verdict = _executor("aliased testcase", "", tests)
+    assert verdict["tests_pass"] is False, verdict["report"]
+
+
+def test_a_locally_named_testcase_helper_does_not_wrong_reject() -> None:
+    """W10: the committed `_is_testcase` matched literal base name
+    "TestCase" regardless of what that name actually pointed at. A
+    project helper `class Fixture(TestCase)` whose `TestCase` is a plain
+    LOCAL class (not `unittest.TestCase`) spawned a `__cases__` child that
+    could only report empty, and the (pre-fix) executor treated that empty
+    child as a failure — rejecting a suite whose real test passed. Fixed:
+    an empty `__cases__` child is not a failure by itself."""
+    tests = (
+        "class TestCase:\n"
+        "    pass\n\n\n"
+        "class Fixture(TestCase):\n"
+        "    value = 3\n\n\n"
+        "def test_add():\n"
+        "    assert 1 + 2 == Fixture.value\n"
+    )
+    verdict = _executor("local testcase double", "", tests)
+    assert verdict["tests_pass"] is True, verdict["report"]
+
+
+def test_an_empty_cases_child_does_not_fail_a_suite_with_passing_tests() -> None:
+    """#176 F2 vacuity repair: a genuine `unittest.TestCase` with NO test
+    methods of its own (only a non-test helper method), alongside a real
+    passing top-level test. No nested `test_*` def exists (`configure` has
+    no underscore-`test_` prefix), so `_enumerate_tests` takes the
+    isolated path and `has_cases` genuinely drives the `__cases__`
+    dispatch — unlike the committed pin this replaces, which took the
+    legacy fallback and never exercised it. The `__cases__` child collects
+    zero tests (the real TestCase has none of its own) and must not fail
+    the suite whose real test passed.
+
+    Mutation-verified (rule 16): reverting `_run_children`'s empty-cases
+    skip to an unconditional `if not ok: failures.append(report)` flips
+    this pin's `tests_pass is True` assertion to `False` — confirmed by
+    hand during this rework and reverted afterward.
+    """
+    tests = (
+        "import unittest\n\n\n"
+        "class Setup(unittest.TestCase):\n"
+        "    def configure(self):\n"
+        "        return None\n\n\n"
+        "def test_add():\n"
+        "    assert add(1, 2) == 3\n"
+    )
+    verdict = _executor("empty testcase", "def add(a, b):\n    return a + b\n", tests)
+    assert verdict["tests_pass"] is True, verdict["report"]
+    assert verdict["n_tests"] == 1
+
+
+def test_a_file_with_only_a_non_testcase_class_refuses() -> None:
+    """#176 review round 1 INVARIANT, second half: `has_cases` only means
+    "a class exists" — when that class is not a real TestCase and nothing
+    else in the file is runnable, the gate refuses with the same reason
+    the legacy path already gives, rather than silently reporting a pass
+    on zero executed tests."""
+    verdict = _executor("no tests", "", "class Fixture:\n    value = 3\n")
+    assert verdict["tests_pass"] is False
+    assert verdict["report"] == "no test_* functions or TestCase classes found"
+    assert verdict["n_tests"] == 0
+
+
+def test_all_doomed_with_a_helper_class_still_reports_the_nameerror() -> None:
+    """#172/#176 F5: `_excise_unbound_callable_tests`'s `has_cases` used to
+    let a bare class's presence license excising every doomed test, on the
+    theory that the class might cover the suite instead — but the function
+    has no way to verify that at analysis time (a plain helper contributes
+    nothing), and guessing wrong destroys the real NameError with nothing
+    to replace it. Declining costs nothing: a doomed test NameErrors for
+    real either way, class or no class. Demonstrating input: every
+    top-level test calls a name bound nowhere, and a helper class is
+    present."""
+    tests = (
+        "class Fixture:\n"
+        "    value = 3\n\n\n"
+        "def test_missing():\n"
+        "    assert file_exists('x')\n"
+    )
+    result = _executor("file ops", "", tests)
+    assert result["tests_excised"] == 0
+    assert result["tests_pass"] is False
+    assert "file_exists" in result["report"]
+
+
+def test_a_pytest_style_class_refuses_instead_of_silently_passing() -> None:
+    """#176 F8 (W3): a pytest-style class (`class TestMath: def
+    test_add(self): ...`, no TestCase anywhere) is invisible to the
+    runner — not a top-level `test_*` function, not a real TestCase
+    subclass. Before this fix, a passing top-level test masked the
+    skipped class entirely and the gate reported 'all passed' while the
+    failing class silently never ran. The runner does not grow
+    pytest-class execution this arc (adjudicated, review round 1); the
+    gate refuses honestly instead of guessing."""
+    code = "def add(a, b):\n    return a + b\n"
+    tests = (
+        "def test_something_real():\n"
+        "    assert True\n\n\n"
+        "class TestMath:\n"
+        "    def test_add(self):\n"
+        "        assert add(1, 2) == 999\n"
+    )
+    verdict = _executor("pytest-style class", code, tests)
+    assert verdict["tests_pass"] is False
+    assert "TestMath" in verdict["report"]
+    assert "cannot execute" in verdict["report"]
