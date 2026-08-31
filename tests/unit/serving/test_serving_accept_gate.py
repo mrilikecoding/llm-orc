@@ -998,7 +998,13 @@ def test_a_pytest_style_class_inheriting_from_the_produced_code_refuses() -> Non
     base class defined in the produced CODE file, not the tests file — so
     the class's own AST body (in the tests source) has no FunctionDef at
     all. `getattr`/`dir` walk the MRO in the real post-exec namespace and
-    catch it regardless of which file defined the method."""
+    catch it regardless of which file defined the method.
+
+    R-1 (review round 3): `Base` itself lives in the CODE and must not be
+    named in the refusal — only `TestSub` (the tests-side class) is a
+    genuine leak. `code_names` skips any class whose NAME the code exec
+    already bound, before the tests exec ever ran.
+    """
     code = (
         "class Base:\n"
         "    def test_from_code(self):\n"
@@ -1008,6 +1014,7 @@ def test_a_pytest_style_class_inheriting_from_the_produced_code_refuses() -> Non
     verdict = _executor("W21", code, tests)
     assert verdict["tests_pass"] is False
     assert "TestSub" in verdict["report"]
+    assert "Base" not in verdict["report"]
 
 
 def test_an_imported_test_attribute_still_refuses() -> None:
@@ -1077,3 +1084,48 @@ def test_a_solo_leak_names_the_class_not_the_generic_reason() -> None:
     assert verdict["tests_pass"] is False
     assert "TestOnlyLeak" in verdict["report"]
     assert "no test_* functions or TestCase classes found" not in verdict["report"]
+
+
+# --- #176 review round 3: R-1 (blocker, a regression the round-2 runner
+# scan introduced) + R-2 (minor, same root) ---
+
+
+def test_a_production_class_with_a_test_prefixed_method_accepts() -> None:
+    """R-1 (blocker): `_leaked_test_classes` scans the MERGED namespace,
+    and the runner execs the produced CODE into it first — so an ordinary
+    deliverable class with a production method that happens to start with
+    `test_` (`class Database: def test_connection(self): ...`) wrong-
+    REJECTED a clean suite, with a reason untrue of the file: the class is
+    in the CODE, not the tests. Fixed by snapshotting the names the code
+    exec bound BEFORE the tests exec (`code_names`), and skipping any
+    class whose NAME is in that snapshot."""
+    code = (
+        "class Database:\n"
+        "    def test_connection(self):\n"
+        "        return True\n\n\n"
+        "def add(a, b):\n"
+        "    return a + b\n"
+    )
+    tests = "def test_add():\n    assert add(1, 2) == 3\n"
+    verdict = _executor("L1", code, tests)
+    assert verdict["tests_pass"] is True, verdict["report"]
+    assert "Database" not in verdict["report"]
+
+
+def test_a_hostile_metaclass_does_not_crash_the_runner() -> None:
+    """R-2 (minor, same root as R-1): a class whose metaclass makes
+    `dir()` raise used to crash the runner child with a raw traceback
+    ('runner crashed: ...') instead of a clean verdict. `dir(obj)` is now
+    wrapped in try/except -> skip that class."""
+    tests = (
+        "class HostileMeta(type):\n"
+        "    def __dir__(cls):\n"
+        "        raise RuntimeError('nope')\n\n\n"
+        "class Hostile(metaclass=HostileMeta):\n"
+        "    pass\n\n\n"
+        "def test_ok():\n"
+        "    assert True\n"
+    )
+    verdict = _executor("L7", "", tests)
+    assert verdict["tests_pass"] is True, verdict["report"]
+    assert "runner crashed" not in verdict["report"]
