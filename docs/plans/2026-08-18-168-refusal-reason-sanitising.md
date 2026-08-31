@@ -300,8 +300,9 @@ wrap — covered by its own pins rather than folded into the six above:
   `stderr` rather than `error`. `_engine_failure_summary` handles that
   family's `error` by accident of the `failed with exit code` alternative;
   nothing scrubs or retains its `stderr`. Carried on #174.
-- The "numeric by construction" safety argument now has its own pin, over
-  the OUTPUT SHAPE rather than any input. Review found a mutant that survived
+- The "numeric by construction" safety argument now has its own pin
+  (`test_no_error_text_can_survive_the_summary`), over the OUTPUT SHAPE
+  rather than any input. Review found a mutant that survived
   every other pin: widening the timeout capture to `(.+?)` re-opens a
   verbatim channel, and a shape assertion catches it whatever it captures.
 - The sanitiser is in `shape.py`, which is deliberately stdlib-only so it
