@@ -67,7 +67,11 @@ def _known_names() -> set[str]:
     names: set[str] = set()
     for pattern in _CODE:
         for path in REPO.rglob(pattern):
-            if _SKIP & set(path.parts):
+            # Relative parts, not absolute: a delegated agent's checkout
+            # lives AT .claude/worktrees/<agent>/, and matching the absolute
+            # path skipped every file it owned (measured: zero known names,
+            # 16 false drift reports in make lint).
+            if _SKIP & set(path.relative_to(REPO).parts):
                 continue
             try:
                 names.update(_TOKEN.findall(path.read_text(encoding="utf-8")))
