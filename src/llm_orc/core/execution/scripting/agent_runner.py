@@ -294,8 +294,10 @@ class ScriptAgentRunner:
         # fix is named for. It is not the whole answer, though; see below.
         if resolver.is_inline_content(script_ref):
             # ScriptAgent does NOT use this predicate. It decides
-            # file-vs-inline with os.path.exists, at three separate sites (a
-            # fourth, _execute_interactive, raises instead — never cached), so
+            # file-vs-inline with os.path.exists, at three separate sites —
+            # its own _execute_interactive among them (this class's
+            # _execute_interactive is the one that raises instead — never
+            # cached), so
             # a bare name that happens to name a file in the process CWD gets
             # EXECUTED as a file while this call would name it content — the
             # #160 key, and a regression review round 4 caught round 3

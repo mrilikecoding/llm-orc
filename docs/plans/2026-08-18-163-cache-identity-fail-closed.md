@@ -34,8 +34,10 @@ that:
 succeeds**: fd exhaustion (`EMFILE`/`ENFILE`), `EIO`/`ESTALE` on a network
 filesystem, or an ENOENT race where the file is replaced between the resolve
 and the read. Fd pressure is the plausible one here, and #158 made it more
-so — script agents now run concurrently on a dedicated thread pool, so many
-whole-file reads overlap where they used to be serialized.
+so — script agents now run concurrently on a dedicated thread pool, so the
+interpreters' file opens overlap where they used to be serialized. (The
+identity's own `read_bytes` runs synchronously on the event loop and cannot
+overlap another; the fd pressure it feels comes from the pool beside it.)
 
 Severity is unchanged from the issue's: the bad key persists for the 3600s
 TTL, and under `persist_to_artifacts` it crosses processes.
@@ -117,8 +119,9 @@ resolution failure is a run failure and #159 already declines to cache those.
 
 **Scope decision, deliberate.** The issue asks only about the `read_bytes`
 raise. The non-regular-file row is included because it degrades identically
-and today has a pin asserting the degradation (`test_a_fifo_reference_does_
-not_hang_the_agent` asserts a path-only identity). Shipping a fix whose
+and today has a pin asserting the degradation
+(`test_a_fifo_reference_does_not_hang_the_agent` asserts a path-only
+identity). Shipping a fix whose
 stated invariant is already violated one branch over is how invariants drift
 (doctrine 4: state the invariant, not the instance). That pin's real subject
 — computing an identity must not HANG on a FIFO — is unchanged; only its
@@ -215,10 +218,16 @@ latter.
 - **A legitimately inline reference that collides with a CWD entry is
   silently uncacheable.** The cost of failing closed on the #177
   disagreement. It can only refuse, never serve wrong, and no shipped
-  `script:` value can hit it — every one in the repo's YAML is a `.py`
-  reference carrying a separator — but a project using a bare-word inline
-  script in a directory that happens to contain a file of that name loses
-  caching with no error. A debug log names it.
+  `script:` value can hit it — none is extensionless. Two carry no
+  separator (`aggregator.py` in `adr-swarm-review.yaml`,
+  `test_simple_input.py` in `testing/simple-input-test.yaml`; derive:
+  `grep -rn --include="*.yaml" --include="*.yml" -E
+  "^[[:space:]]*script:[[:space:]]*[^/\\ ]*$" .` — two rows), but the
+  `SCRIPT_EXTENSIONS` clause classifies both as
+  paths. So the bound is live only for a future extensionless bare-word
+  ref (`script: helper`): a project using one in a directory that happens
+  to contain a file of that name loses caching with no error. A debug log
+  names it.
 - **The whole change is inert on a default install.** `ScriptCacheConfig`
   ships `enabled = False` (#160), and `cacheable` gates the identity
   computation entirely, so none of this runs until a project opts in. The
