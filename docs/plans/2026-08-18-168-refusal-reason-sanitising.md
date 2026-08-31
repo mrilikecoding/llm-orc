@@ -115,7 +115,10 @@ is that it is not closed and is not closeable by this rule.
 ## Regression instruments
 
 F8 (round 8 confirmation review): this section named no `test_*` identifier
-while the arc shipped 21 pins (25 after round 8), so `scripts/check_doc_drift.py`
+while the arc shipped 21 pins (25 after round 8; 26 after round 8b's
+`test_an_exception_whose_str_raises_still_reports_the_test`, the guard
+that keeps a raising `__str__` from crashing the runner child), so
+`scripts/check_doc_drift.py`
 (loop-protocol rule 19, added after this branch started) had nothing to
 resolve. Every pin below is named in backticks and drawn from the tree —
 `grep -n "^def test_" tests/unit/serving/test_serving_shape.py` plus the
