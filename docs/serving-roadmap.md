@@ -142,10 +142,11 @@ fix rule 18 had been pointing at since round 6.
 
 ### Open, and which are small
 
-- **#175** — a refusal reason can still carry any path-free string produced
-  code reads server-side, including environment values, because the sandbox
-  inherits the environment. Next after #172/#176 merge. Env-scrub is small;
-  the closed report vocabulary is not.
+- **#175** — the env-scrub slice is MERGED (produced code runs under an
+  empty environment; the child's true census — PEP 538's LC_CTYPE plus
+  macOS's UID-bearing __CF_USER_TEXT_ENCODING — is pinned, and the
+  pwd-route username is pinned as the accepted bound). The issue stays
+  open for the closed-report-vocabulary half, riding #180/#142.
 - **#180** — filed this session from #168 round 8b: the accept report is
   unbounded and unittest itself teaches the model to inflate it
   (`maxDiff = None`). #114/#175 family.
@@ -235,7 +236,8 @@ Remaining, in order:
 - [x] #172 #176 merged after four rounds (runner-namespace judgment, library
   source resolution rebuilt: explicit env path trusted on existence, cwd and
   packaged candidates content-gated non-empty, `("local","")` never escapes)
-- [ ] #175 — small, fix rather than queue (rule 13); env-scrub slice next
+- [x] #175 env-scrub slice merged (empty child env, census pinned, bounds
+  named); the vocabulary half stays open on #175, riding #180/#142
 - [ ] #171 #174 #177 — the general fixes the two long arcs circled
 - [ ] #161 #162 #165 — script-cache purity/imports and the -n auto flake;
   #155 Arcs B/C remainder
@@ -370,7 +372,7 @@ dishonest outcome.
 - [x] #179 the doc-drift check knows its names inside agent worktrees
 - [x] #172 #176 — an empty submodule is not a library; the gate's verdict
   comes only from tests the runner executes (four rounds)
-- [ ] #151 runtime-window detector remainder · #155 Arcs B/C · #174 a dead seat ships the engine envelope as the answer · #175 path-free strings still reach the wire · #177 three file-vs-inline classifiers · #180 the accept report is unbounded · #161 cache purity · #162 cache misses imports · #165 `-n auto` flake · #85 sandbox hardening · #84 gate adversarial harness · #90 llama.cpp · #93 hot path · #95 dead surface · #106 shape home · #110 artifact quality · #114 trace cap · #132 BitNet · #142 reject templates
+- [ ] #151 runtime-window detector remainder · #155 Arcs B/C · #174 a dead seat ships the engine envelope as the answer · #175 vocabulary half (env route CLOSED; path-free literals still reach the wire) · #177 three file-vs-inline classifiers · #180 the accept report is unbounded · #161 cache purity · #162 cache misses imports · #165 `-n auto` flake · #85 sandbox hardening · #84 gate adversarial harness · #90 llama.cpp · #93 hot path · #95 dead surface · #106 shape home · #110 artifact quality · #114 trace cap · #132 BitNet · #142 reject templates
 
 ### epic:off-path
 #80 #65 #30 #66 — parked, not on the north-star path.
@@ -416,15 +418,16 @@ Superseded by epic labels: `gh issue list --label epic:<name>`. Closed
 #107–#109 #111–#113 #115 #116 #118 #120 #133 #134 #138 #139 #145 #152
 #153 #154 #156 #157 #158 #159 #160 #164.
 
-**#163 #166 #168 #169 #170 #173 #178 #179 are merged on local main and
-still OPEN on GitHub**, because nothing is pushed. They close when the push
-lands, not before — the roadmap said "closed" here first, which is the kind
-of claim rule 15 exists for.
+**#163 #166 #168 #169 #170 #172 #173 #176 #178 #179 are merged on local
+main and still OPEN on GitHub**, because nothing is pushed. They close when
+the push lands, not before — the roadmap said "closed" here first, which is
+the kind of claim rule 15 exists for. #175 is merged in part (env slice)
+and stays open by design for its vocabulary half.
 
 Filed 2026-08-30 from review findings, all measured, none previously
 tracked: #171 #172 #173 #174 #175 #176 #177 #178, then #179 (fixed+merged)
-and #180 (open) in the evening session. #172 and #176 are reworked on
-`fix/172-176-small-fixes`, round-2 review running.
+and #180 (open) in the evening session. #172 and #176 merged after four
+review rounds.
 
 Two closed issues gate work that is tracked elsewhere: **#138**
 (instrument shipped; the paid runs are #167) and **#139** (curve
