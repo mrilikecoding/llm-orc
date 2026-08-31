@@ -839,7 +839,10 @@ def test_a_unittest_diff_over_relative_paths_keeps_the_evidence() -> None:
 
     The cause is that an `assertEqual` diff is MULTI-LINE: its last line is a
     diff fragment with no colon, so the type salvage had nothing to keep.
-    `_exception_line` scans back for the type wherever the message ends.
+    Round 8 (#178) deleted the scan entirely — `_safe_reason` sees the live
+    exception object, so the message not being path-free means the whole
+    message is dropped by the same check it always used, not by a
+    traceback-shape coincidence.
     """
     report = _executor_report(
         'def listing():\n    return ["src/a.py"]\n',
@@ -865,11 +868,14 @@ def test_a_decoy_message_line_does_not_displace_the_exception_class() -> None:
         AssertionError('Response mismatch:\\nStatus: 404\\nBody: not found')
         -> 'test_response: Body: not found'    the class dropped entirely
 
-    Not a leak — the caller's checks still hold — but it is the same
-    evidence loss this arc has re-fixed in rounds 2, 3, 4 and 5, wearing
-    "wrong match" instead of "no match". The traceback's own grammar settles
-    it: frames are indented, the exception line is the first column-0 line
-    after them.
+    Round 8 (#178) deleted the scan: the ``TestCase`` branch now reports the
+    live exception object through `_safe_reason`, same as `_run_test_fns`,
+    so there is no line to displace the class in the first place. The full
+    message — decoy line and all — is kept, because it names no path; that
+    is `_safe_reason`'s existing discipline, not a new exception for this
+    input. What the original bug lost (the class) and what round 6's own
+    fix happened to also lose (everything past the first physical line) are
+    both restored.
     """
     report = _executor_report(
         "",
@@ -882,8 +888,8 @@ def test_a_decoy_message_line_does_not_displace_the_exception_class() -> None:
         ),
     )
 
-    assert "AssertionError" in report, report
-    assert "Body: not found" not in report, report
+    assert "AssertionError: Response mismatch" in report, report
+    assert "Body: not found" in report, report
 
 
 def test_a_chained_exception_reports_the_one_that_failed() -> None:
@@ -897,7 +903,10 @@ def test_a_chained_exception_reports_the_one_that_failed() -> None:
 
     Asymmetry worth noting: the `test_*`-function branch never had this bug,
     because `_safe_reason` works on the live exception object rather than on
-    formatted text. Only the TestCase branch parses a traceback.
+    formatted text. Round 8 (#178) closed the asymmetry by deleting the
+    `TestCase` branch's parser and routing it through `_safe_reason` too —
+    the class here is asserted directly off the exception `_LiveResult`
+    captured, not recovered from any grammar, chained or not.
     """
     report = _executor_report(
         "",
@@ -914,3 +923,108 @@ def test_a_chained_exception_reports_the_one_that_failed() -> None:
 
     assert "RuntimeError" in report, report
     assert "ValueError" not in report, report
+
+
+def test_a_multiline_string_diff_keeps_the_evidence() -> None:
+    """Round 8 (#178), and the confirmation review's blocking finding.
+
+    `difflib.ndiff` prefixes UNCHANGED lines with two spaces. Round 5's
+    fix assumed every diff line sits at column 0; that is false the moment
+    the compared strings share a line, and `assertEqual` over two
+    multi-line strings routes through `assertMultiLineEqual`, which is
+    exactly `ndiff`. The two-space context line reads as a frame to
+    `_exception_line`'s scan, the scan resets on it, and the LAST
+    candidate becomes a diff fragment instead of the exception type —
+    `AssertionError` is lost, not merely reduced to `failed`.
+    """
+    report = _executor_report(
+        "",
+        tests=(
+            "import unittest\n"
+            "class T(unittest.TestCase):\n"
+            "    def test_multiline(self):\n"
+            "        a = 'line one\\nline two\\nline three'\n"
+            "        b = 'line one\\nline TWO\\nline three'\n"
+            "        self.assertEqual(a, b)\n"
+        ),
+    )
+
+    assert "AssertionError" in report, report
+
+
+def test_a_twelve_item_list_diff_keeps_the_evidence() -> None:
+    """Same defect as the multi-line string above, on the other shape the
+    review named: a list long enough that `pprint.pformat` wraps it across
+    lines also produces two-space `ndiff` context lines. The shipped round
+    5 pin (`test_a_unittest_diff_over_relative_paths_keeps_the_evidence`)
+    passes only because its one-item lists pformat to a single line each,
+    which suppresses every context line — it never exercised the scan's
+    real failure mode.
+    """
+    items_a = ", ".join(f"'item{i}'" for i in range(12))
+    items_b = ", ".join(f"'item{i}'" for i in range(11)) + ", 'itemELEVEN'"
+    report = _executor_report(
+        "",
+        tests=(
+            "import unittest\n"
+            "class T(unittest.TestCase):\n"
+            "    def test_biglist(self):\n"
+            f"        a = [{items_a}]\n"
+            f"        b = [{items_b}]\n"
+            "        self.assertEqual(a, b)\n"
+        ),
+    )
+
+    assert "AssertionError" in report, report
+
+
+def test_a_forged_frame_in_the_message_does_not_displace_the_real_class() -> None:
+    """Review F5. A message containing an indented line — shaped like a
+    frame — followed by a column-0 line shaped like `Type: message`
+    displaces the real exception under the reset-and-keep-last scan: the
+    forged line reads as a fresh candidate immediately after what the scan
+    treats as a frame, and it is the last one seen.
+
+    The message content survives on the wire regardless — that part is
+    correct, since it names no path — but the reported CLASS must be the
+    live exception's, not text an attacker put inside its message.
+    """
+    report = _executor_report(
+        "",
+        tests=(
+            "import unittest\n"
+            "class T(unittest.TestCase):\n"
+            "    def test_forged(self):\n"
+            '        raise AssertionError("boom\\n    (forged) File '
+            "'evil.py', line 1\\nPermissionError: everything is fine\")\n"
+        ),
+    )
+
+    assert "AssertionError: boom" in report, report
+    assert "): PermissionError" not in report, report
+
+
+def test_a_subtest_failure_is_not_silently_dropped() -> None:
+    """Found while implementing round 8 (#178), not by review — worth
+    pinning precisely because it is not.
+
+    `unittest.TestResult.addSubTest`'s default implementation does NOT call
+    `addFailure`/`addError`; it appends straight to `self.failures`/
+    `self.errors`. A `_LiveResult` that only overrides the two would let a
+    produced test's `with self.subTest():` failure vanish entirely — not
+    reduced to `failed`, gone, with `tests_pass` coming back `True`. That is
+    a wrong-accept, and a worse regression than any of this arc's leaks:
+    those degraded evidence, this would have flipped the verdict.
+    """
+    report = _executor_report(
+        "",
+        tests=(
+            "import unittest\n"
+            "class T(unittest.TestCase):\n"
+            "    def test_sub(self):\n"
+            "        with self.subTest():\n"
+            "            raise AssertionError('sub failure')\n"
+        ),
+    )
+
+    assert "AssertionError: sub failure" in report, report
