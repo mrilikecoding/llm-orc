@@ -22,14 +22,12 @@ Exit 0 when every named test resolves, 1 otherwise.
 
 from __future__ import annotations
 
-import ast
 import re
 import sys
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
 DOCS = REPO / "docs" / "plans"
-TESTS = REPO / "tests"
 
 # A test name as a doc writes it: inside backticks, optionally qualified by a
 # class. Bare prose mentions are not matched — a name has to be marked up as
