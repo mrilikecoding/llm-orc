@@ -69,8 +69,8 @@ def _known_names() -> set[str]:
         for path in REPO.rglob(pattern):
             # Relative parts, not absolute: a delegated agent's checkout
             # lives AT .claude/worktrees/<agent>/, and matching the absolute
-            # path skipped every file it owned (measured: zero known names,
-            # 16 false drift reports in make lint).
+            # path skipped every file it owned — zero known names, so any
+            # wrong doc passed while every right name reported as drift.
             if _SKIP & set(path.relative_to(REPO).parts):
                 continue
             try:
