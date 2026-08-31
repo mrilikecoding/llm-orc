@@ -957,3 +957,123 @@ def test_a_pytest_style_class_refuses_instead_of_silently_passing() -> None:
     assert verdict["tests_pass"] is False
     assert "TestMath" in verdict["report"]
     assert "cannot execute" in verdict["report"]
+
+
+# --- #176 review round 2, N-1: rule 18's third instance of this file
+# guessing what runs from an AST shape. The static candidate scan +
+# aggregate-count-equality check (round 1's F8 fix) had a demonstrated
+# wrong-accept whenever a genuine TestCase ALSO contributed tests, since the
+# executed-test count then no longer equals the top-level function count by
+# coincidence. Moved to the runner, which scans the REAL post-exec namespace
+# instead of guessing from source. ---
+
+
+def test_a_failing_pytest_style_class_is_not_masked_by_a_real_testcase() -> None:
+    """W19: the round-1 aggregate-equality check assumed a passing suite's
+    executed-test count equals its top-level function count whenever a
+    pytest-style class contributes nothing — but a co-present, genuinely
+    passing `TestReal(unittest.TestCase)` also contributes, so the counts
+    never matched and the equality check never fired. A failing
+    pytest-style class (`TestPytestStyle.test_bad`) then silently never
+    ran and the gate reported 'all passed'."""
+    code = "def add(a, b):\n    return a + b\n"
+    tests = (
+        "import unittest\n\n\n"
+        "def test_ok():\n"
+        "    assert True\n\n\n"
+        "class TestPytestStyle:\n"
+        "    def test_bad(self):\n"
+        "        assert False, 'should fail'\n\n\n"
+        "class TestReal(unittest.TestCase):\n"
+        "    def test_real(self):\n"
+        "        self.assertTrue(True)\n"
+    )
+    verdict = _executor("W19", code, tests)
+    assert verdict["tests_pass"] is False
+    assert "TestPytestStyle" in verdict["report"]
+
+
+def test_a_pytest_style_class_inheriting_from_the_produced_code_refuses() -> None:
+    """W21: a pytest-style class's `test_*` method can be INHERITED from a
+    base class defined in the produced CODE file, not the tests file — so
+    the class's own AST body (in the tests source) has no FunctionDef at
+    all. `getattr`/`dir` walk the MRO in the real post-exec namespace and
+    catch it regardless of which file defined the method."""
+    code = (
+        "class Base:\n"
+        "    def test_from_code(self):\n"
+        "        assert False, 'should fail'\n"
+    )
+    tests = "def test_ok():\n    assert True\n\n\nclass TestSub(Base):\n    pass\n"
+    verdict = _executor("W21", code, tests)
+    assert verdict["tests_pass"] is False
+    assert "TestSub" in verdict["report"]
+
+
+def test_an_imported_test_attribute_still_refuses() -> None:
+    """W23: a pytest-style class's `test_*` attribute can be bound to an
+    IMPORTED callable (`test_it = helper_check`) rather than defined via
+    `def` in the tests source at all — the old AST scan looked for a
+    FunctionDef inside the class body and missed this entirely."""
+    code = "def helper_check(self):\n    assert False, 'should fail'\n"
+    tests = (
+        "from solution import helper_check\n\n\n"
+        "def test_ok():\n"
+        "    assert True\n\n\n"
+        "class TestImportedName:\n"
+        "    test_it = helper_check\n"
+    )
+    verdict = _executor("W23", code, tests)
+    assert verdict["tests_pass"] is False
+    assert "TestImportedName" in verdict["report"]
+
+
+def test_a_passing_pytest_style_class_still_refuses() -> None:
+    """W25 (adjudicated fail-closed trade): even a pytest-style class
+    whose `test_*` method WOULD pass if the runner could execute it still
+    refuses. The runner never attempts to run it at all, so there is no
+    way to know either way — guessing "it would have passed" is exactly
+    the leniency the F8 decision forecloses."""
+    tests = (
+        "def test_ok():\n"
+        "    assert True\n\n\n"
+        "class TestHarmless:\n"
+        "    def test_would_pass(self):\n"
+        "        assert True\n"
+    )
+    verdict = _executor("W25", "", tests)
+    assert verdict["tests_pass"] is False
+    assert "TestHarmless" in verdict["report"]
+
+
+def test_a_runtest_only_class_does_not_trigger_a_false_refusal() -> None:
+    """W22: a class with only a `runTest` method (unittest's own
+    default-method-name convention) and no `test_*` attribute at all, not
+    deriving TestCase, is not flagged. Nothing anywhere in this system
+    would ever execute it — not a top-level `test_*` function, not a real
+    TestCase, no `test_*` attribute for the leak scan to find — so
+    refusing would be a false refusal, not an honest one."""
+    tests = (
+        "def test_ok():\n"
+        "    assert True\n\n\n"
+        "class Runner:\n"
+        "    def runTest(self):\n"
+        "        assert False, 'never actually runs'\n"
+    )
+    verdict = _executor("W22", "", tests)
+    assert verdict["tests_pass"] is True, verdict["report"]
+
+
+def test_a_solo_leak_names_the_class_not_the_generic_reason() -> None:
+    """When the ONLY child spawned is `__cases__` (no top-level `test_*`
+    functions at all) and it finds a leaked class, `_run_children`'s
+    empty-cases allowance must not swallow the leak and fall through to
+    the generic "no test_* functions or TestCase classes found" — the
+    review's own wording requires naming the class(es), not just
+    reporting an empty run."""
+    code = "class Base:\n    def test_from_code(self):\n        assert False\n"
+    tests = "class TestOnlyLeak(Base):\n    pass\n"
+    verdict = _executor("leak, no top-level tests", code, tests)
+    assert verdict["tests_pass"] is False
+    assert "TestOnlyLeak" in verdict["report"]
+    assert "no test_* functions or TestCase classes found" not in verdict["report"]
