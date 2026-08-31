@@ -16,6 +16,7 @@ from pathlib import Path
 
 import pytest
 
+import scripts.check_doc_drift as check_doc_drift
 from scripts.check_doc_drift import check
 
 
@@ -72,10 +73,13 @@ def test_a_name_living_only_outside_the_test_tree_resolves(doc: Path) -> None:
     """What pins the SCAN's breadth. Narrowing it to `tests/**/test_*.py`
     leaves the previous pin green, because `test_writer` also appears in test
     fixtures — so that pin cannot discriminate the narrowing. This name lives
-    only in a benchmark fixture, which is exactly the kind of generated
-    identifier a design doc quotes."""
-    fixture = "test_" + "absolute_zero"
-    doc.write_text(f"The ladder's `{fixture}` case.\n")
+    only under `benchmarks/agentic_serving/tests/`, a TRACKED instrument pin.
+    Its predecessor (`test_` + `absolute_zero`) resolved only through
+    gitignored `.llm-orc/agentic-sessions/` artifacts — green in the
+    authoring checkout, red in any clean tree, worktree, or CI — which is
+    this file's own defect class, found in the #179 review."""
+    fixture = "test_" + "a_broken_pytest_command_is_unscored_not_red"
+    doc.write_text(f"The instrument's `{fixture}` case.\n")
 
     assert check([doc]) == []
 
@@ -87,6 +91,38 @@ def test_prose_without_backticks_is_not_a_claim(doc: Path) -> None:
     doc.write_text("the generated test_add_multiple_todo_items asserted two\n")
 
     assert check([doc]) == []
+
+
+def test_a_checkout_under_a_skip_named_directory_still_knows_its_names(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The skip set names directories INSIDE a checkout (htmlcov, dist, a
+    worktree's own .claude/worktrees). A checkout that itself lives under a
+    directory named like one — every delegated agent's worktree sits at
+    .claude/worktrees/<agent>/ — must still scan its own files. Measured:
+    inside such a worktree the checker knew zero names, so it passed any
+    wrong doc and reported 16 right names as drift in `make lint`."""
+    repo = tmp_path / "worktrees" / "agent-under-review"
+    (repo / "tests").mkdir(parents=True)
+    wanted = "test_" + "a_name_only_this_checkout_defines"
+    (repo / "tests" / "test_probe.py").write_text(f"def {wanted}(): ...\n")
+    monkeypatch.setattr(check_doc_drift, "REPO", repo)
+
+    assert wanted in check_doc_drift._known_names()
+
+
+def test_a_skip_directory_inside_the_checkout_is_still_skipped(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The companion bound: relativizing the parts must not stop the skip
+    from doing its one job on directories inside the checkout."""
+    repo = tmp_path / "clean-checkout"
+    (repo / "htmlcov").mkdir(parents=True)
+    unwanted = "test_" + "a_name_only_generated_output_defines"
+    (repo / "htmlcov" / "junk.py").write_text(f"def {unwanted}(): ...\n")
+    monkeypatch.setattr(check_doc_drift, "REPO", repo)
+
+    assert unwanted not in check_doc_drift._known_names()
 
 
 def test_the_shipped_design_docs_are_clean() -> None:
