@@ -161,6 +161,67 @@ class TestTheGuardDoesNotRejectRealCandidates:
 
         assert envelope["diagnostics"]["accept"] is True
 
+    def test_a_one_line_real_fix_still_accepts(self) -> None:
+        """#173's scope is inert candidates only — real code carrying any
+        statement (assignment, import, def...) is untouched, even a single
+        line. #171 is the general "does the deliverable participate" fix
+        and is out of scope here."""
+        envelope = _envelope("x = 1\n")
+
+        assert envelope["diagnostics"]["accept"] is True
+
+
+class TestAnInertCandidateIsNeverAccepted:
+    """#173: #169's emptiness check (``code.strip()``) is one ``#`` character
+    wide. A comment-only or docstring-only candidate parses, satisfies the
+    injected smoke test (a ``pass`` body is satisfied by no code), and would
+    otherwise ship — clobbering a file the client already has."""
+
+    def test_a_comment_only_candidate_is_rejected(self) -> None:
+        envelope = _envelope("# TODO: implement the fix\n")
+
+        assert envelope["_tests_pass"] is True, (
+            "the smoke test must still pass against a comment, or this pins "
+            "the wrong thing"
+        )
+        assert envelope["diagnostics"]["accept"] is False
+
+    def test_a_docstring_only_candidate_is_rejected(self) -> None:
+        envelope = _envelope('"""placeholder - could not fix."""\n')
+
+        assert envelope["_tests_pass"] is True, (
+            "the smoke test must still pass against a bare docstring, or "
+            "this pins the wrong thing"
+        )
+        assert envelope["diagnostics"]["accept"] is False
+
+    def test_a_comment_and_docstring_with_no_code_is_rejected(self) -> None:
+        envelope = _envelope('# nope\n"""placeholder"""\n')
+
+        assert envelope["_tests_pass"] is True, (
+            "the smoke test must still pass against a comment plus a "
+            "docstring, or this pins the wrong thing"
+        )
+        assert envelope["diagnostics"]["accept"] is False
+
+    def test_the_reject_reason_names_the_target_and_the_defect(self) -> None:
+        envelope = _envelope("# TODO: implement the fix\n")
+        reason = envelope["diagnostics"]["accept_reason"]
+
+        assert "executable" in reason.lower()
+        assert "calc.py" in reason, "the refusal must name what was not written"
+
+    def test_an_unparseable_candidate_is_rejected_and_does_not_crash(self) -> None:
+        """#173's guard must not itself raise on code the load gate already
+        rejects (SyntaxError at load, #169's mechanism) — fail closed, never
+        crash the node."""
+        envelope = _envelope("def broken(:\n")
+
+        assert envelope["_tests_pass"] is False, (
+            "the load gate must still catch this, or this pins the wrong thing"
+        )
+        assert envelope["diagnostics"]["accept"] is False
+
 
 def _serving_tail(envelope: dict[str, Any]) -> dict[str, Any]:
     """seat_contract -> shape -> form_gate -> emit, all real, with the
