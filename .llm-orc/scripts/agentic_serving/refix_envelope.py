@@ -17,12 +17,38 @@ pytest re-run remains the semantic verifier once a loadable fix ships.
 
 from __future__ import annotations
 
+import ast
 import json
 import sys
 
 from _helpers import deps as _deps
 from _helpers import payload as _payload
 from _helpers import response as _response
+
+
+def _is_inert(code: str) -> bool:
+    """True when no statement in ``code`` does anything: comment-only,
+    whitespace-only, a bare docstring, or several bare docstrings with
+    nothing else (#173). #169's ``code.strip()`` emptiness check is one
+    ``#`` character wide — a comment or a bare docstring both parse and
+    satisfy the injected smoke test (a ``pass`` body is satisfied by no
+    code), so either would clobber a file the client already has.
+
+    A candidate that fails to parse is not inert by this check — the
+    executor's load gate (compile/exec, #169's mechanism) already rejects
+    it via ``tests_pass=False``. If ``ast.parse`` here raises anyway, fail
+    closed (treat as inert) rather than let the exception escape this node.
+    """
+    try:
+        tree = ast.parse(code)
+    except SyntaxError:
+        return True
+    return all(
+        isinstance(stmt, ast.Expr)
+        and isinstance(stmt.value, ast.Constant)
+        and isinstance(stmt.value.value, str)
+        for stmt in tree.body
+    )
 
 
 def _executor_verdict(deps: dict[str, object]) -> tuple[bool, str]:
@@ -66,7 +92,12 @@ def main() -> None:
     # reference the target module passes against an empty candidate too, and
     # rung 1.5's visible test is whatever test_<stem>.py was found.
     candidate_present = bool(code.strip())
-    accept = tests_pass and candidate_present
+    # #173: a candidate that parses but carries no executable statement
+    # (comment-only, docstring-only, or both) is never a fix either — see
+    # _is_inert. Only checked when something survived .strip(), so this
+    # cannot change the emptiness branch below.
+    inert = candidate_present and _is_inert(code)
+    accept = tests_pass and candidate_present and not inert
     if not candidate_present:
         # Names the target (review round 1): #166's caller guard names the
         # file it declined to write, and a refusal the client cannot map to
@@ -74,6 +105,12 @@ def main() -> None:
         # from gather's own extraction — never from a path on this server.
         target = str(selected.get("target_file", "")) or "the file"
         reason = f"re-fix candidate for {target} is empty; the original is unchanged"
+    elif inert:
+        target = str(selected.get("target_file", "")) or "the file"
+        reason = (
+            f"re-fix candidate for {target} has no executable statement "
+            "(comment or docstring only); the original is unchanged"
+        )
     elif smoke_only:
         reason = (
             "candidate loads cleanly; no visible test, the client run verifies"
