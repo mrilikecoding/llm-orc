@@ -469,21 +469,32 @@ def test_a_real_testcase_still_runs() -> None:
     method named `test_it` — a nested `test_*` def, so `_enumerate_tests`
     took the legacy whole-run fallback and `has_cases` was never consulted
     at all; the pin stayed green even with `has_cases` hard-coded to
-    `False`. Reconstructed to actually drive the `__cases__` dispatch: the
-    method is named `testAdd` (no underscore), so it doesn't trip the
-    nested-test-def fallback, `_enumerate_tests` returns `has_cases=True`
-    with zero top-level names, and only the `__cases__` child can produce
-    a pass.
+    `False`. The method was renamed to `testAdd` (no underscore) to dodge
+    that fallback, but with zero top-level names the empty-vs-populated
+    `names` list ALSO decides which branch runs — with `has_cases`
+    mutated to `False`, `_run_sandboxed`'s "nothing enumerable" check
+    (`not names and not has_cases`) is true either way, so it falls to the
+    SAME legacy whole-run branch, which does real TestCase detection
+    unconditionally and passes regardless. Still vacuous (#176 review
+    round 2, N-2).
+
+    Fixed by adding a top-level `test_top`, so `names` is non-empty
+    regardless of `has_cases` and the isolated per-test path is taken
+    either way — but only a correct `has_cases=True` spawns the
+    `__cases__` child that runs `testAdd`. `n_tests == 2` (`test_top` +
+    `testAdd`) only when both run; a `has_cases=False` mutant contributes
+    only `test_top`, giving `n_tests == 1`.
     """
     verdict = _executor_verdict(
         "def add(a, b):\n    return a + b\n",
         "import unittest\n"
         "from solution import add\n\n"
+        "def test_top():\n"
+        "    assert True\n\n\n"
         "class TestAdd(unittest.TestCase):\n"
         "    def testAdd(self):\n"
         "        self.assertEqual(add(1, 2), 3)\n",
     )
 
     assert verdict["tests_pass"] is True, verdict["report"]
-    assert verdict["n_tests"] == 1
-    assert verdict["n_tests"] == 1
+    assert verdict["n_tests"] == 2

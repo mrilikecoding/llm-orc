@@ -399,9 +399,7 @@ def _inverted_expectation(stmt: ast.stmt) -> tuple[ast.Call, str] | None:
     call_stmt = stmt.body[0]
     if not (isinstance(call_stmt, ast.Expr) and isinstance(call_stmt.value, ast.Call)):
         return None
-    if not all(
-        len(h.body) == 1 and _is_assert_false(h.body[0]) for h in stmt.handlers
-    ):
+    if not all(len(h.body) == 1 and _is_assert_false(h.body[0]) for h in stmt.handlers):
         return None
     exc_name = _declared_expected_exception(stmt.handlers[0])
     if not exc_name or not _is_vacuous_else(stmt.orelse):
@@ -557,49 +555,6 @@ def _enumerate_tests(tests: str) -> tuple[list[str], bool] | None:
     return names, has_cases
 
 
-def _pytest_style_candidates(tests: str) -> list[str]:
-    """Names of module-level classes that define at least one method of
-    their own starting with ``test_`` — the pytest ``class TestFoo: def
-    test_x(self): ...`` dialect the runner has no mechanism to execute
-    (#176 F8). Requires an actual ``test_*`` method, not just a
-    Test-prefixed class name: a name-only match would misfire on an inert
-    local double like ``class TestCase: pass`` used purely as a base for
-    an unrelated helper (#176 W10) — that class has nothing to silently
-    skip, so flagging it would be a false refusal, not an honest one.
-    """
-    try:
-        tree = ast.parse(tests)
-    except SyntaxError:
-        return []
-    return [
-        node.name
-        for node in tree.body
-        if isinstance(node, ast.ClassDef)
-        and any(
-            isinstance(m, (ast.FunctionDef, ast.AsyncFunctionDef))
-            and m.name.startswith("test_")
-            for m in node.body
-        )
-    ]
-
-
-def _top_level_test_count(tests: str) -> int:
-    """Count of module-level ``test_*`` function defs — the same set the
-    runner's own ``test_fns`` collects, computed statically so #176 F8 can
-    tell whether a pytest-style candidate class actually contributed
-    anything to the run beyond them."""
-    try:
-        tree = ast.parse(tests)
-    except SyntaxError:
-        return 0
-    return sum(
-        1
-        for n in tree.body
-        if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
-        and n.name.startswith("test_")
-    )
-
-
 def _materialize(
     tmp: str,
     code: str,
@@ -631,7 +586,7 @@ def _run_one(
     target_file: str,
     only: str | None,
     timeout: float,
-) -> tuple[bool, str, int]:
+) -> tuple[bool, str, int, list[str]]:
     with tempfile.TemporaryDirectory() as tmp:
         code_path, tests_path = _materialize(tmp, code, tests, workspace, target_file)
         argv = [sys.executable, str(RUNNER), str(code_path), str(tests_path)]
@@ -647,18 +602,20 @@ def _run_one(
                 check=False,
             )
         except subprocess.TimeoutExpired:
-            return False, f"timeout after {timeout:g}s", 0
+            return False, f"timeout after {timeout:g}s", 0, []
     if completed.returncode != 0:
         detail = (completed.stderr.strip() or completed.stdout.strip())[:200]
-        return False, f"runner crashed: {detail}", 0
+        return False, f"runner crashed: {detail}", 0, []
     try:
         verdict = json.loads(completed.stdout)
     except json.JSONDecodeError:
-        return False, f"unreadable runner output: {completed.stdout[:200]!r}", 0
+        return False, f"unreadable runner output: {completed.stdout[:200]!r}", 0, []
+    leaked = verdict.get("leaked_classes", [])
     return (
         bool(verdict.get("tests_pass", False)),
         str(verdict.get("report", "")),
         int(verdict.get("n_tests", 0)),
+        [str(name) for name in leaked] if isinstance(leaked, list) else [],
     )
 
 
@@ -679,11 +636,15 @@ def _run_children(
     per-child timeout (check-before-spawn slack), not the budget alone.
 
     A ``__cases__`` child that ran and found zero real TestCase tests is
-    NOT a failure (#176 review round 1): ``has_cases`` only means "a class
-    exists in the file", not "it is a TestCase" — the runner's own real
-    ``issubclass`` check makes that call, and an empty result just means
-    this file's classes are not TestCase subclasses. The verdict comes
-    from the tests that actually ran; ``_run_sandboxed`` separately
+    NOT a failure (#176 review round 1) UNLESS the runner also reports
+    leaked classes: ``has_cases`` only means "a class exists in the
+    file", not "it is a TestCase" — the runner's own real ``issubclass``
+    check makes that call, and an empty result with no leak just means
+    this file's classes are not TestCase subclasses. But an empty result
+    WITH a leak (#176 review round 2, N-1) means the runner found a
+    class it cannot execute at all — that is not "nothing to report", so
+    it must not be swallowed by the empty-cases allowance. The verdict
+    comes from the tests that actually ran; ``_run_sandboxed`` separately
     refuses when NOTHING ran at all.
     """
     budget = _aggregate_budget()
@@ -699,11 +660,11 @@ def _run_children(
                 f"{remaining} of {n} tests not run"
             )
             break
-        ok, report, n_tests = _run_one(
+        ok, report, n_tests, leaked = _run_one(
             code, tests, workspace, target_file, only, timeout
         )
         total += n_tests
-        empty_cases_child = only == "__cases__" and n_tests == 0
+        empty_cases_child = only == "__cases__" and n_tests == 0 and not leaked
         if not ok and not empty_cases_child:
             failures.append(report)
     return failures, total
@@ -718,52 +679,37 @@ def _run_sandboxed(
     timeout = _timeout()
     enumerated = _enumerate_tests(tests)
     if enumerated is None or (not enumerated[0] and not enumerated[1]):
-        # unparseable or nothing enumerable: one legacy run reports it
-        ok, report, n_tests = _run_one(code, tests, workspace, target_file, None, timeout)
-    else:
-        names, has_cases = enumerated
-        capped = len(names) > _MAX_ISOLATED_TESTS
-        children: list[str | None] = list(names[:_MAX_ISOLATED_TESTS])
-        if has_cases:
-            children.append("__cases__")
-
-        failures, total = _run_children(
-            code, tests, workspace, target_file, timeout, children
+        # unparseable or nothing enumerable: one legacy run reports it.
+        # #176 F8 (review round 2, N-1): the runner's own leak scan
+        # already covers this path — nothing further needed here.
+        ok, report, n_tests, _leaked = _run_one(
+            code, tests, workspace, target_file, None, timeout
         )
-        if capped:
-            failures.append(f"…capped at {_MAX_ISOLATED_TESTS} isolated tests")
+        return ok, report, n_tests
 
-        # a load failure repeats identically in every child — report it once
-        deduped = list(dict.fromkeys(failures))
-        if deduped:
-            ok, report, n_tests = False, "; ".join(deduped), total
-        elif total == 0:
-            # #176 review round 1 INVARIANT: a file whose classes yield no
-            # runnable tests is judged by its remaining tests (handled
-            # above); a file with no runnable tests AT ALL refuses, same
-            # reason the legacy path already gives.
-            ok, report, n_tests = (
-                False,
-                "no test_* functions or TestCase classes found",
-                0,
-            )
-        else:
-            ok, report, n_tests = True, "all passed", total
+    names, has_cases = enumerated
+    capped = len(names) > _MAX_ISOLATED_TESTS
+    children: list[str | None] = list(names[:_MAX_ISOLATED_TESTS])
+    if has_cases:
+        children.append("__cases__")
 
-    if ok:
-        # #176 F8: a pytest-style class (name or methods, no TestCase) that
-        # contributed nothing beyond the top-level test_* functions was
-        # about to accept silently — the runner has no mechanism to
-        # execute that dialect this arc, so refuse honestly instead.
-        candidates = _pytest_style_candidates(tests)
-        if candidates and n_tests == _top_level_test_count(tests):
-            return (
-                False,
-                "tests define a class-based suite the runner cannot "
-                f"execute: {', '.join(candidates)}",
-                n_tests,
-            )
-    return ok, report, n_tests
+    failures, total = _run_children(
+        code, tests, workspace, target_file, timeout, children
+    )
+    if capped:
+        failures.append(f"…capped at {_MAX_ISOLATED_TESTS} isolated tests")
+
+    # a load failure repeats identically in every child — report it once
+    deduped = list(dict.fromkeys(failures))
+    if deduped:
+        return False, "; ".join(deduped), total
+    if total == 0:
+        # #176 review round 1 INVARIANT: a file whose classes yield no
+        # runnable tests is judged by its remaining tests (handled
+        # above); a file with no runnable tests AT ALL refuses, same
+        # reason the legacy path already gives.
+        return False, "no test_* functions or TestCase classes found", 0
+    return True, "all passed", total
 
 
 def main() -> None:
