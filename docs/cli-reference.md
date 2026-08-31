@@ -267,32 +267,31 @@ llm-orc library copy code-analysis/security-review --global
 
 #### Library Source Configuration
 
-By default, LLM Orchestra uses local filesystem detection: it checks for a `llm-orchestra-library/` directory in the current working directory, then falls back to a no-op if none is found. Remote GitHub is not used unless explicitly configured. To use a specific library source:
+By default (no environment variables set), `llm-orc library` commands resolve the library in this order: the current working directory's `llm-orchestra-library/`, then the library packaged with this install — each only counts when its `ensembles/` subdirectory exists and holds at least one entry (an empty directory, the normal state right after `git clone` without `--recurse-submodules` or after `git worktree add`, is never treated as a library). If neither resolves, library commands report no categories or ensembles found. Remote GitHub is used ONLY when explicitly requested. To use a specific library source:
 
 ```bash
-# Use a local library at a custom path
+# Use a local library at a custom path — trusted on its own existence,
+# not required to hold an ensembles/ directory (a profiles-only or
+# templates-only library is still a valid, intentional configuration)
 export LLM_ORC_LIBRARY_PATH=/path/to/llm-orchestra-library
 llm-orc library browse research-analysis
-
-# Use local package submodule explicitly
-export LLM_ORC_LIBRARY_SOURCE=local
-llm-orc library browse research-analysis  # Uses local submodule
-llm-orc init                              # Copies from local submodule
 
 # Use remote GitHub library
 export LLM_ORC_LIBRARY_SOURCE=remote
 llm-orc library browse research-analysis
 ```
 
-**When to use local library:**
+`LLM_ORC_LIBRARY_SOURCE=local` is a no-op: the packaged library is already checked by default whether or not this variable is set, and it does not affect `llm-orc init`, which copies profile templates through a separate configuration seam that plain `llm-orc init` does not wire up.
+
+**When to use a custom `LLM_ORC_LIBRARY_PATH`:**
 - Testing changes to library ensembles before publishing
 - Working on feature branches of the llm-orchestra-library
 - Offline development (when remote access unavailable)
 - Custom ensemble development and testing
 
-**Requirements for local library:**
-- The `llm-orchestra-library` submodule must be initialized and present
-- Clear error messages guide you if the local library is not found
+**Requirements for the cwd checkout and the packaged library:**
+- `ensembles/` must exist and hold at least one entry
+- Clear error messages guide you if no library is found anywhere
 
 ### Contributing to the Library
 
@@ -638,37 +637,26 @@ LLM Orchestra follows a configuration hierarchy:
 
 ### Library Path Configuration
 
-Control where `llm-orc init` finds primitive scripts using environment variables or project-specific configuration:
+Primitive scripts (`llm-orc scripts list`, used by script agents) ship as built-in package modules under `llm_orc.primitives` — `llm-orc init` does not copy them from `llm-orchestra-library/`, and `LLM_ORC_LIBRARY_SOURCE` has no effect on them (verified: a fresh `llm-orc init` with no environment variables set installs zero scripts either way). `LLM_ORC_LIBRARY_SOURCE=local` in particular is a no-op everywhere in the current CLI — see [Library Source Configuration](#library-source-configuration) above, where the same variable's only remaining meaning (`=remote`) is documented for the `llm-orc library` command group.
+
+`LLM_ORC_LIBRARY_PATH` and ensemble/profile directory discovery (`llm-orc list-ensembles`, model profiles) still resolve through `ConfigurationManager`, independently of the `llm-orc library` command group:
 
 ```bash
-# Option 1: Custom library location via environment variable
+# Custom library location via environment variable
 export LLM_ORC_LIBRARY_PATH="/path/to/your/custom-library"
-llm-orc init
 
-# Option 2: Project-specific configuration via .llm-orc/.env
+# Project-specific configuration via .llm-orc/.env
 mkdir -p .llm-orc
 echo 'LLM_ORC_LIBRARY_PATH=/path/to/your/custom-library' > .llm-orc/.env
-llm-orc init
-
-# Option 3: Use local submodule (development default)
-export LLM_ORC_LIBRARY_SOURCE=local
-llm-orc init
-
-# Option 4: Auto-detect library in current directory (no configuration needed)
-# Looks for: ./llm-orchestra-library/scripts/primitives/
-llm-orc init
 ```
 
-**Priority order:**
-1. `LLM_ORC_LIBRARY_PATH` environment variable - Explicit custom location (highest priority)
-2. `.llm-orc/.env` file - Project-specific configuration
-3. `LLM_ORC_LIBRARY_SOURCE=local` - Package submodule
-4. `./llm-orchestra-library/` - Current working directory auto-detection
-5. No scripts installed (graceful fallback)
+**Priority order (ensembles and profiles, not scripts):**
+1. `LLM_ORC_LIBRARY_PATH` environment variable — explicit custom location (highest priority)
+2. `.llm-orc/.env` file — project-specific configuration
+3. `./llm-orchestra-library/` — current working directory auto-detection
+4. Global config fallback, or nothing found
 
 **Note**: Environment variables always take precedence over `.env` file settings, allowing temporary overrides without modifying project files.
-
-This allows developers to maintain their own script libraries while still using llm-orc's orchestration features.
 
 ### XDG Base Directory Support
 Configurations follow the XDG Base Directory specification:
