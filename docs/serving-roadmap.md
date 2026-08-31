@@ -63,9 +63,21 @@ buy-back ledger tracks hosted seats.
 
 ### Next up
 
-The gate is empty: every branch this session opened or inherited is merged.
-Next: **#175** (env-scrub slice), then the arc-sized trio below, then the
-owed live-battery rows.
+The gate is empty and the handoff's executable queue is EXHAUSTED: both
+long arcs, every rule-13 small fix (#173, #175 env slice, #178-in-arc,
+#179), the #172/#176 rework, and #168's live validation row are merged.
+What remains forks three ways, and the fork is the practitioner's call:
+
+1. **Push** — 11 merge units close eight GitHub issues on landing; CI's
+   first look at the drift checker; `gh run watch` after.
+2. **Arc-sized trio** — #174 (dead seat on non-build routes ships the
+   engine envelope as the ANSWER; nearest to #168's just-validated
+   family), #177 (unify the three file-vs-inline classifiers; changes
+   what EXECUTES), #171 (the deliverable must participate; the general
+   fix #166/#169/#173 closed slices of).
+3. **Remaining live rows** — #166 #169 #173 #172 #176 #175; the
+   fault-injection template is recorded in the #168 gate record, but the
+   re-fix shapes need a seat-level injection design first.
 
 Nothing is pushed (`git log --oneline origin/main..main` for the count; 10
 merge units). The push — and the GitHub issue-closing that rides on it —
