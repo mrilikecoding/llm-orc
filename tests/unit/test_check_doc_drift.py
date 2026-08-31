@@ -73,10 +73,13 @@ def test_a_name_living_only_outside_the_test_tree_resolves(doc: Path) -> None:
     """What pins the SCAN's breadth. Narrowing it to `tests/**/test_*.py`
     leaves the previous pin green, because `test_writer` also appears in test
     fixtures — so that pin cannot discriminate the narrowing. This name lives
-    only in a benchmark fixture, which is exactly the kind of generated
-    identifier a design doc quotes."""
-    fixture = "test_" + "absolute_zero"
-    doc.write_text(f"The ladder's `{fixture}` case.\n")
+    only under `benchmarks/agentic_serving/tests/`, a TRACKED instrument pin.
+    Its predecessor (`test_` + `absolute_zero`) resolved only through
+    gitignored `.llm-orc/agentic-sessions/` artifacts — green in the
+    authoring checkout, red in any clean tree, worktree, or CI — which is
+    this file's own defect class, found in the #179 review."""
+    fixture = "test_" + "a_broken_pytest_command_is_unscored_not_red"
+    doc.write_text(f"The instrument's `{fixture}` case.\n")
 
     assert check([doc]) == []
 
