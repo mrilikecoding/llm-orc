@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import errno
+import hashlib
 import json
 import os
 import threading
@@ -16,6 +18,7 @@ from llm_orc.agents.script_agent import ScriptAgent
 from llm_orc.core.execution.progress_controller import NoOpProgressController
 from llm_orc.core.execution.scripting.agent_runner import ScriptAgentRunner
 from llm_orc.core.execution.scripting.cache import ScriptCache, ScriptCacheConfig
+from llm_orc.core.execution.scripting.resolver import ScriptResolver
 from llm_orc.core.execution.usage_collector import UsageCollector
 from llm_orc.schemas.agent_config import ScriptAgentConfig
 
@@ -541,7 +544,10 @@ class TestFailuresAreNotCached:
         asyncio.run(runner.execute(config, "{}"))
 
         # The cache is keyed by identity now (#160), not by the raw path.
+        # A digestable script always has one; None here would mean the
+        # entry could not exist at all (#163).
         identity = runner._cache_identity(str(script))
+        assert identity is not None
         entry = cache.get(identity, {"input_data": "{}", "parameters": {}})
         assert entry is not None
         assert "success" not in entry
@@ -669,6 +675,13 @@ class TestCacheIdentity:
 
         assert json.loads(first)["v"] == "one"
         assert json.loads(second)["v"] == "two"
+        # Review round 4: without this the pin stopped discriminating its own
+        # named mutant. Dropping project_dir now yields None rather than the
+        # reference, so nothing caches, both runs execute fresh, and the
+        # edit assertions are satisfied by the cache being ABSENT rather than
+        # by invalidation working. Same inoculation
+        # test_the_cross_process_case_is_invalidated already carries.
+        assert cache.get_stats()["sets"] == 2, "nothing was cached at all"
 
     def test_the_cross_process_case_is_invalidated(self, tmp_path: Path) -> None:
         """The worst case the issue names: a FRESH ScriptCache reading the
@@ -772,19 +785,25 @@ class TestCacheIdentity:
         assert spy.call_count == 0
 
     def test_a_fifo_reference_does_not_hang_the_agent(self, tmp_path: Path) -> None:
-        """Why the guard is os.path.isfile and not os.path.exists.
+        """Why the guard tests the file TYPE and not mere existence.
 
         A FIFO resolves fine and is not a regular file. read_bytes blocks
-        on open until a writer appears, so with `exists` in place of
-        `isfile` computing a cache key hangs the agent forever — and
-        review showed that swap survives the whole suite unpinned. A
-        watchdog thread is the cheap way to pin a hang.
+        on open until a writer appears, so a guard that asked only whether
+        something is THERE would hang the agent forever — and review showed
+        that swap surviving the whole suite unpinned. The guard is now
+        `stat.S_ISREG` on a single stat; the hazard and this pin are
+        unchanged by that. A watchdog thread is the cheap way to pin a hang.
+
+        The identity itself is now None rather than the path (#163): a
+        FIFO is a real filesystem object whose bytes we cannot name, and
+        returning the path was the #160 key shape. The hang is what this
+        pin is for and it is unchanged.
         """
         fifo = tmp_path / "piped.sh"
         os.mkfifo(fifo)
         runner = self._runner(ScriptCache(ScriptCacheConfig(enabled=True)))
 
-        result: list[str] = []
+        result: list[str | None] = []
         worker = threading.Thread(
             target=lambda: result.append(runner._cache_identity(str(fifo))),
             daemon=True,
@@ -793,7 +812,7 @@ class TestCacheIdentity:
         worker.join(timeout=5)
 
         assert not worker.is_alive(), "computing a cache identity hung on a FIFO"
-        assert result == [str(fifo)], "a FIFO must yield no digest"
+        assert result == [None], "a FIFO must not be cacheable"
 
     def test_an_edit_reverted_mid_run_is_a_known_wrong_accept(
         self, tmp_path: Path
@@ -900,21 +919,26 @@ class TestCacheIdentity:
     def test_inline_content_with_a_nul_byte_does_not_raise(
         self, tmp_path: Path
     ) -> None:
-        """One of three things the os.path.isfile guard uniquely buys.
+        """An awkward inline reference answers rather than raising.
 
-        Written after a mutation run showed that removing that guard killed
-        no pin. For inline content too long for PATH_MAX, read_bytes raises
-        OSError, which the except below already catches, so the guard is
-        redundant there. For inline content carrying a NUL byte it raises
-        ValueError, which an `except OSError` does NOT catch, so it escapes
-        _cache_identity and kills the run before the script is ever
-        executed.
+        Written when the guard was `os.path.isfile`, to pin the one thing
+        that guard uniquely bought: a NUL byte makes `read_bytes` raise
+        ValueError, which an `except OSError` does NOT catch, so it escaped
+        and killed the run before the script was ever executed.
 
-        Review later found two more, both non-files that resolve fine: a
-        FIFO, where read_bytes blocks on open until a writer appears and so
-        HANGS the agent, and a character device such as /dev/zero, which
-        reads unbounded. Neither is pinned here; a hang is awkward to pin
-        without a watchdog, and this pin already kills the mutant.
+        The mechanism has moved twice since, and the property is narrower
+        than a previous version of this docstring claimed. Inline content is
+        classified syntactically, but it still costs one `os.path.exists`
+        (#163 review round 4's fail-closed), so it is NOT true that these
+        shapes stay off the filesystem — measured, `echo hello`, a NUL byte
+        and a 5000-character string each take one `exists` and the `os.stat`
+        inside it. What holds is that `os.path.exists` ANSWERS for all three
+        rather than raising, so the run reaches the script.
+
+        It does NOT discriminate the classification: deleting the inline
+        short-circuit leaves it green, because the `except Exception` below
+        swallows what the stat then raises.
+        `test_inline_content_still_caches` is the pin for that.
         """
         cache = ScriptCache(ScriptCacheConfig(enabled=True))
         runner = self._runner(cache, project_dir=tmp_path)
@@ -996,3 +1020,407 @@ class TestCacheIdentity:
 
         assert cache.get_stats()["sets"] == 0
         assert cache.get_stats()["hits"] == 0
+
+
+class TestUndigestableScriptIsNotCached:
+    """#163: when the bytes cannot be digested, _cache_identity used to drop
+    to path-only — which IS the #160 bug it exists to fix — with no warning
+    and nothing observing the path. Removing the `except OSError` entirely
+    left the whole suite green.
+
+    The trigger the issue named (a script executable but not readable) is
+    refuted: every interpreter in script_agent.py's map must READ the file,
+    so an unreadable script fails to execute and #159 never caches a
+    failure. The reachable trigger is a TRANSIENT OSError while execution
+    still succeeds — fd exhaustion, EIO/ESTALE on a network filesystem, or
+    an ENOENT race — and #158 made overlapping whole-file reads the norm.
+    """
+
+    def _runner(
+        self,
+        cache: ScriptCache,
+        project_dir: Path | None = None,
+    ) -> ScriptAgentRunner:
+        return ScriptAgentRunner(
+            script_cache=cache,
+            usage_collector=UsageCollector(),
+            progress_controller=None,
+            emit_event=lambda name, data: None,
+            project_dir=project_dir,
+            performance_config={"execution": {"default_timeout": 30}},
+        )
+
+    def _emit(self, value: str) -> str:
+        return f'import json\nprint(json.dumps({{"v": "{value}"}}))\n'
+
+    @staticmethod
+    def _raising_read_bytes(target: Path) -> Any:
+        """Path.read_bytes that raises EMFILE for `target` only, so the
+        resolver and everything else in the run still read normally."""
+        real = Path.read_bytes
+
+        def flaky(self: Path, *args: Any, **kwargs: Any) -> bytes:
+            if self == target:
+                raise OSError(24, "Too many open files")
+            return real(self, *args, **kwargs)
+
+        return flaky
+
+    def test_a_transient_read_failure_serves_no_stale_result(
+        self, tmp_path: Path
+    ) -> None:
+        """The issue's reproduction, end to end. Under a transient OSError
+        the identity has no digest in it, so the entry written under it is
+        keyed on the path alone and the EDITED script is served the pre-edit
+        output for the whole TTL."""
+        script = tmp_path / "probe.py"
+        script.write_text(self._emit("one"))
+        cache = ScriptCache(ScriptCacheConfig(enabled=True))
+        runner = self._runner(cache)
+        config = ScriptAgentConfig(name="probe", script=str(script))
+        flaky = self._raising_read_bytes(script)
+
+        with patch.object(Path, "read_bytes", flaky):
+            first, _, _ = asyncio.run(runner.execute(config, "{}"))
+        script.write_text(self._emit("two"))
+        with patch.object(Path, "read_bytes", flaky):
+            second, _, _ = asyncio.run(runner.execute(config, "{}"))
+
+        assert json.loads(first)["v"] == "one"
+        assert json.loads(second)["v"] == "two", "served the pre-edit output"
+        assert cache.get_stats()["hits"] == 0
+
+    def test_nothing_is_written_under_a_digestless_identity(
+        self, tmp_path: Path
+    ) -> None:
+        """The WRITE half of the guard, observed directly.
+
+        Unlike the interactive skip — where the get and the set are
+        genuinely separate decisions, because byte-identity aliases
+        several references onto one key while requires_user_input judges
+        each reference separately (#160) — here both halves read one
+        predicate. So this is not an independence pin; it is the pin that
+        the poisoned entry is never created in the first place, which is
+        the half that outlives the process under persist_to_artifacts.
+        """
+        script = tmp_path / "probe.py"
+        script.write_text(self._emit("one"))
+        cache = ScriptCache(ScriptCacheConfig(enabled=True))
+        runner = self._runner(cache)
+        config = ScriptAgentConfig(name="probe", script=str(script))
+
+        with patch.object(Path, "read_bytes", self._raising_read_bytes(script)):
+            asyncio.run(runner.execute(config, "{}"))
+
+        assert cache.get_stats()["sets"] == 0
+
+    def test_an_existing_entry_is_not_consulted_without_a_digest(
+        self, tmp_path: Path
+    ) -> None:
+        """The READ half, against an entry that really is there: a healthy
+        run writes a real digest entry, then the same script is asked for
+        again while the digest cannot be taken.
+
+        The observation is the CALL, not the stats. A get that still ran
+        would look up the path-only key and simply miss, which is
+        indistinguishable from not looking — the same shape of false
+        green as #160's get-side skip that survived the whole suite.
+        """
+        script = tmp_path / "probe.py"
+        script.write_text(self._emit("one"))
+        cache = ScriptCache(ScriptCacheConfig(enabled=True))
+        runner = self._runner(cache)
+        config = ScriptAgentConfig(name="probe", script=str(script))
+
+        asyncio.run(runner.execute(config, "{}"))
+        assert cache.get_stats()["sets"] == 1, "the healthy run must cache"
+
+        with (
+            patch.object(cache, "get", wraps=cache.get) as spy,
+            patch.object(Path, "read_bytes", self._raising_read_bytes(script)),
+        ):
+            asyncio.run(runner.execute(config, "{}"))
+
+        assert spy.call_count == 0, "the cache was consulted with no digest"
+
+    def test_becoming_undigestable_mid_run_stores_nothing(self, tmp_path: Path) -> None:
+        """edited_mid_run compares the post-run identity to the pre-run one.
+        A run whose bytes become undigestable only AFTER the subprocess has
+        read them must fail closed, not compare equal and store."""
+        script = tmp_path / "probe.py"
+        script.write_text(self._emit("one"))
+        cache = ScriptCache(ScriptCacheConfig(enabled=True))
+        runner = self._runner(cache)
+        config = ScriptAgentConfig(name="probe", script=str(script))
+
+        real = Path.read_bytes
+        calls = {"n": 0}
+
+        def fails_on_the_second_identity(
+            self: Path, *args: Any, **kwargs: Any
+        ) -> bytes:
+            if self == script:
+                calls["n"] += 1
+                if calls["n"] > 1:
+                    raise OSError(5, "Input/output error")
+            return real(self, *args, **kwargs)
+
+        with patch.object(Path, "read_bytes", fails_on_the_second_identity):
+            asyncio.run(runner.execute(config, "{}"))
+
+        assert calls["n"] >= 2, "the post-run identity was never recomputed"
+        assert cache.get_stats()["sets"] == 0
+
+
+class TestAResolveFailureIsAlsoUndigestable:
+    """#163 review round 1 BLOCKER. The fix landed at ``read_bytes``, but
+    ``resolve_script_path`` stats the file FIRST, and ``Path.exists()``
+    swallows only ENOENT/ENOTDIR/EBADF/ELOOP — ``EIO``/``ESTALE``
+    propagate. They landed in the untouched ``except Exception: return
+    script_ref``, which is the #160 path-only key again.
+
+    Two of the three triggers the design names reach ``stat`` before they
+    reach ``read_bytes``, so the fix was shaped to the landing site rather
+    than to the invariant.
+
+    Refusing to cache a reference that did not RESOLVE costs nothing:
+    execution resolves through the same resolver a moment later, so a
+    resolution failure is a run failure, and #159 declines to cache those.
+    An earlier draft special-cased ``ScriptNotFoundError`` to keep such a
+    reference cacheable; the distinction is unobservable, and the pin
+    written for it could not fail.
+    """
+
+    def _runner(self, cache: ScriptCache) -> ScriptAgentRunner:
+        return ScriptAgentRunner(
+            script_cache=cache,
+            usage_collector=UsageCollector(),
+            progress_controller=None,
+            emit_event=lambda name, data: None,
+            project_dir=None,
+            performance_config={"execution": {"default_timeout": 30}},
+        )
+
+    def _emit(self, value: str) -> str:
+        return f'import json\nprint(json.dumps({{"v": "{value}"}}))\n'
+
+    @staticmethod
+    def _flapping_stat(target: Path, failing: set[int]) -> Any:
+        """os.stat that raises ESTALE for `target` on the numbered calls in
+        ``failing``, counting from 1.
+
+        Scripted by CALL ORDER rather than by caller (review round 2): the
+        earlier version read ``sys._getframe(1).f_code.co_name`` and so was
+        pinned to a method name — a behavior-preserving extraction of the
+        resolve into a helper turned it red with a message pointing nowhere
+        near the cause, in a repo whose commit discipline encourages exactly
+        that kind of refactor.
+
+        Both versions spend an oracle the OS would not give; call order is
+        the cheaper coupling. The CHILD still runs, which is what makes this
+        a STALE SERVE rather than a failed run — a mock that failed
+        everything would prove nothing, since the execution would die and
+        #159 declines to cache a failure anyway.
+        """
+        real = os.stat
+        seen = [0]
+
+        def flaky(path: Any, *args: Any, **kwargs: Any) -> Any:
+            if str(path) == str(target):
+                seen[0] += 1
+                if seen[0] in failing:
+                    raise OSError(116, "Stale file handle")
+            return real(path, *args, **kwargs)
+
+        return flaky
+
+    def test_a_resolve_failure_is_not_cacheable(self, tmp_path: Path) -> None:
+        """Round 1's site, pinned by MECHANISM (review round 3).
+
+        The end-to-end version could not fail. It scripted the fault at the
+        resolver's first stat only, which leaves the POST-run identity
+        healthy — so `edited_mid_run` suppressed the write for a reason
+        unrelated to the guard, and `sets == 0` was satisfied either way.
+        Reverting the guard to `return script_ref` survived the whole suite.
+
+        A stale handle does not politely retreat after one call, so the
+        honest fault is sustained; asserting the ANSWER rather than a
+        downstream side effect makes the schedule irrelevant.
+        """
+        script = tmp_path / "probe.py"
+        script.write_text(self._emit("one"))
+        runner = self._runner(ScriptCache(ScriptCacheConfig(enabled=True)))
+
+        def estale(self: Path) -> bool:
+            raise OSError(116, "Stale file handle")
+
+        with patch.object(Path, "exists", estale):
+            identity = runner._cache_identity(str(script))
+
+        assert identity is None, f"a failed resolve named the script: {identity!r}"
+
+    def test_an_enoent_after_a_healthy_resolve_is_not_cacheable(
+        self, tmp_path: Path
+    ) -> None:
+        """Review round 3's BLOCKER: the FOURTH site.
+
+        The errno rule kept a reference cacheable on ``ENOENT``, which is
+        right for inline content and wrong for a path the resolver just
+        found a file at — the file vanished between the resolve and the
+        stat, which is one of the three triggers this fix is named for, and
+        the answer was the bare path.
+
+        The rule could not be repaired by trimming the errno set: ``ENOENT``
+        is exactly what made ``script: "echo hello"`` cacheable, so one errno
+        was being asked two questions. The classification moved to the
+        resolver, which answers what IT will do with the reference — not
+        what the system does with it, which is the distinction round 4 then
+        had to add (see the bare-name pin below, and #177).
+        """
+        script = tmp_path / "probe.py"
+        script.write_text(self._emit("one"))
+        runner = self._runner(ScriptCache(ScriptCacheConfig(enabled=True)))
+        real_stat = os.stat
+
+        def vanished(path: Any, *args: Any, **kwargs: Any) -> Any:
+            if str(path) == str(script):
+                raise OSError(errno.ENOENT, "No such file or directory")
+            return real_stat(path, *args, **kwargs)
+
+        with (
+            patch.object(Path, "exists", lambda self: True),
+            patch("os.stat", vanished),
+        ):
+            identity = runner._cache_identity(str(script))
+
+        assert identity is None, f"a vanished file was named by path: {identity!r}"
+
+    def test_a_bare_name_that_is_a_file_serves_no_stale_result(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Review round 4's BLOCKER, and a regression round 3 introduced.
+
+        Round 3's premise was that the resolver is the only thing that knows
+        which references it treats as content. True of ``ScriptResolver``,
+        false of the system: ``ScriptAgent`` decides file-vs-inline with
+        ``os.path.exists`` at three sites, so a bare name that names a file
+        in the process CWD is EXECUTED as a file while the identity called it
+        content and named the reference — the #160 key.
+
+        End to end rather than a unit assertion, because the unit answer
+        (the reference verbatim) looks perfectly fine in isolation. That is
+        what let it through. The disagreement itself is #177.
+        """
+        monkeypatch.chdir(tmp_path)
+        script = tmp_path / "probe"
+        script.write_text('#!/bin/bash\necho \'{"v": "one"}\'\n')
+        script.chmod(0o755)
+        cache = ScriptCache(ScriptCacheConfig(enabled=True))
+        runner = self._runner(cache)
+        config = ScriptAgentConfig(name="probe", script="probe")
+
+        first, _, _ = asyncio.run(runner.execute(config, "{}"))
+        script.write_text('#!/bin/bash\necho \'{"v": "two"}\'\n')
+        script.chmod(0o755)
+        second, _, _ = asyncio.run(runner.execute(config, "{}"))
+
+        assert json.loads(first)["v"] == "one"
+        assert json.loads(second)["v"] == "two", "served the pre-edit output"
+        assert cache.get_stats()["hits"] == 0
+
+    def test_a_symlinked_script_still_digests(self, tmp_path: Path) -> None:
+        """The over-refusal direction for the stat: a symlink to a real
+        script is a regular file through the link and must stay cacheable."""
+        target = tmp_path / "real.py"
+        target.write_text(self._emit("one"))
+        link = tmp_path / "link.py"
+        link.symlink_to(target)
+        runner = self._runner(ScriptCache(ScriptCacheConfig(enabled=True)))
+
+        identity = runner._cache_identity(str(link))
+
+        expected = hashlib.sha256(target.read_bytes()).hexdigest()
+        assert identity is not None
+        assert identity.endswith(f":{expected}"), identity
+
+    def test_a_stat_failure_after_a_healthy_resolve_is_not_cacheable(
+        self, tmp_path: Path
+    ) -> None:
+        """Review round 2 BLOCKER: the THIRD landing site.
+
+        Round 1 moved the guard from ``read_bytes`` to the resolve because
+        ``Path.exists()`` PROPAGATES ``EIO``/``ESTALE``. The next line then
+        called ``os.path.isfile`` and ``os.path.exists``, which are
+        ``genericpath`` — they SWALLOW ``OSError`` and answer ``False``. So
+        the same fault, one call later, fell through to
+        ``return ... else resolved``: the #160 path-only key again, four
+        lines below the line round 1 fixed.
+
+        Isolated by MECHANISM rather than by call order or caller name. The
+        resolver checks with ``Path.exists``; the identity stats with
+        ``os.stat``. Patching them apart makes the resolve succeed and only
+        the identity's own stat fail, and — unlike counting calls — it stays
+        honest under a mutant that ADDS stats, which is exactly what
+        reinstating the genericpath prelude does.
+
+        A unit pin because the end-to-end consequence is already pinned for
+        the sibling site by the stale-serve test above; what is unpinned
+        here is which ANSWER this site gives.
+        """
+        script = tmp_path / "probe.py"
+        script.write_text(self._emit("one"))
+        runner = self._runner(ScriptCache(ScriptCacheConfig(enabled=True)))
+        real_stat = os.stat
+
+        def estale(path: Any, *args: Any, **kwargs: Any) -> Any:
+            if str(path) == str(script):
+                raise OSError(116, "Stale file handle")
+            return real_stat(path, *args, **kwargs)
+
+        with (
+            patch.object(Path, "exists", lambda self: True),
+            patch("os.stat", estale),
+        ):
+            identity = runner._cache_identity(str(script))
+
+        assert identity is None, f"a failed stat named the script by path: {identity!r}"
+
+    def test_an_empty_reference_never_touches_the_cache(self, tmp_path: Path) -> None:
+        """#163 review round 1. The fast path returned "" — a constant
+        identity naming no bytes — which passed the not-None check, so the
+        cache was consulted under it. Nothing can ever write there, but the
+        invariant says the cache is READ only under an identity that names
+        the script's bytes."""
+        runner = self._runner(ScriptCache(ScriptCacheConfig(enabled=True)))
+
+        assert runner._cache_identity("") is None
+
+
+class TestIsInlineContent:
+    """#163 review round 5. This arc promoted a local `is_path` variable to
+    a public predicate with a second consumer, and the cache identity now
+    depends on it — but one of its three clauses was deletable with the
+    whole suite green. Dropping the `"/"` clause makes a relative
+    extensionless reference (`scripts/mytool`) stop resolving through the
+    search paths and get handed to bash as content.
+
+    It is not a #163 hole: the identity and ScriptAgent go through the same
+    predicate there, so they stay consistent and no stale serve follows. It
+    is an unpinned clause of a predicate the fix rests on.
+    """
+
+    @pytest.mark.parametrize(
+        ("ref", "inline", "why"),
+        [
+            ("echo hello", True, "no separator, no script extension"),
+            ("echo", True, "a bare word is content"),
+            ("scripts/mytool", False, "the slash clause"),
+            ("scripts\\mytool", False, "the backslash clause"),
+            ("mytool.py", False, "the script-extension clause"),
+            ("mytool.sh", False, "the script-extension clause"),
+            ("/abs/tool", False, "absolute paths carry a separator"),
+            ("", True, "vacuously, and the caller short-circuits first"),
+        ],
+    )
+    def test_the_classification(self, ref: str, inline: bool, why: str) -> None:
+        assert ScriptResolver(project_dir=None).is_inline_content(ref) is inline, why
