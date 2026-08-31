@@ -195,8 +195,14 @@ def _excise_unbound_callable_tests(tests: str, code: str) -> tuple[str, int]:
     os.path.exists``) would risk changing intent. Scope: top-level
     ``test_*`` functions (per-test isolation's unit). Bounded: if excision
     would drop ALL test units, the suite is returned unchanged so the
-    round rejects on the real NameError. The echoed (shipped) tests are
-    the excised suite, per the v0.18.7 repair convention.
+    round rejects on the real NameError — regardless of whether a class is
+    ALSO present in the file (#176 review round 1, F5): this function has
+    no way to verify at analysis time whether that class will contribute
+    anything runnable (a plain helper never will), and guessing wrong
+    would destroy the only evidence of the real failure with nothing to
+    replace it. Declining costs nothing — a doomed test NameErrors for
+    real either way, class or no class. The echoed (shipped) tests are the
+    excised suite, per the v0.18.7 repair convention.
     """
     try:
         tree = ast.parse(tests)
@@ -214,8 +220,7 @@ def _excise_unbound_callable_tests(tests: str, code: str) -> tuple[str, int]:
         and n.name.startswith("test_")
     ]
     doomed = [f for f in test_funcs if _calls_unbound_name(f, bound)]
-    has_cases = any(isinstance(n, ast.ClassDef) for n in tree.body)
-    if not doomed or (len(doomed) == len(test_funcs) and not has_cases):
+    if not doomed or len(doomed) == len(test_funcs):
         return tests, 0
     lines = tests.splitlines()
     for func in sorted(doomed, key=lambda f: f.lineno, reverse=True):
@@ -394,9 +399,7 @@ def _inverted_expectation(stmt: ast.stmt) -> tuple[ast.Call, str] | None:
     call_stmt = stmt.body[0]
     if not (isinstance(call_stmt, ast.Expr) and isinstance(call_stmt.value, ast.Call)):
         return None
-    if not all(
-        len(h.body) == 1 and _is_assert_false(h.body[0]) for h in stmt.handlers
-    ):
+    if not all(len(h.body) == 1 and _is_assert_false(h.body[0]) for h in stmt.handlers):
         return None
     exc_name = _declared_expected_exception(stmt.handlers[0])
     if not exc_name or not _is_vacuous_else(stmt.orelse):
@@ -504,8 +507,21 @@ def _aggregate_budget() -> float:
 
 
 def _enumerate_tests(tests: str) -> tuple[list[str], bool] | None:
-    """(top-level test_* function names, has_testcase_classes), or ``None``
-    when the tests don't parse — the caller falls back to one legacy run.
+    """(top-level test_* function names, has_cases), or ``None`` when the
+    tests don't parse — the caller falls back to one legacy run.
+
+    ``has_cases`` is the presence of ANY module-level class (#176 review
+    round 1): guessing TestCase-ness from base names (aliased imports,
+    locally-derived bases, a local class that just happens to be named
+    ``TestCase``) was demonstrated wrong in both directions — under a
+    real TestCase reached through an unrecognised base (wrong ACCEPT: the
+    failing test never runs) and over a helper whose base merely LOOKS
+    like TestCase by name (wrong REJECT). The guess is not needed: the
+    runner decides what actually executes via a real
+    ``issubclass(obj, unittest.TestCase)`` check, and the caller (
+    ``_run_children`` / ``_run_sandboxed``) treats an empty ``__cases__``
+    dispatch as informationless rather than as a failure, so a false
+    positive here costs nothing but one wasted child run.
 
     Completeness invariant: per-test isolation only ever runs the names
     returned here, but only ``tree.body`` is visible to the caller's child
@@ -570,7 +586,7 @@ def _run_one(
     target_file: str,
     only: str | None,
     timeout: float,
-) -> tuple[bool, str, int]:
+) -> tuple[bool, str, int, list[str]]:
     with tempfile.TemporaryDirectory() as tmp:
         code_path, tests_path = _materialize(tmp, code, tests, workspace, target_file)
         argv = [sys.executable, str(RUNNER), str(code_path), str(tests_path)]
@@ -586,21 +602,23 @@ def _run_one(
                 check=False,
             )
         except subprocess.TimeoutExpired:
-            return False, f"timeout after {timeout:g}s", 0
+            return False, f"timeout after {timeout:g}s", 0, []
     if completed.returncode != 0:
         # #168 review round 1: the child's stderr is a TRACEBACK naming the
         # runner's absolute path, and refix_envelope binds this report
         # straight to accept_reason, which emit ships to the client. The
         # exit code is the actionable part and cannot carry a path.
-        return False, f"runner crashed (exit {completed.returncode})", 0
+        return False, f"runner crashed (exit {completed.returncode})", 0, []
     try:
         verdict = json.loads(completed.stdout)
     except json.JSONDecodeError:
-        return False, "unreadable runner output", 0
+        return False, "unreadable runner output", 0, []
+    leaked = verdict.get("leaked_classes", [])
     return (
         bool(verdict.get("tests_pass", False)),
         str(verdict.get("report", "")),
         int(verdict.get("n_tests", 0)),
+        [str(name) for name in leaked] if isinstance(leaked, list) else [],
     )
 
 
@@ -618,7 +636,20 @@ def _run_children(
     children × per-child timeout is too much blocking time for an
     interactive serve). The budget check happens before spawning each
     child, not after, so the real worst case is budget + at most one
-    per-child timeout (check-before-spawn slack), not the budget alone."""
+    per-child timeout (check-before-spawn slack), not the budget alone.
+
+    A ``__cases__`` child that ran and found zero real TestCase tests is
+    NOT a failure (#176 review round 1) UNLESS the runner also reports
+    leaked classes: ``has_cases`` only means "a class exists in the
+    file", not "it is a TestCase" — the runner's own real ``issubclass``
+    check makes that call, and an empty result with no leak just means
+    this file's classes are not TestCase subclasses. But an empty result
+    WITH a leak (#176 review round 2, N-1) means the runner found a
+    class it cannot execute at all — that is not "nothing to report", so
+    it must not be swallowed by the empty-cases allowance. The verdict
+    comes from the tests that actually ran; ``_run_sandboxed`` separately
+    refuses when NOTHING ran at all.
+    """
     budget = _aggregate_budget()
     start = time.monotonic()
     n = len(children)
@@ -632,11 +663,12 @@ def _run_children(
                 f"{remaining} of {n} tests not run"
             )
             break
-        ok, report, n_tests = _run_one(
+        ok, report, n_tests, leaked = _run_one(
             code, tests, workspace, target_file, only, timeout
         )
         total += n_tests
-        if not ok:
+        empty_cases_child = only == "__cases__" and n_tests == 0 and not leaked
+        if not ok and not empty_cases_child:
             failures.append(report)
     return failures, total
 
@@ -650,8 +682,13 @@ def _run_sandboxed(
     timeout = _timeout()
     enumerated = _enumerate_tests(tests)
     if enumerated is None or (not enumerated[0] and not enumerated[1]):
-        # unparseable or nothing enumerable: one legacy run reports it
-        return _run_one(code, tests, workspace, target_file, None, timeout)
+        # unparseable or nothing enumerable: one legacy run reports it.
+        # #176 F8 (review round 2, N-1): the runner's own leak scan
+        # already covers this path — nothing further needed here.
+        ok, report, n_tests, _leaked = _run_one(
+            code, tests, workspace, target_file, None, timeout
+        )
+        return ok, report, n_tests
 
     names, has_cases = enumerated
     capped = len(names) > _MAX_ISOLATED_TESTS
@@ -669,6 +706,12 @@ def _run_sandboxed(
     deduped = list(dict.fromkeys(failures))
     if deduped:
         return False, "; ".join(deduped), total
+    if total == 0:
+        # #176 review round 1 INVARIANT: a file whose classes yield no
+        # runnable tests is judged by its remaining tests (handled
+        # above); a file with no runnable tests AT ALL refuses, same
+        # reason the legacy path already gives.
+        return False, "no test_* functions or TestCase classes found", 0
     return True, "all passed", total
 
 

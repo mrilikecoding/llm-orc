@@ -9,7 +9,7 @@ the code's names), runs every ``test_*`` callable, and prints the deterministic
 verdict. Optional ``--only <name>`` runs a single test function by name;
 ``--only __cases__`` runs only unittest.TestCase classes.
 
-Emits JSON: {tests_pass, n_tests, report}
+Emits JSON: {tests_pass, n_tests, report, leaked_classes}
 
 Sandbox scope (MVP): process isolation plus a wall-clock timeout enforced by the
 caller. Heavy sandboxing (container / seccomp / resource limits) is the named
@@ -230,13 +230,78 @@ def _run_test_fns(test_fns: list, tests: str) -> tuple[int, list[str]]:
     return n_tests, failures
 
 
-def run_tests(code: str, tests: str, only: str | None = None) -> tuple[bool, str, int]:
+def _leaked_test_classes(
+    namespace: dict[str, object], testcase: type, code_names: set[str]
+) -> list[str]:
+    """Names of module-level classes, in the REAL post-exec namespace, that
+    carry a callable ``test_*`` attribute and are NOT ``testcase``
+    subclasses — the pytest ``class TestFoo: def test_x(self): ...``
+    dialect the runner has no mechanism to execute (#176 F8).
+
+    ``getattr``/``dir`` walk the MRO, so this catches every syntactic
+    shape the class could reach a ``test_*`` callable through: a method
+    defined directly on the class, one inherited from a base defined in
+    the CODE file rather than the tests file, or a name simply ASSIGNED
+    to an imported callable (``test_x = imported_fn``, no ``def`` at
+    all). #176 review round 2 (N-1, rule 18's third instance of this file
+    guessing what runs from AST shape): a prior version of this check
+    parsed the tests SOURCE for a class defining a `test_*` method and
+    compared the executed-test count against the top-level function
+    count, and every one of those three shapes evaded it — the truth
+    only exists in the namespace after both files have actually loaded,
+    so the judgment moves here.
+
+    ``code_names`` (review round 3, R-1 — a regression this scan
+    introduced): the runner execs the produced CODE into the SAME
+    namespace before the tests exec, so an ordinary deliverable class
+    with a production method that happens to be named ``test_*``
+    (``class Database: def test_connection(self): ...``) was wrongly
+    caught by this scan too — a wrong-REJECT of a clean suite, with a
+    reason untrue of the file (the class lives in the code, not the
+    tests). A class whose bound NAME was already present right after the
+    code exec (snapshotted before the tests exec ever ran) is a code-side
+    name and is skipped. Bound, stated honestly: this skips by NAME, not
+    identity — a tests file that REDEFINES a code class's name with its
+    own class carrying a ``test_*`` attribute slips this scan too. The
+    cost of the snapshot approach.
+
+    ``dir(obj)`` is wrapped (review round 3, R-2): a class whose metaclass
+    makes ``dir()`` raise used to crash the runner child with a raw
+    traceback instead of a clean verdict; such a class is skipped
+    instead.
+    """
+    leaked = []
+    for name, obj in namespace.items():
+        if name in code_names:
+            continue
+        if not isinstance(obj, type) or issubclass(obj, testcase):
+            continue
+        try:
+            attrs = dir(obj)
+        except Exception:  # noqa: BLE001 - a hostile metaclass must not crash the runner
+            continue
+        if any(
+            attr.startswith("test_") and callable(getattr(obj, attr, None))
+            for attr in attrs
+        ):
+            leaked.append(name)
+    return leaked
+
+
+def run_tests(
+    code: str, tests: str, only: str | None = None
+) -> tuple[bool, str, int, list[str]]:
     """Exec code + tests in a shared namespace, call every ``test_*`` function.
 
     ``only`` (per-test isolation, seat-quality design 2026-07-09) restricts
     the run to one named top-level test function — the executor spawns one
     runner per test so module and filesystem state cannot leak across
     tests. ``only="__cases__"`` runs just the unittest.TestCase classes.
+
+    Returns (tests_pass, report, n_tests, leaked_classes) — the last is
+    the names any ``_leaked_test_classes`` found, always computed from the
+    full namespace regardless of ``only``, so every child (and the legacy
+    whole-run) reports the same file-level fact consistently.
     """
     namespace: dict[str, object] = {}
     try:
@@ -249,7 +314,11 @@ def run_tests(code: str, tests: str, only: str | None = None) -> tuple[bool, str
                 "code failed to load",
             ),
             0,
+            [],
         )
+    # snapshot BEFORE the tests exec: names the code bound are code-side,
+    # never candidates for the tests-only leak scan below (R-1)
+    code_names = set(namespace)
     try:
         exec(compile(tests, "test_solution.py", "exec"), namespace)
     except Exception as error:  # noqa: BLE001
@@ -260,6 +329,7 @@ def run_tests(code: str, tests: str, only: str | None = None) -> tuple[bool, str
                 "tests failed to load",
             ),
             0,
+            [],
         )
 
     test_fns = [
@@ -277,6 +347,7 @@ def run_tests(code: str, tests: str, only: str | None = None) -> tuple[bool, str
         and issubclass(obj, unittest.TestCase)
         and obj is not unittest.TestCase
     ]
+    leaked_classes = _leaked_test_classes(namespace, unittest.TestCase, code_names)
 
     test_fns, case_classes = _filter_by_only(test_fns, case_classes, only)
 
@@ -300,17 +371,30 @@ def run_tests(code: str, tests: str, only: str | None = None) -> tuple[bool, str
             detail = f"{safe_name}: {_safe_reason(exc)}"
             failures.append(_wire_safe(detail, f"{safe_name}: failed"))
 
-    if n_tests == 0:
+    if leaked_classes:
+        # #168 x #176 merge: identifiers cannot carry a separator, so the
+        # check cannot fire here — but nothing skips the check (round 8's
+        # postcondition), so the leak line passes through it like every
+        # other emitted piece.
+        failures.append(
+            _wire_safe(
+                "tests define a class-based suite the runner cannot execute: "
+                + ", ".join(sorted(leaked_classes)),
+                "tests define a class-based suite the runner cannot execute",
+            )
+        )
+
+    if n_tests == 0 and not leaked_classes:
         detail = _wire_safe(
             f"no test named {only!r} found"
             if only and only != "__cases__"
             else ("no test_* functions or TestCase classes found"),
             "no tests found",
         )
-        return False, detail, 0
+        return False, detail, 0, leaked_classes
     if failures:
-        return False, "; ".join(failures), n_tests
-    return True, "all passed", n_tests
+        return False, "; ".join(failures), n_tests, leaked_classes
+    return True, "all passed", n_tests, leaked_classes
 
 
 def main() -> None:
@@ -322,8 +406,17 @@ def main() -> None:
         only = sys.argv[sys.argv.index("--only") + 1]
     code = Path(sys.argv[1]).read_text(encoding="utf-8")
     tests = Path(sys.argv[2]).read_text(encoding="utf-8")
-    tests_pass, report, n_tests = run_tests(code, tests, only)
-    print(json.dumps({"tests_pass": tests_pass, "n_tests": n_tests, "report": report}))
+    tests_pass, report, n_tests, leaked_classes = run_tests(code, tests, only)
+    print(
+        json.dumps(
+            {
+                "tests_pass": tests_pass,
+                "n_tests": n_tests,
+                "report": report,
+                "leaked_classes": leaked_classes,
+            }
+        )
+    )
 
 
 if __name__ == "__main__":
