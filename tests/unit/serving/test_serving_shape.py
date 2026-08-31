@@ -1028,3 +1028,31 @@ def test_a_subtest_failure_is_not_silently_dropped() -> None:
     )
 
     assert "AssertionError: sub failure" in report, report
+
+
+def test_an_exception_whose_str_raises_still_reports_the_test() -> None:
+    """Round 8b (N1). `_safe_reason` renders the message with `str(error)`;
+    an exception whose `__str__` raises killed the runner child instead
+    (`runner crashed (exit 1)`), erasing every test's evidence at once.
+    unittest's own `_exc_info_to_string` is defensive here, so the deleted
+    parser survived this shape by accident, and the runner's stated
+    contract — a crashing test reports as a failure, never a crashed
+    runner — did not hold. The guard lives in `_safe_reason`, so every
+    call site (both branches, both load paths) shares it: the class name
+    still reports when the message cannot be rendered.
+    """
+    report = _executor_report(
+        "",
+        tests=(
+            "import unittest\n"
+            "class Weird(Exception):\n"
+            "    def __str__(self):\n"
+            "        raise RuntimeError('no message for you')\n"
+            "class T(unittest.TestCase):\n"
+            "    def test_weird(self):\n"
+            "        raise Weird()\n"
+        ),
+    )
+
+    assert "Weird" in report, report
+    assert "runner crashed" not in report, report

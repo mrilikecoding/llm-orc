@@ -124,7 +124,14 @@ def _safe_reason(error: BaseException) -> str:
         # nothing skips the check, not that this particular piece happens
         # to be safe by construction.
         return name + where if _path_free(where) else name
-    message = str(error).strip()
+    try:
+        message = str(error).strip()
+    except Exception:
+        # A message that cannot be rendered is no message. unittest's own
+        # _exc_info_to_string is defensive here; without this, one hostile
+        # __str__ killed the runner child and erased every test's evidence
+        # (round 8b, N1). The class name is already checked and reports.
+        return name
     # `name` is already checked and the separator is not in ": ", so a
     # further check on the join would be dead (round 4). One guard, once.
     if message and _path_free(message):
