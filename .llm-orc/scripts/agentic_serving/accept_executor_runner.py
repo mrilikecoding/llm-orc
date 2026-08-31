@@ -21,7 +21,9 @@ from __future__ import annotations
 import json
 import sys
 import traceback
+import unittest
 from pathlib import Path
+from types import TracebackType
 
 
 def _filter_by_only(
@@ -100,48 +102,6 @@ def _wire_safe(text: str, fallback: str) -> str:
     return fallback if _path_free(fallback) else "failed"
 
 
-def _exception_line(trace: str) -> str:
-    """The ``Type: message`` line of a traceback, or its last line.
-
-    Found by the traceback's own GRAMMAR: frames are indented, so an
-    exception line is the first column-0 line after an indented block, and
-    the LAST such line is the exception that actually terminated. Three
-    shapes defeat the obvious alternatives, all ordinary rather than
-    adversarial —
-
-    - taking the last LINE loses the type whenever the message is
-      multi-line, which is what ``assertEqual`` produces for any sequence;
-    - scanning backward for the first ``identifier:`` line picks a MESSAGE
-      line reading ``Key: value`` over the real type line above it, so
-      ``AssertionError('Response mismatch:\nStatus: 404\nBody: not found')``
-      reported ``Body: not found`` (#168 review round 6);
-    - taking the FIRST such line reports the CAUSE of a chained exception
-      rather than the one that failed the test, so ordinary
-      ``except ValueError: raise RuntimeError(...)`` cleanup reported
-      ``ValueError`` (#168 review round 7). A chained traceback has one
-      frame block per link, so resetting after each capture and keeping the
-      last lands on the terminating exception — and ``raise ... from None``
-      has one link, so it is unaffected.
-
-    Measured: an ``assertEqual`` diff's continuation lines are all at
-    column 0, so they never look like a frame and cannot start a new
-    candidate.
-
-    Falls back to the last line when there are no frames at all, which is
-    the shape a bare message has.
-    """
-    lines = trace.strip().splitlines()
-    found = ""
-    after_frame = False
-    for line in lines:
-        if line[:1].isspace():
-            after_frame = True
-        elif after_frame:
-            found = line.strip()
-            after_frame = False
-    return found or (lines[-1].strip() if lines else "")
-
-
 def _safe_reason(error: BaseException) -> str:
     """What a test failure may say on the wire (#168).
 
@@ -158,13 +118,64 @@ def _safe_reason(error: BaseException) -> str:
         where = f" at line {lineno}"
         if isinstance(offset, int):
             where += f", column {offset}"
-        return name + where
+        # Round 8 review (F3): every other piece is checked as it enters
+        # the string; this one wasn't. `where` is built from two ints, so
+        # it cannot carry a path today — but the postcondition is that
+        # nothing skips the check, not that this particular piece happens
+        # to be safe by construction.
+        return name + where if _path_free(where) else name
     message = str(error).strip()
     # `name` is already checked and the separator is not in ": ", so a
     # further check on the join would be dead (round 4). One guard, once.
     if message and _path_free(message):
         return f"{name}: {message}"
     return name
+
+
+class _LiveResult(unittest.TestResult):
+    """A ``TestResult`` that keeps the live exception object, not a
+    formatted traceback string (#168 round 8, #178).
+
+    ``addFailure``/``addError`` receive ``(type, value, traceback)`` before
+    unittest formats anything to text. Capturing ``value`` here means the
+    ``TestCase`` branch reports failures exactly like ``_run_test_fns``
+    does — through ``_safe_reason`` on the live object — so there is no
+    format to parse and no traceback-grammar heuristic to get wrong.
+
+    ``addSubTest``'s default implementation does NOT call ``addFailure``/
+    ``addError`` — it appends straight to ``self.failures``/``self.errors``,
+    bypassing both. A produced test using ``with self.subTest():`` would
+    otherwise vanish from ``captured`` entirely: not reduced to ``failed``,
+    gone, with the run reporting ``all passed`` — a wrong-accept, and a
+    worse regression than anything the parser it replaces ever produced.
+    Overridden separately below.
+    """
+
+    _ExcInfo = (
+        tuple[type[BaseException], BaseException, TracebackType]
+        | tuple[None, None, None]
+    )
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.captured: list[tuple[unittest.TestCase, BaseException]] = []
+
+    def addFailure(self, test: unittest.TestCase, err: _ExcInfo) -> None:  # noqa: N802
+        super().addFailure(test, err)
+        if err[1] is not None:
+            self.captured.append((test, err[1]))
+
+    def addError(self, test: unittest.TestCase, err: _ExcInfo) -> None:  # noqa: N802
+        super().addError(test, err)
+        if err[1] is not None:
+            self.captured.append((test, err[1]))
+
+    def addSubTest(  # noqa: N802
+        self, test: unittest.TestCase, subtest: unittest.TestCase, err: _ExcInfo | None
+    ) -> None:
+        super().addSubTest(test, subtest, err)
+        if err is not None and err[1] is not None:
+            self.captured.append((subtest, err[1]))
 
 
 def _run_test_fns(test_fns: list, tests: str) -> tuple[int, list[str]]:
@@ -252,8 +263,6 @@ def run_tests(code: str, tests: str, only: str | None = None) -> tuple[bool, str
 
     # unittest.TestCase classes are the other common seat-model dialect
     # ('no test_* functions found' otherwise rejects perfectly good tests)
-    import unittest
-
     case_classes = [
         obj
         for obj in namespace.values()
@@ -271,24 +280,18 @@ def run_tests(code: str, tests: str, only: str | None = None) -> tuple[bool, str
         suite = unittest.TestSuite(
             loader.loadTestsFromTestCase(case) for case in case_classes
         )
-        result = unittest.TestResult()
+        result = _LiveResult()
         suite.run(result)
         n_tests += result.testsRun
-        for test, trace in result.failures + result.errors:
-            # Same piece-by-piece discipline as _run_test_fns (#168 round 5).
-            # Checking only the composed string lost the test name, the
-            # exception class and the message together on an ordinary
-            # `assertEqual` over a sequence containing a relative path: the
-            # diff is multi-line, its LAST line is a diff fragment with no
-            # colon, the type salvage returned it unchanged, and everything
-            # went. `test failed` is what the client and the retry prompt
-            # both got for a real, ordinary failure.
-            detail = _exception_line(trace)
-            if not _path_free(detail):
-                detail = detail.split(":", 1)[0].strip()
-            failures.append(
-                f"{_wire_safe(str(test), 'test')}: {_wire_safe(detail, 'failed')}"
-            )
+        for test, exc in result.captured:
+            # #168 round 8 (#178): the live exception object, exactly the
+            # call `_run_test_fns` already makes — one code path for both
+            # branches, and `_safe_reason` already checks its own pieces
+            # (class name, message) before either reaches the wire. No
+            # traceback text, so no grammar to get wrong.
+            safe_name = _wire_safe(str(test), "test")
+            detail = f"{safe_name}: {_safe_reason(exc)}"
+            failures.append(_wire_safe(detail, f"{safe_name}: failed"))
 
     if n_tests == 0:
         detail = _wire_safe(
