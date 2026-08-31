@@ -1207,12 +1207,14 @@ class TestLibrarySourceResolution:
     `llm-orchestra-library` is a git submodule, so an empty directory is the
     normal state after `git clone` without `--recurse-submodules` and after
     every `git worktree add`. Accepting it shadows a real packaged library:
-    with `LLM_ORC_LIBRARY_SOURCE=local` explicitly requested, priority 2 wins
-    on the empty directory and priority 3 never looks at the package.
+    with the cwd checkout empty, the packaged library went unlooked-at.
 
-    Every other cwd-based resolver in the tree gates on the content-bearing
-    subdirectory instead — `config_manager.get_ensembles_dirs`,
-    `library_handler.get_library_dir` — so this one was the outlier.
+    Every other content-checking resolver in the tree gates on the
+    content-bearing subdirectory instead — `config_manager.get_ensembles_dirs`
+    and `library_handler._browse_ensembles` (review round 1, F7 — the
+    original citation named `library_handler.get_library_dir`, which returns
+    a bare directory path with no content check at all) — so this one was
+    the outlier.
     """
 
     def test_an_empty_library_directory_is_not_a_source(
@@ -1245,3 +1247,100 @@ class TestLibrarySourceResolution:
 
         assert source_type == "local"
         assert source_path == str(library)
+
+    def test_a_file_named_ensembles_is_not_a_library(self, tmp_path: Path) -> None:
+        """#172 F6: `_is_library` used `.exists()`, so a FILE named
+        `ensembles` (not a directory) was accepted as a populated library —
+        and browse later died with `NotADirectoryError` trying to iterate
+        it. `.is_dir()` refuses it cleanly instead."""
+        from llm_orc.cli_library.library import _is_library
+
+        library = tmp_path / "llm-orchestra-library"
+        library.mkdir()
+        (library / "ensembles").write_text("not a directory")
+
+        assert _is_library(library) is False
+
+    def test_the_packaged_library_is_a_default_candidate_when_populated(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """#172 F4 headline instrument (review round 1): priority 4's
+        packaged-library check used to run only when
+        `LLM_ORC_LIBRARY_SOURCE=local` was explicitly set — a caller who
+        sets no library env var at all (the common case) skipped it
+        entirely and fell straight to the empty sentinel. It is now an
+        unconditional default candidate. Hermetic (the #170 lesson): the
+        packaged path is monkeypatched to a controlled fixture rather than
+        depending on this checkout's own submodule state, which is itself
+        empty in a bare `git worktree add`.
+        """
+        import llm_orc.cli_library.library as library
+
+        packaged = tmp_path / "packaged"
+        (packaged / "ensembles" / "one").mkdir(parents=True)
+        (packaged / "ensembles" / "two").mkdir(parents=True)
+        monkeypatch.setattr(library, "_packaged_library_path", lambda: packaged)
+
+        project = tmp_path / "project"
+        project.mkdir()
+        monkeypatch.chdir(project)
+        monkeypatch.delenv("LLM_ORC_LIBRARY_PATH", raising=False)
+        monkeypatch.delenv("LLM_ORC_LIBRARY_SOURCE", raising=False)
+
+        source_type, source_path = library._get_library_source_config()
+
+        assert source_type == "local"
+        assert source_path == str(packaged)
+        assert library.get_library_categories() == ["one", "two"]
+
+    def test_the_packaged_library_wins_over_an_empty_cwd_checkout_with_source_local(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """#172 F5: no pin could fail if the priority-3 cwd `_is_library`
+        gate were mutated back to a bare `.exists()` on the directory — an
+        empty cwd checkout would then win priority 3 and the packaged
+        library at priority 4 would never be looked at. Also exercises
+        `LLM_ORC_LIBRARY_SOURCE=local` explicitly (the committed pin
+        deleted this env var and never drove the commit's own namesake
+        scenario)."""
+        import llm_orc.cli_library.library as library
+
+        packaged = tmp_path / "packaged"
+        (packaged / "ensembles").mkdir(parents=True)
+        monkeypatch.setattr(library, "_packaged_library_path", lambda: packaged)
+
+        project = tmp_path / "project"
+        (project / "llm-orchestra-library").mkdir(parents=True)  # empty submodule
+        monkeypatch.chdir(project)
+        monkeypatch.delenv("LLM_ORC_LIBRARY_PATH", raising=False)
+        monkeypatch.setenv("LLM_ORC_LIBRARY_SOURCE", "local")
+
+        source_type, source_path = library._get_library_source_config()
+
+        assert source_type == "local"
+        assert source_path == str(packaged)
+
+    def test_an_unrelated_cwd_ensembles_dir_is_never_served_as_the_library(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """#172 F4: the ("local", "") sentinel used to escape into
+        `Path("") / "ensembles"` — a RELATIVE path that silently resolves
+        against whatever the caller's cwd happens to be. A user's own
+        top-level `./ensembles/` (nothing to do with the library) would
+        then be served as if it were the library's categories. Demonstrates
+        the exact scenario: empty submodule dir + a cwd `ensembles/` with
+        content + no env vars — the cwd ensembles must not appear."""
+        import llm_orc.cli_library.library as library
+
+        monkeypatch.setattr(
+            library, "_packaged_library_path", lambda: tmp_path / "no-such-package"
+        )
+        (tmp_path / "llm-orchestra-library").mkdir()  # empty submodule
+        (tmp_path / "ensembles" / "mine").mkdir(parents=True)
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.delenv("LLM_ORC_LIBRARY_PATH", raising=False)
+        monkeypatch.delenv("LLM_ORC_LIBRARY_SOURCE", raising=False)
+
+        categories = library.get_library_categories()
+
+        assert categories == []

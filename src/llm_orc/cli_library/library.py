@@ -17,25 +17,65 @@ def _is_library(path: Path) -> bool:
     ``llm-orchestra-library`` is a git SUBMODULE, so an empty directory is
     the normal state after ``git clone`` without ``--recurse-submodules``
     and after every ``git worktree add``. Accepting one shadows a real
-    library: with ``LLM_ORC_LIBRARY_SOURCE=local`` explicitly requested, an
-    empty directory in the cwd won priority 2 and the packaged library at
-    priority 3 was never looked at.
+    library: with the cwd checkout empty, a real library elsewhere (the
+    packaged copy) went unlooked-at.
 
-    Gating on the content-bearing subdirectory is what every other
-    cwd-based resolver in the tree already does — ``get_ensembles_dirs``,
-    ``get_library_dir`` — so this was the outlier rather than a new rule.
+    Gating on the content-bearing subdirectory, and requiring it to be a
+    DIRECTORY rather than merely existing (review round 1, F6: a FILE
+    named ``ensembles`` used to be accepted, and browse died with
+    ``NotADirectoryError`` trying to iterate it), is what every other
+    content-checking resolver in the tree already does —
+    ``config_manager.get_ensembles_dirs`` and
+    ``library_handler._browse_ensembles`` both check for it (unlike
+    ``library_handler.get_library_dir``, which returns a bare directory
+    path with no content check at all, per F7) — so this was the outlier
+    rather than a new rule.
     """
-    return (path / "ensembles").exists()
+    return (path / "ensembles").is_dir()
+
+
+def _packaged_library_path() -> Path:
+    """The library bundled with this install: four parents up from this
+    file (``src/llm_orc/cli_library/library.py`` -> the package/repo
+    root), joined with the submodule directory name.
+
+    A named seam rather than inlined into ``_get_library_source_config``,
+    so a test can point it at a populated fixture without depending on
+    this checkout's own submodule state — the #170 lesson (a unit test
+    should not depend on ambient filesystem state) applies here too: this
+    checkout's OWN packaged copy is empty in a bare ``git worktree add``,
+    same as the cwd case #172 is about.
+    """
+    return Path(__file__).parent.parent.parent.parent / "llm-orchestra-library"
 
 
 def _get_library_source_config() -> tuple[str, str]:
     """Get library source configuration from environment or defaults.
 
     Priority order:
-    1. LLM_ORC_LIBRARY_PATH env var (custom location)
-    2. LLM_ORC_LIBRARY_SOURCE=local (package submodule)
-    3. Current working directory (llm-orchestra-library/)
-    4. Remote GitHub (default)
+    1. ``LLM_ORC_LIBRARY_PATH`` env var, when it points at a populated
+       library (``_is_library``) — a custom location.
+    2. ``LLM_ORC_LIBRARY_SOURCE=remote``, explicit: remote GitHub.
+    3. The current working directory's ``llm-orchestra-library/``, when
+       populated — a local checkout (the submodule, or a test fixture).
+    4. The library packaged with this install (``_packaged_library_path``),
+       when populated. Checked UNCONDITIONALLY now (review round 1, F4):
+       it used to run only when ``LLM_ORC_LIBRARY_SOURCE=local`` was
+       explicitly set, so a caller who set no library env var at all —
+       the common case — skipped it entirely and fell straight to (5).
+    5. Nothing resolved anywhere: ``("local", "")``. Every function below
+       that calls this treats an empty local path as "no library" and
+       returns nothing of its own accord — it never falls back to remote,
+       and it never falls back to whatever the caller's cwd happens to
+       hold (F4: a caller whose cwd holds its own unrelated
+       ``ensembles/`` directory must not have it silently served as the
+       library, which the bare sentinel used to allow via
+       ``Path("") / "ensembles"`` resolving as a relative path against
+       cwd). Remote is reachable ONLY through an explicit
+       ``LLM_ORC_LIBRARY_SOURCE=remote`` (F3: this docstring now
+       describes that, rather than promising an implicit remote default
+       the code never took) — an implicit default would mean every user
+       who never configured a library starts making network calls.
 
     Returns:
         Tuple of (source_type, source_path) where source_type is 'local' or 'remote'
@@ -44,34 +84,27 @@ def _get_library_source_config() -> tuple[str, str]:
     library_path_env = os.environ.get("LLM_ORC_LIBRARY_PATH")
     if library_path_env:
         library_path = Path(library_path_env)
-        if library_path.exists():
+        if _is_library(library_path):
             return "local", str(library_path)
 
-    # Priority 2: Check current working directory first (for tests and local usage)
-    cwd_library = Path.cwd() / "llm-orchestra-library"
-    if _is_library(cwd_library):
-        return "local", str(cwd_library)
-
-    # Priority 3: Check package submodule only if LLM_ORC_LIBRARY_SOURCE=local
-    # is explicitly set
-    library_source = os.environ.get("LLM_ORC_LIBRARY_SOURCE")
-    if library_source == "local":
-        # Explicitly requested local - check package-relative path
-        current_dir = Path(__file__).parent.parent.parent.parent
-        local_path = current_dir / "llm-orchestra-library"
-        if _is_library(local_path):
-            return "local", str(local_path)
-        # Local explicitly requested but not found - return empty path
-        return "local", ""
-    elif library_source == "remote":
-        # Explicitly requested remote - use GitHub
+    # Priority 2: Explicit remote request
+    if os.environ.get("LLM_ORC_LIBRARY_SOURCE") == "remote":
         return (
             "remote",
             "https://raw.githubusercontent.com/mrilikecoding/llm-orchestra-library/main",
         )
 
-    # Priority 4: No explicit config - gracefully return nothing
-    # This allows the system to work without a library (no scripts installed)
+    # Priority 3: Current working directory's checkout
+    cwd_library = Path.cwd() / "llm-orchestra-library"
+    if _is_library(cwd_library):
+        return "local", str(cwd_library)
+
+    # Priority 4: The library packaged with this install
+    packaged_library = _packaged_library_path()
+    if _is_library(packaged_library):
+        return "local", str(packaged_library)
+
+    # Priority 5: Nothing resolved anywhere — gracefully return nothing
     return "local", ""
 
 
@@ -79,7 +112,7 @@ def get_library_categories() -> list[str]:
     """Get list of available library categories by scanning the library directory."""
     source_type, source_path = _get_library_source_config()
 
-    if source_type == "local":
+    if source_type == "local" and source_path:
         # Scan local library directory for actual categories
         ensembles_dir = Path(source_path) / "ensembles"
         if not ensembles_dir.exists():
@@ -92,7 +125,7 @@ def get_library_categories() -> list[str]:
             if d.is_dir() and not d.name.startswith(".")
         ]
         return sorted(categories)
-    else:
+    if source_type == "remote":
         # Hardcoded list for remote (can't easily scan remote directories)
         categories = [
             "code-analysis",
@@ -103,6 +136,10 @@ def get_library_categories() -> list[str]:
             "learning-facilitation",
         ]
         return categories
+    # No library resolved anywhere (#172 F4): nothing to serve, and never
+    # the caller's cwd — an empty local path is never treated as a
+    # directory to scan.
+    return []
 
 
 def get_library_categories_with_descriptions() -> list[tuple[str, str]]:
@@ -122,10 +159,12 @@ def get_category_ensembles(category: str) -> list[dict[str, Any]]:
     """Get ensembles for a specific category from local or remote source."""
     source_type, source_path = _get_library_source_config()
 
-    if source_type == "local":
+    if source_type == "local" and source_path:
         return _get_local_category_ensembles(category, Path(source_path))
-    else:
+    if source_type == "remote":
         return _get_remote_category_ensembles(category)
+    # No library resolved anywhere (#172 F4): nothing to serve.
+    return []
 
 
 def _get_local_category_ensembles(
@@ -216,10 +255,12 @@ def fetch_ensemble_content(ensemble_path: str) -> str:
     """Fetch ensemble content from local or remote source."""
     source_type, source_path = _get_library_source_config()
 
-    if source_type == "local":
+    if source_type == "local" and source_path:
         return _fetch_local_ensemble_content(ensemble_path, Path(source_path))
-    else:
+    if source_type == "remote":
         return _fetch_remote_ensemble_content(ensemble_path)
+    # No library resolved anywhere (#172 F4): nothing to fetch.
+    raise FileNotFoundError(f"Ensemble not found: {ensemble_path}")
 
 
 def _fetch_local_ensemble_content(ensemble_path: str, library_path: Path) -> str:
@@ -475,10 +516,12 @@ def get_template_content(template_name: str) -> str:
     """Fetch template content from local or remote source."""
     source_type, source_path = _get_library_source_config()
 
-    if source_type == "local":
+    if source_type == "local" and source_path:
         return _get_local_template_content(template_name, Path(source_path))
-    else:
+    if source_type == "remote":
         return _get_remote_template_content(template_name)
+    # No library resolved anywhere (#172 F4): nothing to fetch.
+    raise FileNotFoundError(f"Template not found: {template_name}")
 
 
 def _get_local_template_content(template_name: str, library_path: Path) -> str:
@@ -523,10 +566,11 @@ def copy_profile_templates(target_profiles_dir: Path) -> None:
     try:
         target_profiles_dir.mkdir(parents=True, exist_ok=True)
 
-        if source_type == "local":
+        if source_type == "local" and source_path:
             _copy_local_profile_templates(Path(source_path), target_profiles_dir)
-        else:
+        elif source_type == "remote":
             _copy_remote_profile_templates(target_profiles_dir)
+        # else: no library resolved anywhere (#172 F4) — nothing to copy
     except (OSError, requests.RequestException):
         # If we can't access source, fail silently
         pass
