@@ -22,7 +22,10 @@ leaks home dir : True   leaks username : True   leaks argv : True
 shape — lines 150, 153, 469, 574 and others, across `shape`, `resolve` and
 `seat_contract`. The recorded interpreter is the bare `python3` of the
 pre-#154 era; the script path leaks the home directory and username either
-way.
+way. (F7: `.serve-trace/` is gitignored — those captures are not in the
+repo and are not reproducible from a clean checkout. The regression pins
+below do not depend on them; each drives the leak end to end from a fault
+injected in-process, independent of any historical capture.)
 
 **The engine wrap is not the only wire channel** (review round 1). The first
 draft recorded `accept_executor._run_one`'s `runner crashed: <stderr>` branch
@@ -111,28 +114,95 @@ is that it is not closed and is not closeable by this rule.
 
 ## Regression instruments
 
+F8 (round 8 confirmation review): this section named no `test_*` identifier
+while the arc shipped 21 pins (25 after round 8), so `scripts/check_doc_drift.py`
+(loop-protocol rule 19, added after this branch started) had nothing to
+resolve. Every pin below is named in backticks and drawn from the tree —
+`grep -n "^def test_" tests/unit/serving/test_serving_shape.py` plus the
+same over `tests/unit/web/test_serving_ensemble_endpoint.py`.
+
 1. **The captured wrap produces a reason with no absolute path and no
-   username.** Red today. Driven end to end through
-   `shape -> form_gate -> emit`, since a node-level pin does not prove the
-   chain (#155's lesson).
+   username.** Driven end to end through the real engine, since a
+   node-level pin does not prove the chain (#155's lesson):
+   `test_a_crashed_routing_node_refuses_without_naming_a_path`. The
+   shape-level pin behind it, against the wrap directly:
+   `test_a_wrapped_exit_status_reason_names_no_path_or_user`.
 2. **An UNRECOGNISED error shape leaks nothing either** — the
    `FileNotFoundError` family, which the issue's own proposed strip would
    pass through. This is the pin that distinguishes positive extraction from
    a denylist, and it is the one that fails if a future edit reaches for a
-   clause-strip.
+   clause-strip: `test_an_unrecognized_error_shape_leaks_nothing_either`.
 3. **The actionable tail survives** for both recognised families, so the
    sanitiser is not just deleting the reason. Named separately per family,
-   because one regex covering both is how a family gets silently dropped.
+   because one regex covering both is how a family gets silently dropped:
+   `test_the_exit_status_tail_survives`, `test_the_timeout_tail_survives`.
 4. **The failing node is still named** (`resolve` vs `classify`), which is
-   the part of the reason an operator routes on.
+   the part of the reason an operator routes on:
+   `test_the_failing_node_is_still_named`.
 5. **`turn_trace` still records the unsanitised text server-side** — asserting
    the RESIDUE that was removed from the wire, not the wrap's prefix. Review
    round 1: the prefix is the first 28 characters, and the 280-char snippet
-   clipped the residue off every node (the wrap runs 302-310 chars on a real
-   checkout), so the pin was green while the operator had LESS than the client
-   used to. `turn_trace` now records the wrap's `error` whole.
+   clipped the residue off every node, so the pin was green while the
+   operator had LESS than the client used to. `turn_trace` now records the
+   wrap's `error` whole: `test_the_unsanitised_engine_error_is_still_recorded_server_side`.
+
+   F6 (round 8): this bullet previously claimed "the wrap runs 302-310 chars
+   on a real checkout" as one fixed range. Falsified — the wrap embeds TWO
+   paths (the interpreter's and the produced script's), so its length is
+   `81 + len(sys.executable) + len(<produced script's path>)` (81 is the
+   fixed surrounding text: `Schema JSON execution failed: Command '[`, `',
+   '` between the two paths, and `']' returned non-zero exit status N.`).
+   It depends on BOTH the checkout root's length (`sys.executable` lives
+   under it) and the platform's temp-dir convention for the produced
+   script's path, not on the checkout alone. Measured by adding a print of
+   the raw `error` field's length and its two path lengths to
+   `test_the_unsanitised_engine_error_is_still_recorded_server_side` and
+   running it: 344 chars, stable across 3 runs, on this worktree checkout
+   (root `/Users/.../llm-orc/.claude/worktrees/agent-<id>`, 89 chars, macOS
+   `/private/var/folders/.../T/pytest-of-<user>/...` temp convention).
+   Solving the same formula for the canonical 47-char checkout root
+   (`/Users/<user>/Development/eddi-lab/llm-orc`) gives 302 — at the LOW end
+   of the range this bullet used to attribute to worktree roots, which is
+   the tell that checkout-root length is one input to this number, not the
+   whole story; the platform's temp-dir convention is the other, and it is
+   not this repo's to control. Take the dependence, not the digits: a pin
+   that hardcodes a length is a future flake, and the shipped pins here
+   assert the residue and the tail, never a byte count.
 6. **A healthy turn is unaffected** — the over-refusal direction. Labelled
-   as such: it cannot fail under deletion of the sanitiser.
+   as such: it cannot fail under deletion of the sanitiser:
+   `test_a_readable_routing_decision_is_unaffected`.
+
+The executor's report (review round 1) is a separate wire channel with its
+own failure modes — shaped by `unittest`/`subprocess`, not by the engine's
+wrap — covered by its own pins rather than folded into the six above:
+
+7. **Every wire-channel of the executor's report, closed by property rather
+   than by producer** (rounds 1-2): `test_the_executor_report_names_no_path_or_user`
+   (a message naming a path, a `SyntaxError` repr, a runner-crash
+   traceback), `test_a_failing_test_names_no_path_or_user` (round 2's most
+   reachable channel — a produced module shelling out to `sys.executable`),
+   `test_a_unittest_failure_names_no_path_or_user` (`OSError.__str__`),
+   `test_a_tests_module_that_raises_names_no_path_or_user` (the tests-load
+   path, unpinned until round 2), `test_no_report_can_name_a_path` (the
+   hostile corpus asserting the OUTPUT SHAPE, not any one input).
+8. **The trade the sanitising makes, and its edges** (rounds 2-4):
+   `test_a_syntax_error_keeps_its_line_and_column`,
+   `test_the_executor_report_still_says_what_happened` (direction guard),
+   `test_a_path_free_failure_message_survives`,
+   `test_a_relative_path_in_the_source_echo_keeps_the_evidence` (round 4:
+   checking only the composed string discarded the class and message
+   whenever the source echo named a relative path).
+9. **The `TestCase` branch's traceback-parsing history, closed structurally
+   in round 8 (#178)** — one pin per wrong-exception defect review found,
+   plus round 8's own three: `test_a_unittest_diff_over_relative_paths_keeps_the_evidence`
+   (round 5), `test_a_decoy_message_line_does_not_displace_the_exception_class`
+   (round 6), `test_a_chained_exception_reports_the_one_that_failed` (round
+   7), `test_a_multiline_string_diff_keeps_the_evidence` and
+   `test_a_twelve_item_list_diff_keeps_the_evidence` (round 8 / F1),
+   `test_a_forged_frame_in_the_message_does_not_displace_the_real_class`
+   (round 8 / F5), `test_a_subtest_failure_is_not_silently_dropped` (round
+   8, found implementing rather than reviewing — see "Known bounds"). See
+   "Known bounds" below for what changed structurally.
 
 ## Known bounds
 
@@ -159,16 +229,44 @@ is that it is not closed and is not closeable by this rule.
   inside the runner. Pre-existing, deliberate intent required, and it
   belongs to #85's containment surface; recorded so the next sweep does not
   rediscover it as new.
-- **The `TestCase` branch parses a formatted traceback, and that has been
-  wrong three ways** — the last line loses the type on any multi-line
-  message, a backward `identifier:` scan picks a message line, a forward
-  scan reports a chained exception's CAUSE. The current version keeps the
-  last candidate per frame block and is verified across nine shapes, but it
-  is still a parser for a format Python does not promise. The sibling
-  `test_*` branch has had none of them, because it passes the live exception
-  OBJECT to `_safe_reason`. **#178** carries routing both branches that way
-  and deleting the parser; it is not done here because this arc's seven
-  review rounds are against the current code.
+- **The `TestCase` branch parsed a formatted traceback, and that was wrong
+  three ways before round 8 deleted it** — the last line loses the type on
+  any multi-line message, a backward `identifier:` scan picks a message
+  line, a forward scan reports a chained exception's CAUSE. Round 5's fix
+  (keep the last candidate per frame block) was "verified across nine
+  shapes," and that sentence was itself the gap: none of the nine put a
+  two-space-indented UNCHANGED line into the trace, which is exactly what
+  `difflib.ndiff` emits for every line an `assertEqual` diff's two sides
+  share. A multi-line-string or 12-item-list failure produces one, the scan
+  reads it as a frame and resets on it, and the report degrades to
+  `test_x: failed` — the evidence round 5 itself was paid to keep. That is
+  **F1**, the confirmation review's blocking finding, round 8. A crafted
+  message with an indented line followed by a column-0 `Type: message`-shaped
+  line displaced the real class the same way — **F5**.
+
+  **Round 8 took #178 in this arc** rather than filing a fourth instance fix
+  (loop-protocol rule 18): `unittest.TestResult.addFailure`/`addError` hand
+  the live `(type, value, traceback)` triple before anything is formatted to
+  text; a `_LiveResult` subclass keeps `value`; the `TestCase` branch now
+  calls `_safe_reason` on it directly, the same call the sibling `test_*`
+  branch already made — which is why that branch never had any of the three
+  defects above.
+
+  Found while implementing, not by review: `addSubTest`'s DEFAULT
+  implementation does not call `addFailure`/`addError` at all — it appends
+  straight to `self.failures`/`self.errors`, bypassing both. A `_LiveResult`
+  overriding only the two would drop a produced test's `with
+  self.subTest():` failure entirely — not degraded to `failed`, gone, with
+  `tests_pass` coming back `True`. Worse than any leak this arc closed,
+  since those degraded evidence and this flips the verdict. `_LiveResult`
+  overrides `addSubTest` too:
+  `test_a_subtest_failure_is_not_silently_dropped`.
+
+  No traceback text is parsed in the runner any more:
+  `grep -n "extract_tb\|_exception_line" .llm-orc/scripts/agentic_serving/accept_executor_runner.py`
+  finds one `extract_tb` call, in `_failing_line`, which locates a SOURCE
+  line by filename and line number rather than reading exception text, and
+  no `_exception_line` at all — the function is deleted, not bypassed.
 - The property is enforced on what is EMITTED, at every emission point, and
   on each PIECE as it enters the string, in BOTH failure branches. Checking
   only the composed string discarded the class name and the message whenever
