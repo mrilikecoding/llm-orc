@@ -1,0 +1,4 @@
+{"model": "agentic",
+ "messages": [{"role": "user", "content": "write a function that adds two numbers in add.py"}],
+ "tools": [{"type": "function", "function": {"name": "write", "description": "Write a file to the workspace", "parameters": {"type": "object", "properties": {"filePath": {"type": "string"}, "content": {"type": "string"}}, "required": ["filePath", "content"]}}},
+           {"type": "function", "function": {"name": "read", "description": "Read a file", "parameters": {"type": "object", "properties": {"filePath": {"type": "string"}}, "required": ["filePath"]}}}]}

@@ -144,11 +144,20 @@ fix rule 18 had been pointing at since round 6.
 
 ### Queued, not skipped
 
-Live real-OpenCode validation rows are owed for **#166 #169 #168 #173
-#172 #176** — every one changes client-visible behaviour.
-Dogfood entry 9 is the exact refusal message #168 sanitises, still the
-natural gate. The serve was not started this session; batteries run
-detached (nohup + Monitor tail) per §Environments.
+**#168's live row LANDED** (dogfood entry 10; record
+`docs/plans/2026-08-30-168-live-gate/`): a live-injected resolve crash
+whose message named an absolute path reached the wire as
+`(resolve: exited non-zero, status 1)` — both legs, direct wire and
+`opencode run`, zero tool_use, nothing written. Found on the way: entry
+9's PATH-broken precondition is EXTINCT on this main (#154), so that
+replay now builds normally; live fault injection with a
+confirmed-live mutant is the template for future rows. Also: a stale
+serve from 08-17 was found still on :8765 — restart the serve before
+every gate, a long-running serve validates the wrong code.
+
+Still owed: rows for **#166 #169 #173** (re-fix/build refusal shapes),
+**#172 #176** (library source, gate participants), **#175** (env
+scrub) — each changes client-visible behaviour.
 
 ## Timeline
 
