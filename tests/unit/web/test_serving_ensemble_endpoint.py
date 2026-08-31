@@ -2696,3 +2696,85 @@ def test_crashed_classify_refuses_instead_of_a_silent_empty_finish(
         "resolve crashed too, so this exercised the resolve-crashed path "
         f"rather than the laundering path: {content}"
     )
+
+
+# --- #168: a refusal reason names no filesystem path -------------------------
+
+
+@pytest.mark.parametrize("script", ["resolve.py", "classify.py"])
+def test_a_crashed_routing_node_refuses_without_naming_a_path(
+    serving_project: Path, monkeypatch: pytest.MonkeyPatch, script: str
+) -> None:
+    """The leak, end to end through the REAL engine wrap.
+
+    A node-level pin does not prove the chain (#155's lesson), and this one
+    especially: the wrap's text is produced by script_agent.py, not by the
+    test, so a fixture that hand-writes the error would be pinning the
+    fixture. Here the node really crashes and the engine really wraps it,
+    embedding the interpreter path and the script path — hence the
+    operator's home directory and username — in what reaches the client.
+    """
+    client = _crashed_script_client(serving_project, monkeypatch, script)
+    resp = client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "ensemble-agent",
+            "messages": [
+                {"role": "user", "content": "write an add function in add.py"}
+            ],
+            "tools": [_WRITE_TOOL],
+        },
+    )
+
+    assert resp.status_code == 200
+    content = resp.json()["choices"][0]["message"]["content"]
+
+    home = str(Path.home())
+    assert home not in content, content
+    assert home.rsplit("/", 1)[-1] not in content, content
+    assert "Command '[" not in content, content
+    assert "serving pipeline error" in content
+    # Direction guards, not leak pins: green on main, and here so the
+    # sanitiser cannot degrade into "say nothing".
+    if script == "resolve.py":
+        # Not just deleted: the refusal still says which node and what
+        # happened to it. Only asserted for resolve, because shape's
+        # depends_on is [resolve, seat, seat_contract] — it never receives a
+        # classify dep, so _routing_failure_reason's classify branch cannot
+        # fire in the shipped skeleton and a crashed classify arrives as
+        # resolve's laundered empty target. Recorded rather than asserted
+        # away; the leak invariant above holds on both routes either way.
+        assert "resolve" in content
+        assert "exited non-zero" in content
+
+
+def test_the_unsanitised_engine_error_is_still_recorded_server_side(
+    serving_project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The operator loses nothing. Sanitising the wire is only defensible
+    because turn_trace keeps the raw node responses, so the full text — argv
+    and all — is still there to debug from."""
+    client = _crashed_script_client(serving_project, monkeypatch, "resolve.py")
+    client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "ensemble-agent",
+            "messages": [
+                {"role": "user", "content": "write an add function in add.py"}
+            ],
+            "tools": [_WRITE_TOOL],
+        },
+    )
+
+    raw = (serving_project / ".serve-trace" / "turns.jsonl").read_text()
+
+    # Review round 1: asserting the wrap's PREFIX proved nothing — it is the
+    # first 28 characters, and the residue the sanitiser removed from the
+    # wire was clipped off the trace by the 280-char snippet on every node
+    # (the wrap runs 302-310 chars on a real checkout). The pin was green
+    # while the operator had LESS than the client used to. Assert the
+    # residue itself, which is what has to survive for the sanitising to be
+    # defensible at all.
+    assert "Schema JSON execution failed" in raw
+    assert "returned non-zero exit status 1" in raw
+    assert "Command '[" in raw, "the argv is what the operator debugs from"

@@ -17,9 +17,34 @@ gracefully rather than requiring every seat to envelope first.
 from __future__ import annotations
 
 import json
+import re
 import sys
 
 from _helpers import terminal as _terminal
+
+# #168: the engine's wrap is f"Schema JSON execution failed: {str(e)}" over a
+# blanket except, and subprocess exceptions stringify with the whole argv —
+# so the interpreter path, the script path, and hence the operator's home
+# directory and username used to ride to the client on every wrapped node
+# failure. Ten captures in .llm-orc/.serve-trace/turns.jsonl.
+#
+# Positive extraction rather than stripping the `Command '[...]'` clause the
+# captures happen to show. Both recognised residues are NUMERIC, so neither
+# can carry a path by construction, and an unrecognised shape contributes no
+# verbatim text at all. The clause-strip the issue proposed fails open on
+# FileNotFoundError, which carries an absolute path and no Command clause —
+# the same denylist failure #152 and #155 Arc A were both paid for.
+#
+# One pattern per FACT, not per producer wording. script_agent.py states the
+# same two facts three ways — the blanket except's stringified subprocess
+# exception, its own "Script failed with exit code N" envelope, and its
+# "Script timed out after N seconds" envelope — and the client should see one
+# vocabulary regardless. A producer that words it a fourth way degrades to
+# "failed" rather than leaking, which is the right direction.
+_EXIT_STATUS_RE = re.compile(
+    r"(?:returned non-zero exit status|failed with exit code) (\d+)"
+)
+_TIMEOUT_RE = re.compile(r"timed out after ([\d.]+) seconds?")
 
 
 def _deps(raw: str) -> dict:
@@ -60,10 +85,27 @@ def _readable_decision(dep: object) -> dict | None:
     return parsed
 
 
+def _engine_failure_summary(error: str) -> str:
+    """The client-safe residue of an engine wrap error (#168).
+
+    The operator keeps the full text: ``turn_trace.py`` records raw node
+    responses server-side, so nothing debuggable is lost by refusing to
+    quote it here.
+    """
+    status = _EXIT_STATUS_RE.search(error)
+    if status:
+        return f"exited non-zero, status {status.group(1)}"
+    timeout = _TIMEOUT_RE.search(error)
+    if timeout:
+        return f"timed out after {timeout.group(1)} seconds"
+    return "failed"
+
+
 def _routing_failure_reason(deps: dict) -> str:
     """The deterministic refusal reason for a turn with no readable
-    routing decision, carrying the engine failure envelope's one-line
-    ``error`` when a decision dep has one (never raw stderr)."""
+    routing decision, naming the failing node and what happened to it —
+    never the engine wrap's text, which embeds the subprocess argv
+    (#168), and never raw stderr."""
     for name in ("resolve", "classify"):
         try:
             parsed = json.loads(_response(deps.get(name)))
@@ -72,9 +114,10 @@ def _routing_failure_reason(deps: dict) -> str:
         if isinstance(parsed, dict):
             error = parsed.get("error")
             if isinstance(error, str) and error:
+                summary = _engine_failure_summary(error)
                 return (
                     "serving pipeline error: no readable routing decision "
-                    f"this turn ({name}: {error}); nothing was built or "
+                    f"this turn ({name}: {summary}); nothing was built or "
                     "written"
                 )
     return (
