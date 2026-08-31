@@ -7,6 +7,7 @@ import hashlib
 import json
 import logging
 import os
+import stat
 import subprocess
 import time
 from collections.abc import Callable
@@ -149,11 +150,14 @@ class ScriptAgentRunner:
         # _validate_primitive_output needs it (_normalize_script_ref returns
         # None for an identity string, which would silently disable the
         # primitive schema check on every cache hit).
-        cache_identity = self._cache_identity(script_content) if cacheable else ""
+        # None means "no identity that names this script's bytes" (#163):
+        # neither half of the cache runs, rather than degrading to the
+        # path-only key that IS the #160 bug.
+        cache_identity = self._cache_identity(script_content) if cacheable else None
 
         cached_result = (
             self._script_cache.get(cache_identity, cache_key_params)
-            if cacheable
+            if cache_identity is not None
             else None
         )
         if cached_result is not None:
@@ -182,10 +186,18 @@ class ScriptAgentRunner:
         # for the full TTL rather than self-correcting. Re-reading here
         # closes the window: if the bytes moved, this run's output belongs
         # to no key we can name, so it belongs in no entry.
-        edited_mid_run = cacheable and self._cache_identity(script_content) != (
-            cache_identity
+        # A post-run identity of None (the bytes stopped being digestable
+        # during the run) compares unequal here, so it falls closed with
+        # the edited case rather than sharing an entry (#163).
+        edited_mid_run = (
+            cache_identity is not None
+            and self._cache_identity(script_content) != cache_identity
         )
-        if cacheable and not edited_mid_run and not _reports_failure(response):
+        if (
+            cache_identity is not None
+            and not edited_mid_run
+            and not _reports_failure(response)
+        ):
             cache_result = {
                 "output": response,
                 "execution_metadata": {"duration_ms": duration_ms},
@@ -211,67 +223,113 @@ class ScriptAgentRunner:
         """
         return bool(self._script_cache.config.enabled)
 
-    def _cache_identity(self, script_ref: str) -> str:
-        """What identifies this script for caching (#160).
+    def _cache_identity(self, script_ref: str) -> str | None:
+        """What identifies this script for caching (#160), or ``None`` when
+        nothing does and the run must not be cached at all (#163).
 
-        The cache used to key on ``agent_config.script``, a REFERENCE,
-        which in every shipped ensemble is a path — so the key named the
-        file and never its contents, and editing a script served the
-        pre-edit result for the TTL.
+        The cache used to key on ``agent_config.script``, a REFERENCE, which
+        in every shipped ensemble is a path — so the key named the file and
+        never its contents, and editing a script served the pre-edit result
+        for the TTL, crossing processes under ``persist_to_artifacts``.
 
-        A reference that resolves to a FILE is identified by that path
-        AND the sha256 of its bytes. Both halves matter: bytes alone
-        would collide two different scripts with identical contents,
-        which bites when a script reads its own ``__file__`` or a sibling
-        relative path; path alone is the original bug.
+        **The invariant.** The cache is read and written only under an
+        identity that names the script's BYTES. When the bytes cannot be
+        named, there is no identity and the run is not cached.
 
-        A reference that does not resolve to a file is returned as-is,
-        which is CORRECT rather than a fallback: ``resolve_script_path``
-        returns inline content verbatim, so ``script: "echo hello"``
-        genuinely is its own content. An unresolvable reference also
-        lands here — computing a cache key must never be the thing that
-        reports a missing script, and execution a moment later produces
-        the real error.
+        Two kinds of reference. The CLASSIFICATION is syntactic and happens
+        before any filesystem call; the ANSWER for inline content still
+        costs one ``os.path.exists``, because of the disagreement below.
 
-        ``os.path.isfile`` rather than leaning on the try/except below,
-        and it does more than ask whether a file exists. Two drafts of
-        this docstring got its contribution wrong in opposite directions,
-        so what follows is measured. It buys NOTHING for inline content
-        longer than PATH_MAX: ``read_bytes`` raises ``OSError`` there and
-        the ``except`` already catches it. It buys three things the
-        ``except`` cannot:
+        - **Inline content.** ``resolve_script_path`` returns it verbatim, so
+          the reference IS its own bytes and identifies itself. The resolver
+          answers this (``is_inline_content``) because it is what the
+          RESOLVER will do with the reference — but it is not the last word,
+          see the disagreement below.
+        - **A path.** The resolver will go and find a file, so anything that
+          stops us naming that file's bytes — the resolve, the stat, a
+          non-regular file, an unreadable one — is a refusal. There is no
+          "which call threw" to get wrong; they all answer ``None``.
 
-        - inline content carrying a NUL byte, where ``read_bytes`` raises
-          ``ValueError`` rather than ``OSError``, so it escapes and kills
-          the run;
-        - a FIFO, which resolves fine and is not a regular file;
-          ``read_bytes`` blocks on open until a writer appears, so
-          without the guard computing a cache key HANGS the agent;
-        - a character device such as ``/dev/zero``, which reads
-          unbounded.
+        That shape is the third. It replaced an errno rule, which could not
+        work: ``ENOENT`` is both "this is inline content" and "the file
+        vanished between the resolve and the stat", and one errno cannot
+        answer two questions. Before that it was ``os.path.isfile`` plus
+        ``os.path.exists``, which are ``genericpath`` — they SWALLOW
+        ``OSError`` and answer ``False``, so a stale-mount stat fell through
+        to the bare path. Each shape was written against the call that had
+        just been seen to fail; this one is written against the question.
 
-        The last two are why this is ``isfile`` and not ``exists``.
+        **The disagreement.** ``ScriptAgent`` classifies file-vs-inline
+        separately, with ``os.path.exists``, at three sites — so for a bare
+        name that happens to name a file in the process CWD the resolver says
+        content and the agent EXECUTES a file. Failed closed below (such a
+        reference is not cached at all) and tracked as #177. The cost is one
+        ``exists`` on the inline path and a silent over-refusal: a
+        legitimately inline reference that collides with a CWD entry stops
+        being cacheable.
+
+        Reachable triggers for the refusal path, all measured: fd exhaustion
+        (``EMFILE``/``ENFILE``), ``EIO``/``ESTALE`` on a network filesystem,
+        and an ENOENT race where the file is replaced mid-turn — #158 made
+        the first likelier by overlapping script agents. The issue's own
+        hypothesis, a script executable but not readable, is refuted:
+        ``script_agent.py`` runs every extension through an interpreter
+        (``bash`` by default), all of which must read the file, so such a
+        script never executes and #159 never caches its failure.
         """
-        # A fast path, NOT a correctness guard, and review was right to
-        # flag it as looking like one: resolve_script_path("") returns ""
-        # and os.path.isfile("") is False, so the fall-through returns ""
-        # anyway and removing this line changes no result. It stays
-        # because execute() passes "" for a non-ScriptAgentConfig, and
-        # building a resolver to learn nothing is worse than one branch.
+        # execute() passes "" for a non-ScriptAgentConfig, which has no
+        # script and therefore no bytes to name. It used to return "" here
+        # — a constant identity naming nothing, which the cache was then
+        # consulted under (#163 review round 1). Nothing can ever write
+        # there, but the invariant is about the READ too.
         if not script_ref:
+            return None
+        resolver = ScriptResolver(project_dir=self._project_dir)
+        # The RESOLVER answers what IT will do with the reference (#163
+        # review round 3). That has to be settled before any errno is seen:
+        # an errno cannot make the split, because ENOENT is both "this is
+        # inline content" and "the file vanished between the resolve and the
+        # stat", and the shape before this answered the bare path for the
+        # second — the #160 key, reachable by one of the three triggers this
+        # fix is named for. It is not the whole answer, though; see below.
+        if resolver.is_inline_content(script_ref):
+            # ScriptAgent does NOT use this predicate. It decides
+            # file-vs-inline with os.path.exists, at three separate sites —
+            # its own _execute_interactive among them (this class's
+            # _execute_interactive is the one that raises instead — never
+            # cached), so
+            # a bare name that happens to name a file in the process CWD gets
+            # EXECUTED as a file while this call would name it content — the
+            # #160 key, and a regression review round 4 caught round 3
+            # introducing. Fail closed where the two classifiers disagree;
+            # unifying them changes what gets EXECUTED and is #177.
+            # This costs inline content one stat, which is why the
+            # docstring above does NOT claim it stays off the filesystem.
+            if os.path.exists(script_ref):
+                logger.debug(
+                    "no cache identity: %r is inline content but names a file",
+                    script_ref,
+                )
+                return None
             return script_ref
+        # From here the reference denotes a file the resolver will go and
+        # find, so ANYTHING that stops us naming its bytes is a refusal.
+        # There is no "which call threw" left to get wrong: the resolve, the
+        # stat and the read all answer None, and only a regular file that
+        # digests produces an identity.
         try:
-            resolved = ScriptResolver(
-                project_dir=self._project_dir
-            ).resolve_script_path(script_ref)
-        except Exception:
-            return script_ref
-        if not os.path.isfile(resolved):
-            return resolved
-        try:
+            resolved = resolver.resolve_script_path(script_ref)
+            info = os.stat(resolved)
+            if not stat.S_ISREG(info.st_mode):
+                return None
             digest = hashlib.sha256(Path(resolved).read_bytes()).hexdigest()
-        except OSError:
-            return resolved
+        except Exception:
+            # Not caching is the safe direction, so no pin can catch a
+            # programming error here (a resolver signature change, an
+            # AttributeError) silently disabling the cache forever. A log
+            # line makes it visible without changing behaviour.
+            logger.debug("no cache identity for %r", script_ref, exc_info=True)
+            return None
         return f"{resolved}:{digest}"
 
     async def _execute_without_cache(
