@@ -194,6 +194,11 @@ dynamically at metaclass/`__init_subclass__` time rather than through
 `dir()`-visible means is not demonstrated either way and is out of this
 arc's scope.
 
+**Bound (round 3's `code_names` fix, R-1):** the scan skips code-bound
+NAMES, so a tests file that REDEFINES a code-side class's name with its
+own class carrying a `test_*` attribute slips the scan too — the cost of
+the snapshot approach, stated honestly rather than fixed here.
+
 ## Review round 2 outcome
 
 Six further findings, all adjudicated (N-1 above; N-2 through N-6 here).
@@ -248,7 +253,42 @@ Six further findings, all adjudicated (N-1 above; N-2 through N-6 here).
   Primitive scripts ship as built-in `llm_orc.primitives` package
   modules, not copied from the library; the section now says so plainly
   and points at the `library`-command-group section instead of
-  duplicating a stale, disproved priority list.
+  duplicating a stale, disproved priority list. (Round 3, R-3, sharpens
+  this further — see below: "ship as built-in modules" alone overclaimed
+  that `scripts list` shows them, which it does not.)
+
+## Review round 3 outcome
+
+One blocker in the round-2 runner-side fix, one minor same-root issue,
+one docs half-truth. All adjudicated; the reviewer verified the fix
+across a 46-shape matrix.
+
+- **R-1 (blocker, a regression round 2's runner scan introduced):**
+  `_leaked_test_classes` scans the MERGED namespace, and the runner
+  execs the produced CODE into it first. An ordinary deliverable class
+  with a production method that happens to be named `test_*`
+  (`class Database: def test_connection(self): ...`) wrong-REJECTED a
+  clean suite, with a reason untrue of the file — the class lives in the
+  code, not the tests (L1). The same defect polluted correct refusals'
+  messages too: W21's report named the CODE-side base class alongside
+  the genuine tests-side leak. Fixed by snapshotting `code_names =
+  set(namespace)` right after the code exec, BEFORE the tests exec, and
+  skipping any class whose bound NAME is in that snapshot. See the F8
+  section's second bound note above for the honest cost of skipping by
+  name rather than identity.
+- **R-2 (minor, same root):** a class whose metaclass makes `dir()`
+  raise crashed the runner child with a raw traceback (`runner crashed:
+  ...`) instead of a clean verdict (L7). `dir(obj)` is now wrapped in
+  `try/except Exception: continue`.
+- **R-3 (docs):** round 2's own `cli-reference.md` fix claimed primitives
+  "ship as built-in package modules" without qualifying `llm-orc scripts
+  list`'s actual behavior — half true. Resolution reaches the package
+  (`ScriptResolver`'s "Priority 1.5: Installed package primitives"), but
+  `llm-orc scripts list` calls `PrimitiveRegistry.discover_primitives()`,
+  which enumerates only `.llm-orc/scripts/primitives/` and
+  `llm-orchestra-library/scripts/primitives/` — never the package. The
+  sentence now says built-ins are resolvable but not enumerated by
+  `scripts list`.
 
 ## Regression instruments
 
@@ -281,7 +321,10 @@ Round 2 additions, `tests/unit/serving/test_serving_accept_gate.py`
     W19, RED-verified against round 1's aggregate-equality check.
 7b. `test_a_pytest_style_class_inheriting_from_the_produced_code_refuses`
     — W21 (inherited `test_*` method, base defined in the CODE file),
-    RED-verified against round 1.
+    RED-verified against round 1. Round 3 (R-1) added an assertion that
+    the CODE-side base class name (`Base`) is absent from the refusal
+    message — RED-verified against round 2 (which named both `Base` and
+    `TestSub`).
 7c. `test_an_imported_test_attribute_still_refuses` — W23 (`test_it =
     imported_fn`, an `Assign` not a `FunctionDef`), RED-verified against
     round 1.
@@ -299,6 +342,17 @@ always return `[]` flips 7a–7d red; reverting `_run_children`'s
 `empty_cases_child` to drop `and not leaked` flips 7f red (message
 degrades to the generic reason, no longer names `TestOnlyLeak`); 7e stays
 green under both mutations (it does not depend on leak detection at all).
+
+Round 3 additions (R-1, R-2):
+
+7g. `test_a_production_class_with_a_test_prefixed_method_accepts` — L1,
+    RED-verified against round 2 (refused, naming `Database`). Mutation-
+    verified: replacing the `name in code_names` skip with `if False:`
+    flips this red.
+7h. `test_a_hostile_metaclass_does_not_crash_the_runner` — L7,
+    RED-verified against round 2 (`runner crashed: Traceback...`).
+    Mutation-verified: removing the `dir(obj)` try/except flips this red
+    with the same `runner crashed` message.
 
 `tests/unit/serving/test_serving_shape.py`:
 
@@ -389,16 +443,16 @@ Read via `gh issue view 172`.
 
 ## Verification
 
-Round 1 close: `make test` 4046 passed. Round 2 close (below): +9 pins
-(6 in `test_serving_accept_gate.py` — N-1's 7a–7f minus one already
-counted; 3 in `test_library_commands.py` — N-4's 16 and N-5's 17–18).
+Round 1 close: `make test` 4046 passed. Round 2 close: 4055 passed (+9
+pins). Round 3 close (below): +2 pins in `test_serving_accept_gate.py`
+(L1, L7 — W21 gained an assertion, not a new test function).
 
 - `make lint`: exit 0 (mypy, ruff check + format, complexipy, bandit,
   vulture, `scripts/check_doc_drift.py` — resolves every `test_*` name
   above).
-- `make test` (`uv run pytest -n auto`): 4055 passed, no lone `-n auto`
+- `make test` (`uv run pytest -n auto`): 4057 passed, no lone `-n auto`
   failures to re-run.
 - `uv run pytest tests/unit/serving/ tests/unit/benchmarks/test_judge_adequacy_harness.py -q --no-cov`:
-  751 passed.
+  753 passed.
 - `uv run pytest tests/unit/cli/test_library_commands.py -q --no-cov`: 54
-  passed.
+  passed (unchanged this round).
