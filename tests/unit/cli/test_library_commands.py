@@ -1238,7 +1238,7 @@ class TestLibrarySourceResolution:
         from llm_orc.cli_library.library import _get_library_source_config
 
         library = tmp_path / "llm-orchestra-library"
-        (library / "ensembles").mkdir(parents=True)
+        (library / "ensembles" / "a-category").mkdir(parents=True)
         monkeypatch.chdir(tmp_path)
         monkeypatch.delenv("LLM_ORC_LIBRARY_PATH", raising=False)
         monkeypatch.delenv("LLM_ORC_LIBRARY_SOURCE", raising=False)
@@ -1306,7 +1306,7 @@ class TestLibrarySourceResolution:
         import llm_orc.cli_library.library as library
 
         packaged = tmp_path / "packaged"
-        (packaged / "ensembles").mkdir(parents=True)
+        (packaged / "ensembles" / "a-category").mkdir(parents=True)
         monkeypatch.setattr(library, "_packaged_library_path", lambda: packaged)
 
         project = tmp_path / "project"
@@ -1344,3 +1344,67 @@ class TestLibrarySourceResolution:
         categories = library.get_library_categories()
 
         assert categories == []
+
+    def test_a_profiles_only_env_path_is_trusted_on_its_own_existence(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """#172 N-4 (review round 2): an explicitly configured
+        LLM_ORC_LIBRARY_PATH pointing at a profiles-only directory (no
+        `ensembles/` at all) used to be silently discarded —
+        `_is_library` gated it the same as the IMPLICIT candidates — and
+        the PACKAGED library served in its place instead. Explicit user
+        config wins on its own existence, not on carrying ensembles
+        content: it serves its profiles/templates and honestly lists
+        zero ensemble categories."""
+        import llm_orc.cli_library.library as library
+
+        env_library = tmp_path / "profiles-only"
+        (env_library / "profiles").mkdir(parents=True)
+        (env_library / "profiles" / "default.yaml").write_text("name: default\n")
+        monkeypatch.setenv("LLM_ORC_LIBRARY_PATH", str(env_library))
+        monkeypatch.delenv("LLM_ORC_LIBRARY_SOURCE", raising=False)
+
+        source_type, source_path = library._get_library_source_config()
+
+        assert source_type == "local"
+        assert source_path == str(env_library)
+        assert library.get_library_categories() == []
+
+    def test_an_empty_ensembles_directory_is_not_a_library(
+        self, tmp_path: Path
+    ) -> None:
+        """#172 N-5 (review round 2): `_is_library` still accepted an
+        EMPTY `ensembles/` directory — present but with nothing inside,
+        the normal post-`git worktree add` state. Issue #172's own
+        invariant is that an empty directory is never a source, with no
+        carve-out for "empty but present"."""
+        from llm_orc.cli_library.library import _is_library
+
+        library = tmp_path / "llm-orchestra-library"
+        (library / "ensembles").mkdir(parents=True)
+
+        assert _is_library(library) is False
+
+    def test_an_empty_ensembles_dir_never_shadows_a_populated_packaged_library(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """#172 N-5 (review round 2): a cwd checkout with an EMPTY
+        `ensembles/` (present, zero entries) must not shadow a populated
+        packaged copy — this gate applies to the IMPLICIT candidates
+        (cwd, packaged); the env path stays existence-gated per N-4."""
+        import llm_orc.cli_library.library as library
+
+        packaged = tmp_path / "packaged"
+        (packaged / "ensembles" / "a-category").mkdir(parents=True)
+        monkeypatch.setattr(library, "_packaged_library_path", lambda: packaged)
+
+        project = tmp_path / "project"
+        (project / "llm-orchestra-library" / "ensembles").mkdir(parents=True)
+        monkeypatch.chdir(project)
+        monkeypatch.delenv("LLM_ORC_LIBRARY_PATH", raising=False)
+        monkeypatch.delenv("LLM_ORC_LIBRARY_SOURCE", raising=False)
+
+        source_type, source_path = library._get_library_source_config()
+
+        assert source_type == "local"
+        assert source_path == str(packaged)
