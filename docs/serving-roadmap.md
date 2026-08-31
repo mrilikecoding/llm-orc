@@ -59,140 +59,85 @@ layer is the insulation that keeps an eventual hardening cheap, and
 "frozen component" status is the trigger, tracked informally the way the
 buy-back ledger tracks hosted seats.
 
-## State (2026-08-30)
+## State (2026-08-30, evening rewrite)
 
 ### Next up
 
-Nothing is pushed. Four merges sit on local `main`, three branches wait, and
-the two long arcs need one confirmation round each — resume there.
+One branch remains in the gate: `fix/172-176-small-fixes` (#172 #176), tip
+`c8892e9c`, round-2 review running after a four-blocker first review and a
+full rework. On its APPROVE it merges; then **#175** (held deliberately —
+both touch the executor); then the arc-sized trio below.
 
-**Merged to main, unpushed** (`git log origin/main..main`, 16 commits):
+Nothing is pushed. 52 commits / 8 merge units sit on local `main`
+(`git log --oneline origin/main..main`). The push — and the GitHub
+issue-closing that rides on it — awaits the practitioner's explicit go.
+CI has never seen the drift checker; #179 fixed the latent red that would
+have surfaced on first push.
 
-- **#166** — an empty build deliverable is never a client write. The design
-  named the wrong fault and pre-flight falsified it on all nine cells: with
-  the real `seat_contract` node running rather than a hand-fed verdict, a
-  dead seat refuses on all three build routes. The reachable fault is a LIVE
-  seat with an empty artifact, single-fault on `re-fix` (the injected smoke
-  test's `pass` body is satisfied by no code, and the target is a file the
-  client already has, so the write is a clobber) and on `build-gated` (the
-  executor's ground truth is satisfied by the materialized workspace when the
-  target is not the tested module). Corrected with it: line 469 is a
-  #152-class incident, not this fault; the near-misses are trace lines
-  38/81/97/98; the write census is 52, not 136.
-- **#169** — a re-fix candidate that is empty is never accepted, at source.
-  Complementary to #166 rather than duplicate: that guard stops the write,
-  this makes the verdict correct, so the turn records as rejected instead of
-  shipped-then-refused.
-- **#170** — `make test` no longer depends on the working directory. It was
-  red in every git worktree and green in the main checkout on the same
-  commit, so the merge gate said one thing to authors and another to the
-  independent reviewers rule 4 requires. Not the network: the library is a
-  submodule, `worktree add` leaves it empty, and an empty directory was
-  accepted as a local source.
-- **Loop-protocol rules 13-19** and `scripts/check_doc_drift.py`, now gating
-  `make lint`. See §Process below.
+**Merged to local main this session, each with an author-independent
+APPROVE after a wrong-accept hunt:**
 
-**In the gate, green, one confirmation round short** — both branches pass
-`make lint` and `make test` on their own tree (#163: 4001; #168: 4014):
+- **#163** — an undigestable script is never cached. The confirmation round
+  found no wrong-accept (~25 fresh probes; all 15 named instruments went red
+  under their claimed mutants) and blocked once on two doc claims that did
+  not derive; fixed and re-verified by the same reviewer.
+- **#168** — a refusal reason names no absolute path; eight rounds and a
+  three-part confirmation. The confirmation found the round-7 fix regressed
+  round 5 (ndiff context lines are indented, so ordinary assertEqual diffs
+  lost their evidence), so **#178 was taken in-arc**: the traceback parser
+  is deleted and a `TestResult` subclass keeps the live exception at capture
+  time. Found on the way: `addSubTest` does not delegate, so subtest
+  failures were silently dropped — closed and pinned. Round 8b's residuals:
+  a raising `__str__` no longer kills the runner child (guard in-arc);
+  **#180 filed** (the report is unbounded and produced code controls the
+  bound — 76KB measured; #114/#175 family); the vacuous-pass shapes
+  (all-skipped suite reports all-passed) recorded on #84.
+- **#173** — an inert re-fix candidate is never accepted, at source. The
+  first review found the round-1 guard caught 2 of a 15-member class
+  (`pass` alone — the injected smoke test's own body — still clobbered);
+  reworked to a closed AST whitelist (structure and constants only), which
+  supersedes #169's one-character pin explicitly. End-to-end pin included;
+  zero wrong-rejects across 16 real-code shapes.
+- **#179** (new, filed and fixed this session) — the doc-drift check knew
+  zero names inside agent worktrees: `_SKIP` matched "worktrees" against
+  absolute path parts, so rule 19's instrument was blind exactly where
+  delegated agents run, and 4 of its own tests failed there. Relative parts
+  close it; the breadth pin now names a tracked benchmarks instrument
+  instead of a gitignored session artifact.
 
-- **#163** `fix/163-cache-identity-fail-closed`, 8 commits, 6 review rounds.
-  Round 6 found no sixth landing site and blocked on prose only; that is
-  fixed (`836bd705`) and unverified. An undigestable script is never cached:
-  the resolver classifies inline-vs-path before any filesystem call, and a
-  reference that denotes a file yields an identity only when it stats regular
-  and digests.
-- **#168** `fix/168-refusal-reason-path-leak`, 12 commits, 7 review rounds.
-  Round 7 found no eighth leak channel and blocked on the chained-exception
-  line; that is fixed (`ded66e1b`) and unverified. A refusal reason names no
-  absolute path: positive extraction for the engine wrap, and a
-  path-separator property enforced on every emitted string in the executor.
-
-  **`fix/168` conflicts with main on one line** — the ws9-platform epic list,
-  because #169 merged its own additions there. Main's copy is the union and
-  is the correct resolution.
-
-**Built, unreviewed**: `fix/172-176-small-fixes`, 1 commit. #172 (an empty
-submodule directory shadowed a real packaged library — measured, 0 categories
-where the package serves 9) and #176 (any module-level helper class failed a
-passing suite, a wrong-REJECT in the gate that decides whether a build ships).
-Both mutation-verified; neither has had an author-independent review.
+Prior handoff's merges (#166 #169 #170, rules 13-19) unchanged beneath.
 
 ### Process
 
-The two long arcs cost 6 and 7 review rounds. Every round after the first
-found something the previous fix introduced or missed, and twice the new
-defect sat inside the function written to close the previous one. The rounds
-were not waste — each moved a guard from an instance to an invariant, and the
-final rounds of both found no defect of the kind the arc was about — but the
-cost is the signal, and the general fixes are #175, #177 and #178 rather than
-either arc.
-
-Rules 13-19 in `docs/loop-protocol.md` encode what those rounds bought.
-Rule 19 is the mechanical half: `check_doc_drift.py` resolves every
-backticked `test_*` name in `docs/plans` against every `test_*` token in
-code, and found four stale names in the existing corpus on its first run.
-
-The standing risk this session demonstrated, for whoever picks it up: prose
-written from intent rather than from the code passes every gate. One design
-section was wrong in four consecutive rounds; each correction restated what
-the author meant the code to do. Rule 15 exists for that, and rule 19 checks
-the one part of it a machine can.
+Every first review this session found real blockers — the record is now
+seven-for-seven — and both long-arc confirmations found their blocker by
+RE-PROBING earlier findings with fresh inputs, not by re-reading. Rule 4's
+re-verify clause is the one earning its keep. The #168 confirmation is the
+sharpest datum: the round-7 fix traded one defect for a regression of round
+5 on an equally ordinary input, which is what finally forced the structural
+fix rule 18 had been pointing at since round 6.
 
 ### Open, and which are small
 
-Filed from review findings this session, none previously tracked. Rule 13
-says the small ones get fixed rather than queued; these are sorted by that
-judgement rather than by number.
-
-Small enough to fix directly, and not yet done:
-
-- **#173** — `re-fix` accepts a comment-only or docstring-only candidate and
-  clobbers the client's file. The guard's boundary is one `#` character wide.
-  `not ast.parse(code).body` closes the comment-only half in one line;
-  docstring-only needs a second decision.
 - **#175** — a refusal reason can still carry any path-free string produced
   code reads server-side, including environment values, because the sandbox
-  inherits the environment. The env-scrub direction is small; the closed
-  report vocabulary is not.
-- **#178** — the `TestCase` branch parses formatted tracebacks, which
-  produced three wrong-exception defects in three rounds. A `TestResult`
-  subclass keeps the live exception object and both branches share one path.
-  Attempted at round 7 and reverted, on the reasoning that it would
-  invalidate the review so far — which rule 13 now names as a non-reason.
-
-Arc-sized, genuinely:
-
-- **#171** — the accept gate can be satisfied without the deliverable
-  participating: workspace-satisfied tests accept any content, so `x = 1` and
-  `# TODO` clobber exactly as `""` did on both build routes. This is what
-  #166 and #169 close only the empty slice of.
-- **#174** — a dead seat on a non-build route ships the engine's failure
-  envelope as the ANSWER, traceback and script path included. #155 Arc B's
-  shape, on the routes Arc A did not reach; the build routes are safe only
-  because they all declare `seat_contract:` blocks.
-- **#177** — file-vs-inline is decided in three places by two rules, and they
-  disagree. #163 fails closed on the disagreement; unifying the predicates
-  changes what gets EXECUTED.
-
-Also open and untouched this session: **#165** (the `-n auto` flake — two
-hypotheses refuted by reading, `ArtifactManager.__init__` does no filesystem
-work and all twelve `persist_to_artifacts` tests pass explicit directories;
-a reproduction loop was started and stopped rather than run across a merge),
-the two decision residuals on **#155**, and **#161/#162**.
-
-Still blocked on the practitioner: **#167** (the volume paid runs — r=8 per
-level, roughly $10-30 per model, with a cheaper L1-and-L5-only variant) and
-**#141's CLAUDE.md-confound spike**, whose None condition suppresses the live
-`~/.claude/CLAUDE.md` and so needs an explicit go.
+  inherits the environment. Next after #172/#176 merge. Env-scrub is small;
+  the closed report vocabulary is not.
+- **#180** — filed this session from #168 round 8b: the accept report is
+  unbounded and unittest itself teaches the model to inflate it
+  (`maxDiff = None`). #114/#175 family.
+- **#171 #174 #177** — arc-sized, unchanged from the morning handoff.
+- Untouched: **#165**, **#155** Arcs B/C, **#161/#162**, **#149 #151**.
+- Still blocked on the practitioner: **#167** (volume paid runs) and
+  **#141** (CLAUDE.md-confound spike's None condition).
 
 ### Queued, not skipped
 
-No live real-OpenCode validation ran this session, and three of the merged
-arcs change client-visible behaviour. The delegation contract ends a
-capability arc with a live battery row; that row is owed for #166, #169 and
-(on merge) #168. Ollama is up on the rig; the serve is not running. Dogfood
-entry 9 is the exact refusal message #168 sanitises, which makes it the
-natural gate.
+Live real-OpenCode validation rows are owed for **#166 #169 #168 #173**
+(and #172/#176 on merge) — every one changes client-visible behaviour.
+Dogfood entry 9 is the exact refusal message #168 sanitises, still the
+natural gate. The serve was not started this session; batteries run
+detached (nohup + Monitor tail) per §Environments.
 
 ## Timeline
 
@@ -252,9 +197,12 @@ Remaining, in order:
 - [x] #166 #169 #170 merged (empty deliverable never written; empty re-fix
   candidate never accepted; `make test` independent of the working
   directory), plus loop-protocol 13-19 and the doc-drift check
-- [ ] #163 #168 — green and one confirmation round short; then
-  `fix/172-176-small-fixes` (#172 #176) needs its first review
-- [ ] #173 #175 #178 — small, fix rather than queue (rule 13)
+- [x] #163 #168 merged after confirmation rounds (#178 taken in-arc:
+  the parser is deleted); #173 merged (inert class closed 15/15); #179
+  filed+fixed+merged (drift check works in worktrees)
+- [ ] `fix/172-176-small-fixes` (#172 #176) — reworked after a
+  four-blocker first review; round-2 review running
+- [ ] #175 — small, fix rather than queue (rule 13); next after #172/#176
 - [ ] #171 #174 #177 — the general fixes the two long arcs circled
 - [ ] #161 #162 #165 — script-cache purity/imports and the -n auto flake;
   #155 Arcs B/C remainder
@@ -382,7 +330,12 @@ dishonest outcome.
 - [x] #169 an empty re-fix candidate is never accepted, at source
 - [x] #170 `make test` no longer depends on the ambient working directory
 - [x] #155 Arc A — a node that cannot READ its input refuses (crashed shape/form_gate finished as an empty success); Arcs B/C still open
-- [ ] #151 runtime-window detector remainder · #155 Arcs B/C · #163 an undigestable script is cached under a path-only key · #168 refusal reasons leak server paths + username · #173 re-fix accepts a comment-only candidate (clobbers) · #174 a dead seat ships the engine envelope as the answer · #175 path-free strings still reach the wire · #176 a helper class fails a passing suite · #177 three file-vs-inline classifiers · #178 the TestCase branch parses tracebacks · #161 cache purity · #162 cache misses imports · #165 `-n auto` flake · #85 sandbox hardening · #84 gate adversarial harness · #90 llama.cpp · #93 hot path · #95 dead surface · #106 shape home · #110 artifact quality · #114 trace cap · #132 BitNet · #142 reject templates
+- [x] #163 an undigestable script is never cached (7 rounds + confirmation)
+- [x] #168 a refusal reason names no absolute path (8 rounds + confirmation;
+  #178 taken in-arc — the TestCase branch no longer parses tracebacks)
+- [x] #173 an inert re-fix candidate is never accepted (closed AST whitelist)
+- [x] #179 the doc-drift check knows its names inside agent worktrees
+- [ ] #151 runtime-window detector remainder · #155 Arcs B/C · #172 #176 in round-2 review · #174 a dead seat ships the engine envelope as the answer · #175 path-free strings still reach the wire · #177 three file-vs-inline classifiers · #180 the accept report is unbounded · #161 cache purity · #162 cache misses imports · #165 `-n auto` flake · #85 sandbox hardening · #84 gate adversarial harness · #90 llama.cpp · #93 hot path · #95 dead surface · #106 shape home · #110 artifact quality · #114 trace cap · #132 BitNet · #142 reject templates
 
 ### epic:off-path
 #80 #65 #30 #66 — parked, not on the north-star path.
@@ -428,13 +381,15 @@ Superseded by epic labels: `gh issue list --label epic:<name>`. Closed
 #107–#109 #111–#113 #115 #116 #118 #120 #133 #134 #138 #139 #145 #152
 #153 #154 #156 #157 #158 #159 #160 #164.
 
-**#166 #169 #170 are merged on local main and still OPEN on GitHub**, because
-nothing is pushed. They close when the push lands, not before — the roadmap
-said "closed" here first, which is the kind of claim rule 15 exists for.
+**#163 #166 #168 #169 #170 #173 #178 #179 are merged on local main and
+still OPEN on GitHub**, because nothing is pushed. They close when the push
+lands, not before — the roadmap said "closed" here first, which is the kind
+of claim rule 15 exists for.
 
 Filed 2026-08-30 from review findings, all measured, none previously
-tracked: #171 #172 #173 #174 #175 #176 #177 #178. #172 and #176 are fixed on
-`fix/172-176-small-fixes` and await review.
+tracked: #171 #172 #173 #174 #175 #176 #177 #178, then #179 (fixed+merged)
+and #180 (open) in the evening session. #172 and #176 are reworked on
+`fix/172-176-small-fixes`, round-2 review running.
 
 Two closed issues gate work that is tracked elsewhere: **#138**
 (instrument shipped; the paid runs are #167) and **#139** (curve
