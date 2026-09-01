@@ -44,6 +44,14 @@ unknowable) and a dead seat-side gate on a build turn
 (``BUILD_REFUSED_PREFIX``, mints ``refused`` — routing succeeded by
 construction, so ``is_build_ask`` is known).
 
+#174 adds a third, the seat itself dying rather than its gate: consumed
+exactly where content ships (the prose-finish branch and the build write
+path), never as a turn-wide precondition, so a dead placeholder seat on a
+delegation/prose route (one whose answer rides the routing decision and
+never touches the seat terminal) still answers normally. Selects between
+the same two existing prefixes by ``is_build_ask`` (never ``build`` —
+routing can be False on a build ask's own discovery round).
+
 """
 
 from __future__ import annotations
@@ -292,8 +300,10 @@ def main() -> None:
     content = str(gated.get("content", ""))
     accept = gated.get("accept")
     seat_admitted = gated.get("seat_admitted")
+    is_build_ask = bool(gated.get("is_build_ask", False))
 
     seat_gate_failed = str(gated.get("seat_gate_failed", ""))
+    seat_failed = str(gated.get("seat_failed", ""))
 
     seam = _seam_outcome(gated)
     if seam is not None:
@@ -361,6 +371,20 @@ def main() -> None:
                 f"{seat_gate_failed}; nothing was built or written"
             ),
         }
+    elif build and gated.get("valid", False) and seat_failed:
+        # #174: the seat itself is dead — shape already zeroed `content`, so
+        # this is the honest refusal in place of the empty write that would
+        # otherwise fall through (#166's caller-side empty-deliverable guard
+        # is the backstop if this branch is ever bypassed; naming it here
+        # keeps the reason specific instead of generic). `build` already
+        # proves is_build_ask, same as the branch below.
+        outcome = {
+            "finish": True,
+            "content": (
+                f"{TERMINALS['build_refused'].prefix}serving pipeline error: "
+                f"{seat_failed}; nothing was built or written"
+            ),
+        }
     elif build and gated.get("valid", False):
         outcome = {
             "finish": False,
@@ -376,6 +400,25 @@ def main() -> None:
         outcome = {
             "finish": True,
             "content": f"{TERMINALS['build_refused'].prefix}{reason}",
+        }
+    elif seat_failed:
+        # #174: a dead seat's placeholder must not ship as the prose finish
+        # — the remaining dishonest gap #166's build-side guard does not
+        # reach (a non-build turn is never a client write). Prefix by
+        # `is_build_ask`, not `build`: this branch runs with `build` False
+        # by construction, but the SAME dead-seat shape can answer a build
+        # ask's own discovery/explain round (recap grounding, #133/#134).
+        prefix = (
+            TERMINALS["build_refused"].prefix
+            if is_build_ask
+            else TERMINALS["refused"].prefix
+        )
+        outcome = {
+            "finish": True,
+            "content": (
+                f"{prefix}serving pipeline error: {seat_failed}; "
+                f"nothing was built or written"
+            ),
         }
     else:
         outcome = {"finish": True, "content": content}

@@ -131,6 +131,9 @@ def main() -> None:
                 # unchanged. A different kind of failure from node_failed —
                 # emit consumes it on the BUILD branch only.
                 "seat_gate_failed": str(shaped.get("seat_gate_failed", "")),
+                # #174: shape's read of the seat dep itself, passed through
+                # unchanged — emit consumes it exactly where content ships.
+                "seat_failed": str(shaped.get("seat_failed", "")),
             }
         )
     )

@@ -144,6 +144,39 @@ def _envelope_deliverable(seat_terminal: str) -> str | None:
     return primary if isinstance(primary, str) else None
 
 
+def _dead_seat_reason(seat_terminal: str) -> str:
+    """Why the seat is dead, or ``""`` when it isn't (#174).
+
+    Positive recognition, not a denylist: a seat terminal that parses as a
+    JSON dict WITHOUT ``status`` is not a healthy seat output whatever else
+    it may be — a raw-prose seat (the explainer) never parses as a dict at
+    all, and a healthy ADR-024 envelope always carries ``status``. Both
+    engine failure families are dicts of this disjoint shape by
+    construction: ``execute_with_schema_json``'s wrap
+    (``success``/``data``/``error``/``agent_requests``) and the sub-ensemble
+    ``ScriptAgent.execute`` ``{success, error, stderr}`` shape.
+
+    Named bound (accepted the way #155 accepted its seat_contract
+    trip-wire): an explainer answer that happens to BE a parseable JSON
+    dict without ``status`` is indistinguishable from a dead seat here and
+    wrong-refuses. The system prompt forbids that shape.
+
+    The reason text is built ONLY from ``_engine_failure_summary`` over the
+    dict's string ``error`` field — never ``stderr``, argv, or any other
+    dict value; ``turn_trace.py`` keeps the whole thing server-side.
+    """
+    try:
+        env = json.loads(seat_terminal)
+    except (json.JSONDecodeError, TypeError):
+        return ""
+    if not isinstance(env, dict) or "status" in env:
+        return ""
+    error = env.get("error")
+    if isinstance(error, str) and error:
+        return _engine_failure_summary(error)
+    return "failed"
+
+
 def _seat_verdict(dep: object) -> tuple[bool | None, str]:
     """The per-seat admission verdict from the ``seat_contract`` node, or
     ``(None, "")`` when no seat contract ran. ``None`` means "no per-seat gate";
@@ -243,8 +276,14 @@ def main() -> None:
 
     seat_terminal = _terminal(_response(deps.get("seat", {})))
     deliverable = _envelope_deliverable(seat_terminal)
+    seat_failed = ""
     if deliverable is None:
-        deliverable = seat_terminal.strip()
+        # #174: a dead seat (a JSON dict without `status`) is not a healthy
+        # seat output — zero the deliverable as defense in depth rather than
+        # ship the engine's failure envelope. Everything that does not parse
+        # to a dict stays raw prose, unaffected.
+        seat_failed = _dead_seat_reason(seat_terminal)
+        deliverable = "" if seat_failed else seat_terminal.strip()
 
     accept, accept_reason = _envelope_verdict(seat_terminal)
     seat_admitted, seat_contract_reason = _seat_verdict(deps.get("seat_contract"))
@@ -291,6 +330,12 @@ def main() -> None:
                 # no bearing on a delegation or prose route, so emit consumes
                 # this on the BUILD branch only.
                 "seat_gate_failed": seat_gate_failed,
+                # #174: non-empty exactly when the seat itself is dead (a
+                # JSON dict without `status`) — emit consumes this exactly
+                # where content ships, never as a turn-wide precondition, so
+                # a dead placeholder seat cannot refuse a delegation/prose
+                # route whose answer never touches the seat terminal.
+                "seat_failed": seat_failed,
             }
         )
     )

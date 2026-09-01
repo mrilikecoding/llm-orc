@@ -793,4 +793,164 @@ def test_the_form_gate_reason_outranks_a_dead_seat_gate() -> None:
     )
 
     assert "not valid Python" in outcome["content"]
+
+
+# --- #174: emit consumes seat_failed exactly where content ships -----------
+
+
+def test_a_dead_seat_refuses_a_build_that_would_otherwise_ship() -> None:
+    """Closes "safe by luck": shape already zeroed `content`, and this fires
+    even when `seat_contract` is deleted from the ensemble (a vacuous
+    `seat_admitted: True`) — the exact scenario #166's caller-side
+    empty-deliverable guard is the backstop for, but this branch gives the
+    specific #168-vocabulary reason instead of a generic empty-write one."""
+    outcome = _emit(
+        {
+            "valid": True,
+            "build": True,
+            "file": "a.py",
+            "content": "",
+            "seat_failed": "exited non-zero, status 1",
+        }
+    )
+
+    assert outcome["finish"] is True
+    assert outcome["content"].startswith(BUILD_REFUSED_PREFIX)
+    assert "exited non-zero, status 1" in outcome["content"]
+    assert "file" not in outcome
+
+
+def test_a_dead_seat_refuses_a_non_build_prose_finish() -> None:
+    """The remaining dishonest gap #166 does not reach: a non-build turn is
+    never a client write, so an empty `{"finish": true, "content": ""}` was
+    the last place a dead seat could still slip through."""
+    outcome = _emit(
+        {
+            "valid": True,
+            "build": False,
+            "content": "",
+            "seat_failed": "failed",
+        }
+    )
+
+    assert outcome == {
+        "finish": True,
+        "content": (
+            "Refused: serving pipeline error: failed; nothing was built or written"
+        ),
+    }
+
+
+def test_a_dead_seat_on_a_build_asks_own_discovery_round_uses_the_build_prefix() -> (
+    None
+):
+    """Prefix by `is_build_ask`, never `build`: the SAME dead-seat shape can
+    answer a build ask's own discovery/explain round, where `build` is
+    False by construction but the ledger must still be able to mint a build
+    outcome (#133/#134 recap grounding)."""
+    outcome = _emit(
+        {
+            "valid": True,
+            "build": False,
+            "content": "",
+            "seat_failed": "failed",
+            "is_build_ask": True,
+        }
+    )
+
+    assert outcome["content"].startswith(BUILD_REFUSED_PREFIX)
+
+
+def test_a_dead_seat_never_refuses_a_delegation_seam() -> None:
+    """NOT a turn-wide precondition (design brief): a needs-files request
+    rides the routing decision and never touches the seat terminal, so a
+    dead placeholder seat must not refuse it."""
+    outcome = _emit(
+        {
+            "valid": True,
+            "build": False,
+            "content": "",
+            "needs_files": ["storage.py"],
+            "seat_failed": "failed",
+        }
+    )
+
+    assert outcome == {"finish": False, "reads": ["storage.py"]}
+
+
+def test_a_dead_seat_never_refuses_a_not_grounded_answer() -> None:
+    outcome = _emit(
+        {
+            "valid": True,
+            "build": False,
+            "content": "",
+            "not_grounded": "todo.py",
+            "seat_failed": "failed",
+        }
+    )
+
+    assert outcome["finish"] is True
+    assert "No `todo.py`" in outcome["content"]
+
+
+def test_a_dead_seat_never_refuses_a_recall_answer() -> None:
+    outcome = _emit(
+        {
+            "valid": True,
+            "build": False,
+            "content": "",
+            "recall_answer": "You first built add.py.",
+            "seat_failed": "failed",
+        }
+    )
+
+    assert outcome == {"finish": True, "content": "You first built add.py."}
+
+
+def test_a_healthy_seat_ships_normally_with_seat_failed_empty() -> None:
+    """The over-refusal direction: this cannot fail under deletion of the
+    fix — a healthy turn carries an empty `seat_failed` and is untouched."""
+    outcome = _emit(
+        {
+            "valid": True,
+            "build": False,
+            "content": "A tuple is immutable.",
+            "seat_failed": "",
+        }
+    )
+
+    assert outcome == {"finish": True, "content": "A tuple is immutable."}
+
+
+def test_the_accept_gate_outranks_a_dead_seat() -> None:
+    outcome = _emit(
+        {
+            "valid": True,
+            "build": True,
+            "file": "a.py",
+            "content": "x = 1",
+            "accept": False,
+            "accept_reason": "tests do not pass",
+            "seat_failed": "exited non-zero, status 1",
+        }
+    )
+
+    assert outcome["content"].startswith(ACCEPT_GATE_REJECT_PREFIX)
+    assert "tests do not pass" in outcome["content"]
+
+
+def test_a_seat_contract_rejection_outranks_a_dead_seat() -> None:
+    outcome = _emit(
+        {
+            "valid": True,
+            "build": True,
+            "file": "a.py",
+            "content": "x = 1",
+            "seat_admitted": False,
+            "seat_contract_reason": "no artifact",
+            "seat_failed": "exited non-zero, status 1",
+        }
+    )
+
+    assert outcome["content"].startswith(SEAT_CONTRACT_REJECT_PREFIX)
     assert "seat contract" not in outcome["content"]
