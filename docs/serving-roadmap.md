@@ -59,30 +59,44 @@ layer is the insulation that keeps an eventual hardening cheap, and
 "frozen component" status is the trigger, tracked informally the way the
 buy-back ledger tracks hosted seats.
 
-## State (2026-08-30, evening rewrite)
+## State (2026-08-31, arc-trio session, in progress)
 
 ### Next up
 
-The gate is empty and the handoff's executable queue is EXHAUSTED: both
-long arcs, every rule-13 small fix (#173, #175 env slice, #178-in-arc,
-#179), the #172/#176 rework, and #168's live validation row are merged.
-What remains forks three ways, and the fork is the practitioner's call:
+The practitioner delegated the 08-30 fork ("work through any well-scoped
+work"); this session took fork 2, the arc-sized trio, all three briefed
+by the lead (`docs/plans/2026-08-31-{174,177,171}-*.md`) and delegated:
 
-1. **Push** — 11 merge units close eight GitHub issues on landing; CI's
-   first look at the drift checker; `gh run watch` after.
-2. **Arc-sized trio** — #174 (dead seat on non-build routes ships the
-   engine envelope as the ANSWER; nearest to #168's just-validated
-   family), #177 (unify the three file-vs-inline classifiers; changes
-   what EXECUTES), #171 (the deliverable must participate; the general
-   fix #166/#169/#173 closed slices of).
-3. **Remaining live rows** — #166 #169 #173 #172 #176 #175; the
-   fault-injection template is recorded in the #168 gate record, but the
-   re-fix shapes need a seat-level injection design first.
+- **#174 MERGED** (`fix/174-dead-seat-envelope`): a dead seat refuses
+  honestly on every route. Two review rounds + a delta confirmation
+  (round 1 APPROVE-with-rework: the accept branch outranked the dead-seat
+  refusal and quoted a path from the dead terminal; whole-stderr trace
+  retention was unbounded — 4MB/turn measured; round 2 confirmed, then
+  the stderr cap's head-only truncation was flipped to head+tail after a
+  capture showed the traceback falling past the cap). Merged tree: 4145
+  passed, lint 0. Named bounds recorded in the brief (NB-3 statusful
+  envelope with no extractable deliverable, NB-4 `{"value": prose}` loop
+  wrap, Note-6 empty-stdout seat).
+- **#177 in review round 3**: round 1 BLOCKED (classification re-derived
+  per stat — a vanished bare-name file flipped FILE→INLINE and ran a PATH
+  impostor via `bash -c`); round 2 BLOCKED (the fix closed the inline
+  door; slashless `bash <name>` re-resolved on PATH through the FILE
+  branch); round 3 reviews the anchoring rework (`./name` at the single
+  resolve seam; `is_inline_content` deleted, zero callers).
+- **#171 implementing after a pre-flight REDESIGN**: the v1 static
+  design (unconditional shadow + tests-reference-candidate rule) was
+  refuted by measurement — 8/8 constructed non-participation shapes
+  still shipped (shared-namespace exec rebinding), the adequacy seam is
+  absent on held/re-fix routes, and the shadow moved 0/32 recorded
+  turns. v2 is a runtime ablation control in `accept_executor` (0/8
+  wrong-accept, 0/71 wrong-reject on the recorded corpus, median 0.19s)
+  plus a surface-derived re-fix smoke test and an injector guard.
 
-Nothing is pushed (`git log --oneline origin/main..main` for the count; 10
-merge units). The push — and the GitHub issue-closing that rides on it —
-awaits the practitioner's explicit go. CI has never seen the drift checker;
-#179 fixed the latent red that would have surfaced on first push.
+The push (now 70+ merge units) and the GitHub issue-closing that rides
+on it still await the practitioner's explicit go. CI has never seen the
+drift checker; #179 fixed the latent red that would have surfaced on
+first push. The remaining-live-rows fork (#166 #169 #173 #172 #176 #175,
+now + #174) still needs the seat-level injection design.
 
 **#172 #176 merged** after four review rounds (first review: four blockers,
 including the #176 heuristic converting wrong-REJECT into wrong-ACCEPT;
@@ -150,7 +164,7 @@ fix rule 18 had been pointing at since round 6.
 - **#180** — filed this session from #168 round 8b: the accept report is
   unbounded and unittest itself teaches the model to inflate it
   (`maxDiff = None`). #114/#175 family.
-- **#171 #174 #177** — arc-sized, unchanged from the morning handoff.
+- **#171 #177** — in flight this session (see Next up); **#174 merged**.
 - Untouched: **#165**, **#155** Arcs B/C, **#161/#162**, **#149 #151**.
 - Still blocked on the practitioner: **#167** (volume paid runs) and
   **#141** (CLAUDE.md-confound spike's None condition).
@@ -238,7 +252,9 @@ Remaining, in order:
   packaged candidates content-gated non-empty, `("local","")` never escapes)
 - [x] #175 env-scrub slice merged (empty child env, census pinned, bounds
   named); the vocabulary half stays open on #175, riding #180/#142
-- [ ] #171 #174 #177 — the general fixes the two long arcs circled
+- [x] #174 merged (a dead seat refuses honestly on every route; dead-seat
+  refusal outranks accept/validity; stderr retained head+tail capped)
+- [ ] #171 #177 — the general fixes the two long arcs circled (in flight)
 - [ ] #161 #162 #165 — script-cache purity/imports and the -n auto flake;
   #155 Arcs B/C remainder
 - [ ] North star: parity on real work, honesty column held at zero
@@ -418,8 +434,8 @@ Superseded by epic labels: `gh issue list --label epic:<name>`. Closed
 #107–#109 #111–#113 #115 #116 #118 #120 #133 #134 #138 #139 #145 #152
 #153 #154 #156 #157 #158 #159 #160 #164.
 
-**#163 #166 #168 #169 #170 #172 #173 #176 #178 #179 are merged on local
-main and still OPEN on GitHub**, because nothing is pushed. They close when
+**#163 #166 #168 #169 #170 #172 #173 #174 #176 #178 #179 are merged on
+local main and still OPEN on GitHub**, because nothing is pushed. They close when
 the push lands, not before — the roadmap said "closed" here first, which is
 the kind of claim rule 15 exists for. #175 is merged in part (env slice)
 and stays open by design for its vocabulary half.
