@@ -246,12 +246,16 @@ class ScriptAgentRunner:
         sites were fixed to stop reaching for independently. One call
         closes both.
 
-        The identity's name-component below is ``script_ref`` — the
-        reference itself, not ``resolved`` — so anchoring a bare file
-        reference (``./name``, #177 review round 2 finding 1) does not
-        change the identity's shape: the digest is still taken from the
-        anchored path (the correct bytes), but the name that PICKS the
-        cache slot stays the stable thing the caller actually configured.
+        The identity's name-component below is ``resolved`` — the
+        location the reference resolves TO — not ``script_ref`` (#177
+        review round 3 BLOCKER, a regression review round 2 introduced
+        with a since-refuted stability rationale). The digest answers
+        "same bytes"; only the resolved location answers "same script".
+        Two different projects can each ship a byte-identical
+        ``helper.py`` that reads its own sibling data file — same ref,
+        same digest, DIFFERENT script — and keying on the ref alone let
+        one project's run get served the other's cached output on a
+        cache HIT, without its own script ever running.
 
         - **Inline content.** The reference IS its own bytes and
           identifies itself.
@@ -312,7 +316,7 @@ class ScriptAgentRunner:
         except Exception:
             logger.debug("no cache identity for %r", script_ref, exc_info=True)
             return None
-        return f"{script_ref}:{digest}"
+        return f"{resolved}:{digest}"
 
     async def _execute_without_cache(
         self,
