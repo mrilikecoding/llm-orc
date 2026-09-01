@@ -137,12 +137,19 @@ branch, and three residual bounds recorded here rather than fixed:
 - **NB-4** (residual, unreachable today): `LoopAgentRunner._terminal_output`
   wraps a non-JSON loop-body deliverable as `{"value": prose}` — a
   HEALTHY statusless dict, the same shape as the explainer-JSON bound
-  above but from a different producer. Unreachable today: both round
-  ensembles (`build-round`, `write-tests-round`, looped by `build-gated`
-  and `write-tests`) terminate in envelope scripts
-  (`dispatch_unwrap.py`/`tests_envelope.py`), never a raw loop body. A
-  future seat that dispatches directly to a looped, prose-terminated body
-  would wrong-refuse under this predicate.
+  above but from a different producer. Unreachable today, but not for the
+  reason first recorded here (round-2 review correction): `build-round`
+  (the `build-gated` loop body) does not itself terminate in an envelope
+  script — its own `unwrap` step, `dispatch_unwrap.py`, is a peeler that
+  emits `{}` on anything it cannot parse, not a `status` guarantee of its
+  own. The guarantee is one level down, in what it peels: `route_round.py`
+  dispatches only to `build-code-round` or `build-gated-round`, and BOTH
+  terminate in `build_gated_envelope.py`, so the unwrap always finds a
+  `status`-carrying dict. `write-tests-round` (the `write-tests` loop
+  body) needs no such argument — it terminates directly in
+  `tests_envelope.py`, no unwrap step at all. A future seat that
+  dispatches directly to a looped, prose-terminated body would
+  wrong-refuse under this predicate.
 - **Note 6** (residual, pre-existing, out of scope): a seat that exits 0
   with empty stdout ships an empty `content` — the empty string does not
   parse as JSON, so `_dead_seat_reason` returns `""` (not a dict at all,
