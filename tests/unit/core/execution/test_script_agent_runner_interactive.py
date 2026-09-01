@@ -905,6 +905,48 @@ class TestCacheIdentity:
         assert cache.get_stats()["hits"] == 0
         assert cache.get_stats()["sets"] == 2
 
+    def test_identical_bytes_at_the_same_ref_in_different_projects_do_not_cross(
+        self, tmp_path: Path
+    ) -> None:
+        """#177 review round 3 BLOCKER, the pin nothing caught before this:
+        the SAME reference (``helper.py``) resolves to a DIFFERENT file in
+        each project, and the two happen to be byte-identical -- but each
+        one reads its own sibling data file, so they are different
+        scripts wearing the same name and the same digest. Keying the
+        identity on the reference (round 2's regression) collided them:
+        project B's run got served project A's cached output on a cache
+        HIT, without B's own script ever running. Keying on the RESOLVED
+        location (what this pins) tells them apart.
+        """
+        helper_body = (
+            "import json, os\n"
+            "here = os.path.dirname(os.path.abspath(__file__))\n"
+            "with open(os.path.join(here, 'data.txt')) as f:\n"
+            "    v = f.read().strip()\n"
+            "print(json.dumps({'v': v}))\n"
+        )
+        project_a = tmp_path / "a"
+        project_b = tmp_path / "b"
+        project_a.mkdir()
+        project_b.mkdir()
+        (project_a / "helper.py").write_text(helper_body)
+        (project_a / "data.txt").write_text("AAA")
+        (project_b / "helper.py").write_text(helper_body)
+        (project_b / "data.txt").write_text("BBB")
+
+        cache = ScriptCache(ScriptCacheConfig(enabled=True))
+        runner_a = self._runner(cache, project_dir=project_a)
+        runner_b = self._runner(cache, project_dir=project_b)
+        config = ScriptAgentConfig(name="helper", script="helper.py")
+
+        result_a, _, _ = asyncio.run(runner_a.execute(config, "{}"))
+        result_b, _, _ = asyncio.run(runner_b.execute(config, "{}"))
+
+        assert json.loads(result_a)["v"] == "AAA"
+        assert json.loads(result_b)["v"] == "BBB", (
+            "project B was served project A's cached output"
+        )
+
     def test_an_unresolvable_reference_does_not_raise(self, tmp_path: Path) -> None:
         """Computing a cache key must never be the thing that reports a
         missing script; execution a moment later produces the real error."""
@@ -1302,14 +1344,18 @@ class TestAResolveFailureIsAlsoUndigestable:
 
         Round 3's premise was that the resolver is the only thing that knows
         which references it treats as content. True of ``ScriptResolver``,
-        false of the system: ``ScriptAgent`` decides file-vs-inline with
-        ``os.path.exists`` at three sites, so a bare name that names a file
-        in the process CWD is EXECUTED as a file while the identity called it
-        content and named the reference — the #160 key.
+        false of the system at the time: ``ScriptAgent`` decided
+        file-vs-inline with ``os.path.exists`` at three sites, so a bare
+        name that names a file in the process CWD was EXECUTED as a file
+        while the identity called it content and named the reference — the
+        #160 key. #177 unified the two onto one predicate, so the identity
+        below is now a digest of the file's bytes rather than a refusal
+        (see ``test_a_bare_name_that_is_a_file_is_cacheable_by_digest``);
+        this pin stays end to end to keep proving the edit is still seen.
 
         End to end rather than a unit assertion, because the unit answer
         (the reference verbatim) looks perfectly fine in isolation. That is
-        what let it through. The disagreement itself is #177.
+        what let the round-3 regression through.
         """
         monkeypatch.chdir(tmp_path)
         script = tmp_path / "probe"
@@ -1327,6 +1373,29 @@ class TestAResolveFailureIsAlsoUndigestable:
         assert json.loads(first)["v"] == "one"
         assert json.loads(second)["v"] == "two", "served the pre-edit output"
         assert cache.get_stats()["hits"] == 0
+
+    def test_a_bare_name_that_is_a_file_is_cacheable_by_digest(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """#177 instrument 2. Once the resolver and ``ScriptAgent`` agree
+        on a bare CWD-file reference, its identity is a digest of the
+        file's bytes rather than a refusal — the #163 fail-closed patch
+        that named this exact shape and refused it can come out, and an
+        UNCHANGED script now genuinely hits."""
+        monkeypatch.chdir(tmp_path)
+        script = tmp_path / "probe"
+        script.write_text('#!/bin/bash\necho \'{"v": "one"}\'\n')
+        script.chmod(0o755)
+        cache = ScriptCache(ScriptCacheConfig(enabled=True))
+        runner = self._runner(cache)
+        config = ScriptAgentConfig(name="probe", script="probe")
+
+        first, _, _ = asyncio.run(runner.execute(config, "{}"))
+        second, _, _ = asyncio.run(runner.execute(config, "{}"))
+
+        assert json.loads(first)["v"] == "one"
+        assert json.loads(second)["v"] == "one"
+        assert cache.get_stats()["hits"] == 1
 
     def test_a_symlinked_script_still_digests(self, tmp_path: Path) -> None:
         """The over-refusal direction for the stat: a symlink to a real
@@ -1396,31 +1465,60 @@ class TestAResolveFailureIsAlsoUndigestable:
         assert runner._cache_identity("") is None
 
 
-class TestIsInlineContent:
+class TestFileVsInlineClassification:
     """#163 review round 5. This arc promoted a local `is_path` variable to
-    a public predicate with a second consumer, and the cache identity now
-    depends on it — but one of its three clauses was deletable with the
-    whole suite green. Dropping the `"/"` clause makes a relative
-    extensionless reference (`scripts/mytool`) stop resolving through the
-    search paths and get handed to bash as content.
+    a public predicate (`is_inline_content`) with a second consumer, and
+    the cache identity now depends on it — but one of its three clauses
+    was deletable with the whole suite green. Dropping the `"/"` clause
+    makes a relative extensionless reference (`scripts/mytool`) stop
+    resolving through the search paths and get handed to bash as content.
 
     It is not a #163 hole: the identity and ScriptAgent go through the same
     predicate there, so they stay consistent and no stale serve follows. It
     is an unpinned clause of a predicate the fix rests on.
+
+    #177 review round 2 (R2-2): `is_inline_content` ended up with ZERO
+    production callers once `resolve_and_classify` unified resolution and
+    classification, and survived only because these tests asserted it —
+    test-only surface this repo has been bitten by twice. Deleted the
+    public method; the syntactic clause is pinned directly against the
+    now-private `_has_path_syntax`, and the full classification (the
+    clause that needs a filesystem observation) against
+    `resolve_and_classify`, the one call production actually makes.
     """
 
     @pytest.mark.parametrize(
-        ("ref", "inline", "why"),
+        ("ref", "has_path_syntax", "why"),
         [
-            ("echo hello", True, "no separator, no script extension"),
-            ("echo", True, "a bare word is content"),
-            ("scripts/mytool", False, "the slash clause"),
-            ("scripts\\mytool", False, "the backslash clause"),
-            ("mytool.py", False, "the script-extension clause"),
-            ("mytool.sh", False, "the script-extension clause"),
-            ("/abs/tool", False, "absolute paths carry a separator"),
-            ("", True, "vacuously, and the caller short-circuits first"),
+            ("echo hello", False, "no separator, no script extension"),
+            ("echo", False, "a bare word has no path syntax"),
+            ("scripts/mytool", True, "the slash clause"),
+            ("scripts\\mytool", True, "the backslash clause"),
+            ("mytool.py", True, "the script-extension clause"),
+            ("mytool.sh", True, "the script-extension clause"),
+            ("/abs/tool", True, "absolute paths carry a separator"),
+            ("", False, "vacuously"),
         ],
     )
-    def test_the_classification(self, ref: str, inline: bool, why: str) -> None:
-        assert ScriptResolver(project_dir=None).is_inline_content(ref) is inline, why
+    def test_the_syntactic_clause(
+        self, ref: str, has_path_syntax: bool, why: str
+    ) -> None:
+        resolver = ScriptResolver(project_dir=None)
+        assert resolver._has_path_syntax(ref) is has_path_syntax, why
+
+    @pytest.mark.parametrize(
+        "ref",
+        ["echo hello", "echo", ""],
+    )
+    def test_a_bare_reference_naming_nothing_classifies_inline(
+        self, ref: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The clause the syntactic pin above cannot cover: a bare
+        reference is a FILE or INLINE depending on the invoking CWD, so
+        this runs from an empty ``tmp_path`` rather than the ambient CWD
+        (#170 discipline) -- a real file named `echo` there would flip
+        this case, which is #177 review round 1 finding 3's fix."""
+        monkeypatch.chdir(tmp_path)
+        resolver = ScriptResolver(project_dir=None)
+
+        assert resolver.resolve_and_classify(ref) == (ref, False)

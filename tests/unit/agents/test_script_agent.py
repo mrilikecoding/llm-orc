@@ -344,9 +344,9 @@ sys.exit(1)
         agent = ScriptAgent("test_agent", config)
 
         with patch.object(
-            agent._script_resolver, "resolve_script_path"
+            agent._script_resolver, "resolve_and_classify"
         ) as mock_resolve:
-            mock_resolve.return_value = "/absolute/path/to/script.py"
+            mock_resolve.return_value = ("/absolute/path/to/script.py", True)
 
             with patch("subprocess.run") as mock_run:
                 mock_run.return_value.stdout = '{"success": true}'
@@ -939,3 +939,175 @@ class TestScriptAgentsOffTheEventLoop:
         assert len(results) == count
         for raw in results:
             assert json.loads(raw)["ok"] == 1
+
+
+class TestOnePredicateFileVsInline:
+    """#177: file-vs-inline was decided in three places by two rules. This
+    class pins the trap in ``ScriptAgent``'s own execution: once a
+    reference is classified as a FILE at resolve time, that classification
+    must stick through execution rather than being re-derived by a second
+    ``os.path.exists`` right before the subprocess runs.
+    """
+
+    @pytest.mark.asyncio
+    async def test_a_file_vanished_after_first_resolve_never_falls_back_to_inline(
+        self, tmp_path: Path
+    ) -> None:
+        """Trap 4, ABSOLUTE-path shape. ``ScriptResolver`` caches a
+        successful resolution, so a second run with the same reference
+        does not re-check the filesystem, and re-deriving the
+        classification with a fresh ``os.path.exists`` on the (now
+        vanished) resolved path is exactly what used to fall back to
+        ``_execute_inline_script`` -- handing the path itself to
+        ``bash -c`` to run whatever it names on PATH.
+
+        Review round 1: this shape alone is insufficient. An absolute (or
+        any path-syntax) reference never reclassifies regardless of what
+        happens to the file -- ``_has_path_syntax`` makes it structurally
+        unflippable -- so this passes for a reason unrelated to the
+        property it claims. The property itself is pinned on the BARE
+        shape below, the one #177 widened.
+        """
+        script = tmp_path / "probe.py"
+        script.write_text('import json\nprint(json.dumps({"v": "one"}))\n')
+        agent = ScriptAgent("t", {"script": str(script), "timeout_seconds": 5})
+
+        first = await agent.execute("{}")
+        assert json.loads(first)["v"] == "one"
+
+        script.unlink()
+
+        with patch.object(
+            agent, "_execute_inline_script", wraps=agent._execute_inline_script
+        ) as inline_spy:
+            second = await agent.execute("{}")
+
+        assert json.loads(second)["success"] is False
+        inline_spy.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_a_bare_file_vanishing_mid_classification_never_runs_inline(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Trap 4, BARE shape (round 1 review's BLOCKER, and the shape
+        #177 actually widened). This pin measures the MECHANISM: before
+        ``resolve_and_classify`` unified them, the resolve and a separate
+        classification predicate each stat a bare name independently -- a
+        live ``os.path.exists``, re-derived on every call, not fixed at
+        resolve time. If the file vanishes in the gap BETWEEN those two
+        calls, the resolve has already returned the bare name (found)
+        while the later, independent classification sees it gone and
+        calls it inline, so ``ScriptAgent`` hands the bare name to
+        ``bash -c``, which runs whatever program shares that name on
+        PATH -- a same-named impostor, not the configured script, and not
+        an error either. Round 1 review's fix (one observation) closes
+        this door; round 2 review then found the FILE branch's own door
+        (see the outcome pin below), which anchoring closes.
+
+        Measured true end to end with a fresh ``ScriptAgent`` per
+        execution, the production shape; reproduced here at the unit
+        level by making the file vanish as a side effect of the FIRST
+        ``os.path.exists`` call, so a second, independent call sees it
+        gone.
+        """
+        monkeypatch.chdir(tmp_path)
+        script = tmp_path / "probe"
+        script.write_text('#!/bin/bash\necho \'{"v": "one"}\'\n')
+        script.chmod(0o755)
+        agent = ScriptAgent("t", {"script": "probe", "timeout_seconds": 5})
+
+        real_exists = os.path.exists
+        seen = {"n": 0}
+
+        def vanish_after_first_look(path: str) -> bool:
+            if path == "probe":
+                seen["n"] += 1
+                if seen["n"] == 1:
+                    script.unlink()  # vanishes in the gap between two stats
+                    return True
+            return real_exists(path)
+
+        with (
+            patch("os.path.exists", vanish_after_first_look),
+            patch.object(
+                agent, "_execute_inline_script", wraps=agent._execute_inline_script
+            ) as inline_spy,
+        ):
+            await agent.execute("{}")
+
+        inline_spy.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_a_vanished_bare_file_does_not_run_a_path_impostor(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Trap 4, BARE shape -- the OUTCOME pin (round 2 review). The
+        mechanism pin above only proves ``_execute_inline_script`` is not
+        called; it says nothing about what the FILE branch itself does
+        with a slashless name. ``bash <name>`` (like ``bash -c <name>``)
+        searches PATH when the name is not found where it runs, so a bare
+        name classified FILE, handed to the interpreter VERBATIM, and
+        then vanished still reaches a same-named PATH program and
+        reports SUCCESS -- round 2 review's own capture: inline called 0
+        times (round 1's fix worked), impostor ran anyway (it was never
+        the harm). Doctrine 5: assert the OUTCOME (no impostor ran, the
+        run failed), not the mechanism a prior fix happened to touch.
+        """
+        monkeypatch.chdir(tmp_path)
+        script = tmp_path / "probe"
+        script.write_text('#!/bin/bash\necho \'{"v": "real"}\'\n')
+        script.chmod(0o755)
+
+        bin_dir = tmp_path.parent / f"{tmp_path.name}-bin"
+        bin_dir.mkdir()
+        impostor = bin_dir / "probe"
+        impostor.write_text('#!/bin/bash\necho \'{"v": "impostor"}\'\n')
+        impostor.chmod(0o755)
+        monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ['PATH']}")
+
+        real_exists = os.path.exists
+
+        def vanish_after_classification(path: str) -> bool:
+            if path == "probe":
+                found = real_exists(path)
+                script.unlink()  # gone by the time the subprocess launches
+                return found
+            return real_exists(path)
+
+        agent = ScriptAgent("t", {"script": "probe", "timeout_seconds": 5})
+
+        with patch("os.path.exists", vanish_after_classification):
+            result = await agent.execute("{}")
+
+        parsed = json.loads(result)
+        assert parsed.get("v") != "impostor", "a same-named PATH impostor ran"
+        assert parsed.get("success") is False, (
+            "a vanished file must fail loudly, not report success"
+        )
+
+    @pytest.mark.asyncio
+    async def test_a_bare_dot_ts_cwd_file_executes_as_a_file(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Instrument 4, at the execution layer: a bare name outside
+        ``SCRIPT_EXTENSIONS`` (``.ts``, the issue's own example) that
+        names a CWD file must still run as a file, not inline content."""
+        monkeypatch.chdir(tmp_path)
+        script = tmp_path / "probe.ts"
+        script.write_text("#!/bin/bash\necho '{\"v\": 1}'\n")
+        script.chmod(0o755)
+        agent = ScriptAgent("t", {"script": "probe.ts"})
+
+        with (
+            patch.object(
+                agent, "_execute_script_file", wraps=agent._execute_script_file
+            ) as file_spy,
+            patch.object(
+                agent, "_execute_inline_script", wraps=agent._execute_inline_script
+            ) as inline_spy,
+        ):
+            result = await agent.execute("{}")
+
+        file_spy.assert_called_once()
+        inline_spy.assert_not_called()
+        assert json.loads(result)["v"] == 1
