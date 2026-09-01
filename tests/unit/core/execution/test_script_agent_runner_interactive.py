@@ -1423,44 +1423,60 @@ class TestAResolveFailureIsAlsoUndigestable:
         assert runner._cache_identity("") is None
 
 
-class TestIsInlineContent:
+class TestFileVsInlineClassification:
     """#163 review round 5. This arc promoted a local `is_path` variable to
-    a public predicate with a second consumer, and the cache identity now
-    depends on it — but one of its three clauses was deletable with the
-    whole suite green. Dropping the `"/"` clause makes a relative
-    extensionless reference (`scripts/mytool`) stop resolving through the
-    search paths and get handed to bash as content.
+    a public predicate (`is_inline_content`) with a second consumer, and
+    the cache identity now depends on it — but one of its three clauses
+    was deletable with the whole suite green. Dropping the `"/"` clause
+    makes a relative extensionless reference (`scripts/mytool`) stop
+    resolving through the search paths and get handed to bash as content.
 
     It is not a #163 hole: the identity and ScriptAgent go through the same
     predicate there, so they stay consistent and no stale serve follows. It
     is an unpinned clause of a predicate the fix rests on.
 
-    #177 review round 1 finding 3: the predicate now reads the invoking
-    CWD for a bare reference (a real file named `echo` there would flip
-    that case), so every case here runs from an empty ``tmp_path`` rather
-    than the ambient CWD (#170 discipline).
+    #177 review round 2 (R2-2): `is_inline_content` ended up with ZERO
+    production callers once `resolve_and_classify` unified resolution and
+    classification, and survived only because these tests asserted it —
+    test-only surface this repo has been bitten by twice. Deleted the
+    public method; the syntactic clause is pinned directly against the
+    now-private `_has_path_syntax`, and the full classification (the
+    clause that needs a filesystem observation) against
+    `resolve_and_classify`, the one call production actually makes.
     """
 
     @pytest.mark.parametrize(
-        ("ref", "inline", "why"),
+        ("ref", "has_path_syntax", "why"),
         [
-            ("echo hello", True, "no separator, no script extension"),
-            ("echo", True, "a bare word is content"),
-            ("scripts/mytool", False, "the slash clause"),
-            ("scripts\\mytool", False, "the backslash clause"),
-            ("mytool.py", False, "the script-extension clause"),
-            ("mytool.sh", False, "the script-extension clause"),
-            ("/abs/tool", False, "absolute paths carry a separator"),
-            ("", True, "vacuously, and the caller short-circuits first"),
+            ("echo hello", False, "no separator, no script extension"),
+            ("echo", False, "a bare word has no path syntax"),
+            ("scripts/mytool", True, "the slash clause"),
+            ("scripts\\mytool", True, "the backslash clause"),
+            ("mytool.py", True, "the script-extension clause"),
+            ("mytool.sh", True, "the script-extension clause"),
+            ("/abs/tool", True, "absolute paths carry a separator"),
+            ("", False, "vacuously"),
         ],
     )
-    def test_the_classification(
-        self,
-        ref: str,
-        inline: bool,
-        why: str,
-        tmp_path: Path,
-        monkeypatch: pytest.MonkeyPatch,
+    def test_the_syntactic_clause(
+        self, ref: str, has_path_syntax: bool, why: str
     ) -> None:
+        resolver = ScriptResolver(project_dir=None)
+        assert resolver._has_path_syntax(ref) is has_path_syntax, why
+
+    @pytest.mark.parametrize(
+        "ref",
+        ["echo hello", "echo", ""],
+    )
+    def test_a_bare_reference_naming_nothing_classifies_inline(
+        self, ref: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The clause the syntactic pin above cannot cover: a bare
+        reference is a FILE or INLINE depending on the invoking CWD, so
+        this runs from an empty ``tmp_path`` rather than the ambient CWD
+        (#170 discipline) -- a real file named `echo` there would flip
+        this case, which is #177 review round 1 finding 3's fix."""
         monkeypatch.chdir(tmp_path)
-        assert ScriptResolver(project_dir=None).is_inline_content(ref) is inline, why
+        resolver = ScriptResolver(project_dir=None)
+
+        assert resolver.resolve_and_classify(ref) == (ref, False)

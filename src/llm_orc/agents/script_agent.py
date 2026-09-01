@@ -163,17 +163,26 @@ class ScriptAgent:
         independently re-deriving it (#177).
 
         Delegates to ``ScriptResolver.resolve_and_classify``, which takes
-        ONE observation of the filesystem for both halves. Calling
-        ``resolve_script_path`` and ``is_inline_content`` separately here
-        — the shape review round 1 found live — let a bare name's file
-        vanish in the gap BETWEEN those two calls: the resolve had
+        ONE observation of the filesystem for both halves. Calling the
+        resolve and a separate classification predicate independently
+        here — the shape round 1 review found live — let a bare name's
+        file vanish in the gap BETWEEN those two calls: the resolve had
         already returned the bare name (found) while the later,
         independent classification saw it gone and called it inline, so
         the reference was handed to ``bash -c``, which runs whatever
-        program shares that name on ``PATH``. With one observation, a
-        reference classified FILE here stays FILE for the rest of this
-        call; an absence discovered later is a run failure the subprocess
-        itself reports, never a reason to fall back to inline execution.
+        program shares that name on ``PATH``.
+
+        One observation alone is not the whole fix (round 2 review): a
+        bare name returned VERBATIM is still slashless, and handing a
+        slashless name to the FILE branch's own interpreter is subject to
+        the SAME PATH search if the file is gone by execution time —
+        measured true, a same-named PATH impostor ran and reported
+        success. ``resolve_and_classify`` anchors a bare file reference
+        (``./name``) rather than returning it verbatim, so a name
+        classified FILE here stays a path the shell CANNOT re-resolve via
+        PATH: a vanished file fails loudly in either branch instead of
+        silently falling back to inline execution or running an
+        impostor.
         """
         return self._script_resolver.resolve_and_classify(script_ref)
 

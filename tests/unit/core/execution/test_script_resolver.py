@@ -634,40 +634,39 @@ class TestOnePredicateFileVsInline:
     """#177: file-vs-inline was decided in three places by two rules, and
     they disagreed for a bare name that names a file in the process CWD
     -- the resolver called it content while ``ScriptAgent`` executed the
-    file. ``is_inline_content`` is now the sole predicate and describes
-    what actually executes; these pin the three traps the widening has
-    to respect.
+    file. ``resolve_and_classify`` is now the sole call and describes
+    what actually executes; these pin the traps the widening has to
+    respect.
     """
 
     def test_a_bare_cwd_file_classifies_the_same_as_scriptagent_would(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """Instrument 1. ``os.path.exists`` on the resolved reference is
-        exactly how ``ScriptAgent`` decided file-vs-inline before this
-        predicate existed, so the two answers have to be opposites of
-        each other for every reference -- including this one, where they
-        used to disagree."""
+        exactly how ``ScriptAgent`` decided file-vs-inline before one
+        predicate existed, so ``resolve_and_classify``'s own answer has
+        to agree -- including this one, where the two used to disagree."""
         monkeypatch.chdir(tmp_path)
         (tmp_path / "probe").write_text("#!/bin/bash\necho hi\n")
         resolver = ScriptResolver()
 
-        resolved = resolver.resolve_script_path("probe")
+        resolved, is_file = resolver.resolve_and_classify("probe")
         scriptagent_would_execute_as_file = os.path.exists(resolved)
 
-        assert resolver.is_inline_content("probe") is (
-            not scriptagent_would_execute_as_file
-        ), "the resolver and ScriptAgent disagree on file-vs-inline"
+        assert is_file is scriptagent_would_execute_as_file, (
+            "resolve_and_classify and a fresh os.path.exists disagree on file-vs-inline"
+        )
 
     def test_a_bare_name_naming_nothing_stays_inline(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """Trap 2, unchanged: a bare name that names nothing in the CWD is
-        still inline content, resolved verbatim."""
+        still inline content, resolved verbatim (never anchored -- only a
+        FILE reference is anchored)."""
         monkeypatch.chdir(tmp_path)
         resolver = ScriptResolver()
 
-        assert resolver.is_inline_content("probe") is True
-        assert resolver.resolve_script_path("probe") == "probe"
+        assert resolver.resolve_and_classify("probe") == ("probe", False)
 
     def test_a_dot_ts_bare_name_in_cwd_still_classifies_as_a_file(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -675,13 +674,14 @@ class TestOnePredicateFileVsInline:
         """Instrument 4. ``.ts``/``.mjs`` (and ``.pl``/``.zsh``/``.ps1``/
         ``.R``, the issue's own list) are not in ``SCRIPT_EXTENSIONS``, so
         a bare ``probe.ts`` only classifies as a file through the
-        CWD-existence clause -- the exact shape the issue measured."""
+        CWD-existence clause -- the exact shape the issue measured.
+        Anchored (``./probe.ts``), not verbatim (#177 review round 2
+        finding 1)."""
         monkeypatch.chdir(tmp_path)
         (tmp_path / "probe.ts").write_text("console.log('hi')\n")
         resolver = ScriptResolver()
 
-        assert resolver.is_inline_content("probe.ts") is False
-        assert resolver.resolve_script_path("probe.ts") == "probe.ts"
+        assert resolver.resolve_and_classify("probe.ts") == ("./probe.ts", True)
 
     def test_a_bare_name_present_in_both_cwd_and_llm_orc_scripts_keeps_cwd(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -706,18 +706,27 @@ class TestOnePredicateFileVsInline:
 
         result = resolver.resolve_script_path("probe")
 
-        assert result == "probe"
+        # Anchored (./probe), not verbatim (#177 review round 2 finding 1).
+        assert result == "./probe"
         assert Path(result).read_text() == "cwd version"
 
 
 class TestResolveAndClassify:
     """#177 review round 1 finding 1 (BLOCKER): the resolve and the
     classification used to come from two independent ``os.path.exists``
-    calls (``resolve_script_path`` then ``is_inline_content``), which a
-    bare name's file could vanish between -- the resolve saw it and the
-    later, separate classification did not, flipping a FILE reference to
-    inline. ``resolve_and_classify`` is the one call every production
-    consumer now uses instead, so there is only one observation to ask.
+    calls, which a bare name's file could vanish between -- the resolve
+    saw it and the later, separate classification did not, flipping a
+    FILE reference to inline. ``resolve_and_classify`` is the one call
+    every production consumer now uses instead, so there is only one
+    observation to ask.
+
+    Round 2 finding 1: one observation was not the whole fix. A bare FILE
+    reference returned VERBATIM is still slashless, and handing a
+    slashless name to an interpreter or execvp is subject to a PATH
+    search if the file is gone by execution time -- measured true, a
+    same-named PATH impostor ran and reported success. The FILE branch
+    below is anchored (``./name``) rather than verbatim so a vanished
+    file cannot be re-resolved that way.
     """
 
     def test_a_bare_cwd_file_is_one_call_not_two_stats(
@@ -725,7 +734,7 @@ class TestResolveAndClassify:
     ) -> None:
         """The one-observation contract, directly: exactly one
         ``os.path.exists`` call for a bare reference, not the two a
-        caller pairing ``resolve_script_path`` with ``is_inline_content``
+        caller pairing a resolve with a separate classification predicate
         would make."""
         monkeypatch.chdir(tmp_path)
         (tmp_path / "probe").write_text("#!/bin/bash\necho hi\n")
@@ -741,7 +750,7 @@ class TestResolveAndClassify:
         with patch("os.path.exists", counting_exists):
             resolved, is_file = resolver.resolve_and_classify("probe")
 
-        assert (resolved, is_file) == ("probe", True)
+        assert (resolved, is_file) == ("./probe", True)
         assert len(calls) == 1, f"expected one stat, saw {len(calls)}"
 
     def test_a_bare_name_naming_nothing_answers_inline_without_raising(
@@ -755,9 +764,9 @@ class TestResolveAndClassify:
     def test_a_path_syntax_reference_that_resolves_nothing_raises(
         self, tmp_path: Path
     ) -> None:
-        """Unlike ``is_inline_content`` (a total, non-raising predicate),
-        the search IS the resolution for path syntax, so not finding
-        anything raises -- unchanged from ``resolve_script_path``."""
+        """Unlike a bare reference (a total, non-raising case), the
+        search IS the resolution for path syntax, so not finding anything
+        raises -- unchanged from ``resolve_script_path``."""
         resolver = ScriptResolver(project_dir=tmp_path)
 
         with pytest.raises(ScriptNotFoundError):
