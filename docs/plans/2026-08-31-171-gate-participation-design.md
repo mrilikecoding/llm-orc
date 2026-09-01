@@ -65,6 +65,17 @@ Conditions and bounds:
   asserting `len(open("helpers.py").read()) > 0` passes the control
   with a junk deliverable. The value-bearing adequacy rule is the other
   half of the invariant and already exists; neither subsumes the other.
+- **Named bound (review F4, control granularity ≠ real-run
+  granularity):** the control always runs as ONE combined process; the
+  real suite runs per-test isolated (a fresh subprocess, fresh
+  workspace copy, per test). A workspace module with cross-test state
+  can pass every test in isolation yet fail when the SAME tests run
+  together in the control's one process, for a reason unrelated to the
+  deliverable — the control then reads "necessary" and non-
+  participating junk ships. Measured live rate: 0/46 recorded turns hit
+  this shape; matching granularity would cost one extra per-test-
+  isolated subprocess set on every ablation run for a divergence not
+  yet observed live, so this is recorded rather than closed.
 
 ## Two companion slices (independent, same arc)
 
@@ -101,6 +112,16 @@ Conditions and bounds:
    the corpus expectation — 0 wrong-rejects held over the 71
    recorded/labelled contracts (13 build/re-fix replays, 42 write-tests
    replays, 16 judge_adequacy fixtures).
+
+   **Correction (review round 1):** the pre-flight's own "0
+   wrong-rejects over 71" figure was itself measured with the
+   destination's stale copy WITHHELD at the control (skip the shadow)
+   rather than emptied — production shape includes it. Under that
+   control, 14/55 recorded pairs flip accept→refuse (two are genuine
+   live additive-edit turns whose suite covers only the unchanged half
+   of the deliverable, F3 below). The briefed control — shadow the
+   target file with EMPTY bytes too, never skip it — gives 13/13 on the
+   build/re-fix replay subset with the stale copy correctly present.
 3. The import-dialect wrong-accept set (`import X` + attribute, aliased
    import, star import, facade re-export, injected-import diversion)
    all refuse — these killed the static rule and are the fixture set
