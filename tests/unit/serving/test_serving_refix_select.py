@@ -161,6 +161,46 @@ def test_missing_prior_code_still_injects_a_loads_cleanly_smoke_test() -> None:
     assert "import solution" in selected["tests"]
 
 
+def test_smoke_surface_empty_flag_is_true_with_no_prior_surface() -> None:
+    """M3 (review): refix_envelope needs to tell "no surface to check"
+    apart from "these tests happen not to exercise the deliverable" so it
+    can give the surface-less sub-path its own actionable reason instead of
+    the generic participation constant."""
+    selected = _select(
+        {
+            "deterministic_code": "def f(): return 1\n",
+            "visible_test": "",
+            "task": "fix f in f.py",
+        }
+    )
+    assert selected["smoke_surface_empty"] is True
+
+
+def test_smoke_surface_empty_flag_is_false_with_a_real_prior_surface() -> None:
+    selected = _select(
+        {
+            "deterministic_code": "",
+            "visible_test": "",
+            "prior_code": _PRIOR_WITH_SURFACE,
+            "task": "fix restock in calc.py",
+        }
+    )
+    assert selected["smoke_surface_empty"] is False
+
+
+def test_smoke_surface_empty_flag_is_false_with_a_visible_test() -> None:
+    """The flag is scoped to the smoke-only path — a real visible test is
+    never "surface-less" in this sense, it just isn't the smoke test."""
+    selected = _select(
+        {
+            "deterministic_code": "def f(): return 1\n",
+            "visible_test": "def test_f(): assert f() == 1\n",
+            "task": "fix f in f.py",
+        }
+    )
+    assert selected["smoke_surface_empty"] is False
+
+
 @pytest.mark.parametrize(
     ("label", "candidate"),
     [

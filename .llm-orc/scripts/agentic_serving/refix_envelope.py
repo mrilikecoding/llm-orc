@@ -19,11 +19,18 @@ from __future__ import annotations
 
 import ast
 import json
+import re
 import sys
 
 from _helpers import deps as _deps
 from _helpers import payload as _payload
 from _helpers import response as _response
+
+# The surface-derived smoke test's own assert message IS the dropped name
+# (refix_select's `assert hasattr(solution, "<name>"), "<name>"`) — #171
+# review M3: on the smoke-only path this is the ONLY test that can fail, so
+# a report matching this shape names a dropped name, never a user assertion.
+_DROPPED_NAME_RE = re.compile(r"AssertionError: ([A-Za-z_]\w*)\b")
 
 # #173 review round 1's adjudicated predicate: a closed whitelist of node
 # types that can bind no name and call nothing. Structure (Module, Pass, If,
@@ -89,6 +96,25 @@ def _is_inert(code: str) -> bool:
     except SyntaxError:
         return True
     return all(isinstance(node, _INERT_NODE_TYPES) for node in ast.walk(tree))
+
+
+def _smoke_failure_reason(target: str, report: str) -> str:
+    """A plain statement of what the surface-derived smoke test found
+    (#171 review M3). The smoke-only candidate can fail this gate two
+    ways: it does not load at all, or it loads fine but no longer defines
+    a name the prior module provided. "Failed to load" is only true of
+    the first — the second used to say it anyway, and quoted the smoke
+    test's own internal assert source line (an implementation detail of
+    the ablation's own check, not anything the user wrote). Naming the
+    DROPPED name is fine; that is the fact the check exists to report.
+    """
+    dropped = _DROPPED_NAME_RE.search(report)
+    if dropped:
+        return (
+            f"re-fix candidate for {target} no longer defines "
+            f"{dropped.group(1)}, which the prior module provided"
+        )
+    return f"re-fix candidate for {target} failed to load: {report}"
 
 
 def _executor_verdict(deps: dict[str, object]) -> tuple[bool, str, bool, str]:
@@ -166,12 +192,20 @@ def main() -> None:
         # own accept formula can catch a suite the deliverable never
         # touched (the smoke-only path's own "loads cleanly" bar, or a
         # visible test the target module never appears in).
-        reason = participation_reason or "the tests never exercise the deliverable"
+        #
+        # Review M3: a surface-less prior (select found no top-level name
+        # to preserve) gets its OWN actionable reason — it isn't that
+        # these particular tests happen not to exercise the deliverable,
+        # it's that there was no surface to derive a real check from.
+        if smoke_only and bool(selected.get("smoke_surface_empty", False)):
+            reason = "the prior module defines no public surface to check"
+        else:
+            reason = participation_reason or "the tests never exercise the deliverable"
     elif smoke_only:
         reason = (
             "candidate loads cleanly; no visible test, the client run verifies"
             if accept
-            else f"re-fix candidate failed to load: {report}"
+            else _smoke_failure_reason(target, report)
         )
     else:
         reason = report or ("tests pass" if accept else "tests did not pass")
