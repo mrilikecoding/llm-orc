@@ -2904,3 +2904,52 @@ def test_a_dead_build_seat_never_writes_even_with_seat_contract_deleted(
     content = choice["message"]["content"]
     assert content.startswith("Build refused: "), content
     assert "nothing was built or written" in content
+
+
+def test_a_dead_seat_on_a_json_destination_blames_the_seat_not_json_syntax(
+    serving_project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Round-1 review Note 5 (rides fix 1's reorder): shape zeroes `content`
+    to "" for a dead seat, and form_gate's validity check runs over that
+    empty string against the DESTINATION's extension — trivially valid
+    Python (`ast.parse("")` succeeds) but invalid JSON (`json.loads("")`
+    raises). Before the reorder, the form-gate-invalid branch sat below the
+    dead-seat branch's `valid` gate, so a `.json` destination fell through
+    to it and blamed JSON syntax for a seat that never ran. Driven end to
+    end through the real seat -> shape -> form_gate -> emit chain.
+
+    code-seat's own `seat_contract:` block is removed first (as in the
+    instrument-5 test above) — otherwise its artifact-presence assertion
+    refuses first (the "safe by luck" path), and the JSON-blame bug this
+    pins never gets reached.
+    """
+    (serving_project / "ensembles" / "code-seat.yaml").write_text(
+        "name: code-seat\n"
+        "description: code-seat with seat_contract removed, for #174 Note 5\n"
+        "agents:\n"
+        "  - name: generate\n"
+        "    ensemble: code-generator\n"
+        "  - name: envelope\n"
+        "    script: scripts/agentic_serving/emit_envelope.py\n"
+        "    depends_on: [generate]\n"
+    )
+    client = _crashed_script_client(serving_project, monkeypatch, "emit_envelope.py")
+    resp = client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "ensemble-agent",
+            "messages": [
+                {"role": "user", "content": "write default settings in settings.json"}
+            ],
+            "tools": [_WRITE_TOOL],
+        },
+    )
+
+    assert resp.status_code == 200
+    choice = resp.json()["choices"][0]
+    assert choice["finish_reason"] == "stop"
+    assert not choice["message"].get("tool_calls")
+    content = choice["message"]["content"]
+    assert content.startswith("Build refused: "), content
+    assert "exited non-zero" in content, content
+    assert "not valid JSON" not in content, content
