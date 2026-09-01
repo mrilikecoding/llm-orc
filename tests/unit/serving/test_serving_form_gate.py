@@ -238,3 +238,26 @@ def test_a_healthy_shape_sets_no_node_failure() -> None:
 
     assert not gated["node_failed"]
     assert gated["valid"] is True
+
+
+# --- #174: form_gate passes seat_failed through unchanged -------------------
+
+
+def test_seat_failed_passes_through_form_gate() -> None:
+    gated = _gate(
+        {
+            "build": False,
+            "file": "solution.py",
+            "content": "",
+            "seat_failed": "exited non-zero, status 1",
+        }
+    )
+
+    assert gated["seat_failed"] == "exited non-zero, status 1"
+    assert gated["valid"] is True
+
+
+def test_form_gate_defaults_seat_failed_empty_when_absent() -> None:
+    gated = _gate({"build": False, "file": "solution.py", "content": "prose"})
+
+    assert gated["seat_failed"] == ""

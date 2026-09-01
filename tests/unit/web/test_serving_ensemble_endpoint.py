@@ -363,7 +363,8 @@ def test_prior_turns_reach_the_seat_via_dispatch_input(
         "description: input-echo explain seat for the context thread-through\n"
         "agents:\n"
         "  - name: out\n"
-        '    script: "cat"\n'
+        '    script: "python3 -c \\"import json, sys; '
+        "print(json.load(sys.stdin)['input'])\\\"\"\n"
     )
     resp = serving_client.post(
         "/v1/chat/completions",
@@ -602,7 +603,8 @@ def test_explain_of_a_visible_written_file_grounds_on_the_real_content(
         "description: input-echo explain seat for the grounded-explain check\n"
         "agents:\n"
         "  - name: out\n"
-        '    script: "cat"\n'
+        '    script: "python3 -c \\"import json, sys; '
+        "print(json.load(sys.stdin)['input'])\\\"\"\n"
     )
     resp = serving_client.post(
         "/v1/chat/completions",
@@ -2778,3 +2780,127 @@ def test_the_unsanitised_engine_error_is_still_recorded_server_side(
     assert "Schema JSON execution failed" in raw
     assert "returned non-zero exit status 1" in raw
     assert "Command '[" in raw, "the argv is what the operator debugs from"
+
+
+# --- #174: a dead seat never ships the engine's envelope as the answer ------
+#
+# `shape._envelope_deliverable` recognises an ADR-024 envelope by
+# `"status" in env`. The sub-ensemble `ScriptAgent.execute` failure family
+# (`{success, error, stderr}`) carries none of that, so shape used to fall
+# back to `deliverable = seat_terminal.strip()` — the crash dump itself,
+# shipped to the client as the assistant's answer.
+
+# An UNCAUGHT exception rather than `_CRASH_STUB`'s clean `sys.exit(1)`, so
+# `stderr` carries a real traceback naming the script's own path — the exact
+# shape the issue's live capture shows (a traceback whose path embeds the
+# operator's home directory and username).
+_TRACEBACK_CRASH_STUB = "#!/usr/bin/env python3\nraise RuntimeError('boom')\n"
+
+
+def _traceback_crashed_client(
+    serving_project: Path, monkeypatch: pytest.MonkeyPatch, script: str
+) -> TestClient:
+    (serving_project / "scripts" / "agentic_serving" / script).write_text(
+        _TRACEBACK_CRASH_STUB
+    )
+
+    def _caller() -> ServingEnsembleCaller:
+        return ServingEnsembleCaller(project_dir=serving_project, ensemble="serving")
+
+    monkeypatch.setattr(
+        v1_chat_completions, "get_serving_ensemble_caller", _caller, raising=False
+    )
+    return TestClient(create_app())
+
+
+def test_a_crashed_non_build_seat_refuses_instead_of_shipping_the_crash_dump(
+    serving_project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The exact live capture from the issue, driven end to end through the
+    real shape -> form_gate -> emit chain (a node-level pin does not prove
+    the chain — #155's lesson). `run-verdict` is a non-build target with no
+    `seat_contract:` block, so nothing upstream of shape catches this."""
+    client = _traceback_crashed_client(serving_project, monkeypatch, "run_verdict.py")
+    resp = client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "ensemble-agent",
+            "messages": [
+                {"role": "user", "content": "run the tests"},
+                {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "id": "call_b1",
+                            "type": "function",
+                            "function": {
+                                "name": "bash",
+                                "arguments": '{"command": "pytest -q"}',
+                            },
+                        }
+                    ],
+                },
+                {
+                    "role": "tool",
+                    "tool_call_id": "call_b1",
+                    "content": ".....\n5 passed in 0.12s",
+                },
+            ],
+            "tools": [_WRITE_TOOL, _READ_TOOL_DEF, _BASH_TOOL_DEF],
+        },
+    )
+
+    assert resp.status_code == 200
+    choice = resp.json()["choices"][0]
+    assert choice["finish_reason"] == "stop"
+    assert not choice["message"].get("tool_calls")
+    content = choice["message"]["content"]
+
+    home = str(Path.home())
+    assert home not in content, content
+    assert home.rsplit("/", 1)[-1] not in content, content
+    assert '"success"' not in content, content
+    assert "Traceback" not in content, content
+    assert content.startswith("Refused: "), content
+
+
+def test_a_dead_build_seat_never_writes_even_with_seat_contract_deleted(
+    serving_project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Instrument 5 (design brief): closes "safe by luck". Before this fix,
+    a dead code-seat refused only because its `seat_contract:` block asserts
+    artifact PRESENCE, which a crash dump adapted as prose does not have —
+    an accident of that one contract's shape, not a property of the chain
+    (#155's lesson: a node-level pin does not prove the chain). The contract
+    is deleted here and the crash is driven through the real
+    seat -> shape -> form_gate -> emit chain."""
+    (serving_project / "ensembles" / "code-seat.yaml").write_text(
+        "name: code-seat\n"
+        "description: code-seat with seat_contract removed, for #174 instrument 5\n"
+        "agents:\n"
+        "  - name: generate\n"
+        "    ensemble: code-generator\n"
+        "  - name: envelope\n"
+        "    script: scripts/agentic_serving/emit_envelope.py\n"
+        "    depends_on: [generate]\n"
+    )
+    client = _crashed_script_client(serving_project, monkeypatch, "emit_envelope.py")
+    resp = client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "ensemble-agent",
+            "messages": [
+                {"role": "user", "content": "write an add function in add.py"}
+            ],
+            "tools": [_WRITE_TOOL],
+        },
+    )
+
+    assert resp.status_code == 200
+    choice = resp.json()["choices"][0]
+    assert choice["finish_reason"] == "stop"
+    assert not choice["message"].get("tool_calls")
+    content = choice["message"]["content"]
+    assert content.startswith("Build refused: "), content
+    assert "nothing was built or written" in content

@@ -148,6 +148,7 @@ def _seat_entry(name: str, node: Any, usage: Any = None) -> dict[str, Any]:
     diagnostics = _diagnostics(response)
     if diagnostics is not None:
         entry["diagnostics"] = diagnostics
+    entry.update(_engine_failure_fields(response))
     entry.update(_usage_counts(usage))
     return entry
 
@@ -170,24 +171,33 @@ def _top_level_usage(result_dict: dict[str, Any]) -> dict[str, Any]:
     return agents if isinstance(agents, dict) else {}
 
 
-def _engine_failure_error(response: Any) -> str:
-    """The engine wrap's whole ``error`` string, or ``""`` when the response
-    is not a failure wrap (#168).
+def _engine_failure_fields(response: Any) -> dict[str, str]:
+    """The engine wrap's whole ``error`` and (#174) ``stderr`` strings, keyed
+    only when present as non-empty strings; ``{}`` when the response is not
+    a failure wrap.
 
-    Recognised positively by the wrap's own key — a dict carrying a
-    non-empty string ``error`` — not by matching text. Every other response
-    shape keeps the snippet and nothing else.
+    Recognised positively by the wrap's own keys, not by matching text — the
+    ``execute_with_schema_json`` dispatch-level wrap carries ``error`` alone;
+    the sub-ensemble ``ScriptAgent.execute`` failure family
+    (``{success, error, stderr}``) carries both, and its real payload — the
+    traceback — is in ``stderr``, which used to survive only as a 280-char
+    snippet (#168 kept ``error`` whole; #174 does the same for ``stderr``).
+    Every other response shape keeps the snippet and nothing else.
     """
     if not isinstance(response, str):
-        return ""
+        return {}
     try:
         parsed = json.loads(response)
     except (json.JSONDecodeError, TypeError):
-        return ""
+        return {}
     if not isinstance(parsed, dict):
-        return ""
-    error = parsed.get("error")
-    return error if isinstance(error, str) and error else ""
+        return {}
+    fields: dict[str, str] = {}
+    for key in ("error", "stderr"):
+        value = parsed.get(key)
+        if isinstance(value, str) and value:
+            fields[key] = value
+    return fields
 
 
 def _node_entry(name: str, node: Any, top_usage: dict[str, Any]) -> dict[str, Any]:
@@ -206,10 +216,9 @@ def _node_entry(name: str, node: Any, top_usage: dict[str, Any]) -> dict[str, An
     # wrap runs 302-310 characters on a real checkout, so the 280-char snippet
     # clipped the residue ("returned non-zero exit status 1") off EVERY node,
     # leaving the operator with less than the client used to get. The error
-    # field is recorded whole; the snippet still governs everything else.
-    failure = _engine_failure_error(response)
-    if failure:
-        entry["error"] = failure
+    # (and #174: stderr) fields are recorded whole; the snippet still governs
+    # everything else.
+    entry.update(_engine_failure_fields(response))
     entry.update(_usage_counts(top_usage.get(name)))
     child = _child_results(response)
     if child is not None:

@@ -217,6 +217,67 @@ def test_seat_entry_records_prompt_eval_count_from_child_usage() -> None:
     assert seat_nodes[0]["eval_count"] == 58
 
 
+# --- #174: the sub-ensemble failure family keeps its whole error AND stderr -
+
+
+def test_a_crashed_seat_child_retains_its_whole_error_and_stderr() -> None:
+    """`_engine_failure_error` (#168) keeps only `error`; the sub-ensemble
+    `ScriptAgent.execute` failure family (`{success, error, stderr}`) carries
+    its real payload in `stderr` — the traceback — which used to survive
+    only as a 280-char snippet on the nested seat-child entry. The wire
+    sanitising in shape/emit is only defensible because the operator keeps
+    the whole thing here."""
+    import json
+
+    traceback_text = (
+        "Traceback (most recent call last):\n"
+        '  File "/Users/someuser/.llm-orc/scripts/agentic_serving/'
+        'run_verdict.py", line 2, in <module>\n'
+        "    raise RuntimeError('boom')\n"
+        "RuntimeError: boom\n"
+    ) * 20  # comfortably over the 280-char snippet cap
+    child_result = {
+        "results": {
+            "verdict": {
+                "response": json.dumps(
+                    {
+                        "success": False,
+                        "error": "Script failed with exit code 1",
+                        "stderr": traceback_text,
+                    }
+                )
+            }
+        }
+    }
+    result = {
+        "results": {"seat": {"status": "success", "response": json.dumps(child_result)}}
+    }
+
+    trace = build_turn_trace("serving", result)
+
+    seat_nodes = trace["nodes"][0]["seat"]
+    assert seat_nodes[0]["error"] == "Script failed with exit code 1"
+    assert seat_nodes[0]["stderr"] == traceback_text
+    # the snippet cap still governs the plain response field
+    assert len(seat_nodes[0]["response"]) <= 281
+
+
+def test_a_healthy_seat_child_carries_no_error_or_stderr_fields() -> None:
+    """The over-refusal direction: a healthy nested response is untouched."""
+    import json
+
+    child_result = {"results": {"explainer": {"response": "some answer"}}}
+    result = {
+        "results": {"seat": {"status": "success", "response": json.dumps(child_result)}}
+    }
+
+    trace = build_turn_trace("serving", result)
+
+    seat_nodes = trace["nodes"][0]["seat"]
+    assert "error" not in seat_nodes[0]
+    assert "stderr" not in seat_nodes[0]
+
+
 def test_emit_never_propagates_a_trace_build_failure(tmp_path: Path) -> None:
     """PR #116 review: 'tracing must never break the serve' — a hostile
     child response (pathologically nested JSON raises RecursionError at
