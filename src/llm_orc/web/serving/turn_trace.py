@@ -42,6 +42,24 @@ _SNIPPET = 280
 # its own and is kept whole regardless.
 _STDERR_CAP = 20_000
 
+# Round-2 review NB-5: keeping only the HEAD (`value[:_STDERR_CAP]`) lost
+# the cause on anything oversized, because stderr's terminating exception
+# (or, on a pytest-shaped dump, the FAILURES section / assertion diff /
+# short summary) is always LAST — a log-then-raise probe that logged 20KB
+# of retry warnings before raising lost `Traceback`, `RuntimeError`, and
+# the actual cause entirely; a 113KB pytest-shaped dump lost all three of
+# FAILURES/diff/summary the same way. Split retention instead: a HEAD slice
+# for entry context (what was dispatched, the first sign of trouble) and a
+# TAIL slice for the cause (the exception, the failing assertion, the
+# summary line) — one is a fraction of `_STDERR_CAP`, sized for a command
+# line and the first frames, not a proportional half-split of the budget;
+# the other gets the rest of `_STDERR_CAP`, since the cause is usually the
+# larger, more valuable chunk (a full traceback, a diff, several FAILED
+# lines). An explicit elision marker sits between the two slices so a
+# reader can tell content was cut rather than the dump merely ending there.
+_STDERR_HEAD_CAP = 4_000
+_STDERR_TAIL_CAP = _STDERR_CAP - _STDERR_HEAD_CAP
+
 
 def _snippet_cap() -> int:
     """The response clip length: readable-short by default,
@@ -63,8 +81,19 @@ def _snippet(value: Any) -> str:
 def _capped_stderr(value: str) -> str:
     """``value`` clipped to ``_STDERR_CAP``, whitespace intact — unlike
     ``_snippet``, this is a traceback: line structure IS the content, so it
-    is never whitespace-collapsed."""
-    return value if len(value) <= _STDERR_CAP else value[:_STDERR_CAP] + "…"
+    is never whitespace-collapsed.
+
+    Head-and-tail split (#174 round-2 NB-5), not a single head clip: the
+    terminating exception/summary that makes stderr diagnosable is always
+    LAST, so a head-only clip loses it on anything oversized. The elided
+    span is named explicitly (never a bare ``…``) so a reader can tell
+    content was cut, not that the dump simply ended there.
+    """
+    if len(value) <= _STDERR_CAP:
+        return value
+    omitted = len(value) - _STDERR_HEAD_CAP - _STDERR_TAIL_CAP
+    marker = f"\n…[{omitted} chars elided]…\n"
+    return value[:_STDERR_HEAD_CAP] + marker + value[-_STDERR_TAIL_CAP:]
 
 
 def _child_results(response: Any) -> dict[str, Any] | None:
