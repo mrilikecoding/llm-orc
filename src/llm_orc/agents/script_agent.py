@@ -162,17 +162,20 @@ class ScriptAgent:
         place, so the sites below consume the answer instead of each
         independently re-deriving it (#177).
 
-        The classification comes from ``ScriptResolver.is_inline_content``
-        on the REFERENCE, fixed at resolve time — not a stat on the
-        resolved path. A file-classified reference stays a file through
-        execution even if it vanishes in between: the caller must error
-        rather than fall back to executing arbitrary content as if it
-        were inline (a vanished path handed to ``bash -c`` would run
-        whatever that name resolves to on PATH).
+        Delegates to ``ScriptResolver.resolve_and_classify``, which takes
+        ONE observation of the filesystem for both halves. Calling
+        ``resolve_script_path`` and ``is_inline_content`` separately here
+        — the shape review round 1 found live — let a bare name's file
+        vanish in the gap BETWEEN those two calls: the resolve had
+        already returned the bare name (found) while the later,
+        independent classification saw it gone and called it inline, so
+        the reference was handed to ``bash -c``, which runs whatever
+        program shares that name on ``PATH``. With one observation, a
+        reference classified FILE here stays FILE for the rest of this
+        call; an absence discovered later is a run failure the subprocess
+        itself reports, never a reason to fall back to inline execution.
         """
-        resolved = self._script_resolver.resolve_script_path(script_ref)
-        is_file = not self._script_resolver.is_inline_content(script_ref)
-        return resolved, is_file
+        return self._script_resolver.resolve_and_classify(script_ref)
 
     async def execute(
         self, input_data: str, context: dict[str, Any] | None = None

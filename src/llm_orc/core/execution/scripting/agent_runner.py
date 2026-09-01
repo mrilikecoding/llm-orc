@@ -236,18 +236,22 @@ class ScriptAgentRunner:
         identity that names the script's BYTES. When the bytes cannot be
         named, there is no identity and the run is not cached.
 
-        Two kinds of reference, and ``ScriptResolver.is_inline_content`` is
-        the ONE predicate that decides which (#177) — ``ScriptAgent``'s
-        three execution sites ask the same predicate rather than statting
-        the resolved path themselves, so this identity and what actually
-        gets EXECUTED cannot drift apart the way they used to.
+        Two kinds of reference, and ``ScriptResolver.resolve_and_classify``
+        is the ONE call that decides which, from a single filesystem
+        observation (#177 review round 1). It used to call
+        ``is_inline_content`` and ``resolve_script_path`` separately here —
+        two independent stats a bare name's file could vanish between,
+        with the resolve seeing it and the classification not, which is
+        the same disagreement ``ScriptAgent``'s three execution sites were
+        fixed to stop reaching for independently. One call closes both.
 
-        - **Inline content.** ``resolve_script_path`` returns it verbatim, so
-          the reference IS its own bytes and identifies itself.
-        - **A path.** The resolver will go and find a file, so anything that
-          stops us naming that file's bytes — the resolve, the stat, a
-          non-regular file, an unreadable one — is a refusal. There is no
-          "which call threw" to get wrong; they all answer ``None``.
+        - **Inline content.** The reference IS its own bytes and
+          identifies itself.
+        - **A path.** The resolver has already found a file (that is what
+          ``is_file`` means), so anything that stops us naming ITS bytes
+          from here — the stat, a non-regular file, an unreadable one — is
+          a refusal. There is no "which call threw" to get wrong; they all
+          answer ``None``.
 
         That shape is the third. It replaced an errno rule, which could not
         work: ``ENOENT`` is both "this is inline content" and "the file
@@ -275,32 +279,29 @@ class ScriptAgentRunner:
         if not script_ref:
             return None
         resolver = ScriptResolver(project_dir=self._project_dir)
-        # The predicate settles the split before any errno is seen: an
-        # errno cannot make it, because ENOENT is both "this is inline
-        # content" and "the file vanished between the resolve and the
-        # stat", and the shape before this answered the bare path for the
-        # second — the #160 key. ScriptAgent's three execution sites ask
-        # this same predicate (#177), so the reference this call names
-        # inline content for is exactly the reference ScriptAgent hands to
-        # `bash -c` rather than executing as a file.
-        if resolver.is_inline_content(script_ref):
-            return script_ref
-        # From here the reference denotes a file the resolver will go and
-        # find, so ANYTHING that stops us naming its bytes is a refusal.
-        # There is no "which call threw" left to get wrong: the resolve, the
-        # stat and the read all answer None, and only a regular file that
-        # digests produces an identity.
         try:
-            resolved = resolver.resolve_script_path(script_ref)
+            resolved, is_file = resolver.resolve_and_classify(script_ref)
+        except Exception:
+            # An unresolvable reference is a run failure a moment later,
+            # not a caching decision, and a programming error here (a
+            # resolver signature change, an AttributeError) must not
+            # silently disable the cache forever either — both fall
+            # closed the same way. A log line makes it visible.
+            logger.debug("no cache identity for %r", script_ref, exc_info=True)
+            return None
+        if not is_file:
+            return resolved
+        # From here the reference denotes a file the resolver has already
+        # found, so ANYTHING that stops us naming its bytes is a refusal.
+        # There is no "which call threw" left to get wrong: the stat and
+        # the read both answer None, and only a regular file that digests
+        # produces an identity.
+        try:
             info = os.stat(resolved)
             if not stat.S_ISREG(info.st_mode):
                 return None
             digest = hashlib.sha256(Path(resolved).read_bytes()).hexdigest()
         except Exception:
-            # Not caching is the safe direction, so no pin can catch a
-            # programming error here (a resolver signature change, an
-            # AttributeError) silently disabling the cache forever. A log
-            # line makes it visible without changing behaviour.
             logger.debug("no cache identity for %r", script_ref, exc_info=True)
             return None
         return f"{resolved}:{digest}"
@@ -456,6 +457,14 @@ class ScriptAgentRunner:
 
         Uses an asyncio.Lock to serialize terminal access so multiple
         interactive agents in the same phase queue their prompts.
+
+        A fourth site that still classifies with its own ``os.path.exists``
+        rather than ``resolve_and_classify`` (#177 review round 1 finding
+        4) — left alone rather than migrated, because it already fails
+        CLOSED: an absent file RAISES here (below) instead of falling back
+        to inline execution, so it never had the disagreement the other
+        three sites and the cache identity were fixed for. Restated
+        honestly rather than claimed fixed.
         """
         prompt = script_agent.parameters.get("prompt", "Enter input:")
         parameters = script_agent.parameters

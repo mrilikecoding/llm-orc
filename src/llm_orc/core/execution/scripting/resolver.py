@@ -150,66 +150,99 @@ class ScriptResolver:
             or script_ref.endswith(self.SCRIPT_EXTENSIONS)
         )
 
+    def resolve_and_classify(self, script_ref: str) -> tuple[str, bool]:
+        """Resolve AND classify ``script_ref`` from ONE observation of the
+        filesystem, so a resolution and the decision that picks which
+        subprocess shape runs cannot be taken at two different moments and
+        disagree (#177 review round 1).
+
+        Before this, a consumer that needed both called
+        ``resolve_script_path`` and ``is_inline_content`` separately, each
+        doing its OWN ``os.path.exists`` on a bare name. If the file
+        vanished in the gap between those two calls, the resolve had
+        already returned the bare name (found) while the LATER, fresh
+        classification saw it gone and called it inline — so the bare
+        name was handed to ``bash -c``, which runs whatever program
+        shares that name on ``PATH`` rather than erroring. Measured true
+        end to end, with a fresh ``ScriptAgent`` per execution (the
+        production shape): a bare reference that classified as a file at
+        the START of a call must stay a file for the REST of that call.
+
+        Every consumer that needs both the resolved value and the
+        classification — ``ScriptAgent``'s three execution sites and
+        ``ScriptAgentRunner._cache_identity`` — calls this instead of
+        pairing ``resolve_script_path`` with ``is_inline_content``.
+
+        Returns:
+            ``(resolved, is_file)``. ``is_file`` is authoritative for the
+            rest of the caller's turn: an absence discovered later (the
+            file removed between this call and the subprocess launch) is
+            a run failure the subprocess itself reports, never a reason
+            to reinterpret the reference as inline.
+
+        Raises:
+            ScriptNotFoundError: for an absolute or path-syntax reference
+                that does not resolve to a file — unchanged from
+                ``resolve_script_path``. A bare reference never raises:
+                absent, it is inline content and answers ``(ref, False)``.
+        """
+        if os.path.isabs(script_ref):
+            path = Path(script_ref)
+            if path.exists():
+                return str(path), True
+            raise ScriptNotFoundError(script_ref)
+
+        if self._has_path_syntax(script_ref):
+            # Path syntax never falls back to inline (trap 3): the search
+            # itself is the one observation, since each candidate is
+            # necessarily probed with `.exists()` to find it.
+            resolved = self._try_resolve_with_search_paths(script_ref)
+            if resolved:
+                return resolved, True
+            is_primitive = script_ref.startswith("primitives/")
+            raise ScriptNotFoundError(script_ref, is_primitive=is_primitive)
+
+        # Bare name: the ONE stat that decides both the resolved value and
+        # the classification together (trap 1: CWD wins, before any
+        # search-path logic; unchanged when it names nothing -- trap 2).
+        if os.path.exists(script_ref):
+            return script_ref, True
+        return script_ref, False
+
     def is_inline_content(self, script_ref: str) -> bool:
         """Whether this reference is inline script content rather than a file.
 
-        This is the SOLE file-vs-inline predicate (#177). It used to answer
-        only what the RESOLVER does with a reference, while ``ScriptAgent``
-        decided separately with ``os.path.exists`` on the resolved path —
-        and the two disagreed for a bare name that happens to name a file
-        in the process CWD, which cost #163's cache identity a fail-closed
-        patch. Both now ask this instead, so they cannot drift apart again.
+        A read-only classification for inspection (tests, tooling) — it
+        answers on its own, without resolving. It does NOT raise for a
+        path-syntax reference that resolves to nothing (unlike
+        ``resolve_and_classify``, whose search there IS the resolution),
+        so it stays a total function of the reference alone.
+
+        A production consumer that needs to ACT on the classification —
+        run a file, or name its bytes for a cache key — must call
+        ``resolve_and_classify`` instead of pairing this with a separate
+        ``resolve_script_path``: two independent calls take two
+        independent snapshots of the filesystem, and #177 review round 1
+        measured that gap as live (see ``resolve_and_classify``'s
+        docstring).
 
         A reference is a FILE when it has path syntax (see
         ``_has_path_syntax``) OR when, bare, it names a file that exists
-        relative to the process CWD — the shape ``ScriptAgent`` already
-        executed before this predicate existed. Otherwise it is inline
-        content: ``_resolve_uncached`` below returns it verbatim and never
-        touches a file for it.
-
-        That distinction is what lets the cache identity tell "nothing is
-        there, and the reference IS its own bytes" from "a file is there
-        and we failed to name it" — a distinction an errno cannot make,
-        because ``ENOENT`` is both the answer for inline content and the
-        answer for a file that vanished.
+        relative to the process CWD. Otherwise it is inline content:
+        ``resolve_script_path`` returns it verbatim and never touches a
+        file for it.
         """
         if self._has_path_syntax(script_ref):
             return False
         # A bare name is a FILE when it names one relative to the process
-        # CWD. This stat is the one extra filesystem call the predicate
-        # costs on the inline path — the same price the #163 cache
-        # identity already paid before this fix.
+        # CWD. This stat is the one extra filesystem call this predicate
+        # costs on the inline path, same as it always has.
         return not os.path.exists(script_ref)
 
     def _resolve_uncached(self, script_ref: str) -> str:
         """Resolve script reference without using cache."""
-        # Check if it's an absolute path
-        if os.path.isabs(script_ref):
-            path = Path(script_ref)
-            if path.exists():
-                return str(path)
-            raise ScriptNotFoundError(script_ref)
-
-        if not self._has_path_syntax(script_ref) and os.path.exists(script_ref):
-            # A bare name naming an existing CWD file resolves to itself,
-            # before any search-path logic: CWD wins over a same-named
-            # `.llm-orc/scripts` or library entry (#177 trap 1) -- this is
-            # the reference ScriptAgent already executes, and
-            # is_inline_content agrees.
-            return script_ref
-
-        if not self.is_inline_content(script_ref):
-            # Try to resolve using library-aware search paths
-            resolved = self._try_resolve_with_search_paths(script_ref)
-            if resolved:
-                return resolved
-
-            # If it looks like a path but wasn't found, raise error with guidance
-            is_primitive = script_ref.startswith("primitives/")
-            raise ScriptNotFoundError(script_ref, is_primitive=is_primitive)
-
-        # Fall back to treating it as inline content (backward compatibility)
-        return script_ref
+        resolved, _ = self.resolve_and_classify(script_ref)
+        return resolved
 
     def _try_resolve_with_search_paths(self, script_ref: str) -> str | None:
         """Try to resolve script using library-aware search paths.
