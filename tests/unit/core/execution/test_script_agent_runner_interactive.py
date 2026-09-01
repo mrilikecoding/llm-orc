@@ -1434,6 +1434,11 @@ class TestIsInlineContent:
     It is not a #163 hole: the identity and ScriptAgent go through the same
     predicate there, so they stay consistent and no stale serve follows. It
     is an unpinned clause of a predicate the fix rests on.
+
+    #177 review round 1 finding 3: the predicate now reads the invoking
+    CWD for a bare reference (a real file named `echo` there would flip
+    that case), so every case here runs from an empty ``tmp_path`` rather
+    than the ambient CWD (#170 discipline).
     """
 
     @pytest.mark.parametrize(
@@ -1449,5 +1454,13 @@ class TestIsInlineContent:
             ("", True, "vacuously, and the caller short-circuits first"),
         ],
     )
-    def test_the_classification(self, ref: str, inline: bool, why: str) -> None:
+    def test_the_classification(
+        self,
+        ref: str,
+        inline: bool,
+        why: str,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.chdir(tmp_path)
         assert ScriptResolver(project_dir=None).is_inline_content(ref) is inline, why
