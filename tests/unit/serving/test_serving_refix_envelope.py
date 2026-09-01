@@ -55,6 +55,9 @@ from refix_select import _smoke_test as _smoke  # type: ignore  # noqa: E402
 # empty candidate this passes, which is what makes the pin below able to fail.
 _VISIBLE_TEST = "def test_unrelated():\n    assert 1 + 1 == 2\n"
 _REAL = "def restock(n):\n    return n + 1\n"
+# The buggy stale version _REAL fixes — #171's smoke test is surface-
+# derived from prior_code, so a genuine fix pin needs one to preserve.
+_PRIOR_RESTOCK = "def restock(n):\n    return n\n"
 
 # #173 review round 1: measured through the real chain, all 15 clobber under
 # the pre-round-2 predicate ("every statement is a bare string"). Each binds
@@ -97,18 +100,25 @@ def _dep(value: Any) -> dict[str, str]:
     return {"response": value if isinstance(value, str) else json.dumps(value)}
 
 
-def _envelope(code: str, *, visible_test: str = "") -> dict[str, Any]:
+def _envelope(
+    code: str, *, visible_test: str = "", prior_code: str = ""
+) -> dict[str, Any]:
     """executor -> envelope, both real, over a SYNTHESIZED select output.
 
     ``refix_select.py`` is not run here — the dict below is built to the
     shape it emits, verified key-for-key against the real node — so the
-    smoke test comes from the production constant rather than from select
+    smoke test comes from the production function rather than from select
     having injected it. ``code`` is the candidate and the only fault.
+
+    ``prior_code`` defaults to "" (no surface known) — every fixture in
+    this file is about #169/#173's emptiness/inertness guards, which do not
+    need one; the #171 participation pins that DO need a real surface pass
+    it explicitly (see TestTheGuardDoesNotRejectRealCandidates below).
     """
     selected = {
         "requirement": "fix calc.py so restock adds one",
         "code": code,
-        "tests": visible_test or _smoke(""),
+        "tests": visible_test or _smoke(prior_code),
         "target_file": "calc.py",
         "edit_kind": "model",
         "smoke_only": not visible_test,
@@ -180,19 +190,32 @@ class TestTheGuardDoesNotRejectRealCandidates:
     they are here so the fix does not become "reject every re-fix"."""
 
     def test_a_real_candidate_on_the_smoke_only_path_still_accepts(self) -> None:
-        envelope = _envelope(_REAL)
+        """#171: the smoke test is surface-derived from prior_code, so a
+        genuine fix needs a prior surface to preserve — without one an
+        "import solution"-only check cannot prove participation for
+        anything, real or junk (the shape the tests just above this class
+        exist to refuse)."""
+        envelope = _envelope(_REAL, prior_code=_PRIOR_RESTOCK)
 
         assert envelope["diagnostics"]["accept"] is True
         assert envelope["artifacts"][0]["content"] == _REAL
 
-    def test_a_one_line_real_fix_still_accepts(self) -> None:
-        """#173's scope is inert candidates only — real code carrying any
-        statement (assignment, import, def...) is untouched, even a single
-        line. #171 is the general "does the deliverable participate" fix
-        and is out of scope here."""
+    def test_a_one_line_edit_with_no_prior_surface_is_refused(self) -> None:
+        """Supersedes #173's ``test_a_one_line_real_fix_still_accepts``,
+        which pinned ``_envelope("x = 1\\n")`` as accept=True with the
+        rationale "#171 is... out of scope here." #171 landed: with no
+        prior_code surface to check, the smoke test degrades to "import
+        solution" alone, which cannot observe ANYTHING about the candidate
+        — by #171's own invariant (a gate whose ground truth never touched
+        the deliverable must refuse), "loads cleanly" is no longer enough,
+        whatever the content is. The over-refusal counterpart lives above:
+        a real fix WITH a prior surface still accepts."""
         envelope = _envelope("x = 1\n")
 
-        assert envelope["diagnostics"]["accept"] is True
+        assert envelope["diagnostics"]["accept"] is False
+        assert envelope["diagnostics"]["accept_reason"] == (
+            "the tests never exercise the deliverable"
+        )
 
 
 class TestAnInertCandidateIsNeverAccepted:

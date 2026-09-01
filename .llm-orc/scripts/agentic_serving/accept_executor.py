@@ -64,6 +64,14 @@ _CHILD_ENV: dict[str, str] = {}
 # surfaced — no silent caps.
 _MAX_ISOLATED_TESTS = 20
 
+# #171: the runtime ablation control's honest, path-free refusal reason —
+# the tests passed, but they would have passed identically with the
+# deliverable's bytes absent, so `accept: true` would be a claim about a
+# file that never participated. Flows through accept_gate (build-gated) and
+# refix_envelope (re-fix) as accept_reason unchanged; a single constant so
+# neither downstream consumer can drift from the wording the other reads.
+_NONPARTICIPATION_REASON = "the tests never exercise the deliverable"
+
 # A bare-name assert on a name the tests never assign (``assert load`` /
 # ``assert load, "msg"``) checks only module-object truthiness — a defined
 # function is always truthy, so the line carries no test value, and the
@@ -657,7 +665,9 @@ def _run_children(
     target_file: str,
     timeout: float,
     children: list[str | None],
-) -> tuple[list[str], int]:
+    *,
+    control: bool = False,
+) -> tuple[list[str], int, bool | None]:
     """Run each isolated child in turn, stopping early once the aggregate
     wall budget across the suite is spent — the per-child timeout bounds
     one runaway test, this bounds the whole suite (review finding: 21
@@ -677,6 +687,16 @@ def _run_children(
     it must not be swallowed by the empty-cases allowance. The verdict
     comes from the tests that actually ran; ``_run_sandboxed`` separately
     refuses when NOTHING ran at all.
+
+    ``control`` (#171 runtime ablation): when every real child above
+    passed and budget remains, run ONE more child inside this SAME loop's
+    budget — same workspace and repaired tests, the deliverable's bytes
+    absent (empty ``solution.py``, no target-file shadow) — and report
+    whether IT also passed. A control that passes proves the suite never
+    needed the deliverable. The third return value is that verdict, or
+    ``None`` when the control did not run (already-failing suite, or no
+    budget left): a skipped control changes nothing about ``tests_pass``,
+    so the caller treats ``None`` the same as "necessity not disproven".
     """
     budget = _aggregate_budget()
     start = time.monotonic()
@@ -698,7 +718,13 @@ def _run_children(
         empty_cases_child = only == "__cases__" and n_tests == 0 and not leaked
         if not ok and not empty_cases_child:
             failures.append(report)
-    return failures, total
+
+    control_passed: bool | None = None
+    if control and not failures and time.monotonic() - start < budget:
+        control_passed, _report, _n_tests, _leaked = _run_one(
+            "", tests, workspace, "", None, timeout
+        )
+    return failures, total, control_passed
 
 
 def _run_sandboxed(
@@ -706,7 +732,18 @@ def _run_sandboxed(
     tests: str,
     workspace: dict[str, str] | None = None,
     target_file: str = "",
-) -> tuple[bool, str, int]:
+) -> tuple[bool, str, int, bool]:
+    """Returns (tests_pass, report, n_tests, participates) — ``participates``
+    is False only when the #171 ablation control proved the suite passes
+    identically with the deliverable's bytes absent. It is always True when
+    the deliverable is empty (#166/#169 already refuse that; an ablation
+    there is vacuous and would refuse every write-tests turn, #98) or when
+    the legacy single-run fallback fires below, which can never reach the
+    would-accept path in the first place (unparseable tests fail to compile;
+    zero enumerable tests means zero runnable tests, and the runner refuses
+    that unconditionally) — so there is nothing there for a control to
+    disprove.
+    """
     timeout = _timeout()
     enumerated = _enumerate_tests(tests)
     if enumerated is None or (not enumerated[0] and not enumerated[1]):
@@ -716,7 +753,7 @@ def _run_sandboxed(
         ok, report, n_tests, _leaked = _run_one(
             code, tests, workspace, target_file, None, timeout
         )
-        return ok, report, n_tests
+        return ok, report, n_tests, True
 
     names, has_cases = enumerated
     capped = len(names) > _MAX_ISOLATED_TESTS
@@ -724,8 +761,9 @@ def _run_sandboxed(
     if has_cases:
         children.append("__cases__")
 
-    failures, total = _run_children(
-        code, tests, workspace, target_file, timeout, children
+    run_control = bool(code.strip())
+    failures, total, control_passed = _run_children(
+        code, tests, workspace, target_file, timeout, children, control=run_control
     )
     if capped:
         failures.append(f"…capped at {_MAX_ISOLATED_TESTS} isolated tests")
@@ -733,14 +771,16 @@ def _run_sandboxed(
     # a load failure repeats identically in every child — report it once
     deduped = list(dict.fromkeys(failures))
     if deduped:
-        return False, "; ".join(deduped), total
+        return False, "; ".join(deduped), total, True
     if total == 0:
         # #176 review round 1 INVARIANT: a file whose classes yield no
         # runnable tests is judged by its remaining tests (handled
         # above); a file with no runnable tests AT ALL refuses, same
         # reason the legacy path already gives.
-        return False, "no test_* functions or TestCase classes found", 0
-    return True, "all passed", total
+        return False, "no test_* functions or TestCase classes found", 0, True
+    # would-accept: control_passed is None when skipped (empty deliverable
+    # or no budget left) — "not disproven" defaults to participates=True.
+    return True, "all passed", total, not bool(control_passed)
 
 
 def main() -> None:
@@ -770,7 +810,9 @@ def main() -> None:
 
     target_file = str(data.get("target_file", ""))
 
-    tests_pass, report, n_tests = _run_sandboxed(code, tests, workspace, target_file)
+    tests_pass, report, n_tests, participates = _run_sandboxed(
+        code, tests, workspace, target_file
+    )
 
     print(
         json.dumps(
@@ -786,6 +828,10 @@ def main() -> None:
                 "tests_raises_rewritten": tests_raises_rewritten,
                 "tests_imports_injected": tests_imports_injected,
                 "report": report,
+                "participates": participates,
+                "participation_reason": (
+                    "" if participates else _NONPARTICIPATION_REASON
+                ),
             }
         )
     )

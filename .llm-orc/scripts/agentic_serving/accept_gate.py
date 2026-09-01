@@ -55,6 +55,20 @@ def _extract_bool(resp: str, key: str) -> bool | None:
     return None
 
 
+def _extract_str(resp: str, key: str) -> str:
+    """The string at ``key`` in ``resp``'s JSON, or "" — the executor is a
+    deterministic script (never a model seat), so a lenient regex fallback
+    buys nothing here."""
+    try:
+        obj = json.loads(resp)
+        if isinstance(obj, dict):
+            value = obj.get(key, "")
+            return value if isinstance(value, str) else ""
+    except (json.JSONDecodeError, TypeError):
+        pass
+    return ""
+
+
 def _read_deps(raw: str) -> dict[str, object]:
     try:
         envelope = json.loads(raw)
@@ -93,15 +107,28 @@ def _resolve_adequacy(
 def main() -> None:
     deps = _read_deps(sys.stdin.read().strip())
 
-    tests_pass = _extract_bool(_dep_response(deps, "executor"), "tests_pass")
+    executor_resp = _dep_response(deps, "executor")
+    tests_pass = _extract_bool(executor_resp, "tests_pass")
     reasons: list[str] = []
     if tests_pass is None:
         tests_pass = False
         reasons.append("executor verdict unreadable")
+    # #171: absent (an executor response predating this field) means the
+    # runtime ablation control was never run, which is the SAME "necessity
+    # not disproven" default the executor itself uses — never a free pass
+    # for a missing key, never a refusal for one.
+    participates = _extract_bool(executor_resp, "participates")
+    if participates is None:
+        participates = True
     tests_adequate, carried = _resolve_adequacy(deps, reasons)
 
-    accept = bool(tests_pass and tests_adequate)
+    accept = bool(tests_pass and tests_adequate and participates)
     if not accept and not reasons:
+        if not participates:
+            reasons.append(
+                _extract_str(executor_resp, "participation_reason")
+                or "the tests never exercise the deliverable"
+            )
         if not tests_pass:
             reasons.append("tests did not pass")
         if not tests_adequate:
