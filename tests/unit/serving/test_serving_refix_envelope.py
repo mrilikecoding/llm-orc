@@ -27,10 +27,12 @@ import pytest
 REPO = Path(__file__).resolve().parents[3]
 SCRIPTS = REPO / ".llm-orc" / "scripts" / "agentic_serving"
 
-# _SMOKE below is the PRODUCTION constant, not a copy, so the pins in THIS
+# _smoke below is the PRODUCTION function, not a copy, so the pins in THIS
 # file cannot go green for a reason unrelated to the guard if the smoke test
 # changes. #169's own issue lists "make the smoke test assert something about
-# the candidate" as the alternative fix, so that edit is likely.
+# the candidate" as the alternative fix, so that edit is likely — and #171
+# made it: the smoke test is now surface-derived from prior_code, so it is
+# no longer a bare string constant.
 #
 # Round 1 justified this with a measurement that review round 2 falsified:
 # it claimed the whole suite stayed green when refix_select._SMOKE_TEST was
@@ -38,9 +40,14 @@ SCRIPTS = REPO / ".llm-orc" / "scripts" / "agentic_serving"
 # test_serving_refix_select.py and test_serving_ensemble_endpoint.py catch
 # both. What the import actually buys is local: these pins stop depending on
 # a copy that could silently diverge from the constant they are about.
+#
+# Every fixture in this file calls ``_smoke("")`` (no prior surface known) —
+# this file is about #169/#173's emptiness/inertness guards, which are
+# orthogonal to #171's participation guard; #171's own pins live in
+# test_serving_refix_select.py and test_serving_gate_participation.py.
 sys.path.insert(0, str(SCRIPTS))
 
-from refix_select import _SMOKE_TEST as _SMOKE  # type: ignore  # noqa: E402
+from refix_select import _smoke_test as _smoke  # type: ignore  # noqa: E402
 
 # A visible test that does NOT reference the target module. Realistic: rung
 # 1.5's "visible test" is whatever test_<stem>.py was found, and a suite
@@ -101,7 +108,7 @@ def _envelope(code: str, *, visible_test: str = "") -> dict[str, Any]:
     selected = {
         "requirement": "fix calc.py so restock adds one",
         "code": code,
-        "tests": visible_test or _SMOKE,
+        "tests": visible_test or _smoke(""),
         "target_file": "calc.py",
         "edit_kind": "model",
         "smoke_only": not visible_test,

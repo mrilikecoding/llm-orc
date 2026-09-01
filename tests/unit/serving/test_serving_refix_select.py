@@ -17,8 +17,11 @@ import sys
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 REPO = Path(__file__).resolve().parents[3]
 REFIX_SELECT = REPO / ".llm-orc" / "scripts" / "agentic_serving" / "refix_select.py"
+EXECUTOR = REPO / ".llm-orc" / "scripts" / "agentic_serving" / "accept_executor.py"
 
 
 def _select(gather: dict[str, Any]) -> dict[str, Any]:
@@ -28,6 +31,49 @@ def _select(gather: dict[str, Any]) -> dict[str, Any]:
     out = subprocess.run(
         [sys.executable, str(REFIX_SELECT)],
         input=envelope,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    result: dict[str, Any] = json.loads(out)
+    return result
+
+
+def _select_with_model_edit(prior_code: str, model_edit: str) -> dict[str, Any]:
+    """Same wiring as ``_select``, plus a ``model_edit`` dep — the shape a
+    smoke-only round with no deterministic edit actually takes."""
+    gather = {
+        "deterministic_code": "",
+        "visible_test": "",
+        "prior_code": prior_code,
+        "task": "fix restock in calc.py",
+    }
+    payload = json.dumps(
+        {
+            "dependencies": {
+                "gather": {"response": json.dumps(gather)},
+                "model_edit": {"response": model_edit},
+            }
+        }
+    )
+    out = subprocess.run(
+        [sys.executable, str(REFIX_SELECT)],
+        input=payload,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    result: dict[str, Any] = json.loads(out)
+    return result
+
+
+def _executor_result(selected: dict[str, Any]) -> dict[str, Any]:
+    payload = json.dumps(
+        {"dependencies": {"select": {"response": json.dumps(selected)}}}
+    )
+    out = subprocess.run(
+        [sys.executable, str(EXECUTOR)],
+        input=payload,
         capture_output=True,
         text=True,
         check=True,
@@ -74,3 +120,83 @@ def test_visible_test_is_not_smoke_only() -> None:
         }
     )
     assert selected["smoke_only"] is False
+
+
+# --- #171: the smoke test is surface-derived, not a bare `pass` ------------
+#
+# The old `_SMOKE_TEST` was `def ...(): pass` — it references no name, so on
+# the smoke-only path (no visible test) participation was unsatisfiable and
+# any content that merely loaded shipped, clobbering the original (post-#173:
+# `x = 1` / `import os` / an unrelated def all still accepted). The smoke
+# test is now derived from the PRIOR module's top-level names (`prior_code`,
+# already carried by refix_gather): a candidate that drops the surface fails.
+
+_PRIOR_WITH_SURFACE = "def restock(item, n):\n    return n\n"
+
+
+def test_smoke_test_is_derived_from_the_prior_modules_surface() -> None:
+    selected = _select(
+        {
+            "deterministic_code": "",
+            "visible_test": "",
+            "prior_code": _PRIOR_WITH_SURFACE,
+            "task": "fix restock in calc.py",
+        }
+    )
+    assert "restock" in selected["tests"]
+
+
+def test_missing_prior_code_still_injects_a_loads_cleanly_smoke_test() -> None:
+    """No prior_code known (or nothing to preserve) degrades to the old
+    "loads cleanly" bar rather than crashing or emitting an unsatisfiable
+    test — the existing smoke-only pins above never supply prior_code."""
+    selected = _select(
+        {
+            "deterministic_code": "def f(): return 1\n",
+            "visible_test": "",
+            "task": "fix f in f.py",
+        }
+    )
+    assert "def test_" in selected["tests"]
+    assert "import solution" in selected["tests"]
+
+
+@pytest.mark.parametrize(
+    ("label", "candidate"),
+    [
+        ("empty", ""),
+        ("assignment-only", "x = 1\n"),
+        ("comment-only", "# nope\n"),
+        ("import-only", "import os\n"),
+        ("unrelated-def", "def other():\n    return 1\n"),
+    ],
+)
+def test_junk_candidates_fail_the_surface_derived_smoke_test(
+    label: str, candidate: str
+) -> None:
+    selected = _select_with_model_edit(_PRIOR_WITH_SURFACE, candidate)
+    result = _executor_result(selected)
+
+    assert result["tests_pass"] is False, f"{label}: {result['report']}"
+
+
+def test_a_real_fix_passes_the_surface_derived_smoke_test() -> None:
+    selected = _select_with_model_edit(
+        _PRIOR_WITH_SURFACE, "def restock(item, n):\n    return n + 1\n"
+    )
+    result = _executor_result(selected)
+
+    assert result["tests_pass"] is True, result["report"]
+
+
+def test_a_fix_that_drops_a_public_name_refuses() -> None:
+    """Recorded bound (#171): the smoke test is a surface check, not a
+    semantic diff — a fix that intentionally drops a name the prior module
+    exported refuses, whichever was the right call to make."""
+    prior = "def restock(item, n):\n    return n\ndef audit(item):\n    return item\n"
+    selected = _select_with_model_edit(
+        prior, "def restock(item, n):\n    return n + 1\n"
+    )
+    result = _executor_result(selected)
+
+    assert result["tests_pass"] is False, result["report"]
