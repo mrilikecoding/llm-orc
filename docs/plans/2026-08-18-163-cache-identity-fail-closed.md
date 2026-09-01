@@ -182,9 +182,11 @@ test and mapped to hunks rather than counted.
    the stat, asserted against the target's real sha256.
 10. `test_an_empty_reference_never_touches_the_cache` — a non-script agent
     has no bytes to name.
-11. `TestIsInlineContent::test_the_classification` — eight cases over the
-    predicate the whole fix now rests on. Round 5: its `"/"` clause was
-    deletable with 3992 tests green.
+11. `TestFileVsInlineClassification::test_the_syntactic_clause` (renamed
+    from TestIsInlineContent::test_the_classification when #177 review
+    round 2 deleted the by-then-callerless `is_inline_content` public
+    method) — eight cases over the predicate the whole fix now rests on.
+    Round 5: its `"/"` clause was deletable with 3992 tests green.
 
 **Pre-existing, modified by this arc:**
 

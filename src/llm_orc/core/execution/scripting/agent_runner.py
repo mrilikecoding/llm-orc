@@ -238,12 +238,20 @@ class ScriptAgentRunner:
 
         Two kinds of reference, and ``ScriptResolver.resolve_and_classify``
         is the ONE call that decides which, from a single filesystem
-        observation (#177 review round 1). It used to call
-        ``is_inline_content`` and ``resolve_script_path`` separately here —
-        two independent stats a bare name's file could vanish between,
-        with the resolve seeing it and the classification not, which is
-        the same disagreement ``ScriptAgent``'s three execution sites were
-        fixed to stop reaching for independently. One call closes both.
+        observation (#177 review round 1). It used to call a separate
+        classification predicate and ``resolve_script_path`` independently
+        here — two independent stats a bare name's file could vanish
+        between, with the resolve seeing it and the classification not,
+        which is the same disagreement ``ScriptAgent``'s three execution
+        sites were fixed to stop reaching for independently. One call
+        closes both.
+
+        The identity's name-component below is ``script_ref`` — the
+        reference itself, not ``resolved`` — so anchoring a bare file
+        reference (``./name``, #177 review round 2 finding 1) does not
+        change the identity's shape: the digest is still taken from the
+        anchored path (the correct bytes), but the name that PICKS the
+        cache slot stays the stable thing the caller actually configured.
 
         - **Inline content.** The reference IS its own bytes and
           identifies itself.
@@ -304,7 +312,7 @@ class ScriptAgentRunner:
         except Exception:
             logger.debug("no cache identity for %r", script_ref, exc_info=True)
             return None
-        return f"{resolved}:{digest}"
+        return f"{script_ref}:{digest}"
 
     async def _execute_without_cache(
         self,

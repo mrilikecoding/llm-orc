@@ -157,8 +157,8 @@ class ScriptResolver:
         disagree (#177 review round 1).
 
         Before this, a consumer that needed both called
-        ``resolve_script_path`` and ``is_inline_content`` separately, each
-        doing its OWN ``os.path.exists`` on a bare name. If the file
+        ``resolve_script_path`` and a separate classification predicate,
+        each doing its OWN ``os.path.exists`` on a bare name. If the file
         vanished in the gap between those two calls, the resolve had
         already returned the bare name (found) while the LATER, fresh
         classification saw it gone and called it inline — so the bare
@@ -168,17 +168,31 @@ class ScriptResolver:
         production shape): a bare reference that classified as a file at
         the START of a call must stay a file for the REST of that call.
 
+        Closing that gap is not the whole fix (#177 review round 2 finding
+        1): a bare, slashless name handed to the FILE branch's own
+        interpreter (``bash <name>``, or any execvp-style call) is
+        ITSELF subject to a PATH search once the name is not found in
+        CWD — measured true end to end, a same-named PATH impostor ran
+        and reported success after the file vanished post-classification.
+        So the resolved value for a bare CWD file below is anchored
+        (``./name``), never verbatim: a name that carries a separator
+        cannot be re-resolved via PATH by anything that execs it, so a
+        vanished file fails LOUDLY in either branch instead.
+
         Every consumer that needs both the resolved value and the
         classification — ``ScriptAgent``'s three execution sites and
-        ``ScriptAgentRunner._cache_identity`` — calls this instead of
-        pairing ``resolve_script_path`` with ``is_inline_content``.
+        ``ScriptAgentRunner._cache_identity`` — calls this rather than
+        deriving either independently.
 
         Returns:
             ``(resolved, is_file)``. ``is_file`` is authoritative for the
-            rest of the caller's turn: an absence discovered later (the
-            file removed between this call and the subprocess launch) is
-            a run failure the subprocess itself reports, never a reason
-            to reinterpret the reference as inline.
+            rest of the caller's turn. For a bare reference ``resolved``
+            is anchored (``./name``) when it names a file, so an absence
+            discovered later — the file removed between this call and the
+            subprocess launch — cannot be re-resolved via PATH by the
+            interpreter or execvp; it fails loudly instead of silently
+            reinterpreting the reference as inline, or running a
+            same-named PATH impostor.
 
         Raises:
             ScriptNotFoundError: for an absolute or path-syntax reference
@@ -195,7 +209,9 @@ class ScriptResolver:
         if self._has_path_syntax(script_ref):
             # Path syntax never falls back to inline (trap 3): the search
             # itself is the one observation, since each candidate is
-            # necessarily probed with `.exists()` to find it.
+            # necessarily probed with `.exists()` to find it. Every
+            # candidate is built from a search directory, so it already
+            # carries a separator -- no anchoring needed here.
             resolved = self._try_resolve_with_search_paths(script_ref)
             if resolved:
                 return resolved, True
@@ -206,38 +222,13 @@ class ScriptResolver:
         # the classification together (trap 1: CWD wins, before any
         # search-path logic; unchanged when it names nothing -- trap 2).
         if os.path.exists(script_ref):
-            return script_ref, True
+            # Anchored, not verbatim (#177 review round 2 finding 1): a
+            # slashless name handed to `bash <name>` (or execvp) is
+            # subject to a PATH search if it is not found where it is
+            # run -- `./name` carries a separator, so it cannot be
+            # re-resolved that way.
+            return f"./{script_ref}", True
         return script_ref, False
-
-    def is_inline_content(self, script_ref: str) -> bool:
-        """Whether this reference is inline script content rather than a file.
-
-        A read-only classification for inspection (tests, tooling) — it
-        answers on its own, without resolving. It does NOT raise for a
-        path-syntax reference that resolves to nothing (unlike
-        ``resolve_and_classify``, whose search there IS the resolution),
-        so it stays a total function of the reference alone.
-
-        A production consumer that needs to ACT on the classification —
-        run a file, or name its bytes for a cache key — must call
-        ``resolve_and_classify`` instead of pairing this with a separate
-        ``resolve_script_path``: two independent calls take two
-        independent snapshots of the filesystem, and #177 review round 1
-        measured that gap as live (see ``resolve_and_classify``'s
-        docstring).
-
-        A reference is a FILE when it has path syntax (see
-        ``_has_path_syntax``) OR when, bare, it names a file that exists
-        relative to the process CWD. Otherwise it is inline content:
-        ``resolve_script_path`` returns it verbatim and never touches a
-        file for it.
-        """
-        if self._has_path_syntax(script_ref):
-            return False
-        # A bare name is a FILE when it names one relative to the process
-        # CWD. This stat is the one extra filesystem call this predicate
-        # costs on the inline path, same as it always has.
-        return not os.path.exists(script_ref)
 
     def _resolve_uncached(self, script_ref: str) -> str:
         """Resolve script reference without using cache."""
