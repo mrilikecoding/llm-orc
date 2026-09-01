@@ -1,107 +1,120 @@
 # #171 — the deliverable must participate in its own acceptance
 
-Lead design brief, 2026-08-31 — DRAFT, awaiting reviewer pre-flight
-before implementation (this changes gate semantics; the fork below is
-real). Issue #171 has the measured evidence: two of three target shapes
-ship, and content is unconstrained (`x = 1`, wrong function, `# TODO`
-all accept; on `re-fix` the write clobbers real client content).
+Lead design brief v2, 2026-08-31, rewritten after the measured
+pre-flight REDESIGN verdict. v1 (in git) proposed unconditional
+destination shadowing (A) plus a static tests-reference-the-candidate
+rule (B). The pre-flight drove both through the real
+`accept_gather → accept_executor → adequacy_check → accept_gate` chain:
+A+B still shipped 8/8 constructed non-participation shapes, B is
+structurally absent on two of the four gated routes, and A moved 0 of
+32 recorded live build turns while reversing #98 on write-tests. Both
+are dropped. Issue #171 has the original evidence.
 
-## The mechanism, grounded
-
-- `accept_gather.py:184` (and `refix_gather.py:149`) derive
-  `target_file` from `_FILE_RE` over the REQUIREMENT TEXT; when the
-  requirement names no .py file, `target_file=""` and nothing is
-  shadowed.
-- `accept_executor._materialize` writes workspace files, then the
-  target-file shadow (only when non-empty), then the deliverable to
-  `solution.py` and tests to `tests.py`. Tests satisfied by workspace
-  modules pass against ANY deliverable.
-- `adequacy_check.py` reads the TESTS only (value-bearing assert rule)
-  and never sees the code, so `tests_adequate` is structurally
-  independent of what shipped.
-- Meanwhile emit's write destination is the ROUTING DECISION's `file`
-  key (default `solution.py`), which the gate chain never sees. The
-  sandbox's shadow target and the client's write destination are two
-  classifiers that can disagree — the #177 shape at the gate seam.
-
-## Invariant (proposed)
+## Invariant (unchanged from v1)
 
 `accept: true` is a claim about the shipped deliverable: the tests that
-passed must have been able to observe it, at the destination the client
-will receive. Concretely: (a) in the sandbox, every import path by which
-the tests can reach the deliverable's destination module resolves to the
-DELIVERABLE, and (b) the executed tests reference at least one name the
-deliverable defines.
+passed must have been able to observe it. A gate whose ground truth
+never touched the deliverable must refuse.
 
-## The fork
+## Why no static rule can work (measured)
 
-1. **(A) Unconditional shadow at the resolved destination.** Plumb the
-   routing decision's `file` into the gather nodes; shadow it always,
-   `_FILE_RE` demoted to fallback. Deterministic; closes the
-   shadow-miss shapes (`target_file=""`, requirement naming a different
-   file). Does NOT close the participation gap: tests that never touch
-   the deliverable still pass against the workspace.
-2. **(B) Participation check.** Extend the adequacy seam to see the
-   candidate: refuse when the tests reference NO name the candidate
-   defines (via the deliverable's module or `solution`). Closes the
-   workspace-satisfied and junk-content shapes statically, and #169's
-   smoke-test gap at the same seam. Alone, it is spoofable at runtime:
-   a referenced NAME can bind to a stale workspace module when the
-   shadow misses — so B without A certifies the wrong bytes.
-3. **Escalation on signal (#119)** — not reached for; 1 and 2 are not
-   ruled out.
+`accept_executor_runner.run_tests` execs code and tests in ONE shared
+namespace (`exec(code, ns)` then `exec(tests, ns)`); any import in the
+tests rebinds the deliverable's names afterwards, and every workspace
+module is importable. `import inventory; inventory.add_item(...)`,
+`import inventory as inv`, `from inventory import *`, and facade
+re-exports are ordinary dialects no name rule distinguishes from a
+deliverable reference — binding is a runtime fact. Worse, the
+self-inflicted case: `accept_gather._inject_workspace_imports` PREPENDS
+`from inventory import add_item` when the tests reference `add_item`
+bare, actively diverting a reference that would have hit the
+deliverable (WA-2b; the most common turn shape, destination
+`solution.py`).
 
-**Recommendation: A + B together.** A makes the runtime bind the tests
-to the deliverable's bytes; B makes vacuous suites refuse. Each patches
-the other's blind side; both are deterministic (doctrine 9). Runtime
-does most of B's work once A holds (a junk deliverable breaks a genuine
-reference with AttributeError), so B stays minimal: name-overlap only,
-no quality judgment (the issue's own boundary against #110 creep).
+## The mechanism: runtime ablation control in `accept_executor`
 
-## Over-refusal exposure (the pre-flight question)
+When the suite passes and a NON-EMPTY deliverable exists, run one
+control child: same workspace, same repaired tests, the deliverable's
+bytes ABSENT from every destination they were written to (`solution.py`
+and the shadow target both). If the control still passes, the
+deliverable never participated — `accept` is False with the honest,
+path-free reason (the tests never exercise the deliverable). A control
+that fails or crashes proves necessity; proceed to accept.
 
-Doctrine 7: the degenerate optimum is refusing everything. Before
-implementation, B's predicate must be run over the recorded live corpus
-(`.llm-orc/.serve-trace/turns.jsonl` and the dogfood records — the
-issue counts 52 recorded writes) and the wrong-reject rate reported.
-Known suspect shapes for the pre-flight to weigh:
+Why this seam: `accept_executor.py` is the only node on all four gated
+shapes (`build-gated-round`, `build-code-round` held rounds, `re-fix`,
+`write-tests-round`), so held rounds and re-fix are covered without
+touching the ensemble graph — the two routes the adequacy seam
+structurally cannot see (`build-code-round.yaml` and `re-fix.yaml`
+declare no judge agent; `accept_gate._resolve_adequacy` carries round
+1's verdict on held rounds).
 
-- Tests exercising the deliverable ONLY via `solution` import while the
-  turn resolves a different destination (A shadows both — measure).
-- Mutation-pattern tests (`add_todo(todos, "x")`) whose only referenced
-  names are workspace-defined containers.
-- Held rounds (#100: the carry's sentinel block IS the spec) — whose
-  names do held tests reference?
-- `_inject_workspace_imports` preludes adding imports the tests did not
-  write — do injected names count as references? (They must not.)
-- re-fix: the candidate is a FIX of an existing module and defines the
-  same names — overlap passes; confirm no shape where the fix defines
-  ONLY new helper names the visible test does not call.
+Conditions and bounds:
 
-## Seams
+- **Skip when the deliverable is empty** (write-tests turns carry
+  `code: ""` from `tests_gather` — an ablation there is vacuous and
+  would refuse every write-tests turn; emptiness is already #166/#169's
+  refusal).
+- **Run the control only on the would-accept path** (tests already
+  failing need no ablation).
+- **Budget:** the control is one extra child inside `_run_children`'s
+  aggregate wall budget — account for it there, per-child timeout
+  applies. Measured cost: median 0.19s against a 0.38s non-model chain.
+- **Named bound (pin as documented behavior):** the ablation proves the
+  bytes were NECESSARY, not that behavior was observed — a suite
+  asserting `len(open("helpers.py").read()) > 0` passes the control
+  with a junk deliverable. The value-bearing adequacy rule is the other
+  half of the invariant and already exists; neither subsumes the other.
 
-`accept_gather.py` / `refix_gather.py` (destination plumbing + gather
-the decision's `file`), `accept_executor._materialize` (unconditional
-shadow), `adequacy_check.py` (candidate input + name-overlap rule; the
-value-bearing rule unchanged), refusal vocabulary in the envelope
-(honest reason: the tests never exercise the deliverable; path-free per
-#168).
+## Two companion slices (independent, same arc)
 
-## Instruments (from the issue, plus the fork's own)
+1. **re-fix's smoke test becomes surface-derived.** `refix_select`'s
+   `_SMOKE_TEST` is `def ...(): pass` — it references no name, so on
+   the smoke-only path participation is unsatisfiable and today
+   `x = 1` / `import os` / an unrelated def still accept and clobber
+   (post-#173). Derive the smoke test from the PRIOR module's top-level
+   names (`refix_gather` already holds `prior_code` and `target_file`):
+   a candidate that drops the surface fails it. Measured: real fix
+   passes, all five junk shapes fail. Recorded bound: a fix that
+   intentionally drops a public name refuses.
+2. **`_inject_workspace_imports` must not divert.** Skip injection for
+   any name the CANDIDATE defines (both call sites — tests and code).
+   Two-line guard; removes the self-inflicted diversion class (WA-2/2b).
 
-1. A workspace-satisfied suite does not accept a deliverable the tests
-   never touched (all three measured target shapes). Red today.
-2. A healthy build whose tests DO exercise the deliverable still
-   accepts.
-3. End to end through the real serving chain (#155's lesson).
-4. The re-fix counterpart: `# TODO: implement the fix` never clobbers
-   client content.
-5. Sandbox-destination agreement: the file the tests ran against is the
-   file emit writes (the two-classifier pin).
-6. The corpus replay: wrong-reject rate over recorded real turns, with
-   the named suspect shapes as fixtures.
+## Explicitly not doing
 
-## Out of scope
+- A (unconditional destination shadow): 0/32 measured effect on build
+  turns (the two `_FILE_RE` copies are byte-identical over the same
+  text; the turn payload carries no `file` key), and write-tests sets
+  `target_file=""` on purpose (#98) — A there is a regression.
+- B (static reference rule): defeated by import dialects; absent on
+  held/re-fix routes; sees `code: ""` on every write-tests turn.
+- #119 escalation: not reached for.
+- Artifact QUALITY (#110), widening #166/#169.
 
-Artifact QUALITY judgments (#110), widening #166/#169's emptiness
-guards, #119 escalation.
+## Instruments
+
+1. The issue's table closes: all three target shapes and all four
+   junk-content shapes refuse via the ablation (red today), with the
+   already-refused cells unchanged.
+2. Healthy builds still accept: the pre-flight's OK-1..7 shapes, plus
+   the corpus expectation — 0 wrong-rejects held over the 71
+   recorded/labelled contracts (13 build/re-fix replays, 42 write-tests
+   replays, 16 judge_adequacy fixtures).
+3. The import-dialect wrong-accept set (`import X` + attribute, aliased
+   import, star import, facade re-export, injected-import diversion)
+   all refuse — these killed the static rule and are the fixture set
+   that proves the ablation is doing the work.
+4. Held-round participation pin and re-fix participation pin — the two
+   routes the adequacy seam cannot see each carry their own end-to-end
+   pin (#155's lesson).
+5. The re-fix counterpart: `# TODO: implement the fix` never clobbers
+   client content; the surface-derived smoke test fails every junk
+   shape and passes the real fix.
+6. write-tests turns are untouched: empty-candidate skip pinned.
+7. End to end through the real serving chain, and the ablation's
+   refusal reason is path-free (#168 discipline).
+
+Regression instruments: full `make test` (511 instruments + doc-drift),
+`tests/unit/serving/` accept/adequacy/refix suites, #166 #169 #173
+pins, #98's write-tests shadowing pin.
