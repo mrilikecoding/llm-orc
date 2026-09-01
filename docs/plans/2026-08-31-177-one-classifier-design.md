@@ -4,9 +4,12 @@ Lead design brief, 2026-08-31. Issue #177 carries the evidence (the
 resolver calls a bare CWD-file name content while ScriptAgent executes
 the file; #163's cache identity trusted the resolver and reproduced the
 #160 stale serve; the fail-closed patch in `agent_runner.py` covers the
-symptom). Direction (1) from the issue, endorsed there: widen
-`is_inline_content` to agree with EXECUTION, and make every consumer ask
-it. Environment: ANY.
+symptom). Direction (1) from the issue, endorsed there: widen the
+file-vs-inline classification to agree with EXECUTION, and make every
+consumer ask one call. (Landed as `resolve_and_classify`, which
+subsumed and then replaced the `is_inline_content` predicate this brief
+originally named; the syntactic clause alone lives on as the private
+`_has_path_syntax`.) Environment: ANY.
 
 ## Invariant
 
@@ -58,10 +61,12 @@ the fail-closed patch, so nothing gets slower.
 
 ## Seams
 
-- `resolver.py` — widen `is_inline_content` (and `_resolve_uncached` per
-  trap 1); rewrite the docstring paragraphs that describe the
-  disagreement (they name #177 as open — the doc-drift check in
-  `make test` reads these files, so stale prose is a red build, rule 19).
+- `resolver.py` — widen the classification (`is_inline_content` and
+  `_resolve_uncached` per trap 1; later unified into `resolve_and_classify`,
+  with the syntactic clause split out to the private `_has_path_syntax`);
+  rewrite the docstring paragraphs that describe the disagreement (they
+  name #177 as open — the doc-drift check in `make test` reads these
+  files, so stale prose is a red build, rule 19).
 - `script_agent.py` — the three `os.path.exists(resolved_script)` sites
   (`_run_script`, `execute_with_schema_json`, the interactive site)
   consume the predicate's answer instead of statting. Thread the

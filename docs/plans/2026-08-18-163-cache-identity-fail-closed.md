@@ -89,10 +89,12 @@ asked two questions, and it cannot answer both.
 
 The information lives one level up. `ScriptResolver` returns a reference
 verbatim only through its final fall-through; every other successful return
-is a file it found. So the resolver now answers `is_inline_content`, the
-identity asks it BEFORE touching the filesystem, and from that point there is
-no classification left to get wrong: the reference denotes a file, so the
-resolve, the stat and the read all answer `None` and only a regular file that
+is a file it found. So the resolver now answers via `resolve_and_classify`
+(#177 unified this further, replacing the `is_inline_content` predicate this
+paragraph originally named), which classifies BEFORE touching the
+filesystem, and from that point there is no classification left to get
+wrong: the reference denotes a file, so the resolve, the stat and the read
+all answer `None` and only a regular file that
 digests produces an identity. `_ABSENT_ERRNOS` and the `ValueError` branch
 are gone with it.
 
