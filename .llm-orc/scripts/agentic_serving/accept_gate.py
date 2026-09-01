@@ -8,13 +8,16 @@ accept/another-round loop; this node produces the verdict, it does not iterate).
 The AND lives here (deterministic) rather than in a guard, because the guard
 predicate grammar is truthiness / == literal only.
 
-    accept = tests_pass AND tests_adequate
+    accept = tests_pass AND tests_adequate AND participates
 
-The two catch orthogonal failures: the executor catches wrong code real tests
-exercise; the isolated judge catches trivially-tested or under-covering outputs
-the executor passes (ADR-048 §1). Independence: neither input comes from a builder
-the produced artifact could steer — tests_pass is real sandboxed execution,
-tests_adequate is a fresh-context judge (ADR-048 §3).
+The first two catch orthogonal failures: the executor catches wrong code real
+tests exercise; the isolated judge catches trivially-tested or under-covering
+outputs the executor passes (ADR-048 §1). ``participates`` (#171) is the
+executor's own runtime ablation control: a suite that passes identically with
+the deliverable's bytes absent never actually exercised it, which neither of
+the other two inputs can see. Independence: none of the three comes from a
+builder the produced artifact could steer — tests_pass and participates are
+real sandboxed execution, tests_adequate is a fresh-context judge (ADR-048 §3).
 
 Emits JSON: {accept, tests_pass, tests_adequate, reason}
 """
