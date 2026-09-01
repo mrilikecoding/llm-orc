@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from llm_orc.web.serving.turn_trace import build_turn_trace
+from llm_orc.web.serving.turn_trace import _STDERR_CAP, build_turn_trace
 
 
 def _trace_response(length: int) -> str:
@@ -276,6 +276,39 @@ def test_a_healthy_seat_child_carries_no_error_or_stderr_fields() -> None:
     seat_nodes = trace["nodes"][0]["seat"]
     assert "error" not in seat_nodes[0]
     assert "stderr" not in seat_nodes[0]
+
+
+def test_an_oversized_stderr_is_truncated_to_the_named_cap() -> None:
+    """Round-1 review NB-1: whole-`stderr` retention made a trace row
+    unbounded — one live turn measured 4,003,475 bytes written to
+    turns.jsonl (a seat wrote 4MB to stderr) against 3,418 bytes on main.
+    `_STDERR_CAP` bounds the field the response snippet cap does not
+    govern; `error` (producer-authored, short) stays whole regardless."""
+    import json
+
+    huge_stderr = "x" * (_STDERR_CAP * 5)
+    child_result = {
+        "results": {
+            "verdict": {
+                "response": json.dumps(
+                    {
+                        "success": False,
+                        "error": "Script failed with exit code 1",
+                        "stderr": huge_stderr,
+                    }
+                )
+            }
+        }
+    }
+    result = {
+        "results": {"seat": {"status": "success", "response": json.dumps(child_result)}}
+    }
+
+    trace = build_turn_trace("serving", result)
+
+    seat_nodes = trace["nodes"][0]["seat"]
+    assert len(seat_nodes[0]["stderr"]) == _STDERR_CAP + 1  # cap + ellipsis
+    assert seat_nodes[0]["error"] == "Script failed with exit code 1"
 
 
 def test_emit_never_propagates_a_trace_build_failure(tmp_path: Path) -> None:

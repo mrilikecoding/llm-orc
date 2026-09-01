@@ -25,6 +25,23 @@ from llm_orc.web.serving.token_estimate import projected_tokens_v2
 
 _SNIPPET = 280
 
+# Round-1 review NB-1 (#174): retaining the sub-ensemble failure family's
+# whole `stderr` (below) made a trace row unbounded — `_snippet_cap()` only
+# governs the plain `response` field, and `emit_turn_trace` has no size cap
+# or rotation of its own. One live turn measured 4,003,475 bytes written to
+# turns.jsonl (a seat wrote 4MB to stderr) against 3,418 bytes on main.
+#
+# 20,000 chars — ~70x the response snippet's default — is a generous
+# multiple in the #114/#180 family's sense (small structured fields survive
+# the cap whole; prose-sized ones still clip): big enough to hold a REAL
+# pytest failure dump in full (a `-q` summary with several FAILED lines and
+# a full assertion diff runs a few KB, comfortably under this), while still
+# bounding the runaway case the measurement caught. Produced code controls
+# the volume of an honest failure, so a legitimate traceback should never
+# need more than this; `error` (producer-authored, one line) has no cap of
+# its own and is kept whole regardless.
+_STDERR_CAP = 20_000
+
 
 def _snippet_cap() -> int:
     """The response clip length: readable-short by default,
@@ -41,6 +58,13 @@ def _snippet(value: Any) -> str:
     text = value if isinstance(value, str) else json.dumps(value)
     text = " ".join(text.split())
     return text if len(text) <= cap else text[:cap] + "…"
+
+
+def _capped_stderr(value: str) -> str:
+    """``value`` clipped to ``_STDERR_CAP``, whitespace intact — unlike
+    ``_snippet``, this is a traceback: line structure IS the content, so it
+    is never whitespace-collapsed."""
+    return value if len(value) <= _STDERR_CAP else value[:_STDERR_CAP] + "…"
 
 
 def _child_results(response: Any) -> dict[str, Any] | None:
@@ -181,8 +205,11 @@ def _engine_failure_fields(response: Any) -> dict[str, str]:
     the sub-ensemble ``ScriptAgent.execute`` failure family
     (``{success, error, stderr}``) carries both, and its real payload — the
     traceback — is in ``stderr``, which used to survive only as a 280-char
-    snippet (#168 kept ``error`` whole; #174 does the same for ``stderr``).
-    Every other response shape keeps the snippet and nothing else.
+    snippet (#168 kept ``error`` whole; #174 does the same for ``stderr``,
+    up to ``_STDERR_CAP`` — review round 1 NB-1: unlike ``error``, which is
+    producer-authored and short, ``stderr`` is arbitrary subprocess output
+    with no bound of its own). Every other response shape keeps the snippet
+    and nothing else.
     """
     if not isinstance(response, str):
         return {}
@@ -193,10 +220,12 @@ def _engine_failure_fields(response: Any) -> dict[str, str]:
     if not isinstance(parsed, dict):
         return {}
     fields: dict[str, str] = {}
-    for key in ("error", "stderr"):
-        value = parsed.get(key)
-        if isinstance(value, str) and value:
-            fields[key] = value
+    error = parsed.get("error")
+    if isinstance(error, str) and error:
+        fields["error"] = error
+    stderr = parsed.get("stderr")
+    if isinstance(stderr, str) and stderr:
+        fields["stderr"] = _capped_stderr(stderr)
     return fields
 
 
