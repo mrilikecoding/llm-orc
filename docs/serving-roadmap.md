@@ -77,12 +77,18 @@ by the lead (`docs/plans/2026-08-31-{174,177,171}-*.md`) and delegated:
   passed, lint 0. Named bounds recorded in the brief (NB-3 statusful
   envelope with no extractable deliverable, NB-4 `{"value": prose}` loop
   wrap, Note-6 empty-stdout seat).
-- **#177 in review round 3**: round 1 BLOCKED (classification re-derived
-  per stat — a vanished bare-name file flipped FILE→INLINE and ran a PATH
-  impostor via `bash -c`); round 2 BLOCKED (the fix closed the inline
-  door; slashless `bash <name>` re-resolved on PATH through the FILE
-  branch); round 3 reviews the anchoring rework (`./name` at the single
-  resolve seam; `is_inline_content` deleted, zero callers).
+- **#177 MERGED** (`fix/177-one-classifier`) after four rounds: round 1
+  BLOCKED (classification re-derived per stat — a vanished bare-name file
+  flipped FILE→INLINE and ran a PATH impostor via `bash -c`); round 2
+  BLOCKED (the fix closed the inline door; slashless `bash <name>`
+  re-resolved on PATH through the FILE branch — fixed by anchoring
+  `./name` at the single resolve seam); round 3 BLOCKED on a regression
+  the LEAD's own rework brief caused (identity keyed on the ref collided
+  byte-identical scripts across projects — a measured stale serve; keyed
+  back on the resolved location); round 4 APPROVED, every pin
+  outcome-asserting and red under its mutant. `resolve_and_classify` is
+  the one observation; `is_inline_content` deleted (zero callers).
+  Merged tree: 4163 passed, lint 0.
 - **#171 implementing after a pre-flight REDESIGN**: the v1 static
   design (unconditional shadow + tests-reference-candidate rule) was
   refuted by measurement — 8/8 constructed non-participation shapes
@@ -164,7 +170,7 @@ fix rule 18 had been pointing at since round 6.
 - **#180** — filed this session from #168 round 8b: the accept report is
   unbounded and unittest itself teaches the model to inflate it
   (`maxDiff = None`). #114/#175 family.
-- **#171 #177** — in flight this session (see Next up); **#174 merged**.
+- **#171** — in implementation review (see Next up); **#174 #177 merged**.
 - Untouched: **#165**, **#155** Arcs B/C, **#161/#162**, **#149 #151**.
 - Still blocked on the practitioner: **#167** (volume paid runs) and
   **#141** (CLAUDE.md-confound spike's None condition).
@@ -254,7 +260,9 @@ Remaining, in order:
   named); the vocabulary half stays open on #175, riding #180/#142
 - [x] #174 merged (a dead seat refuses honestly on every route; dead-seat
   refusal outranks accept/validity; stderr retained head+tail capped)
-- [ ] #171 #177 — the general fixes the two long arcs circled (in flight)
+- [x] #177 merged (one resolve-and-classify observation; bare CWD refs
+  anchored so PATH cannot re-resolve; identity names bytes AND location)
+- [ ] #171 — the deliverable must participate (in review)
 - [ ] #161 #162 #165 — script-cache purity/imports and the -n auto flake;
   #155 Arcs B/C remainder
 - [ ] North star: parity on real work, honesty column held at zero
@@ -303,6 +311,14 @@ measurement; provenance in the archive.
    two-layer split is the worked example).
 10. **Free-first; estimate before paid spend; hosted seats are named IOUs
     in the buy-back ledger.**
+11. **Pin the harm, not the mechanism.** Three of #177's four blockers
+    were green pins measuring the code path a fix had just edited (a
+    trap pin on the one shape where it held for free, an
+    `assert_not_called` on the edited branch, identity pins checking
+    only the digest suffix) while the defect ran a PATH impostor or
+    crossed a cache. A pin must assert the OUTCOME — which program ran,
+    which output crossed, what reached the wire — and go red under a
+    mutant that reintroduces the defect it was written for.
 
 ## Environments (tag every task)
 
@@ -434,8 +450,8 @@ Superseded by epic labels: `gh issue list --label epic:<name>`. Closed
 #107–#109 #111–#113 #115 #116 #118 #120 #133 #134 #138 #139 #145 #152
 #153 #154 #156 #157 #158 #159 #160 #164.
 
-**#163 #166 #168 #169 #170 #172 #173 #174 #176 #178 #179 are merged on
-local main and still OPEN on GitHub**, because nothing is pushed. They close when
+**#163 #166 #168 #169 #170 #172 #173 #174 #176 #177 #178 #179 are merged
+on local main and still OPEN on GitHub**, because nothing is pushed. They close when
 the push lands, not before — the roadmap said "closed" here first, which is
 the kind of claim rule 15 exists for. #175 is merged in part (env slice)
 and stays open by design for its vocabulary half.
