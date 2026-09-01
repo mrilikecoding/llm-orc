@@ -157,6 +157,18 @@ class ScriptAgent:
         self.parameters = config.get("parameters", {})
         self._env_manager = ScriptEnvironmentManager(self.environment, self.parameters)
 
+    def _resolve_and_classify(self, script_ref: str) -> tuple[str, bool]:
+        """Resolve ``script_ref`` and classify it file-vs-inline, in one
+        place, so the sites below consume the answer instead of each
+        independently re-deriving it (#177).
+
+        Structural only: the classification is still ``os.path.exists``
+        on the resolved path, unchanged from what each site checked on
+        its own.
+        """
+        resolved = self._script_resolver.resolve_script_path(script_ref)
+        return resolved, os.path.exists(resolved)
+
     async def execute(
         self, input_data: str, context: dict[str, Any] | None = None
     ) -> str:
@@ -173,11 +185,10 @@ class ScriptAgent:
             context = {}
 
         try:
-            resolved_script = (
-                self._script_resolver.resolve_script_path(self.script)
-                if self.script
-                else None
-            )
+            if self.script:
+                resolved_script, is_file = self._resolve_and_classify(self.script)
+            else:
+                resolved_script, is_file = None, False
 
             json_input_str = json.dumps(
                 {
@@ -187,7 +198,7 @@ class ScriptAgent:
                 }
             )
 
-            result = await self._run_script(resolved_script, json_input_str)
+            result = await self._run_script(resolved_script, is_file, json_input_str)
 
             parsed_result = self._parse_output(result)
             if isinstance(parsed_result, dict):
@@ -213,10 +224,10 @@ class ScriptAgent:
             return json.dumps({"success": False, "error": str(e)})
 
     async def _run_script(
-        self, resolved_script: str | None, json_input_str: str
+        self, resolved_script: str | None, is_file: bool, json_input_str: str
     ) -> str:
         """Run the resolved script and return its output."""
-        if resolved_script and os.path.exists(resolved_script):
+        if resolved_script and is_file:
             return await self._execute_script_file(resolved_script, json_input_str)
         if resolved_script:
             return await self._execute_inline_script(resolved_script, json_input_str)
@@ -284,12 +295,12 @@ class ScriptAgent:
 
             # Resolve script path using ScriptResolver
             if self.script:
-                resolved_script = self._script_resolver.resolve_script_path(self.script)
+                resolved_script, is_file = self._resolve_and_classify(self.script)
             else:
-                resolved_script = None
+                resolved_script, is_file = None, False
 
             # Execute the script with ScriptAgentInput JSON directly
-            if resolved_script and os.path.exists(resolved_script):
+            if resolved_script and is_file:
                 result = await self._execute_script_file_with_schema_json(
                     resolved_script, input_json
                 )
@@ -364,9 +375,9 @@ class ScriptAgent:
         """
         # Resolve script path
         if self.script:
-            resolved_script = self._script_resolver.resolve_script_path(self.script)
+            resolved_script, is_file = self._resolve_and_classify(self.script)
         else:
-            resolved_script = None
+            resolved_script, is_file = None, False
 
         # Prepare JSON input
         json_input = {
@@ -377,7 +388,7 @@ class ScriptAgent:
         json_input_str = json.dumps(json_input)
 
         # For the minimal implementation, use subprocess with interactive I/O
-        if resolved_script and os.path.exists(resolved_script):
+        if resolved_script and is_file:
             return await self._execute_script_interactive(
                 resolved_script, json_input_str, user_input_handler
             )
