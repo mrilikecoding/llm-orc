@@ -91,14 +91,25 @@ def _is_inert(code: str) -> bool:
     return all(isinstance(node, _INERT_NODE_TYPES) for node in ast.walk(tree))
 
 
-def _executor_verdict(deps: dict[str, object]) -> tuple[bool, str]:
+def _executor_verdict(deps: dict[str, object]) -> tuple[bool, str, bool, str]:
+    """(tests_pass, report, participates, participation_reason). Re-fix has
+    no adequacy seat at all — this route's own accept formula is the only
+    place the #171 ablation's verdict can land. ``participates`` defaults
+    True (an executor response predating the field, or the ablation never
+    ran): necessity not disproven, never a free pass nor a refusal for a
+    missing key."""
     try:
         parsed = json.loads(_response(deps.get("executor", {})))
     except (json.JSONDecodeError, TypeError):
         parsed = {}
     if not isinstance(parsed, dict):
         parsed = {}
-    return bool(parsed.get("tests_pass", False)), str(parsed.get("report", ""))
+    return (
+        bool(parsed.get("tests_pass", False)),
+        str(parsed.get("report", "")),
+        bool(parsed.get("participates", True)),
+        str(parsed.get("participation_reason", "")),
+    )
 
 
 def main() -> None:
@@ -121,7 +132,7 @@ def main() -> None:
     # smoke test so the executor still confirms the candidate LOADS cleanly
     # before it can clobber the original. A candidate that fails either gate
     # is rejected here -> honest-red terminal, original preserved.
-    tests_pass, report = _executor_verdict(deps)
+    tests_pass, report, participates, participation_reason = _executor_verdict(deps)
     # #169: an EMPTY candidate is never a fix, and the executor cannot say
     # so. The injected smoke test's body is `pass`, which passes against any
     # code including none, so an empty model_edit used to report accept:true
@@ -137,7 +148,7 @@ def main() -> None:
     # Only checked when something survived .strip(), so this cannot change
     # the emptiness branch below.
     inert = candidate_present and _is_inert(code)
-    accept = tests_pass and candidate_present and not inert
+    accept = tests_pass and candidate_present and not inert and participates
     # Names the target (review round 1): #166's caller guard names the file
     # it declined to write, and a refusal the client cannot map to a file is
     # worth less. The target comes from select, which took it from gather's
@@ -150,6 +161,12 @@ def main() -> None:
             f"re-fix candidate for {target} has no executable statement; "
             "the original is unchanged"
         )
+    elif not participates:
+        # #171: re-fix has no adequacy seat — this is the only place its
+        # own accept formula can catch a suite the deliverable never
+        # touched (the smoke-only path's own "loads cleanly" bar, or a
+        # visible test the target module never appears in).
+        reason = participation_reason or "the tests never exercise the deliverable"
     elif smoke_only:
         reason = (
             "candidate loads cleanly; no visible test, the client run verifies"
