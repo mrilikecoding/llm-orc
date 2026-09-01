@@ -44,6 +44,14 @@ unknowable) and a dead seat-side gate on a build turn
 (``BUILD_REFUSED_PREFIX``, mints ``refused`` — routing succeeded by
 construction, so ``is_build_ask`` is known).
 
+#174 adds a third, the seat itself dying rather than its gate: consumed
+exactly where content ships (the prose-finish branch and the build write
+path), never as a turn-wide precondition, so a dead placeholder seat on a
+delegation/prose route (one whose answer rides the routing decision and
+never touches the seat terminal) still answers normally. Selects between
+the same two existing prefixes by ``is_build_ask`` (never ``build`` —
+routing can be False on a build ask's own discovery round).
+
 """
 
 from __future__ import annotations
@@ -292,8 +300,10 @@ def main() -> None:
     content = str(gated.get("content", ""))
     accept = gated.get("accept")
     seat_admitted = gated.get("seat_admitted")
+    is_build_ask = bool(gated.get("is_build_ask", False))
 
     seat_gate_failed = str(gated.get("seat_gate_failed", ""))
+    seat_failed = str(gated.get("seat_failed", ""))
 
     seam = _seam_outcome(gated)
     if seam is not None:
@@ -307,6 +317,38 @@ def main() -> None:
         outcome = {
             "finish": True,
             "content": f"{TERMINALS['seat_contract'].prefix}{reason}",
+        }
+    elif build and seat_failed:
+        # Round-1 review NB-2: the seat itself is dead, so `content`,
+        # `accept`/`accept_reason`, and `valid` are ALL derived from the
+        # SAME terminal `_dead_seat_reason` just declared unrecognizable —
+        # `_envelope_verdict` parses `diagnostics.accept` off that same
+        # dead dict with no `status` check of its own. Trusting any of them
+        # below this point is a wrong-accept: the reviewer's capture
+        # (`{"success": false, "error": "...", "diagnostics": {"accept":
+        # false, "accept_reason": "see /Users/nathangreen/x.py"}}`) shipped
+        # `Another round needed: see /Users/nathangreen/x.py` — a path from
+        # a dead terminal — when the accept branch sat above this one.
+        #
+        # NOT gated on `valid` (unlike seat_gate_failed below, whose
+        # terminal IS trustworthy): shape zeroes `content` to "" on a dead
+        # seat, and form_gate's validity check runs that empty string
+        # against the destination's extension — trivially valid Python but
+        # invalid JSON. Gating on `valid` here let a `.json` destination
+        # fall through to the form-gate-invalid branch and blame JSON
+        # syntax for a seat that never ran (Note 5).
+        #
+        # Still ahead of `seat_gate_failed` below: a dead seat proves there
+        # is nothing to admit, which subsumes "the admission verdict is
+        # unknown" (the two are independent failures in practice — a
+        # crashed seat leaves the defensively-wrapped seat_contract node
+        # healthy — but the seat's own death is the more certain fact).
+        outcome = {
+            "finish": True,
+            "content": (
+                f"{TERMINALS['build_refused'].prefix}serving pipeline error: "
+                f"{seat_failed}; nothing was built or written"
+            ),
         }
     elif build and accept is False:
         # The accept gate rejected the deliverable: route another round rather
@@ -376,6 +418,25 @@ def main() -> None:
         outcome = {
             "finish": True,
             "content": f"{TERMINALS['build_refused'].prefix}{reason}",
+        }
+    elif seat_failed:
+        # #174: a dead seat's placeholder must not ship as the prose finish
+        # — the remaining dishonest gap #166's build-side guard does not
+        # reach (a non-build turn is never a client write). Prefix by
+        # `is_build_ask`, not `build`: this branch runs with `build` False
+        # by construction, but the SAME dead-seat shape can answer a build
+        # ask's own discovery/explain round (recap grounding, #133/#134).
+        prefix = (
+            TERMINALS["build_refused"].prefix
+            if is_build_ask
+            else TERMINALS["refused"].prefix
+        )
+        outcome = {
+            "finish": True,
+            "content": (
+                f"{prefix}serving pipeline error: {seat_failed}; "
+                f"nothing was built or written"
+            ),
         }
     else:
         outcome = {"finish": True, "content": content}

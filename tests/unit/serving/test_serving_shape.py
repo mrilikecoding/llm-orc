@@ -537,6 +537,128 @@ def test_a_readable_routing_decision_is_unaffected() -> None:
     assert not shaped.get("routing_failed")
 
 
+# --- #174: shape positively recognises a dead seat --------------------------
+#
+# `_envelope_deliverable` recognises a healthy ADR-024 envelope by `"status"
+# in env`. Both engine failure families are JSON dicts without `status` by
+# construction: `execute_with_schema_json`'s wrap (`_wrapped` above) and the
+# sub-ensemble `ScriptAgent.execute` `{success, error, stderr}` shape below —
+# so a dead seat used to fall through to `deliverable = seat_terminal.strip()`,
+# the crash dump itself, shipped as content.
+
+_NONBUILD_DECISION = {"target": "run-verdict", "kind": "run_verdict", "build": False}
+_SUB_ENSEMBLE_CRASH = json.dumps(
+    {
+        "success": False,
+        "error": "Script failed with exit code 1",
+        "stderr": (
+            "Traceback (most recent call last):\n"
+            '  File "/Users/someuser/.llm-orc/scripts/agentic_serving/'
+            'run_verdict.py", line 2, in <module>\n'
+            "    raise RuntimeError('boom')\n"
+            "RuntimeError: boom\n"
+        ),
+    }
+)
+
+
+def test_a_dead_seat_sets_seat_failed_and_zeroes_content() -> None:
+    shaped = _shape_raw(
+        {
+            "classify": {"response": json.dumps(_NONBUILD_DECISION)},
+            "seat": {"response": _SUB_ENSEMBLE_CRASH},
+        }
+    )
+
+    assert shaped["seat_failed"]
+    assert shaped["content"] == ""
+
+
+def test_a_dead_seat_reason_names_no_path_or_stderr() -> None:
+    """Positive extraction only (#168 vocabulary): the reason comes from
+    `_engine_failure_summary` over `error`, never a quoted `stderr`, argv,
+    or any other dict value."""
+    shaped = _shape_raw(
+        {
+            "classify": {"response": json.dumps(_NONBUILD_DECISION)},
+            "seat": {"response": _SUB_ENSEMBLE_CRASH},
+        }
+    )
+
+    assert "exited non-zero" in shaped["seat_failed"]
+    assert "Traceback" not in shaped["seat_failed"]
+    assert "someuser" not in shaped["seat_failed"]
+
+
+def test_a_dispatch_level_wrap_is_also_a_dead_seat() -> None:
+    """The OTHER engine failure family — `execute_with_schema_json`'s wrap,
+    reached when the dispatch itself dies rather than a script node inside
+    it — is recognised the same way: a dict without `status`, no denylist
+    of failure shapes."""
+    shaped = _shape_raw(
+        {
+            "classify": {"response": json.dumps(_NONBUILD_DECISION)},
+            "seat": {
+                "response": json.dumps(
+                    _wrapped(
+                        f"Schema JSON execution failed: Command {_ARGV} "
+                        "returned non-zero exit status 1."
+                    )
+                )
+            },
+        }
+    )
+
+    assert shaped["seat_failed"]
+    assert "exited non-zero" in shaped["seat_failed"]
+    assert shaped["content"] == ""
+
+
+def test_a_healthy_envelope_is_not_a_dead_seat() -> None:
+    shaped = _shape(
+        {"target": "code-seat", "build": True, "file": "add.py"},
+        {
+            "results": {
+                "envelope": {
+                    "response": json.dumps({"status": "success", "primary": "x = 1"})
+                }
+            }
+        },
+    )
+
+    assert not shaped["seat_failed"]
+    assert shaped["content"] == "x = 1"
+
+
+def test_raw_prose_is_not_a_dead_seat() -> None:
+    """The over-refusal direction: a non-JSON seat terminal (the explainer's
+    raw prose) never parses as a dict at all, so it is untouched."""
+    shaped = _shape(
+        {"target": "explainer", "build": False, "kind": "explanation"},
+        {"results": {"out": {"response": "It adds two numbers."}}},
+    )
+
+    assert not shaped["seat_failed"]
+    assert "adds two numbers" in shaped["content"]
+
+
+def test_a_json_dict_explainer_answer_wrong_refuses() -> None:
+    """Named bound (design brief, accepted the way #155 accepted its
+    seat_contract trip-wire): an explainer answer that happens to BE a
+    parseable JSON dict without `status` is indistinguishable from a dead
+    seat by this predicate and wrong-refuses. The system prompt forbids the
+    explainer from emitting bare JSON, so this is a known, accepted bound —
+    not a regression.
+    """
+    shaped = _shape(
+        {"target": "explainer", "build": False, "kind": "explanation"},
+        {"results": {"out": {"response": json.dumps({"foo": "bar"})}}},
+    )
+
+    assert shaped["seat_failed"]
+    assert shaped["content"] == ""
+
+
 # --- #168 review round 1: the executor's report is a wire channel too -------
 #
 # refix_envelope binds `accept_reason` straight to the executor's report
