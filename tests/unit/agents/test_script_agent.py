@@ -939,3 +939,67 @@ class TestScriptAgentsOffTheEventLoop:
         assert len(results) == count
         for raw in results:
             assert json.loads(raw)["ok"] == 1
+
+
+class TestOnePredicateFileVsInline:
+    """#177: file-vs-inline was decided in three places by two rules. This
+    class pins the trap in ``ScriptAgent``'s own execution: once a
+    reference is classified as a FILE at resolve time, that classification
+    must stick through execution rather than being re-derived by a second
+    ``os.path.exists`` right before the subprocess runs.
+    """
+
+    @pytest.mark.asyncio
+    async def test_a_file_vanished_after_first_resolve_never_falls_back_to_inline(
+        self, tmp_path: Path
+    ) -> None:
+        """Trap 4. ``ScriptResolver`` caches a successful resolution, so a
+        second run with the same reference does not re-check the
+        filesystem. Classification must not either: re-deriving it with a
+        fresh ``os.path.exists`` on the (now vanished) resolved path is
+        exactly what used to fall back to ``_execute_inline_script`` --
+        handing the path itself to ``bash -c`` to run whatever it names
+        on PATH."""
+        script = tmp_path / "probe.py"
+        script.write_text('import json\nprint(json.dumps({"v": "one"}))\n')
+        agent = ScriptAgent("t", {"script": str(script), "timeout_seconds": 5})
+
+        first = await agent.execute("{}")
+        assert json.loads(first)["v"] == "one"
+
+        script.unlink()
+
+        with patch.object(
+            agent, "_execute_inline_script", wraps=agent._execute_inline_script
+        ) as inline_spy:
+            second = await agent.execute("{}")
+
+        assert json.loads(second)["success"] is False
+        inline_spy.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_a_bare_dot_ts_cwd_file_executes_as_a_file(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Instrument 4, at the execution layer: a bare name outside
+        ``SCRIPT_EXTENSIONS`` (``.ts``, the issue's own example) that
+        names a CWD file must still run as a file, not inline content."""
+        monkeypatch.chdir(tmp_path)
+        script = tmp_path / "probe.ts"
+        script.write_text("#!/bin/bash\necho '{\"v\": 1}'\n")
+        script.chmod(0o755)
+        agent = ScriptAgent("t", {"script": "probe.ts"})
+
+        with (
+            patch.object(
+                agent, "_execute_script_file", wraps=agent._execute_script_file
+            ) as file_spy,
+            patch.object(
+                agent, "_execute_inline_script", wraps=agent._execute_inline_script
+            ) as inline_spy,
+        ):
+            result = await agent.execute("{}")
+
+        file_spy.assert_called_once()
+        inline_spy.assert_not_called()
+        assert json.loads(result)["v"] == 1
