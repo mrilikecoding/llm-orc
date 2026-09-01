@@ -236,15 +236,14 @@ class ScriptAgentRunner:
         identity that names the script's BYTES. When the bytes cannot be
         named, there is no identity and the run is not cached.
 
-        Two kinds of reference. The CLASSIFICATION is syntactic and happens
-        before any filesystem call; the ANSWER for inline content still
-        costs one ``os.path.exists``, because of the disagreement below.
+        Two kinds of reference, and ``ScriptResolver.is_inline_content`` is
+        the ONE predicate that decides which (#177) — ``ScriptAgent``'s
+        three execution sites ask the same predicate rather than statting
+        the resolved path themselves, so this identity and what actually
+        gets EXECUTED cannot drift apart the way they used to.
 
         - **Inline content.** ``resolve_script_path`` returns it verbatim, so
-          the reference IS its own bytes and identifies itself. The resolver
-          answers this (``is_inline_content``) because it is what the
-          RESOLVER will do with the reference — but it is not the last word,
-          see the disagreement below.
+          the reference IS its own bytes and identifies itself.
         - **A path.** The resolver will go and find a file, so anything that
           stops us naming that file's bytes — the resolve, the stat, a
           non-regular file, an unreadable one — is a refusal. There is no
@@ -259,23 +258,14 @@ class ScriptAgentRunner:
         to the bare path. Each shape was written against the call that had
         just been seen to fail; this one is written against the question.
 
-        **The disagreement.** ``ScriptAgent`` classifies file-vs-inline
-        separately, with ``os.path.exists``, at three sites — so for a bare
-        name that happens to name a file in the process CWD the resolver says
-        content and the agent EXECUTES a file. Failed closed below (such a
-        reference is not cached at all) and tracked as #177. The cost is one
-        ``exists`` on the inline path and a silent over-refusal: a
-        legitimately inline reference that collides with a CWD entry stops
-        being cacheable.
-
-        Reachable triggers for the refusal path, all measured: fd exhaustion
-        (``EMFILE``/``ENFILE``), ``EIO``/``ESTALE`` on a network filesystem,
-        and an ENOENT race where the file is replaced mid-turn — #158 made
-        the first likelier by overlapping script agents. The issue's own
-        hypothesis, a script executable but not readable, is refuted:
-        ``script_agent.py`` runs every extension through an interpreter
-        (``bash`` by default), all of which must read the file, so such a
-        script never executes and #159 never caches its failure.
+        Reachable triggers for the path-side refusal, all measured: fd
+        exhaustion (``EMFILE``/``ENFILE``), ``EIO``/``ESTALE`` on a network
+        filesystem, and an ENOENT race where the file is replaced mid-turn —
+        #158 made the first likelier by overlapping script agents. The
+        issue's own hypothesis, a script executable but not readable, is
+        refuted: ``script_agent.py`` runs every extension through an
+        interpreter (``bash`` by default), all of which must read the file,
+        so such a script never executes and #159 never caches its failure.
         """
         # execute() passes "" for a non-ScriptAgentConfig, which has no
         # script and therefore no bytes to name. It used to return "" here
@@ -285,32 +275,15 @@ class ScriptAgentRunner:
         if not script_ref:
             return None
         resolver = ScriptResolver(project_dir=self._project_dir)
-        # The RESOLVER answers what IT will do with the reference (#163
-        # review round 3). That has to be settled before any errno is seen:
-        # an errno cannot make the split, because ENOENT is both "this is
-        # inline content" and "the file vanished between the resolve and the
+        # The predicate settles the split before any errno is seen: an
+        # errno cannot make it, because ENOENT is both "this is inline
+        # content" and "the file vanished between the resolve and the
         # stat", and the shape before this answered the bare path for the
-        # second — the #160 key, reachable by one of the three triggers this
-        # fix is named for. It is not the whole answer, though; see below.
+        # second — the #160 key. ScriptAgent's three execution sites ask
+        # this same predicate (#177), so the reference this call names
+        # inline content for is exactly the reference ScriptAgent hands to
+        # `bash -c` rather than executing as a file.
         if resolver.is_inline_content(script_ref):
-            # ScriptAgent does NOT use this predicate. It decides
-            # file-vs-inline with os.path.exists, at three separate sites —
-            # its own _execute_interactive among them (this class's
-            # _execute_interactive is the one that raises instead — never
-            # cached), so
-            # a bare name that happens to name a file in the process CWD gets
-            # EXECUTED as a file while this call would name it content — the
-            # #160 key, and a regression review round 4 caught round 3
-            # introducing. Fail closed where the two classifiers disagree;
-            # unifying them changes what gets EXECUTED and is #177.
-            # This costs inline content one stat, which is why the
-            # docstring above does NOT claim it stays off the filesystem.
-            if os.path.exists(script_ref):
-                logger.debug(
-                    "no cache identity: %r is inline content but names a file",
-                    script_ref,
-                )
-                return None
             return script_ref
         # From here the reference denotes a file the resolver will go and
         # find, so ANYTHING that stops us naming its bytes is a refusal.

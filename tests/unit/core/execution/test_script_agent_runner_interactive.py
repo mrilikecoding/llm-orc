@@ -1302,14 +1302,18 @@ class TestAResolveFailureIsAlsoUndigestable:
 
         Round 3's premise was that the resolver is the only thing that knows
         which references it treats as content. True of ``ScriptResolver``,
-        false of the system: ``ScriptAgent`` decides file-vs-inline with
-        ``os.path.exists`` at three sites, so a bare name that names a file
-        in the process CWD is EXECUTED as a file while the identity called it
-        content and named the reference — the #160 key.
+        false of the system at the time: ``ScriptAgent`` decided
+        file-vs-inline with ``os.path.exists`` at three sites, so a bare
+        name that names a file in the process CWD was EXECUTED as a file
+        while the identity called it content and named the reference — the
+        #160 key. #177 unified the two onto one predicate, so the identity
+        below is now a digest of the file's bytes rather than a refusal
+        (see ``test_a_bare_name_that_is_a_file_is_cacheable_by_digest``);
+        this pin stays end to end to keep proving the edit is still seen.
 
         End to end rather than a unit assertion, because the unit answer
         (the reference verbatim) looks perfectly fine in isolation. That is
-        what let it through. The disagreement itself is #177.
+        what let the round-3 regression through.
         """
         monkeypatch.chdir(tmp_path)
         script = tmp_path / "probe"
@@ -1327,6 +1331,29 @@ class TestAResolveFailureIsAlsoUndigestable:
         assert json.loads(first)["v"] == "one"
         assert json.loads(second)["v"] == "two", "served the pre-edit output"
         assert cache.get_stats()["hits"] == 0
+
+    def test_a_bare_name_that_is_a_file_is_cacheable_by_digest(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """#177 instrument 2. Once the resolver and ``ScriptAgent`` agree
+        on a bare CWD-file reference, its identity is a digest of the
+        file's bytes rather than a refusal — the #163 fail-closed patch
+        that named this exact shape and refused it can come out, and an
+        UNCHANGED script now genuinely hits."""
+        monkeypatch.chdir(tmp_path)
+        script = tmp_path / "probe"
+        script.write_text('#!/bin/bash\necho \'{"v": "one"}\'\n')
+        script.chmod(0o755)
+        cache = ScriptCache(ScriptCacheConfig(enabled=True))
+        runner = self._runner(cache)
+        config = ScriptAgentConfig(name="probe", script="probe")
+
+        first, _, _ = asyncio.run(runner.execute(config, "{}"))
+        second, _, _ = asyncio.run(runner.execute(config, "{}"))
+
+        assert json.loads(first)["v"] == "one"
+        assert json.loads(second)["v"] == "one"
+        assert cache.get_stats()["hits"] == 1
 
     def test_a_symlinked_script_still_digests(self, tmp_path: Path) -> None:
         """The over-refusal direction for the stat: a symlink to a real
