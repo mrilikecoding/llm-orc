@@ -43,11 +43,18 @@ the fail-closed patch, so nothing gets slower.
 4. **The vanished-file race fails closed.** Today ScriptAgent's
    `os.path.exists` falls back to `_execute_inline_script` when a
    resolved PATH is gone at execution time — handing a path to `bash -c`,
-   which executes whatever the name resolves to on PATH. Under one
-   predicate the classification is fixed at resolve time; a
-   file-classified reference whose file has vanished must error, never
-   degrade to inline execution. This is a deliberate behaviour change in
-   the fail-closed direction; pin it.
+   which executes whatever the name resolves to on PATH. Closing that
+   door alone is not enough: a bare, slashless name handed to the FILE
+   branch's own interpreter (`bash <name>`, or any execvp-style call) is
+   subject to the SAME PATH search once the name is not found in CWD —
+   round 2 review measured a same-named PATH impostor running and
+   reporting success after the file vanished post-classification. So the
+   resolved value for a bare CWD file is anchored (`./name`), never
+   verbatim: a vanished file then fails LOUDLY in either branch, because
+   the anchored name carries a separator and cannot be re-resolved via
+   PATH. Pin it on the bare shape — an absolute or already slash-carrying
+   reference never had this hole, since `_has_path_syntax` makes it
+   unflippable regardless of the file's later state.
 
 ## Seams
 
@@ -78,8 +85,11 @@ the fail-closed patch, so nothing gets slower.
    cacheable (over-refusal direction).
 4. A `.ts`/`.mjs` file in the project root still executes as a file.
 5. Both-places bare name: the CWD file still wins (trap 1).
-6. Vanished-file race: no inline fallback for a file-classified
-   reference (trap 4).
+6. Vanished-file race: a file-classified reference whose file vanishes
+   fails loudly in EITHER branch — no inline fallback, and the FILE
+   branch's own interpreter cannot re-resolve an anchored bare name via
+   PATH (trap 4, revised by round 2 review after a same-named PATH
+   impostor ran and reported success).
 
 Regression instruments: full `make test` (511 measurement instruments
 included; the doc-drift check will bite on stale comments),
