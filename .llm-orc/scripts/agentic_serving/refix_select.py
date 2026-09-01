@@ -34,12 +34,16 @@ from _helpers import response as _response
 from _helpers import terminal as _terminal
 
 
-def _smoke_test(prior_code: str) -> str:
-    """A smoke test asserting the candidate imports cleanly and still binds
-    every top-level function/class name ``prior_code`` defined. No prior
-    surface (unparseable, or the prior module bound nothing at module
-    level) degrades to the "loads cleanly" bar alone — deterministic,
-    import/getattr shape only, no behavior claims."""
+def _smoke_test(prior_code: str) -> tuple[str, bool]:
+    """(test text, has_surface): a smoke test asserting the candidate
+    imports cleanly and still binds every top-level function/class name
+    ``prior_code`` defined. No prior surface (unparseable, or the prior
+    module bound nothing at module level) degrades to the "loads cleanly"
+    bar alone — deterministic, import/getattr shape only, no behavior
+    claims. ``has_surface`` is False in exactly that degraded case (#171
+    review M3): refix_envelope needs to tell "no surface to check" apart
+    from "these tests happen not to exercise the deliverable" so it can
+    give the surface-less sub-path its own actionable reason."""
     try:
         tree = ast.parse(prior_code)
     except SyntaxError:
@@ -53,7 +57,8 @@ def _smoke_test(prior_code: str) -> str:
     asserts = "".join(
         f'    assert hasattr(solution, "{name}"), "{name}"\n' for name in names
     )
-    return "def test_refix_candidate_loads_cleanly():\n    import solution\n" + asserts
+    text = "def test_refix_candidate_loads_cleanly():\n    import solution\n" + asserts
+    return text, bool(names)
 
 
 def main() -> None:
@@ -77,7 +82,12 @@ def main() -> None:
     visible_test = str(gathered.get("visible_test", ""))
     smoke_only = not visible_test.strip()
     prior_code = str(gathered.get("prior_code", ""))
-    tests = _smoke_test(prior_code) if smoke_only else visible_test
+    smoke_surface_empty = False
+    if smoke_only:
+        tests, has_surface = _smoke_test(prior_code)
+        smoke_surface_empty = not has_surface
+    else:
+        tests = visible_test
 
     print(
         json.dumps(
@@ -88,6 +98,7 @@ def main() -> None:
                 "target_file": str(gathered.get("target_file", "")),
                 "edit_kind": edit_kind,
                 "smoke_only": smoke_only,
+                "smoke_surface_empty": smoke_surface_empty,
             }
         )
     )

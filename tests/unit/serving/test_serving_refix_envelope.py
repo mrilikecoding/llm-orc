@@ -115,13 +115,16 @@ def _envelope(
     need one; the #171 participation pins that DO need a real surface pass
     it explicitly (see TestTheGuardDoesNotRejectRealCandidates below).
     """
+    smoke_only = not visible_test.strip()
+    smoke_text, smoke_has_surface = _smoke(prior_code)
     selected = {
         "requirement": "fix calc.py so restock adds one",
         "code": code,
-        "tests": visible_test or _smoke(prior_code),
+        "tests": visible_test or smoke_text,
         "target_file": "calc.py",
         "edit_kind": "model",
-        "smoke_only": not visible_test,
+        "smoke_only": smoke_only,
+        "smoke_surface_empty": smoke_only and not smoke_has_surface,
     }
     executor = _node("accept_executor.py", {"select": _dep(selected)})
     envelope = _node(
@@ -209,13 +212,39 @@ class TestTheGuardDoesNotRejectRealCandidates:
         — by #171's own invariant (a gate whose ground truth never touched
         the deliverable must refuse), "loads cleanly" is no longer enough,
         whatever the content is. The over-refusal counterpart lives above:
-        a real fix WITH a prior surface still accepts."""
+        a real fix WITH a prior surface still accepts.
+
+        Review M3: the reason is the surface-less-prior sub-path's own
+        actionable text, not the generic participation constant — it isn't
+        that THESE tests happen not to exercise the deliverable, it's that
+        there was no surface to derive a real check from at all."""
         envelope = _envelope("x = 1\n")
 
         assert envelope["diagnostics"]["accept"] is False
         assert envelope["diagnostics"]["accept_reason"] == (
-            "the tests never exercise the deliverable"
+            "the prior module defines no public surface to check"
         )
+
+    def test_a_dropped_name_reason_states_the_fact_without_quoting_test_source(
+        self,
+    ) -> None:
+        """Review M3: the smoke-only reason used to say "failed to load"
+        for a candidate that loaded FINE but dropped a name the prior
+        module provided, and it quoted the internal smoke test's own
+        assert source line — an implementation detail of the ablation's
+        OWN test, not something the user wrote. Naming the dropped name is
+        fine; quoting internal test source is not."""
+        prior = (
+            "def restock(item, n):\n    return n + 1\n"
+            "def audit(item):\n    return item\n"
+        )
+        envelope = _envelope(_REAL, prior_code=prior)
+        reason = envelope["diagnostics"]["accept_reason"]
+
+        assert envelope["diagnostics"]["accept"] is False
+        assert "failed to load" not in reason, reason
+        assert "assert hasattr" not in reason, reason
+        assert "audit" in reason, reason
 
 
 class TestAnInertCandidateIsNeverAccepted:
