@@ -318,6 +318,38 @@ def main() -> None:
             "finish": True,
             "content": f"{TERMINALS['seat_contract'].prefix}{reason}",
         }
+    elif build and seat_failed:
+        # Round-1 review NB-2: the seat itself is dead, so `content`,
+        # `accept`/`accept_reason`, and `valid` are ALL derived from the
+        # SAME terminal `_dead_seat_reason` just declared unrecognizable —
+        # `_envelope_verdict` parses `diagnostics.accept` off that same
+        # dead dict with no `status` check of its own. Trusting any of them
+        # below this point is a wrong-accept: the reviewer's capture
+        # (`{"success": false, "error": "...", "diagnostics": {"accept":
+        # false, "accept_reason": "see /Users/nathangreen/x.py"}}`) shipped
+        # `Another round needed: see /Users/nathangreen/x.py` — a path from
+        # a dead terminal — when the accept branch sat above this one.
+        #
+        # NOT gated on `valid` (unlike seat_gate_failed below, whose
+        # terminal IS trustworthy): shape zeroes `content` to "" on a dead
+        # seat, and form_gate's validity check runs that empty string
+        # against the destination's extension — trivially valid Python but
+        # invalid JSON. Gating on `valid` here let a `.json` destination
+        # fall through to the form-gate-invalid branch and blame JSON
+        # syntax for a seat that never ran (Note 5).
+        #
+        # Still ahead of `seat_gate_failed` below: a dead seat proves there
+        # is nothing to admit, which subsumes "the admission verdict is
+        # unknown" (the two are independent failures in practice — a
+        # crashed seat leaves the defensively-wrapped seat_contract node
+        # healthy — but the seat's own death is the more certain fact).
+        outcome = {
+            "finish": True,
+            "content": (
+                f"{TERMINALS['build_refused'].prefix}serving pipeline error: "
+                f"{seat_failed}; nothing was built or written"
+            ),
+        }
     elif build and accept is False:
         # The accept gate rejected the deliverable: route another round rather
         # than ship it, even though it parses (ODP-2, the client owns the loop;
@@ -369,20 +401,6 @@ def main() -> None:
             "content": (
                 f"{TERMINALS['build_refused'].prefix}serving pipeline error: "
                 f"{seat_gate_failed}; nothing was built or written"
-            ),
-        }
-    elif build and gated.get("valid", False) and seat_failed:
-        # #174: the seat itself is dead — shape already zeroed `content`, so
-        # this is the honest refusal in place of the empty write that would
-        # otherwise fall through (#166's caller-side empty-deliverable guard
-        # is the backstop if this branch is ever bypassed; naming it here
-        # keeps the reason specific instead of generic). `build` already
-        # proves is_build_ask, same as the branch below.
-        outcome = {
-            "finish": True,
-            "content": (
-                f"{TERMINALS['build_refused'].prefix}serving pipeline error: "
-                f"{seat_failed}; nothing was built or written"
             ),
         }
     elif build and gated.get("valid", False):

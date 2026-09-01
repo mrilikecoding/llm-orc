@@ -922,21 +922,64 @@ def test_a_healthy_seat_ships_normally_with_seat_failed_empty() -> None:
     assert outcome == {"finish": True, "content": "A tuple is immutable."}
 
 
-def test_the_accept_gate_outranks_a_dead_seat() -> None:
+def test_a_dead_seat_outranks_the_accept_branch_and_quotes_nothing_from_it() -> None:
+    """Round-1 review NB-2: `_envelope_verdict` reads `accept`/`accept_reason`
+    from the SAME terminal `_dead_seat_reason` just declared unrecognizable —
+    the two are independent parses of one dead payload, so a dead terminal
+    that happens to also carry a `diagnostics.accept` block used to ship the
+    accept branch's message, path and all, before the dead-seat check ever
+    ran (the accept branch sat ABOVE it).
+
+    Reviewer capture:
+    ``{"success": false, "error": "Script failed with exit code 1",
+    "diagnostics": {"accept": false, "accept_reason":
+    "see /Users/nathangreen/x.py"}}``. The gated dict below is not a
+    hand-picked shape — it is what shape.py + form_gate.py actually produce
+    for that exact terminal (verified by running them): `content` zeroed,
+    `accept`/`accept_reason` read from the same dead dict, `seat_failed`
+    carrying the numeric residue.
+    """
     outcome = _emit(
         {
             "valid": True,
             "build": True,
             "file": "a.py",
-            "content": "x = 1",
+            "content": "",
             "accept": False,
-            "accept_reason": "tests do not pass",
+            "accept_reason": "see /Users/nathangreen/x.py",
+            "seat_admitted": True,
+            "seat_contract_reason": "",
+            "seat_gate_failed": "",
             "seat_failed": "exited non-zero, status 1",
         }
     )
 
+    assert outcome["content"].startswith(BUILD_REFUSED_PREFIX)
+    assert "exited non-zero, status 1" in outcome["content"]
+    assert "Another round needed" not in outcome["content"]
+    assert "/Users/nathangreen" not in outcome["content"]
+    assert "x.py" not in outcome["content"]
+
+
+def test_a_genuine_accept_rejection_still_reaches_its_branch() -> None:
+    """Preservation (round-1 review NB-2): a HEALTHY envelope — no
+    `seat_failed`, since the terminal carries `status` — with
+    `diagnostics.accept: false` must still reach the accept-reject branch
+    unchanged after the reorder ahead of it."""
+    outcome = _emit(
+        {
+            "valid": True,
+            "build": True,
+            "file": "a.py",
+            "content": "def f():\n    pass",
+            "accept": False,
+            "accept_reason": "tests inadequate to verify the requirement",
+            "seat_failed": "",
+        }
+    )
+
     assert outcome["content"].startswith(ACCEPT_GATE_REJECT_PREFIX)
-    assert "tests do not pass" in outcome["content"]
+    assert "inadequate" in outcome["content"]
 
 
 def test_a_seat_contract_rejection_outranks_a_dead_seat() -> None:
