@@ -905,6 +905,48 @@ class TestCacheIdentity:
         assert cache.get_stats()["hits"] == 0
         assert cache.get_stats()["sets"] == 2
 
+    def test_identical_bytes_at_the_same_ref_in_different_projects_do_not_cross(
+        self, tmp_path: Path
+    ) -> None:
+        """#177 review round 3 BLOCKER, the pin nothing caught before this:
+        the SAME reference (``helper.py``) resolves to a DIFFERENT file in
+        each project, and the two happen to be byte-identical -- but each
+        one reads its own sibling data file, so they are different
+        scripts wearing the same name and the same digest. Keying the
+        identity on the reference (round 2's regression) collided them:
+        project B's run got served project A's cached output on a cache
+        HIT, without B's own script ever running. Keying on the RESOLVED
+        location (what this pins) tells them apart.
+        """
+        helper_body = (
+            "import json, os\n"
+            "here = os.path.dirname(os.path.abspath(__file__))\n"
+            "with open(os.path.join(here, 'data.txt')) as f:\n"
+            "    v = f.read().strip()\n"
+            "print(json.dumps({'v': v}))\n"
+        )
+        project_a = tmp_path / "a"
+        project_b = tmp_path / "b"
+        project_a.mkdir()
+        project_b.mkdir()
+        (project_a / "helper.py").write_text(helper_body)
+        (project_a / "data.txt").write_text("AAA")
+        (project_b / "helper.py").write_text(helper_body)
+        (project_b / "data.txt").write_text("BBB")
+
+        cache = ScriptCache(ScriptCacheConfig(enabled=True))
+        runner_a = self._runner(cache, project_dir=project_a)
+        runner_b = self._runner(cache, project_dir=project_b)
+        config = ScriptAgentConfig(name="helper", script="helper.py")
+
+        result_a, _, _ = asyncio.run(runner_a.execute(config, "{}"))
+        result_b, _, _ = asyncio.run(runner_b.execute(config, "{}"))
+
+        assert json.loads(result_a)["v"] == "AAA"
+        assert json.loads(result_b)["v"] == "BBB", (
+            "project B was served project A's cached output"
+        )
+
     def test_an_unresolvable_reference_does_not_raise(self, tmp_path: Path) -> None:
         """Computing a cache key must never be the thing that reports a
         missing script; execution a moment later produces the real error."""
