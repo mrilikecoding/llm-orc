@@ -1,5 +1,6 @@
 """Tests for script resolution and discovery."""
 
+import os
 import subprocess
 import sys
 import tempfile
@@ -627,3 +628,78 @@ class TestTestScriptInterpreter:
 
         assert result["success"] is True, result
         assert sys.executable in str(result["output"])
+
+
+class TestOnePredicateFileVsInline:
+    """#177: file-vs-inline was decided in three places by two rules, and
+    they disagreed for a bare name that names a file in the process CWD
+    -- the resolver called it content while ``ScriptAgent`` executed the
+    file. ``is_inline_content`` is now the sole predicate and describes
+    what actually executes; these pin the three traps the widening has
+    to respect.
+    """
+
+    def test_a_bare_cwd_file_classifies_the_same_as_scriptagent_would(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Instrument 1. ``os.path.exists`` on the resolved reference is
+        exactly how ``ScriptAgent`` decided file-vs-inline before this
+        predicate existed, so the two answers have to be opposites of
+        each other for every reference -- including this one, where they
+        used to disagree."""
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / "probe").write_text("#!/bin/bash\necho hi\n")
+        resolver = ScriptResolver()
+
+        resolved = resolver.resolve_script_path("probe")
+        scriptagent_would_execute_as_file = os.path.exists(resolved)
+
+        assert resolver.is_inline_content("probe") is (
+            not scriptagent_would_execute_as_file
+        ), "the resolver and ScriptAgent disagree on file-vs-inline"
+
+    def test_a_bare_name_naming_nothing_stays_inline(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Trap 2, unchanged: a bare name that names nothing in the CWD is
+        still inline content, resolved verbatim."""
+        monkeypatch.chdir(tmp_path)
+        resolver = ScriptResolver()
+
+        assert resolver.is_inline_content("probe") is True
+        assert resolver.resolve_script_path("probe") == "probe"
+
+    def test_a_dot_ts_bare_name_in_cwd_still_classifies_as_a_file(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Instrument 4. ``.ts``/``.mjs`` (and ``.pl``/``.zsh``/``.ps1``/
+        ``.R``, the issue's own list) are not in ``SCRIPT_EXTENSIONS``, so
+        a bare ``probe.ts`` only classifies as a file through the
+        CWD-existence clause -- the exact shape the issue measured."""
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / "probe.ts").write_text("console.log('hi')\n")
+        resolver = ScriptResolver()
+
+        assert resolver.is_inline_content("probe.ts") is False
+        assert resolver.resolve_script_path("probe.ts") == "probe.ts"
+
+    def test_a_bare_name_present_in_both_cwd_and_llm_orc_scripts_keeps_cwd(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Trap 1. Widening the predicate to search-path logic for bare
+        names must not let a same-named ``.llm-orc/scripts`` (or library)
+        entry silently take over what a bare CWD name already executes --
+        so the CWD name has to resolve to itself BEFORE any search-path
+        lookup runs at all."""
+        llm_orc_scripts = tmp_path / ".llm-orc" / "scripts"
+        llm_orc_scripts.mkdir(parents=True)
+        (llm_orc_scripts / "probe").write_text("library version")
+        (tmp_path / "probe").write_text("cwd version")
+
+        monkeypatch.chdir(tmp_path)
+        resolver = ScriptResolver(project_dir=tmp_path)
+
+        result = resolver.resolve_script_path("probe")
+
+        assert result == "probe"
+        assert Path(result).read_text() == "cwd version"

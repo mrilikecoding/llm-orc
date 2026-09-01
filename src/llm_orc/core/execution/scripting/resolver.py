@@ -135,39 +135,51 @@ class ScriptResolver:
         self._cache[script_ref] = resolved
         return resolved
 
-    def is_inline_content(self, script_ref: str) -> bool:
-        """Whether this reference is inline script content rather than a path.
+    def _has_path_syntax(self, script_ref: str) -> bool:
+        """Whether a reference LOOKS like a path: a separator or a
+        ``SCRIPT_EXTENSIONS`` suffix.
 
-        This answers what the RESOLVER will do with a reference, so callers
-        do not re-derive it (#163 review round 3). ``_resolve_uncached``
-        below uses the same predicate, so those two cannot drift.
-
-        It is NOT the last word on file-vs-inline for the system.
-        ``ScriptAgent`` decides that separately with ``os.path.exists``, and
-        the two disagree for a bare name that happens to name a file in the
-        process CWD — the resolver says content, the agent executes a file.
-        #177 carries unifying them; callers that care must handle the
-        disagreement themselves until it lands.
-
-        A reference that is NOT inline content is one the resolver will look
-        for on the filesystem: it either finds a file or raises. That is what
-        lets the cache identity tell "nothing is there, and the reference IS
-        its own bytes" from "a file is there and we failed to name it" —
-        a distinction an errno cannot make, because ``ENOENT`` is both the
-        answer for inline content and the answer for a file that vanished.
+        No separate absolute-path check: every absolute path contains a
+        separator on either platform, so one would be dead. Review round 3
+        caught its removal surviving the whole suite, which is what dead
+        defensive code looks like from the outside.
         """
-        # Contains a separator, or ends in a script extension: it looks like
-        # a path, so the resolver will go looking for one.
-        #
-        # No separate absolute-path check: every absolute path contains a
-        # separator on either platform, so one would be dead. Review round 3
-        # caught its removal surviving the whole suite, which is what dead
-        # defensive code looks like from the outside.
-        return not (
+        return (
             "/" in script_ref
             or "\\" in script_ref
             or script_ref.endswith(self.SCRIPT_EXTENSIONS)
         )
+
+    def is_inline_content(self, script_ref: str) -> bool:
+        """Whether this reference is inline script content rather than a file.
+
+        This is the SOLE file-vs-inline predicate (#177). It used to answer
+        only what the RESOLVER does with a reference, while ``ScriptAgent``
+        decided separately with ``os.path.exists`` on the resolved path —
+        and the two disagreed for a bare name that happens to name a file
+        in the process CWD, which cost #163's cache identity a fail-closed
+        patch. Both now ask this instead, so they cannot drift apart again.
+
+        A reference is a FILE when it has path syntax (see
+        ``_has_path_syntax``) OR when, bare, it names a file that exists
+        relative to the process CWD — the shape ``ScriptAgent`` already
+        executed before this predicate existed. Otherwise it is inline
+        content: ``_resolve_uncached`` below returns it verbatim and never
+        touches a file for it.
+
+        That distinction is what lets the cache identity tell "nothing is
+        there, and the reference IS its own bytes" from "a file is there
+        and we failed to name it" — a distinction an errno cannot make,
+        because ``ENOENT`` is both the answer for inline content and the
+        answer for a file that vanished.
+        """
+        if self._has_path_syntax(script_ref):
+            return False
+        # A bare name is a FILE when it names one relative to the process
+        # CWD. This stat is the one extra filesystem call the predicate
+        # costs on the inline path — the same price the #163 cache
+        # identity already paid before this fix.
+        return not os.path.exists(script_ref)
 
     def _resolve_uncached(self, script_ref: str) -> str:
         """Resolve script reference without using cache."""
@@ -177,6 +189,14 @@ class ScriptResolver:
             if path.exists():
                 return str(path)
             raise ScriptNotFoundError(script_ref)
+
+        if not self._has_path_syntax(script_ref) and os.path.exists(script_ref):
+            # A bare name naming an existing CWD file resolves to itself,
+            # before any search-path logic: CWD wins over a same-named
+            # `.llm-orc/scripts` or library entry (#177 trap 1) -- this is
+            # the reference ScriptAgent already executes, and
+            # is_inline_content agrees.
+            return script_ref
 
         if not self.is_inline_content(script_ref):
             # Try to resolve using library-aware search paths

@@ -162,12 +162,17 @@ class ScriptAgent:
         place, so the sites below consume the answer instead of each
         independently re-deriving it (#177).
 
-        Structural only: the classification is still ``os.path.exists``
-        on the resolved path, unchanged from what each site checked on
-        its own.
+        The classification comes from ``ScriptResolver.is_inline_content``
+        on the REFERENCE, fixed at resolve time — not a stat on the
+        resolved path. A file-classified reference stays a file through
+        execution even if it vanishes in between: the caller must error
+        rather than fall back to executing arbitrary content as if it
+        were inline (a vanished path handed to ``bash -c`` would run
+        whatever that name resolves to on PATH).
         """
         resolved = self._script_resolver.resolve_script_path(script_ref)
-        return resolved, os.path.exists(resolved)
+        is_file = not self._script_resolver.is_inline_content(script_ref)
+        return resolved, is_file
 
     async def execute(
         self, input_data: str, context: dict[str, Any] | None = None
