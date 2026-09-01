@@ -9,10 +9,17 @@ first).
 
 ## Invariant
 
-Emit never ships a seat terminal that shape could not positively
-recognize as a healthy seat output. A dead seat produces an honest,
-path-free refusal on every route — not the engine's failure envelope
-presented as `content`, and not a file write.
+Emit never ships a seat terminal that parses as one of the two engine
+failure-envelope families (see the predicate below). A dead seat produces
+an honest, path-free refusal on every route — not the engine's failure
+envelope presented as `content`, and not a file write.
+
+(Round-1 review NB-3 narrowed this from "shape could not positively
+recognize as a healthy seat output": a `status`-carrying envelope with no
+extractable deliverable is ALSO not positively recognized, and ALSO
+ships its raw JSON verbatim, pre-existing and unchanged by this issue —
+see Named bounds below. The invariant this issue actually closes is
+scoped to the failure-envelope shapes, not every unrecognized shape.)
 
 ## The predicate (positive recognition, #155 Arc A shape)
 
@@ -86,6 +93,62 @@ Regression instruments: the full suite (`make test`, includes the 511
 measurement instruments), `tests/unit/serving/test_serving_shape.py`,
 `test_serving_emit.py`, `test_serving_form_gate.py`, and the #168
 wire-safety pins.
+
+## Named bounds (round-1 review)
+
+Round-1 review of the implementation (author-independent, APPROVE with
+four non-blockers and two notes) found two in-arc faults, fixed on this
+branch, and three residual bounds recorded here rather than fixed:
+
+- **NB-2** (fixed): `emit.main` checked `accept is False` and the
+  `build`+`valid` ship branch ABOVE the dead-seat check, and
+  `_envelope_verdict` reads `accept`/`accept_reason` from the SAME
+  terminal `_dead_seat_reason` just declared unrecognizable — an
+  independent parse of one dead payload. Capture:
+  `{"success": false, "error": "...", "diagnostics": {"accept": false,
+  "accept_reason": "see /Users/nathangreen/x.py"}}` on a build turn
+  shipped `Another round needed: see /Users/nathangreen/x.py`. Fixed by
+  moving the dead-seat refusal (`build and seat_failed`, no longer gated
+  on `valid`) ahead of both, still below `routing_failed` / the seam asks
+  / `seat_admitted is False` (a separate validator-authored node, whose
+  order is unchanged).
+- **Note 5** (fixed, rode NB-2's reorder): a dead seat targeting a
+  `.json` destination used to refuse as `deliverable for X.json is not
+  valid JSON` — form_gate's validity check ran over the zeroed `content`
+  and blamed JSON syntax for a seat that never ran. Dropping the `valid`
+  gate on the dead-seat branch (above) fixes this as a side effect.
+- **NB-1** (fixed): whole-`stderr` retention (seam 4) made a trace row
+  unbounded — one live turn measured 4,003,475 bytes written to
+  `turns.jsonl` (a seat wrote 4MB to stderr) against 3,418 bytes on main.
+  `turn_trace._STDERR_CAP` (20,000 chars) now bounds it; `error`
+  (producer-authored, short) stays whole.
+- **NB-3** (residual, pre-existing, out of scope): the invariant sentence
+  above overclaims. A `status`-carrying dict whose envelope has no
+  extractable deliverable (no `artifacts[0].content` string, no `primary`
+  string) is not positively recognized by `_envelope_deliverable` either,
+  but `_dead_seat_reason` excludes anything carrying `status` by design
+  (the predicate is scoped to the two failure-envelope families, both of
+  which are `status`-less by construction) — so shape's fallback still
+  ships that envelope's raw JSON text verbatim as `content`. Identical on
+  main; #174 narrows the gap to the failure-envelope families rather than
+  closing it. The invariant is correctly read as "a seat terminal
+  recognized as one of the failure-envelope families" rather than "any
+  terminal shape cannot extract a deliverable from."
+- **NB-4** (residual, unreachable today): `LoopAgentRunner._terminal_output`
+  wraps a non-JSON loop-body deliverable as `{"value": prose}` — a
+  HEALTHY statusless dict, the same shape as the explainer-JSON bound
+  above but from a different producer. Unreachable today: both round
+  ensembles (`build-round`, `write-tests-round`, looped by `build-gated`
+  and `write-tests`) terminate in envelope scripts
+  (`dispatch_unwrap.py`/`tests_envelope.py`), never a raw loop body. A
+  future seat that dispatches directly to a looped, prose-terminated body
+  would wrong-refuse under this predicate.
+- **Note 6** (residual, pre-existing, out of scope): a seat that exits 0
+  with empty stdout ships an empty `content` — the empty string does not
+  parse as JSON, so `_dead_seat_reason` returns `""` (not a dict at all,
+  let alone one without `status`) and shape's fallback ships it
+  unchanged. A genuinely blank answer, distinct from a crash; unrelated
+  to this predicate.
 
 ## Out of scope
 
