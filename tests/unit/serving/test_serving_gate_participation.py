@@ -26,6 +26,7 @@ every sibling harness in this directory.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import time
@@ -307,6 +308,48 @@ def test_injected_import_diversion_refuses_junk() -> None:
     assert result["accept_gate"]["reason"] == _NONPARTICIPATION_REASON
 
 
+def _executor_with_env(
+    gathered: dict[str, Any], env_overrides: dict[str, str]
+) -> dict[str, Any]:
+    """The executor driven directly, with environment overrides — for
+    exercising the budget knobs (LLM_ORC_ACCEPT_EXECUTOR_TIMEOUT /
+    _BUDGET), which ``_node`` has no way to thread through."""
+    payload = json.dumps({"dependencies": {"gather": _dep(gathered)}})
+    env = {**os.environ, **env_overrides}
+    out = subprocess.run(
+        [sys.executable, str(SCRIPTS / "accept_executor.py")],
+        input=payload,
+        capture_output=True,
+        text=True,
+        check=True,
+        env=env,
+    ).stdout
+    result: dict[str, Any] = json.loads(out)
+    return result
+
+
+def test_control_runs_for_unittest_testcase_suites() -> None:
+    """F1 (review, BLOCKER): ``_enumerate_tests`` returns ``None`` for ANY
+    nested ``test_*`` def, including every TestCase method — so this shape
+    takes ``_run_sandboxed``'s legacy single-run branch, which used to
+    hardcode ``participates=True`` unconditionally. The whole junk sweep
+    above ships verbatim in the TestCase dialect, and it is a common one
+    (9/55 recorded live suites, per review)."""
+    result = _build_gated(
+        code_writer="```python\nx = 1\n```\n",
+        tests_writer=(
+            "```python\nimport unittest\nimport inventory\n"
+            "class TestRestock(unittest.TestCase):\n"
+            "    def test_restock(self):\n"
+            "        self.assertEqual(inventory.restock('x', 2), 3)\n```\n"
+        ),
+        requirement="fix restock",
+    )
+    assert result["executor"]["tests_pass"] is True
+    assert result["accept_gate"]["accept"] is False
+    assert result["accept_gate"]["reason"] == _NONPARTICIPATION_REASON
+
+
 # --- held-round and re-fix: the routes the adequacy seam cannot see -------
 
 
@@ -434,6 +477,10 @@ def test_write_tests_shape_skips_the_ablation_on_empty_code() -> None:
 
 # --- budget accounting -----------------------------------------------------
 
+_ABLATION_BUDGET_REASON = (
+    "the runtime ablation control could not run within the aggregate budget"
+)
+
 
 def test_the_control_child_is_counted_inside_the_aggregate_budget() -> None:
     """The control is one extra child inside _run_children's aggregate wall
@@ -458,6 +505,163 @@ def test_the_control_child_is_counted_inside_the_aggregate_budget() -> None:
     assert result["tests_pass"] is True
     assert result["participates"] is True
     assert elapsed < 10, "the control must not meaningfully slow an ordinary turn"
+
+
+def test_a_budget_overrun_on_the_last_child_fails_closed_not_silently_accepts() -> None:
+    """F2 (review, BLOCKER — replaces the prior inert budget pin M2
+    flagged, which passed whether or not the control ever ran). The
+    aggregate-budget check happens BEFORE spawning each child, so a child
+    that overruns AFTER the last pre-spawn check leaves ``failures`` empty:
+    the loop reports a clean pass, and the control's own budget guard then
+    skips it too. Silently defaulting ``participates=True`` there is a
+    wrong-accept with no evidence behind it — the fix is to fail CLOSED,
+    naming the budget honestly (never the generic participation reason,
+    which would claim a verdict never reached)."""
+    tests = "import time\ndef test_a():\n    time.sleep(0.5)\n    assert True\n"
+    gathered = {
+        "requirement": "junk",
+        "code": "x = 1",
+        "tests": tests,
+        "workspace": {},
+        "target_file": "",
+    }
+    result = _executor_with_env(
+        gathered,
+        {
+            "LLM_ORC_ACCEPT_EXECUTOR_TIMEOUT": "5",
+            "LLM_ORC_ACCEPT_EXECUTOR_BUDGET": "0.2",
+        },
+    )
+    assert result["tests_pass"] is True, "the real (single) child genuinely passed"
+    assert result["participates"] is False, "starved must never default to a pass"
+    assert result["participation_reason"] == _ABLATION_BUDGET_REASON
+
+
+# --- F3: the control must empty the destination, not keep the stale copy --
+#
+# Keeping the workspace's stale copy of the target file at the destination
+# (skipping the shadow write rather than shadowing with empty bytes) answers
+# "was this necessary GIVEN WHAT THE CLIENT ALREADY HAS" — the brief's own
+# wording is "the deliverable's bytes ABSENT FROM EVERY DESTINATION they were
+# written to", which includes the target-file shadow. Two real recorded live
+# turns (arm0-run2/turn-07 todo.py, 138-arm0-calibration/turn-L2 ledger.py)
+# are additive edits: the covered function is unchanged, the deliverable adds
+# a genuinely new one the suite does not cover. Keeping the stale copy at the
+# destination wrongly refused both.
+
+
+def test_additive_edit_where_the_covered_function_is_unchanged_still_accepts() -> None:
+    """F3 (review, wrong-reject, live-reachable): the deliverable adds a NEW
+    function alongside the unchanged, already-covered one. The suite only
+    ever exercises the old function, so a control that reverts the
+    destination to the stale copy proves nothing (the stale copy alone
+    already satisfies the suite) — the control must empty the destination
+    entirely, and only THEN does a failing control prove the write really
+    was necessary."""
+    stale = "def restock(item, n):\n    return n + 1\n"
+    additive = (
+        "def restock(item, n):\n    return n + 1\ndef audit(item):\n    return item\n"
+    )
+    result = _build_gated(
+        code_writer=f"```python\n{additive}\n```\n",
+        tests_writer="```python\n" + _RESTOCK_TESTS_BODY + "```\n",
+        requirement="add audit() to inventory.py",
+        workspace_file="inventory.py",
+        workspace_body=stale,
+    )
+    assert result["executor"]["tests_pass"] is True
+    assert result["accept_gate"]["accept"] is True
+    assert result["accept_gate"]["reason"] != _NONPARTICIPATION_REASON
+
+
+def test_byte_identical_resubmission_still_accepts() -> None:
+    """F3 sibling (#166's own healthy-build pin restored below to this
+    exact shape): the deliverable is byte-identical to the stale workspace
+    copy. Under the briefed control (destination EMPTIED, not reverted) an
+    identical resubmission still proves necessity — any real content
+    differs from an empty destination, whether or not it happens to match
+    what was already there."""
+    same = "def restock(item, n):\n    return n + 1\n"
+    result = _build_gated(
+        code_writer=f"```python\n{same}\n```\n",
+        tests_writer="```python\n" + _RESTOCK_TESTS_BODY + "```\n",
+        requirement="fix restock so it adds two, in inventory.py",
+        workspace_file="inventory.py",
+        workspace_body=same,
+    )
+    assert result["executor"]["tests_pass"] is True
+    assert result["accept_gate"]["accept"] is True
+
+
+# --- named bounds (documented, not fixed) ----------------------------------
+
+
+def test_named_bound_control_granularity_can_diverge_from_per_test_isolation() -> None:
+    """NAMED BOUND (#171 review F4, MAJOR — documented, not fixed). The
+    ablation control always runs as ONE combined process; the real suite
+    runs per-test isolated (a fresh subprocess, fresh workspace copy, per
+    test). A workspace module with cross-test state can pass every test
+    when isolated (the real run's granularity) yet fail when the SAME tests
+    run together in one process (the control's granularity) for a reason
+    that has nothing to do with the deliverable — the control then reads
+    "necessary" and non-participating junk ships. Measured live rate: 0/46
+    recorded turns hit this shape; matching granularity would cost one
+    extra per-test-isolated subprocess SET on every ablation run for a
+    divergence not yet observed live, so the bound is recorded here rather
+    than closed (design doc: "Named bound" section)."""
+    context = (
+        "assistant: [read counter.py]\n"
+        "  _state = {'n': 0}\n"
+        "  def next_id():\n"
+        "      _state['n'] += 1\n"
+        "      return _state['n']\n"
+        "\n\nCurrent request: fix next_id"
+    )
+    gather = _node(
+        "accept_gather.py",
+        {
+            "code_writer": _dep(_sub_ensemble_response("```python\nx = 1\n```\n")),
+            "test_writer": _dep(
+                _sub_ensemble_response(
+                    "```python\nimport counter\n"
+                    "def test_first_id():\n    assert counter.next_id() == 1\n"
+                    "def test_second_id():\n    assert counter.next_id() == 1\n```\n"
+                )
+            ),
+        },
+        input_data=context,
+    )
+    executor = _node("accept_executor.py", {"gather": _dep(gather)})
+
+    # real run: per-test isolated, each test gets a FRESH counter.py — both pass
+    assert executor["tests_pass"] is True
+    # the combined control's own cross-test state leak makes it fail for a
+    # reason unrelated to the (junk) deliverable — documented, not closed
+    assert executor["participates"] is True
+
+
+def test_named_bound_a_length_only_assert_cannot_distinguish_content() -> None:
+    """NAMED BOUND (design brief "Conditions and bounds": the ablation
+    proves the deliverable's BYTES were necessary, not that any particular
+    behavior was observed). A suite asserting only
+    ``len(open('solution.py').read()) > 0`` passes the control with junk
+    content too — any non-empty content differs from an empty control, so
+    necessity is "proven" without the test ever checking what the content
+    IS. Review M1: measured to flip junk from refused to accepted."""
+    result = _build_gated(
+        code_writer="```python\nx = 1\n```\n",
+        tests_writer=(
+            "```python\n"
+            "def test_solution_is_non_empty():\n"
+            "    assert len(open('solution.py').read()) > 0\n"
+            "```\n"
+        ),
+        requirement="write something",
+        workspace_file="",
+        workspace_body="",
+    )
+    assert result["executor"]["tests_pass"] is True
+    assert result["accept_gate"]["accept"] is True
 
 
 # --- end to end through the real serving chain (#155's lesson) ------------

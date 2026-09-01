@@ -154,9 +154,7 @@ _TESTS = (
 )
 
 
-def _build_gated_envelope(
-    code_writer: str, requirement: str, *, workspace_body: str = _HEALTHY
-) -> dict[str, Any]:
+def _build_gated_envelope(code_writer: str, requirement: str) -> dict[str, Any]:
     """The real build-gated tail from the faulty node output down: gather ->
     executor -> judge -> accept_gate -> envelope.
 
@@ -165,14 +163,10 @@ def _build_gated_envelope(
     _materialize shadows the TARGET file only, and the target is whatever
     filename the requirement names. ``code_writer`` is the single fault and
     stays a raw seat response — gather owns the fence extraction, so the
-    test never has to guess at it. ``workspace_body`` defaults to the
-    correctly-implemented ``_HEALTHY`` (what the emptiness pins below need:
-    the stale copy alone must satisfy the tests); a genuine edit-turn pin
-    overrides it with a BUGGY stale copy so the fix's own participation is
-    provable rather than coincidental (#171)."""
+    test never has to guess at it."""
     context = (
         "assistant: [read inventory.py]\n"
-        + "".join(f"  {line}\n" for line in workspace_body.splitlines())
+        + "".join(f"  {line}\n" for line in _HEALTHY.splitlines())
         + f"\n\nCurrent request: {requirement}"
     )
     gather = _node(
@@ -306,16 +300,15 @@ class TestTheGuardDoesNotRefuseHealthyBuilds:
     """
 
     def test_a_healthy_build_still_writes(self) -> None:
-        """A genuine edit turn (#171): the stale workspace copy is BUGGY, so
-        the fix's participation is provable rather than coincidental — with
-        an identical stale/new pair, the #171 ablation control cannot tell
-        the fix from the file already there, which is a correct refusal,
-        not the shape this pin is about."""
-        stale = "def restock(item, n):\n    return n\n"  # missing + 1
+        """The stale workspace copy and the healthy new content are BYTE-
+        IDENTICAL here on purpose (#171 review F3): the ablation control
+        must empty the DESTINATION entirely, not fall back to whatever the
+        workspace already had there — so an identical resubmission still
+        proves necessity (a control's own empty file differs from ANY real
+        content, matching or not) and this pin does not depend on the
+        stale copy being wrong."""
         envelope = _build_gated_envelope(
-            f"```python\n{_HEALTHY}```\n",
-            "fix inventory.py so restock adds one",
-            workspace_body=stale,
+            f"```python\n{_HEALTHY}```\n", "fix inventory.py so restock adds one"
         )
         assert envelope["artifacts"][0]["content"].strip()
 
