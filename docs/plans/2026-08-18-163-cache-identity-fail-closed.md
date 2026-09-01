@@ -89,10 +89,12 @@ asked two questions, and it cannot answer both.
 
 The information lives one level up. `ScriptResolver` returns a reference
 verbatim only through its final fall-through; every other successful return
-is a file it found. So the resolver now answers `is_inline_content`, the
-identity asks it BEFORE touching the filesystem, and from that point there is
-no classification left to get wrong: the reference denotes a file, so the
-resolve, the stat and the read all answer `None` and only a regular file that
+is a file it found. So the resolver now answers via `resolve_and_classify`
+(#177 unified this further, replacing the `is_inline_content` predicate this
+paragraph originally named), which classifies BEFORE touching the
+filesystem, and from that point there is no classification left to get
+wrong: the reference denotes a file, so the resolve, the stat and the read
+all answer `None` and only a regular file that
 digests produces an identity. `_ABSENT_ERRNOS` and the `ValueError` branch
 are gone with it.
 
@@ -182,9 +184,11 @@ test and mapped to hunks rather than counted.
    the stat, asserted against the target's real sha256.
 10. `test_an_empty_reference_never_touches_the_cache` — a non-script agent
     has no bytes to name.
-11. `TestIsInlineContent::test_the_classification` — eight cases over the
-    predicate the whole fix now rests on. Round 5: its `"/"` clause was
-    deletable with 3992 tests green.
+11. `TestFileVsInlineClassification::test_the_syntactic_clause` (renamed
+    from TestIsInlineContent::test_the_classification when #177 review
+    round 2 deleted the by-then-callerless `is_inline_content` public
+    method) — eight cases over the predicate the whole fix now rests on.
+    Round 5: its `"/"` clause was deletable with 3992 tests green.
 
 **Pre-existing, modified by this arc:**
 
