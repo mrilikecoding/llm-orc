@@ -25,6 +25,41 @@ from llm_orc.web.serving.token_estimate import projected_tokens_v2
 
 _SNIPPET = 280
 
+# Round-1 review NB-1 (#174): retaining the sub-ensemble failure family's
+# whole `stderr` (below) made a trace row unbounded — `_snippet_cap()` only
+# governs the plain `response` field, and `emit_turn_trace` has no size cap
+# or rotation of its own. One live turn measured 4,003,475 bytes written to
+# turns.jsonl (a seat wrote 4MB to stderr) against 3,418 bytes on main.
+#
+# 20,000 chars — ~70x the response snippet's default — is a generous
+# multiple in the #114/#180 family's sense (small structured fields survive
+# the cap whole; prose-sized ones still clip): big enough to hold a REAL
+# pytest failure dump in full (a `-q` summary with several FAILED lines and
+# a full assertion diff runs a few KB, comfortably under this), while still
+# bounding the runaway case the measurement caught. Produced code controls
+# the volume of an honest failure, so a legitimate traceback should never
+# need more than this; `error` (producer-authored, one line) has no cap of
+# its own and is kept whole regardless.
+_STDERR_CAP = 20_000
+
+# Round-2 review NB-5: keeping only the HEAD (`value[:_STDERR_CAP]`) lost
+# the cause on anything oversized, because stderr's terminating exception
+# (or, on a pytest-shaped dump, the FAILURES section / assertion diff /
+# short summary) is always LAST — a log-then-raise probe that logged 20KB
+# of retry warnings before raising lost `Traceback`, `RuntimeError`, and
+# the actual cause entirely; a 113KB pytest-shaped dump lost all three of
+# FAILURES/diff/summary the same way. Split retention instead: a HEAD slice
+# for entry context (what was dispatched, the first sign of trouble) and a
+# TAIL slice for the cause (the exception, the failing assertion, the
+# summary line) — one is a fraction of `_STDERR_CAP`, sized for a command
+# line and the first frames, not a proportional half-split of the budget;
+# the other gets the rest of `_STDERR_CAP`, since the cause is usually the
+# larger, more valuable chunk (a full traceback, a diff, several FAILED
+# lines). An explicit elision marker sits between the two slices so a
+# reader can tell content was cut rather than the dump merely ending there.
+_STDERR_HEAD_CAP = 4_000
+_STDERR_TAIL_CAP = _STDERR_CAP - _STDERR_HEAD_CAP
+
 
 def _snippet_cap() -> int:
     """The response clip length: readable-short by default,
@@ -41,6 +76,24 @@ def _snippet(value: Any) -> str:
     text = value if isinstance(value, str) else json.dumps(value)
     text = " ".join(text.split())
     return text if len(text) <= cap else text[:cap] + "…"
+
+
+def _capped_stderr(value: str) -> str:
+    """``value`` clipped to ``_STDERR_CAP``, whitespace intact — unlike
+    ``_snippet``, this is a traceback: line structure IS the content, so it
+    is never whitespace-collapsed.
+
+    Head-and-tail split (#174 round-2 NB-5), not a single head clip: the
+    terminating exception/summary that makes stderr diagnosable is always
+    LAST, so a head-only clip loses it on anything oversized. The elided
+    span is named explicitly (never a bare ``…``) so a reader can tell
+    content was cut, not that the dump simply ended there.
+    """
+    if len(value) <= _STDERR_CAP:
+        return value
+    omitted = len(value) - _STDERR_HEAD_CAP - _STDERR_TAIL_CAP
+    marker = f"\n…[{omitted} chars elided]…\n"
+    return value[:_STDERR_HEAD_CAP] + marker + value[-_STDERR_TAIL_CAP:]
 
 
 def _child_results(response: Any) -> dict[str, Any] | None:
@@ -148,6 +201,7 @@ def _seat_entry(name: str, node: Any, usage: Any = None) -> dict[str, Any]:
     diagnostics = _diagnostics(response)
     if diagnostics is not None:
         entry["diagnostics"] = diagnostics
+    entry.update(_engine_failure_fields(response))
     entry.update(_usage_counts(usage))
     return entry
 
@@ -170,24 +224,38 @@ def _top_level_usage(result_dict: dict[str, Any]) -> dict[str, Any]:
     return agents if isinstance(agents, dict) else {}
 
 
-def _engine_failure_error(response: Any) -> str:
-    """The engine wrap's whole ``error`` string, or ``""`` when the response
-    is not a failure wrap (#168).
+def _engine_failure_fields(response: Any) -> dict[str, str]:
+    """The engine wrap's whole ``error`` and (#174) ``stderr`` strings, keyed
+    only when present as non-empty strings; ``{}`` when the response is not
+    a failure wrap.
 
-    Recognised positively by the wrap's own key — a dict carrying a
-    non-empty string ``error`` — not by matching text. Every other response
-    shape keeps the snippet and nothing else.
+    Recognised positively by the wrap's own keys, not by matching text — the
+    ``execute_with_schema_json`` dispatch-level wrap carries ``error`` alone;
+    the sub-ensemble ``ScriptAgent.execute`` failure family
+    (``{success, error, stderr}``) carries both, and its real payload — the
+    traceback — is in ``stderr``, which used to survive only as a 280-char
+    snippet (#168 kept ``error`` whole; #174 does the same for ``stderr``,
+    up to ``_STDERR_CAP`` — review round 1 NB-1: unlike ``error``, which is
+    producer-authored and short, ``stderr`` is arbitrary subprocess output
+    with no bound of its own). Every other response shape keeps the snippet
+    and nothing else.
     """
     if not isinstance(response, str):
-        return ""
+        return {}
     try:
         parsed = json.loads(response)
     except (json.JSONDecodeError, TypeError):
-        return ""
+        return {}
     if not isinstance(parsed, dict):
-        return ""
+        return {}
+    fields: dict[str, str] = {}
     error = parsed.get("error")
-    return error if isinstance(error, str) and error else ""
+    if isinstance(error, str) and error:
+        fields["error"] = error
+    stderr = parsed.get("stderr")
+    if isinstance(stderr, str) and stderr:
+        fields["stderr"] = _capped_stderr(stderr)
+    return fields
 
 
 def _node_entry(name: str, node: Any, top_usage: dict[str, Any]) -> dict[str, Any]:
@@ -206,10 +274,9 @@ def _node_entry(name: str, node: Any, top_usage: dict[str, Any]) -> dict[str, An
     # wrap runs 302-310 characters on a real checkout, so the 280-char snippet
     # clipped the residue ("returned non-zero exit status 1") off EVERY node,
     # leaving the operator with less than the client used to get. The error
-    # field is recorded whole; the snippet still governs everything else.
-    failure = _engine_failure_error(response)
-    if failure:
-        entry["error"] = failure
+    # (and #174: stderr) fields are recorded whole; the snippet still governs
+    # everything else.
+    entry.update(_engine_failure_fields(response))
     entry.update(_usage_counts(top_usage.get(name)))
     child = _child_results(response)
     if child is not None:

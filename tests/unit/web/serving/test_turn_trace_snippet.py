@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from llm_orc.web.serving.turn_trace import build_turn_trace
+from llm_orc.web.serving.turn_trace import _STDERR_CAP, build_turn_trace
 
 
 def _trace_response(length: int) -> str:
@@ -215,6 +215,145 @@ def test_seat_entry_records_prompt_eval_count_from_child_usage() -> None:
     seat_nodes = trace["nodes"][0]["seat"]
     assert seat_nodes[0]["prompt_eval_count"] == 6262
     assert seat_nodes[0]["eval_count"] == 58
+
+
+# --- #174: the sub-ensemble failure family keeps its whole error AND stderr -
+
+
+def test_a_crashed_seat_child_retains_its_whole_error_and_stderr() -> None:
+    """`_engine_failure_error` (#168) keeps only `error`; the sub-ensemble
+    `ScriptAgent.execute` failure family (`{success, error, stderr}`) carries
+    its real payload in `stderr` — the traceback — which used to survive
+    only as a 280-char snippet on the nested seat-child entry. The wire
+    sanitising in shape/emit is only defensible because the operator keeps
+    the whole thing here."""
+    import json
+
+    traceback_text = (
+        "Traceback (most recent call last):\n"
+        '  File "/Users/someuser/.llm-orc/scripts/agentic_serving/'
+        'run_verdict.py", line 2, in <module>\n'
+        "    raise RuntimeError('boom')\n"
+        "RuntimeError: boom\n"
+    ) * 20  # comfortably over the 280-char snippet cap
+    child_result = {
+        "results": {
+            "verdict": {
+                "response": json.dumps(
+                    {
+                        "success": False,
+                        "error": "Script failed with exit code 1",
+                        "stderr": traceback_text,
+                    }
+                )
+            }
+        }
+    }
+    result = {
+        "results": {"seat": {"status": "success", "response": json.dumps(child_result)}}
+    }
+
+    trace = build_turn_trace("serving", result)
+
+    seat_nodes = trace["nodes"][0]["seat"]
+    assert seat_nodes[0]["error"] == "Script failed with exit code 1"
+    assert seat_nodes[0]["stderr"] == traceback_text
+    # the snippet cap still governs the plain response field
+    assert len(seat_nodes[0]["response"]) <= 281
+
+
+def test_a_healthy_seat_child_carries_no_error_or_stderr_fields() -> None:
+    """The over-refusal direction: a healthy nested response is untouched."""
+    import json
+
+    child_result = {"results": {"explainer": {"response": "some answer"}}}
+    result = {
+        "results": {"seat": {"status": "success", "response": json.dumps(child_result)}}
+    }
+
+    trace = build_turn_trace("serving", result)
+
+    seat_nodes = trace["nodes"][0]["seat"]
+    assert "error" not in seat_nodes[0]
+    assert "stderr" not in seat_nodes[0]
+
+
+def test_an_oversized_stderr_keeps_head_context_and_tail_cause() -> None:
+    """Round-2 review NB-5: the round-1 fix kept only the HEAD
+    (`value[:_STDERR_CAP]`), but stderr's terminating exception/summary is
+    always LAST — a log-then-raise dump, or a pytest run with retry
+    warnings ahead of the FAILURES section, lost the actual cause entirely
+    even at a fraction of `_STDERR_CAP`. Split retention: a head slice for
+    entry context and a tail slice for the cause, with an explicit elision
+    marker between so a reader can tell content was cut (not silently
+    dropped).
+
+    The payload measures DIRECTION, not just length (round-2's own
+    correction: `"x" * (cap * 5)` passed under the old head-keeping code
+    too, since every kept char was identical) — distinct head and tail
+    markers, with enough filler between them that only a head+tail scheme
+    keeps both.
+    """
+    import json
+
+    head_marker = "HEAD-CONTEXT: dispatching pytest -q\n"
+    tail_marker = (
+        "\nFAILURES\n"
+        "assert add(1, 2) == 4\n"
+        "AssertionError: 3 != 4\n"
+        "1 failed in 0.01s\n"
+        "TAIL-CAUSE: AssertionError"
+    )
+    filler = "retry warning noise " * 2000  # comfortably over _STDERR_CAP alone
+    huge_stderr = head_marker + filler + tail_marker
+    child_result = {
+        "results": {
+            "verdict": {
+                "response": json.dumps(
+                    {
+                        "success": False,
+                        "error": "Script failed with exit code 1",
+                        "stderr": huge_stderr,
+                    }
+                )
+            }
+        }
+    }
+    result = {
+        "results": {"seat": {"status": "success", "response": json.dumps(child_result)}}
+    }
+
+    trace = build_turn_trace("serving", result)
+
+    stderr = trace["nodes"][0]["seat"][0]["stderr"]
+    assert "HEAD-CONTEXT" in stderr
+    assert "TAIL-CAUSE" in stderr
+    assert "FAILURES" in stderr
+    assert "elided" in stderr
+    assert len(stderr) < len(huge_stderr)
+    assert trace["nodes"][0]["seat"][0]["error"] == "Script failed with exit code 1"
+
+
+def test_an_oversized_stderr_stays_within_the_named_bounds() -> None:
+    """`_STDERR_CAP` bounds the field the response snippet cap does not
+    govern — one live turn measured 4,003,475 bytes written to
+    turns.jsonl (a seat wrote 4MB to stderr) against 3,418 bytes on main
+    (round-1 review NB-1)."""
+    import json
+
+    huge_stderr = "x" * (_STDERR_CAP * 5)
+    child_result = {
+        "results": {"verdict": {"response": json.dumps({"stderr": huge_stderr})}}
+    }
+    result = {
+        "results": {"seat": {"status": "success", "response": json.dumps(child_result)}}
+    }
+
+    trace = build_turn_trace("serving", result)
+
+    stderr = trace["nodes"][0]["seat"][0]["stderr"]
+    assert len(stderr) < len(huge_stderr)
+    assert len(stderr) < _STDERR_CAP + 100
 
 
 def test_emit_never_propagates_a_trace_build_failure(tmp_path: Path) -> None:
