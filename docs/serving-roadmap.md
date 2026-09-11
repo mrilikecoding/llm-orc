@@ -61,6 +61,16 @@ buy-back ledger tracks hosted seats.
 
 ## State (2026-09-11 handoff update; the work is the 2026-08-31 session)
 
+**Ranked index:** the GitHub project "llm-orc kanban"
+(https://github.com/users/mrilikecoding/projects/2 — view 2 is the
+Priority board, view 4 the Roadmap view, both grouped by Priority)
+mirrors this document as of 2026-09-11: P0 = #171 (in progress) +
+#167/#141 (Ready, gated on the practitioner's go), P1 = the Timeline's
+next tier, P2 = hardening/on-signal/flanks, Done = merged-on-local-main
+(closes on push). THIS DOCUMENT GOVERNS — the board is an index of it,
+carries no checklists or gates, and its "Done" means merged locally,
+not closed. A session that merges or files work updates both.
+
 ### Next up
 
 The practitioner delegated the 08-30 fork ("work through any well-scoped
