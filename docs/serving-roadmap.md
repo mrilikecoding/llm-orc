@@ -59,7 +59,7 @@ layer is the insulation that keeps an eventual hardening cheap, and
 "frozen component" status is the trigger, tracked informally the way the
 buy-back ledger tracks hosted seats.
 
-## State (2026-08-31, arc-trio session, in progress)
+## State (2026-09-11 handoff update; the work is the 2026-08-31 session)
 
 ### Next up
 
@@ -89,16 +89,38 @@ by the lead (`docs/plans/2026-08-31-{174,177,171}-*.md`) and delegated:
   outcome-asserting and red under its mutant. `resolve_and_classify` is
   the one observation; `is_inline_content` deleted (zero callers).
   Merged tree: 4163 passed, lint 0.
-- **#171 implementing after a pre-flight REDESIGN**: the v1 static
-  design (unconditional shadow + tests-reference-candidate rule) was
-  refuted by measurement — 8/8 constructed non-participation shapes
-  still shipped (shared-namespace exec rebinding), the adequacy seam is
-  absent on held/re-fix routes, and the shadow moved 0/32 recorded
-  turns. v2 is a runtime ablation control in `accept_executor` (0/8
-  wrong-accept, 0/71 wrong-reject on the recorded corpus, median 0.19s)
-  plus a surface-derived re-fix smoke test and an injector guard.
+- **#171 REWORK COMPLETE, CONFIRMATION NOT RUN — the next session's
+  first task.** History: the v1 static design was refuted by a measured
+  pre-flight (8/8 constructed non-participation shapes shipped under it;
+  the adequacy seam is absent on held/re-fix routes; the shadow moved
+  0/32 recorded turns); v2 is a runtime ablation control in
+  `accept_executor` plus a surface-derived re-fix smoke test and an
+  injector guard. Implementation round 1 BLOCKED with four measured
+  findings (F1 TestCase suites bypassed the control entirely — 16% of
+  recorded live suites; F2 a last-child budget overrun silently skipped
+  the control into accept; F3 the control kept the stale target copy,
+  wrong-rejecting real additive edits — the reviewer corrected its OWN
+  pre-flight baseline here; F4 granularity divergence, recorded as a
+  bound at 0/46 live rate) plus minors. All addressed on branch
+  `worktree-agent-ad938c49404eb13c7` (tip `435d3fcf`, four commits;
+  author-reported 4159 passed / lint 0). The round-2 confirmation was
+  dispatched and DIED on the reviewer's session limit before starting.
+  DO NOT MERGE without it. The confirmation checklist (author-
+  independent, re-probe not re-read): production-shape corpus replay
+  13/13 accept with WA-1..8 refusing and the additive-edit (OK-8) and
+  byte-identical-resubmit (OK-9) shapes accepting, incl. the two live
+  turns arm0-run2/turn-07 and 138-arm0-calibration/turn-L2; TestCase-
+  dialect junk sweep refuses on build-gated AND held while a healthy
+  TestCase suite accepts; last-child overrun refuses with the budget
+  constant (never a silent accept) and a normal budget still runs the
+  control; mutant-check the F1/F2/F3 pins (legacy-branch control call
+  removed / silent-skip restored / control target_file reverted to "");
+  no quoted internal-test source on any re-fix refusal; independent
+  make test + make lint. Precedent: #172/#176 round 4 was lead-run on
+  fresh inputs after that reviewer hit its limit; a fresh session's
+  reviewer is naturally independent (doctrine 1).
 
-The push (now 70+ merge units) and the GitHub issue-closing that rides
+The push (now 94 unpushed commits) and the GitHub issue-closing that rides
 on it still await the practitioner's explicit go. CI has never seen the
 drift checker; #179 fixed the latent red that would have surfaced on
 first push. The remaining-live-rows fork (#166 #169 #173 #172 #176 #175,
