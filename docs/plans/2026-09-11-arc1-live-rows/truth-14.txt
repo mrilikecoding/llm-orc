@@ -1,0 +1,6 @@
+exit=0
+--- git status ---
+--- diff stat ---
+--- pytest (throwaway copy) ---
+...                                                                      [100%]
+3 passed in 0.01s
