@@ -3978,6 +3978,38 @@ def test_named_destination_shallower_listing_ambiguous_basename_refuses() -> Non
     assert "vendor/storage.py" in decision["glob_failed"]
 
 
+def test_named_destination_write_visible_this_session_skips_the_glob() -> None:
+    """Review finding 2 (independent review of f71d5402): a same-session
+    ``[wrote ...]`` block already establishes existence — and the content
+    itself — so no glob round is needed at all; the build proceeds with
+    the prior content already in context, exactly as a fix-verb ask does
+    today when the target is already visible. Mutant check performed by
+    hand: dropping the visibility check (routing straight to
+    ``_latest_glob_listing`` regardless) turns this red — a spurious glob
+    round is requested for a file this session already wrote."""
+    context = "assistant: [wrote todo/storage.py]\n  class TodoStore:\n      pass"
+    decision = _classify({"task": _ROW_10_ASK, "context": context})
+    assert decision["needs_glob"] == ""
+    assert decision["needs_files"] == []
+    assert decision["build"] is True
+    assert decision["target"] == "code-seat"
+    assert decision["file"] == "todo/storage.py"
+
+
+def test_named_destination_read_visible_this_session_skips_glob_and_reread() -> None:
+    """The read-visible half of the same finding: a same-session
+    ``[read ...]`` block also establishes existence — no glob, and no
+    re-read either (``_files_to_request``'s own visibility check already
+    skips a redundant read once existence routes through the read seam)."""
+    context = "assistant: [read todo/storage.py]\n  class TodoStore:\n      pass"
+    decision = _classify({"task": _ROW_10_ASK, "context": context})
+    assert decision["needs_glob"] == ""
+    assert decision["needs_files"] == []
+    assert decision["build"] is True
+    assert decision["target"] == "code-seat"
+    assert decision["file"] == "todo/storage.py"
+
+
 def test_named_destination_absent_from_listing_builds_greenfield() -> None:
     """Instrument 3: the same ask, but the listing lacks todo/storage.py —
     greenfield build to todo/storage.py, exactly as today."""

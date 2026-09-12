@@ -1773,6 +1773,14 @@ def _named_build_discovery(context: str, named_file: str) -> tuple[str, str, str
     turn carrying no fix/update verb (arc 1, issue #185): existence decides
     the read, never the verb.
 
+    - already visible THIS SESSION (review finding 2: a same-session
+      ``[wrote ...]`` or ``[read ...]`` block for this basename) -> exists,
+      no glob round needed at all; glob_file = named_file, unchanged — the
+      existing read seam takes over, and ``_files_to_request``'s own
+      visibility check already skips a redundant read (a write's content is
+      already known; a prior read already grounds it) — the build proceeds
+      with the prior content already in context, exactly as a fix-verb ask
+      does today when its target is already visible.
     - no listing yet -> request ONE glob round (the shared "py" stem seam).
     - a truncated listing (#148) -> named_file's presence is UNKNOWN, not
       absent; request the read anyway (glob_file = named_file, unchanged)
@@ -1799,6 +1807,9 @@ def _named_build_discovery(context: str, named_file: str) -> tuple[str, str, str
     - absent from a complete listing (no suffix match, and no basename
       fallback match either) -> greenfield, unchanged: "", "", "".
     """
+    visible, _ = _visibility(context)
+    if named_file.rsplit("/", 1)[-1] in visible:
+        return "", named_file, ""
     listing = _latest_glob_listing(context)
     if listing is None:
         return _UNNAMED_BUILD_GLOB_STEM, "", ""

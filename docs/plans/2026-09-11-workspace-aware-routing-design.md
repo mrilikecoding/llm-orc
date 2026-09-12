@@ -158,3 +158,15 @@ self-tests is returned unread.
   the read of the ask's OWN path, never rewritten to the listing's
   shallower one; two or more basename matches refuse naming them, same as
   the existing bare-basename ambiguity bound.
+- Review finding 2 (LOW/MEDIUM, fixed): `_named_build_discovery` consulted
+  only the glob listing, never `_visibility()` — a same-session
+  `[wrote ...]`/`[read ...]` block for the same basename already
+  establishes existence (and, for a write, the content itself), so
+  requesting a glob round anyway was a wasted round today and a latent
+  false-absence risk if a later glob's scope ever missed the just-written
+  path (gitignore, a write outside the glob's root). Fixed: a visibility
+  check runs before the listing check; a visible basename returns as
+  existing immediately (glob_file = named_file, unchanged), and
+  `_files_to_request`'s own visibility check already skips a redundant
+  read once that seam takes over — no new mechanism needed there, only
+  the missing check ahead of the listing lookup.
