@@ -86,46 +86,36 @@ _ABLATION_BUDGET_REASON = (
 )
 
 
-def _surface_reason(code: str, target_file: str, prior_surface: list[str]) -> str:
-    """#182 slice B-1: an edit must never drop a name the prior module's
-    public surface (its top-level def/class/assignment names, #171's
-    ``public_top_level_names``) already defined.
+def _surface_missing_names(code: str, prior_surface: list[str]) -> list[str]:
+    """#182 slice B-1: names the prior module's public surface (gather's
+    ``prior_surface``, #171's ``public_top_level_names`` applied to the
+    prior body) that the deliverable's own top-level names no longer
+    include.
 
-    Checked BEFORE any sandboxed execution — a pure AST comparison, no
-    subprocess, ahead of both the real test run and the #171 ablation
-    control below. This is the cheapest correct seam: a candidate that
-    already dropped a prior public name is disqualified by a fact about
-    its own source, independent of whatever the tests say — so a bare
-    fragment (probe turn 2: a single method emitted at module top level,
-    the class gone) refuses naming what it dropped, rather than whatever
-    incidental NameError/ImportError the missing surface happens to cause
-    once the tests run.
+    Review F1 (rework): this is emitted as ITS OWN field alongside the
+    real sandboxed run, never instead of it — the accept gate is what
+    ANDs it into the final verdict and composes the refusal sentence.
+    Earlier this node short-circuited the whole run and faked
+    ``tests_pass``/``n_tests`` to keep the reason clean; that fake data
+    escaped into the ADR-024 diagnostics the #114 ledger preserves
+    verbatim (a turn whose suite never ran read as "the tests passed")
+    and made ``n_tests`` 0, which threw away round 1's adequate tests
+    instead of holding them for the retry. No node may emit invented
+    verdict fields; the gate does the composing.
 
-    "" when there is no prior surface to check (``prior_surface`` empty —
+    [] when there is no prior surface to check (``prior_surface`` empty —
     greenfield, or the target's prior body was never visible in context)
     or the deliverable's own top-level public names are a superset of it
     (a real edit, or a byte-identical resubmission)."""
     if not prior_surface:
-        return ""
+        return []
     try:
         tree = ast.parse(code)
     except SyntaxError:
         defined: frozenset[str] = frozenset()
     else:
         defined = frozenset(_public_top_level_names(tree))
-    missing = sorted(name for name in prior_surface if name not in defined)
-    if not missing:
-        return ""
-    listed = missing[:3]
-    names = ", ".join(listed)
-    remaining = len(missing) - len(listed)
-    if remaining > 0:
-        names += f", and {remaining} more"
-    target = target_file or "the file"
-    return (
-        f"the deliverable for {target} no longer defines {names}; "
-        "an edit must ship the whole updated file"
-    )
+    return sorted(name for name in prior_surface if name not in defined)
 
 
 # A bare-name assert on a name the tests never assign (``assert load`` /
@@ -902,35 +892,11 @@ def main() -> None:
         else []
     )
 
-    # #182 slice B-1: the cheapest correct seam. This is a pure AST fact
-    # about the deliverable itself, so it is checked BEFORE any sandboxed
-    # execution — no test run, no #171 ablation control — and it refuses
-    # for the reason that matters (what the edit dropped) instead of
-    # whatever incidental test failure the missing surface would otherwise
-    # cause downstream (a fragment missing its class NameErrors on every
-    # test that touches it; "tests did not pass" was true but useless).
-    surface_reason = _surface_reason(code, target_file, prior_surface)
-    if surface_reason:
-        print(
-            json.dumps(
-                {
-                    "requirement": requirement,
-                    "code": code,
-                    "tests": tests,
-                    "tests_pass": True,
-                    "n_tests": 0,
-                    "tests_sanitized": 0,
-                    "tests_excised": 0,
-                    "tests_removals_guarded": 0,
-                    "tests_raises_rewritten": 0,
-                    "tests_imports_injected": 0,
-                    "report": "",
-                    "participates": False,
-                    "participation_reason": surface_reason,
-                }
-            )
-        )
-        return
+    # #182 slice B-1 (review F1 rework): a deterministic fact about the
+    # deliverable's own source, computed ALONGSIDE the real run below —
+    # never instead of it. No fake tests_pass/n_tests; the accept gate
+    # ANDs this in as a fourth input and composes the refusal sentence.
+    surface_missing = _surface_missing_names(code, prior_surface)
 
     tests, tests_sanitized = _sanitize_tests(tests)
     tests, tests_excised = _excise_unbound_callable_tests(tests, code)
@@ -958,6 +924,8 @@ def main() -> None:
                 "report": report,
                 "participates": not participation_reason,
                 "participation_reason": participation_reason,
+                "target_file": target_file,
+                "surface_missing": surface_missing,
             }
         )
     )

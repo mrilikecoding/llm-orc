@@ -178,9 +178,9 @@ def _build_gated_edit(
 
 _REMOVE_TESTS = (
     "```python\n"
-    "from storage import TodoStore\n\n"
+    "import storage\n\n"
     "def test_remove_deletes_a_todo():\n"
-    "    store = TodoStore('rm-t.json')\n"
+    "    store = storage.TodoStore('rm-t.json')\n"
     "    store.add('a')\n"
     "    store.remove(1)\n"
     "    assert store.list() == []\n"
@@ -405,6 +405,67 @@ def test_h_the_refusal_reason_carries_no_path_or_username() -> None:
     # the reason names the DROPPED surface, never the test source that
     # happened to exercise it
     assert "assert" not in reason
+
+
+# --- F1 rework: no fake fields; the real suite always runs ---------------
+
+_HELD_MARKER = "[HELD TESTS: round 1 spec; regenerate ONLY the code]"
+
+
+def test_f1_ledger_never_claims_tests_passed_for_a_suite_that_did_not_run() -> None:
+    """Review F1: the short-circuit's tests_pass: true / n_tests: 0
+    convention reached build_gated_envelope's diagnostics, which the #114
+    ledger preserves verbatim — a turn whose suite never ran must never
+    read as 'the tests passed'. The real run must happen regardless."""
+    context = _context("storage.py", _STORAGE_PY_PRIOR, _REMOVE_REQUIREMENT)
+    fragment = (
+        "```python\n"
+        "def remove(self, todo_id):\n"
+        "    todos = self._load()\n"
+        "    todos = [t for t in todos if t['id'] != todo_id]\n"
+        "    self._save(todos)\n"
+        "```\n"
+    )
+    result = _build_gated_edit(context, fragment, _REMOVE_TESTS)
+
+    # the real suite ran: a genuine NameError/AttributeError, not a faked pass
+    assert result["executor"]["tests_pass"] is False, result["executor"]["report"]
+    assert result["executor"]["n_tests"] >= 1
+    assert result["envelope"]["diagnostics"]["tests_pass"] is False
+    assert result["accept_gate"]["accept"] is False
+    # the surface reason stands ALONE — never joined with "tests did not
+    # pass", which would be true only incidentally here
+    assert result["accept_gate"]["reason"] == (
+        "the deliverable for storage.py no longer defines TodoStore; "
+        "an edit must ship the whole updated file"
+    )
+
+
+def test_f1_the_retry_is_routed_to_the_held_round() -> None:
+    """n_tests must reflect the REAL enumerated count so round 1's
+    adequate tests are held as round 2's spec — the coder alone re-runs
+    against them, with the surface reason in its input — instead of a
+    plain retry that discards them (review F1(b))."""
+    context = _context("storage.py", _STORAGE_PY_PRIOR, _REMOVE_REQUIREMENT)
+    fragment = "```python\ndef remove(self, todo_id):\n    pass\n```\n"
+    result = _build_gated_edit(context, fragment, _REMOVE_TESTS)
+
+    assert result["accept_gate"]["accept"] is False
+    retry_input = result["envelope"]["diagnostics"]["retry_input"]
+    assert _HELD_MARKER in retry_input
+    assert "no longer defines TodoStore" in retry_input
+
+
+def test_f1_no_dangling_executor_report_sentence() -> None:
+    """F8: the short-circuit's empty report produced '... Executor
+    report: . Regenerate...' in the retry prompt. The real run always
+    carries a real report string."""
+    context = _context("storage.py", _STORAGE_PY_PRIOR, _REMOVE_REQUIREMENT)
+    fragment = "```python\ndef remove(self, todo_id):\n    pass\n```\n"
+    result = _build_gated_edit(context, fragment, _REMOVE_TESTS)
+
+    retry_input = result["envelope"]["diagnostics"].get("retry_input", "")
+    assert "Executor report: ." not in retry_input
 
 
 # --- the prompt half: the coder is told to ship the whole file on an edit -
