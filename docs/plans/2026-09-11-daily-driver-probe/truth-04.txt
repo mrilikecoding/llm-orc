@@ -1,0 +1,12 @@
+exit=0
+--- git status ---
+?? tests/__pycache__/
+?? todo/__pycache__/
+--- diff stat ---
+untracked: tests/__pycache__/test_storage.cpython-313-pytest-9.0.2.pyc
+untracked: tests/__pycache__/test_storage.cpython-313-pytest-9.1.1.pyc
+untracked: todo/__pycache__/__init__.cpython-313.pyc
+untracked: todo/__pycache__/storage.cpython-313.pyc
+--- pytest (throwaway copy) ---
+...                                                                      [100%]
+3 passed in 0.03s
