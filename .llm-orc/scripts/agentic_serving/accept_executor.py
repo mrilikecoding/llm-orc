@@ -152,17 +152,21 @@ def _surface_missing_names(code: str, prior_surface: list[str]) -> list[str]:
     ANDs it into the final verdict and composes the refusal sentence.
 
     [] when there is no prior surface to check (``prior_surface`` empty —
-    greenfield, or the target's prior body was never visible in context)
-    or the deliverable's own names are a superset of it (a real edit, or
-    a byte-identical resubmission)."""
+    greenfield, or the target's prior body was never visible in context),
+    the deliverable's own names are a superset of it (a real edit, or a
+    byte-identical resubmission), OR (review F5 fix) the deliverable does
+    not PARSE at all: a candidate that fails to load "defines" nothing
+    because it never loads, not because it dropped a name — treating a
+    SyntaxError as an empty surface would claim the former and preempt
+    the honest, line-numbered load failure the real sandboxed run below
+    reports instead."""
     if not prior_surface:
         return []
     try:
         tree = ast.parse(code)
     except SyntaxError:
-        defined: frozenset[str] = frozenset()
-    else:
-        defined = frozenset(_module_scope_names(tree.body))
+        return []
+    defined = frozenset(_module_scope_names(tree.body))
     return sorted(name for name in prior_surface if name not in defined)
 
 
