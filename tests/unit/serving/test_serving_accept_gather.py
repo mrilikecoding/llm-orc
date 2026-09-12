@@ -608,3 +608,118 @@ def test_indented_bodies_materialize_and_lookalikes_stay_content() -> None:
 def test_column_zero_non_header_line_terminates_a_body() -> None:
     context = "assistant: [wrote even.py]\n  def is_even(n): ...\nuser: thanks"
     assert _workspace(context) == {"even.py": "def is_even(n): ..."}
+
+
+# --- #182 slice B-1: an edit never drops the prior module's surface -------
+
+
+def test_gather_emits_prior_surface_for_a_read_prior_matching_the_target() -> None:
+    """A build whose target file was read this turn carries the prior's
+    public top-level names — the deterministic input the accept gate uses
+    to refuse an edit that drops one of them."""
+    criteria = (
+        "Conversation so far:\n"
+        "assistant: [read stack.py]\n"
+        "  class Stack:\n"
+        "      def push(self, item):\n"
+        "          pass\n"
+        "\n\nCurrent request: Add a min() method to the Stack class in stack.py"
+    )
+    out = _gather(criteria, TESTS, CODE)
+    assert out["target_file"] == "stack.py"
+    assert out["prior_surface"] == ["Stack"]
+
+
+def test_gather_emits_prior_surface_for_a_conversation_written_prior() -> None:
+    """Same contract for a '[wrote ...]' prior (a file this SAME turn's
+    conversation already built), not only a client '[read ...]'."""
+    criteria = (
+        "Conversation so far:\n"
+        "assistant: [wrote todo.py]\n"
+        "  def add_todo(todos, item):\n"
+        "      todos.append(item)\n"
+        "\n\nCurrent request: add a complete_todo function to todo.py"
+    )
+    out = _gather(criteria, TESTS, CODE)
+    assert out["target_file"] == "todo.py"
+    assert out["prior_surface"] == ["add_todo"]
+
+
+def test_gather_prior_surface_empty_when_no_prior_visible() -> None:
+    """The greenfield shape (no file named, or a named file never read or
+    written this conversation): nothing to compare against, so the surface
+    is empty and the gate must not refuse."""
+    out = _gather("Write is_even(n) in even.py", TESTS, CODE)
+    assert out["target_file"] == "even.py"
+    assert out["prior_surface"] == []
+
+
+def test_gather_prior_surface_empty_when_no_target_file_named() -> None:
+    out = _gather("Write is_even(n).", TESTS, CODE)
+    assert out["target_file"] == ""
+    assert out["prior_surface"] == []
+
+
+# --- review F3: same basename in two directories must never be conflated --
+
+
+def test_prior_surface_ambiguous_basename_across_directories_yields_no_surface() -> (
+    None
+):
+    """Two files sharing a basename in different directories — the LAST
+    rendered block used to win regardless of which one the ask names. A
+    bare-basename ask ('storage.py', no directory) can't disambiguate, so
+    the surface is empty rather than guessed (the named bound)."""
+    criteria = (
+        "Conversation so far:\n"
+        "assistant: [read todo/storage.py]\n"
+        "  class TodoStore:\n"
+        "      def push(self):\n"
+        "          pass\n"
+        "assistant: [read lib/storage.py]\n"
+        "  def helper():\n"
+        "      return 1\n"
+        "\n\nCurrent request: add a complete method to storage.py"
+    )
+    out = _gather(criteria, TESTS, CODE)
+    assert out["target_file"] == "storage.py"
+    assert out["prior_surface"] == []
+
+
+def test_prior_surface_reordered_reads_still_yield_no_surface() -> None:
+    """Same ask, the two reads in the OPPOSITE order — the verdict must
+    not depend on read order (review F3's demonstrated flip)."""
+    criteria = (
+        "Conversation so far:\n"
+        "assistant: [read lib/storage.py]\n"
+        "  def helper():\n"
+        "      return 1\n"
+        "assistant: [read todo/storage.py]\n"
+        "  class TodoStore:\n"
+        "      def push(self):\n"
+        "          pass\n"
+        "\n\nCurrent request: add a complete method to storage.py"
+    )
+    out = _gather(criteria, TESTS, CODE)
+    assert out["target_file"] == "storage.py"
+    assert out["prior_surface"] == []
+
+
+def test_prior_surface_uses_the_full_path_when_the_ask_names_one() -> None:
+    """When the ask names a real directory component, the matching block
+    is the one whose FULL rendered path equals it — never conflated with
+    a same-basename file elsewhere, and independent of read order."""
+    criteria = (
+        "Conversation so far:\n"
+        "assistant: [read todo/storage.py]\n"
+        "  class TodoStore:\n"
+        "      def push(self):\n"
+        "          pass\n"
+        "assistant: [read lib/storage.py]\n"
+        "  def helper():\n"
+        "      return 1\n"
+        "\n\nCurrent request: add a complete method to todo/storage.py"
+    )
+    out = _gather(criteria, TESTS, CODE)
+    assert out["target_file"] == "storage.py"
+    assert out["prior_surface"] == ["TodoStore"]

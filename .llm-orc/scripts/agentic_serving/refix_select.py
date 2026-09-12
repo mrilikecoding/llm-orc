@@ -60,60 +60,9 @@ import sys
 from _helpers import deps as _deps
 from _helpers import extract_code as _extract_code
 from _helpers import payload as _payload
+from _helpers import public_top_level_names as _public_top_level_names
 from _helpers import response as _response
 from _helpers import terminal as _terminal
-
-
-def _assign_target_names(target: ast.expr) -> set[str]:
-    """Public plain-``Name`` targets an assignment target binds: a bare
-    ``Name`` (excluding a leading underscore, same rule as def/class), or a
-    ``Tuple``/``List`` of them for simple unpacking (``A, B = 1, 2``).
-    Anything else — ``Attribute``, ``Subscript``, ``Starred`` — contributes
-    no name, same as it always has for def/class (this function only ever
-    ADDS names, never removes one the old rule already caught)."""
-    if isinstance(target, ast.Name):
-        return set() if target.id.startswith("_") else {target.id}
-    if isinstance(target, (ast.Tuple, ast.List)):
-        names: set[str] = set()
-        for elt in target.elts:
-            names |= _assign_target_names(elt)
-        return names
-    return set()
-
-
-def _public_top_level_names(tree: ast.Module) -> list[str]:
-    """Every PUBLIC top-level binding ``prior_code`` makes: def/class names
-    (F-2), plus (F-1 round 3, widened rather than skipped) plain-assignment
-    targets — ``Assign`` and ``AnnAssign`` with a ``Name`` target, simple
-    tuple/list unpacking included. A settings module's ``PORT = 8080`` is a
-    public binding exactly the way a function name is; a fix that drops it
-    must refuse for the same reason a fix that drops a function refuses.
-    Import statements bind names too but are deliberately NOT surface here
-    (never were) — an import-only module (an ``__init__`` re-export, say)
-    has zero public bindings by this function's own definition, which is
-    what routes it to the "loads cleanly" fallback below.
-
-    Round 2b fix 2 (independent confirmation review): an ``AnnAssign`` with
-    ``value is None`` — a bare annotation, ``PORT: int`` with no ``= ...``
-    — binds NOTHING at module level; executing that statement alone
-    creates no attribute. Including it put an unsatisfiable name in the
-    surface (the prior module's OWN bare annotation could never satisfy
-    ``hasattr(solution, "PORT")`` either), refusing legitimate fixes to
-    sibling names for "dropping" something the prior never bound in the
-    first place. Only an ``AnnAssign`` that actually assigns a value
-    counts."""
-    names: set[str] = set()
-    for node in tree.body:
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-            if not node.name.startswith("_"):
-                names.add(node.name)
-        elif isinstance(node, ast.Assign):
-            for assign_target in node.targets:
-                names |= _assign_target_names(assign_target)
-        elif isinstance(node, ast.AnnAssign) and node.value is not None:
-            names |= _assign_target_names(node.target)
-    return sorted(names)
-
 
 _BARE_SMOKE_TEXT = "def test_refix_candidate_loads_cleanly():\n    import solution\n"
 
