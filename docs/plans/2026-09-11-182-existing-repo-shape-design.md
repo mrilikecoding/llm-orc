@@ -81,18 +81,49 @@ Implementation notes (measured, 2026-09-12):
   `"py"`, so `**/*py*` (the template any module-stem turn already issues)
   discovers the whole `.py` surface through the SAME single-stem seam,
   with no second pattern shape added to the caller.
-- The MATCH step's "intersect the ask's identifiers" turned out to need
-  more than exact component equality: `TodoStore` → `{todo, store}` does
-  not literally intersect `storage.py`'s `{storage}`. Shipped a narrow,
-  documented stand-in (`_shares_root`): components equal outright, or both
-  ≥ 4 chars and sharing a 4-char prefix — enough to relate `store`/
-  `storage` without a real stemmer. Below that floor only exact equality
-  counts (`cli` must be named exactly).
+- REWORKED after an independent review of this slice (2026-09-12, verdict
+  BLOCKED, findings recorded outside the repo). The first cut's MATCH step
+  used a 4-char-shared-prefix stand-in for stemming (`_shares_root`) so
+  `TodoStore` → `{todo, store}` could relate to `storage.py`'s `{storage}`.
+  Measured
+  wrong-match defects: "add a config option to enable verbose output"
+  against a workspace holding only `tests/conftest.py` uniquely matched it
+  and reached `build: true, file: 'tests/conftest.py'` (Finding 1); "add
+  error handling to the data store" uniquely matched `story.py` and
+  `storefront.py` on the shared prefix `"stor"` alone (Finding 2) — words
+  with no real relationship. `_shares_root` is deleted. The MATCH step is
+  now EXACT equality only: an ask identifier (CamelCase-split, snake_case-
+  split, case-insensitive) must equal the file's whole basename-stem or one
+  of its `_basename_components` verbatim — no prefix or substring matching
+  of any length. Consequence accepted: "Add a remove method to TodoStore
+  ..." against the probe seed now has ZERO matches (`todo`/`store` ≠
+  `storage`, `cli`) and refuses naming the listing — honest, not a guess.
+  Resolving an identifier like `TodoStore` to the file that actually
+  DEFINES it is the content-grep rung's job (#121, the `need-grep` seam), a
+  follow-up, not this MATCH step. The CamelCase splitter was also widened
+  to split an acronym run followed by a capitalized word (`HTTPServer` →
+  `["HTTP", "Server"]`, not one fused token) — needed for exact-equality
+  matching to reach acronym-prefixed names at all.
+- Candidate exclusion widened (Finding 1): besides `test_*` basenames
+  (already excluded), a candidate is also dropped when its basename is
+  `conftest.py`/`setup.py`, or it sits under a `tests`/`test` directory
+  component. A RAW listing that is empty (or `test_*`-only) still
+  greenfields, unchanged; a raw listing that holds candidates but every one
+  is test infrastructure by this new exclusion refuses honestly instead
+  (distinct branch — Finding 1's exact repro must never silently fall back
+  to minting `solution.py` past a real, excluded file).
 - Refusal wording is match-count-shaped, not "always the whole listing":
-  zero matches names the full non-test `.py` listing (nothing more
-  specific to point at); two or more matches names only the matched
-  candidates (more actionable, and keeps a non-matching file like
-  `todo/__init__.py` out of the refusal).
+  zero matches over a non-empty candidate listing names the full listing
+  (nothing more specific to point at); two or more matches names only the
+  matched candidates (more actionable, and keeps a non-matching file like
+  `todo/__init__.py` out of the refusal); all-test-infrastructure names the
+  excluded files themselves (Finding 1's shape).
+- Mutant-count correction (review Finding 3): the "two pins go red" note
+  this section originally carried did not reproduce. Measured against the
+  reworked suite: restoring the silent `return "", "", ""` fallback in only
+  the zero-match branch turns 3 tests red; in only the multi-match branch,
+  2 red; in both branches together, 5 red. The guard itself holds in every
+  variant — this corrects the count, not the mechanism.
 - The mechanism turned out broader than "an existing-verb build with no
   stem match": turn 6's own ask uses "Add", not a fix/update-style verb,
   so the fallback fires for ANY unnamed-file build once the old
