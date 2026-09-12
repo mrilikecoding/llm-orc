@@ -203,27 +203,54 @@ class TestTheGuardDoesNotRejectRealCandidates:
         assert envelope["diagnostics"]["accept"] is True
         assert envelope["artifacts"][0]["content"] == _REAL
 
-    def test_a_one_line_edit_with_no_prior_surface_is_refused(self) -> None:
-        """Supersedes #173's ``test_a_one_line_real_fix_still_accepts``,
-        which pinned ``_envelope("x = 1\\n")`` as accept=True with the
-        rationale "#171 is... out of scope here." #171 landed: with no
-        prior_code surface to check, the smoke test degrades to "import
-        solution" alone, which cannot observe ANYTHING about the candidate
-        — by #171's own invariant (a gate whose ground truth never touched
-        the deliverable must refuse), "loads cleanly" is no longer enough,
-        whatever the content is. The over-refusal counterpart lives above:
-        a real fix WITH a prior surface still accepts.
+    def test_a_one_line_edit_with_no_prior_surface_accepts_under_the_fallback_bar(
+        self,
+    ) -> None:
+        """F-1 (#171 round 2 review): supersedes this test's own prior claim.
+        #171 landed a rule where a surface-less prior refused EVERY
+        candidate: the smoke-only bar degrades to "import solution" alone,
+        which the ablation control satisfies identically with the
+        deliverable's bytes absent (an import-only check observes nothing),
+        so ``participates`` was False for the whole class of surface-less
+        prior modules (constants-only settings, a dict-only rates table, an
+        ``__init__`` re-export module) and the route could never converge.
 
-        Review M3: the reason is the surface-less-prior sub-path's own
-        actionable text, not the generic participation constant — it isn't
-        that THESE tests happen not to exercise the deliverable, it's that
-        there was no surface to derive a real check from at all."""
+        F-1's fix: when the prior module has no public surface, fall back
+        to the pre-#171 bar (load cleanly, plus #173's inertness whitelist)
+        instead of applying the participation gate. ``x = 1`` is not on
+        #173's inert whitelist (``Assign`` isn't a member), so it accepts
+        here exactly as it did pre-#171 — #173's own whitelist, unchanged,
+        is what still catches genuine junk against a surface-less prior;
+        this measured case is not that."""
         envelope = _envelope("x = 1\n")
 
-        assert envelope["diagnostics"]["accept"] is False
-        assert envelope["diagnostics"]["accept_reason"] == (
-            "the prior module defines no public surface to check"
-        )
+        assert envelope["diagnostics"]["accept"] is True, envelope["diagnostics"][
+            "accept_reason"
+        ]
+
+    def test_a_constants_only_prior_with_a_legitimate_fix_accepts(self) -> None:
+        """F-1's own repro: a constants-only settings module (no public
+        def/class) has no surface to derive a real smoke check from, so the
+        participation gate is bypassed for it (see the fallback-bar test
+        above) — a legitimate one-value fix must still accept."""
+        prior = "PORT = 8080\nDEBUG = False\nRETRIES = 3\n"
+        fixed = "PORT = 9090\nDEBUG = False\nRETRIES = 3\n"
+        envelope = _envelope(fixed, prior_code=prior)
+
+        assert envelope["diagnostics"]["accept"] is True, envelope["diagnostics"][
+            "accept_reason"
+        ]
+
+    def test_a_dict_only_rates_table_fix_accepts(self) -> None:
+        """F-1's second repro shape: a dict-only rates table, same reasoning
+        as the constants-only settings module above."""
+        prior = "RATES = {'a': 1, 'b': 2}\n"
+        fixed = "RATES = {'a': 1, 'b': 3}\n"
+        envelope = _envelope(fixed, prior_code=prior)
+
+        assert envelope["diagnostics"]["accept"] is True, envelope["diagnostics"][
+            "accept_reason"
+        ]
 
     def test_a_dropped_name_reason_states_the_fact_without_quoting_test_source(
         self,
