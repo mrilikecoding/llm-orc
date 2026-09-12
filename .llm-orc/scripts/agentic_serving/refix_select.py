@@ -91,7 +91,17 @@ def _public_top_level_names(tree: ast.Module) -> list[str]:
     Import statements bind names too but are deliberately NOT surface here
     (never were) — an import-only module (an ``__init__`` re-export, say)
     has zero public bindings by this function's own definition, which is
-    what routes it to the "loads cleanly" fallback below."""
+    what routes it to the "loads cleanly" fallback below.
+
+    Round 2b fix 2 (independent confirmation review): an ``AnnAssign`` with
+    ``value is None`` — a bare annotation, ``PORT: int`` with no ``= ...``
+    — binds NOTHING at module level; executing that statement alone
+    creates no attribute. Including it put an unsatisfiable name in the
+    surface (the prior module's OWN bare annotation could never satisfy
+    ``hasattr(solution, "PORT")`` either), refusing legitimate fixes to
+    sibling names for "dropping" something the prior never bound in the
+    first place. Only an ``AnnAssign`` that actually assigns a value
+    counts."""
     names: set[str] = set()
     for node in tree.body:
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
@@ -100,7 +110,7 @@ def _public_top_level_names(tree: ast.Module) -> list[str]:
         elif isinstance(node, ast.Assign):
             for assign_target in node.targets:
                 names |= _assign_target_names(assign_target)
-        elif isinstance(node, ast.AnnAssign):
+        elif isinstance(node, ast.AnnAssign) and node.value is not None:
             names |= _assign_target_names(node.target)
     return sorted(names)
 

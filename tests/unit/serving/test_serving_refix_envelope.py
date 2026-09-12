@@ -298,6 +298,24 @@ class TestTheGuardDoesNotRejectRealCandidates:
             "accept_reason"
         ]
 
+    def test_a_bare_annotation_does_not_poison_the_surface(self) -> None:
+        """Round 2b, fix 2 (independent confirmation review): a bare
+        ``PORT: int`` (annotation only, no ``=``) does not bind PORT at
+        module level at all — executing that statement creates no
+        attribute. ``_public_top_level_names`` collected it anyway, adding
+        an UNSATISFIABLE name to the surface: ``hasattr(solution, "PORT")``
+        is False even for the prior module's own bare annotation, so a
+        legitimate fix to a sibling name (``DEBUG``) was refused with "no
+        longer defines PORT" — a name the prior itself never bound.
+        ``AnnAssign`` with ``value is None`` must be excluded."""
+        prior = "PORT: int\nDEBUG = False\n"
+        fixed = "PORT: int\nDEBUG = True\n"
+        envelope = _envelope(fixed, prior_code=prior)
+
+        assert envelope["diagnostics"]["accept"] is True, envelope["diagnostics"][
+            "accept_reason"
+        ]
+
     def test_a_junk_edit_against_a_constants_only_prior_now_refuses(self) -> None:
         """Round 3 correction (the coordinator's own finding): F-1's
         fallback re-opened the exact clobber #173 closed for def-bearing
