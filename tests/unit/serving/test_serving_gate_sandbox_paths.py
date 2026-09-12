@@ -375,6 +375,54 @@ def test_materialize_still_excludes_solution_and_tests_from_workspace_writes() -
     assert (tmp / "tests.py").read_text(encoding="utf-8") == "REAL_TESTS = 1\n"
 
 
+def test_a3_a_nested_tests_dot_py_is_not_dropped_for_sharing_a_root_basename() -> None:
+    """A3 (review, MEDIUM): the solution.py/tests.py skip compared only the
+    BASENAME, so todo/tests.py — a real package module, unrelated to the
+    runner's own root-level tests.py — vanished the same way. Nested
+    namesakes must survive; only the bare root-level names are reserved."""
+    tmp = _materialize_in_tmp(
+        {"todo/tests.py": "FIXTURES = 1\n", "pkg/solution.py": "ANSWER = 42\n"}
+    )
+    assert (tmp / "todo" / "tests.py").read_text(encoding="utf-8") == "FIXTURES = 1\n"
+    assert (tmp / "pkg" / "solution.py").read_text(encoding="utf-8") == "ANSWER = 42\n"
+
+
+def test_a3_nested_tests_module_is_importable_end_to_end() -> None:
+    """The reviewer's exact repro: tests import a nested todo/tests.py
+    fixture module alongside todo/helpers.py — both must resolve."""
+    context = (
+        "assistant: [read todo/__init__.py]\n  \n"
+        "assistant: [read todo/storage.py]\n"
+        "  class TodoStore:\n      pass\n"
+        "assistant: [read todo/helpers.py]\n"
+        "  HELPER = 1\n"
+        "assistant: [read todo/tests.py]\n"
+        "  FIXTURE = 2\n"
+        "\n\nCurrent request: add a remove method to TodoStore in todo/storage.py"
+    )
+    gathered = _node(
+        GATHER,
+        {
+            "code_writer": _dep(
+                _sub_ensemble_response("```python\nclass TodoStore:\n    pass\n```\n")
+            ),
+            "test_writer": _dep(
+                _sub_ensemble_response(
+                    "```python\nfrom todo.helpers import HELPER\n"
+                    "from todo.tests import FIXTURE\n\n"
+                    "def test_x():\n"
+                    "    assert HELPER == 1\n"
+                    "    assert FIXTURE == 2\n"
+                    "```\n"
+                )
+            ),
+        },
+        input_data=context,
+    )
+    result = _executor_from_gather(gathered)
+    assert result["tests_pass"] is True, result["report"]
+
+
 # --- A2: a workspace entry that can't be placed makes the executor refuse -
 
 

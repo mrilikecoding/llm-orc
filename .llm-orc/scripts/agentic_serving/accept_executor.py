@@ -743,21 +743,22 @@ def _materialize(
     runner's namespace model is unchanged; only real-path materialization
     is added beside it (#184 mechanism 3: the runner's ``sys.path[0]`` is
     already the sandbox root, so a package directory placed here is
-    importable, ``__init__.py`` or not)."""
+    importable, ``__init__.py`` or not).
+
+    The runner's OWN two root-level files (``solution.py``/``tests.py``)
+    are reserved by their FULL path, not basename (#184 A3) — a nested
+    ``todo/tests.py`` is a real package module, unrelated to the runner's
+    root-level fixture, and must not vanish just because it shares that
+    one basename."""
     for name, body in (workspace or {}).items():
         safe = _safe_relative_path(name)
-        if not safe:
-            continue
-        basename = safe.rsplit("/", 1)[-1]
-        if basename in ("solution.py", "tests.py"):
+        if not safe or safe in ("solution.py", "tests.py"):
             continue
         _write_at(tmp, safe, str(body))
     shadow = target_path or target_file
     safe_shadow = _safe_relative_path(shadow) if shadow else None
-    if safe_shadow:
-        basename = safe_shadow.rsplit("/", 1)[-1]
-        if basename not in ("solution.py", "tests.py"):
-            _write_at(tmp, safe_shadow, code)
+    if safe_shadow and safe_shadow not in ("solution.py", "tests.py"):
+        _write_at(tmp, safe_shadow, code)
     code_path = Path(tmp) / "solution.py"
     tests_path = Path(tmp) / "tests.py"
     code_path.write_text(code, encoding="utf-8")
