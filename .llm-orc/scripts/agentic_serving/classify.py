@@ -464,6 +464,37 @@ def _visibility(context: str) -> tuple[set[str], dict[str, str]]:
     return visible, attempted
 
 
+# issue #185 / arc 1: the ONE failure shape that means "the destination
+# genuinely does not exist" — the client's own "File not found: ..." wording
+# (``_render_read_block`` in the caller emits it verbatim as the trailing
+# text on a "(failed)" read-attempt line). ``_attempt_reason`` above discards
+# this wording (every "(failed)" variant collapses to the fixed "client read
+# failed" string) because until this arc no caller needed to tell absence
+# apart from any other read failure — a fix-verb ask already KNEW the file
+# existed, so a failed read was always refused. A listing-driven read can
+# legitimately come back absent (a truncated listing's "unknown" resolves to
+# "not there after all"), and that must fall through to greenfield rather
+# than refuse — see ``_files_to_request``.
+_READ_FAILED_LINE_RE = re.compile(
+    r"^assistant: \[read ([^\]]+?) \(failed\)\](?:[ \t]+(.*))?$", re.MULTILINE
+)
+
+
+def _read_reports_absent(context: str, basename: str) -> bool:
+    """True when the LATEST failed-read attempt for ``basename`` reports the
+    file as ABSENT (the client's "File not found" wording) rather than some
+    other failure (a permissions error, a malformed response, an empty read)
+    — the two are indistinguishable through ``_attempt_reason``'s generic
+    "client read failed" string, so this reads the raw trailing text
+    directly, same header the read-attempt scan (``_READ_ATTEMPT_RE``)
+    already trusts."""
+    reason = ""
+    for path, trailing in _READ_FAILED_LINE_RE.findall(context):
+        if path.rsplit("/", 1)[-1] == basename:
+            reason = trailing
+    return reason.strip().lower().startswith("file not found")
+
+
 def _visible_target_body(context: str, basename: str) -> str:
     """The LATEST visible ``[wrote <path>]``/``[read <path>]`` block's body
     for ``basename`` (grounded-explain design, docs/plans/2026-07-12-
@@ -541,13 +572,23 @@ def _files_to_request(
     Deterministic one-round control (issue #83): a named source file that is
     neither conversation-written nor client-read triggers ONE read request;
     a file whose read was already attempted and still is not visible refuses.
-    ``glob_file`` is the discovery match feeding the same seam — a
-    discovering turn names no source file itself, so it is the only entry.
-    A glob match is existing BY CONSTRUCTION (issue #182 slice D: it was
-    just found in the workspace listing), so it counts toward
+    ``glob_file`` is the discovery match feeding the same seam — an unnamed-
+    file discovering turn names no source file itself, so it is the only
+    entry there. A glob match is existing BY CONSTRUCTION (issue #182 slice
+    D: it was just found in the workspace listing), so it counts toward
     ``wants_existing`` even when the ask itself carries no fix/update-style
-    verb — the unnamed-file build's matched file must still be read before
-    the seat generates code, exactly as if the user had named it.
+    verb — the matched file must still be read before the seat generates
+    code, exactly as if the user had named it.
+
+    Issue #185 / arc 1: ``glob_file`` may now ALSO be a NAMED destination
+    the ask already spelled out, confirmed existing by
+    ``_named_build_discovery`` — in that case it duplicates an entry
+    ``_named_source_files`` already found, so it is de-duplicated on the
+    way in rather than requested twice. And a read the LISTING drove (never
+    a fix-verb ask, which needed no listing) that comes back reporting the
+    file genuinely ABSENT is not a refusal: the workspace has already had
+    its say, so the build falls through to greenfield instead of refusing a
+    file that turns out not to exist.
     """
     wants_existing = (
         tests_primary
@@ -558,7 +599,7 @@ def _files_to_request(
         return [], ""
     named = _named_source_files(task)
     if glob_file:
-        named = [glob_file, *named]
+        named = [glob_file, *(path for path in named if path != glob_file)]
     visible, attempted = _visibility(context)
     to_request: list[str] = []
     for path in named:
@@ -566,6 +607,14 @@ def _files_to_request(
         if basename in visible:
             continue
         if basename in attempted:
+            if (
+                glob_file
+                and path == glob_file
+                and _read_reports_absent(context, basename)
+            ):
+                # arc 1, invariant 5: a listing-driven read that confirms
+                # absence is the greenfield signal, never a refusal.
+                continue
             return [], f"could not read {path}: {attempted[basename]}"
         to_request.append(path)
     return to_request, ""
@@ -1689,6 +1738,75 @@ def _stem_discovery(context: str, stem: str) -> tuple[str, str, str]:
     )
 
 
+# --- issue #185 / arc 1, workspace-aware routing (docs/plans/2026-09-11-
+# workspace-aware-routing-design.md) — whether a NAMED destination already
+# exists in the client workspace is a fact about the workspace listing, never
+# the ask's verb (the invariant docs/plans/2026-09-11-182-d-live-rows/ row 10
+# names: "Add a remove(todo_id) method to ... todo/storage.py" shipped a
+# blind overwrite because no fix/update verb led the ask, so _EXISTING_RE
+# never fired and no read was ever requested). Rides the SAME "py"-stem glob
+# seam slice D added — a named destination has nothing new to DISCOVER (the
+# path is already known), only something to CONFIRM.
+def _named_destination_matches(named_file: str, listing_paths: list[str]) -> list[str]:
+    """Listed paths that name the SAME destination as ``named_file``: exact
+    equality, or a path-suffix match after normalising the client's absolute
+    workspace-root prefix away (component-wise, never a bare string
+    ``endswith`` — that would let ``torage.py`` wrongly suffix-match
+    ``storage.py``) when ``named_file`` already carries a directory; basename
+    equality when ``named_file`` is a bare basename (the ask never said which
+    directory) — every listed path sharing that basename is returned so the
+    caller can refuse an ambiguous bare name naming all of them, exactly as
+    the unnamed-file MATCH step already does for two equally-named
+    candidates."""
+    if "/" in named_file:
+        named_parts = named_file.split("/")
+        return [
+            path
+            for path in listing_paths
+            if path.split("/")[-len(named_parts) :] == named_parts
+        ]
+    return [path for path in listing_paths if path.rsplit("/", 1)[-1] == named_file]
+
+
+def _named_build_discovery(context: str, named_file: str) -> tuple[str, str, str]:
+    """(needs_glob, glob_file, refusal) for a NAMED destination on a build
+    turn carrying no fix/update verb (arc 1, issue #185): existence decides
+    the read, never the verb.
+
+    - no listing yet -> request ONE glob round (the shared "py" stem seam).
+    - a truncated listing (#148) -> named_file's presence is UNKNOWN, not
+      absent; request the read anyway (glob_file = named_file, unchanged)
+      rather than claim absence from an incomplete listing — a subsequent
+      read failure that reports the file absent then falls through to
+      greenfield (``_files_to_request``), never a refusal for a file that
+      turns out not to exist.
+    - a complete listing: named_file present (``_named_destination_matches``)
+      -> exists; glob_file = named_file, UNCHANGED — the ask's own naming is
+      preserved, never rewritten to the client's absolute listing path — so
+      the existing read seam fires next, exactly as a fix-verb ask does
+      today.
+    - a bare-basename ask matching two or more listed paths -> refuse naming
+      all of them (D's own bound: an honest ask, not a guess).
+    - absent from a complete listing -> greenfield, unchanged: "", "", "".
+    """
+    listing = _latest_glob_listing(context)
+    if listing is None:
+        return _UNNAMED_BUILD_GLOB_STEM, "", ""
+    if listing.truncated:
+        return "", named_file, ""
+    matches = _named_destination_matches(named_file, listing.paths)
+    if len(matches) > 1:
+        listed = ", ".join(matches)
+        return (
+            "",
+            "",
+            f"multiple files match '{named_file}': {listed} — please name one",
+        )
+    if matches:
+        return "", named_file, ""
+    return "", "", ""
+
+
 def _discovery(
     task: str,
     context: str,
@@ -1714,15 +1832,27 @@ def _discovery(
     -known target (``turn["file"]`` or a task-text extraction) — a turn
     that names one has nothing to discover regardless of which of those two
     sources it came from.
+
+    Issue #185 / arc 1: a NAMED destination whose ask carries no fix/update
+    verb (``wants_existing`` False here) falls through to
+    ``_named_build_discovery`` instead of skipping outright — the workspace
+    listing, not the verb, now decides whether it already exists. A
+    fix/update-verb-led ask (``wants_existing`` True) is untouched: it
+    already requests the read directly, with no glob, before this arc — so
+    is ``tests_primary`` (#123's scope, not this arc's). The listing this
+    arc reads is ``.py``-only (the shared "py" stem seam), so a non-``.py``
+    destination (``README.md``) never enters this branch either — recorded
+    bound, today's verb-based behavior continues for it.
     """
     wants_existing = tests_primary or (
         has_build_signal and bool(_EXISTING_RE.search(task))
     )
-    # A turn that names ANY file has nothing to discover — including
-    # test_*-named files, which _named_source_files deliberately excludes
-    # (review blocker 2026-07-10: "tests for test_storage.py" stemmed
-    # "test_storage" and burned a doomed glob round).
-    if named_file or _extract_file(task):
+    extracted_file = named_file or _extract_file(task)
+    if extracted_file:
+        if wants_existing:
+            return "", "", ""
+        if has_build_signal and extracted_file.endswith(".py"):
+            return _named_build_discovery(context, extracted_file)
         return "", "", ""
     stem = _module_stem(task) if wants_existing else ""
     if stem:

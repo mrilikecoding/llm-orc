@@ -205,6 +205,11 @@ def test_build_turn_writes_deliverable_via_tool_call(
     """A build turn routes classify -> capability seat -> marshal and writes a
     deliverable (scenarios.md, ADR-046 §1). At the API boundary the response is
     a ``write`` tool_call carrying the produced file.
+
+    issue #185 / arc 1 (workspace-aware routing): add.py's existence is now
+    decided from the workspace listing rather than the "write" verb, so the
+    FIRST round requests one glob (never a build against an unknown
+    workspace); an empty listing then writes exactly as before.
     """
     resp = serving_client.post(
         "/v1/chat/completions",
@@ -215,6 +220,38 @@ def test_build_turn_writes_deliverable_via_tool_call(
                     "role": "user",
                     "content": "write a function that adds two numbers in add.py",
                 }
+            ],
+            "tools": [_WRITE_TOOL],
+        },
+    )
+
+    assert resp.status_code == 200
+    choice = resp.json()["choices"][0]
+    assert choice["finish_reason"] == "tool_calls"
+    tool_calls = choice["message"]["tool_calls"]
+    assert len(tool_calls) == 1
+    glob_call = tool_calls[0]
+    assert glob_call["function"]["name"] == "glob"
+
+    resp = serving_client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "ensemble-agent",
+            "messages": [
+                {
+                    "role": "user",
+                    "content": "write a function that adds two numbers in add.py",
+                },
+                {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [glob_call],
+                },
+                {
+                    "role": "tool",
+                    "tool_call_id": glob_call["id"],
+                    "content": "",
+                },
             ],
             "tools": [_WRITE_TOOL],
         },
@@ -241,6 +278,11 @@ def test_multi_turn_history_serves_the_latest_user_message(
     """A real client (OpenCode) sends the FULL history every turn; the serve
     must handle the latest user message, not re-run turn 1 (Cycle-8 PLAY
     field note #1: every turn re-processed "hello").
+
+    issue #185 / arc 1: add.py's existence is now decided from the listing,
+    so the first response is a glob (still proof the serve is processing
+    THIS turn's build ask, not "hello" — a "hello" turn never globs);
+    continuing with an empty listing then writes to add.py as before.
     """
     resp = serving_client.post(
         "/v1/chat/completions",
@@ -252,6 +294,38 @@ def test_multi_turn_history_serves_the_latest_user_message(
                 {
                     "role": "user",
                     "content": "write a function that adds two numbers in add.py",
+                },
+            ],
+            "tools": [_WRITE_TOOL],
+        },
+    )
+
+    assert resp.status_code == 200
+    choice = resp.json()["choices"][0]
+    assert choice["finish_reason"] == "tool_calls"
+    glob_call = choice["message"]["tool_calls"][0]
+    assert glob_call["function"]["name"] == "glob"
+
+    resp = serving_client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "ensemble-agent",
+            "messages": [
+                {"role": "user", "content": "hello"},
+                {"role": "assistant", "content": "Hi! How can I help?"},
+                {
+                    "role": "user",
+                    "content": "write a function that adds two numbers in add.py",
+                },
+                {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [glob_call],
+                },
+                {
+                    "role": "tool",
+                    "tool_call_id": glob_call["id"],
+                    "content": "",
                 },
             ],
             "tools": [_WRITE_TOOL],
@@ -2488,6 +2562,11 @@ def test_a_crashed_seat_contract_refuses_a_build_with_the_minting_prefix(
     DISPATCH node — a different fault. Measured against main: a dead
     `seat_contract` SHIPPED, minting `shipped`. The change converts a
     wrong-accept into a refusal, which is why the entry must still mint.
+
+    issue #185 / arc 1: add.py's existence is now decided from the listing
+    rather than the "write" verb, so the FIRST round would only glob — the
+    turn is continued here with an empty listing already rendered so the
+    decision reaches the actual build branch this test exercises.
     """
     client = _crashed_script_client(serving_project, monkeypatch, "seat_contract.py")
     resp = client.post(
@@ -2495,7 +2574,22 @@ def test_a_crashed_seat_contract_refuses_a_build_with_the_minting_prefix(
         json={
             "model": "ensemble-agent",
             "messages": [
-                {"role": "user", "content": "write an add function in add.py"}
+                {"role": "user", "content": "write an add function in add.py"},
+                {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "id": "call_g1",
+                            "type": "function",
+                            "function": {
+                                "name": "glob",
+                                "arguments": '{"pattern": "**/*py*"}',
+                            },
+                        }
+                    ],
+                },
+                {"role": "tool", "tool_call_id": "call_g1", "content": ""},
             ],
             "tools": [_WRITE_TOOL],
         },
@@ -2874,7 +2968,12 @@ def test_a_dead_build_seat_never_writes_even_with_seat_contract_deleted(
     an accident of that one contract's shape, not a property of the chain
     (#155's lesson: a node-level pin does not prove the chain). The contract
     is deleted here and the crash is driven through the real
-    seat -> shape -> form_gate -> emit chain."""
+    seat -> shape -> form_gate -> emit chain.
+
+    issue #185 / arc 1: add.py's existence is now decided from the listing
+    rather than the "write" verb, so the FIRST round would only glob — the
+    turn is continued here with an empty listing already rendered so the
+    decision reaches the actual build branch this test exercises."""
     (serving_project / "ensembles" / "code-seat.yaml").write_text(
         "name: code-seat\n"
         "description: code-seat with seat_contract removed, for #174 instrument 5\n"
@@ -2891,7 +2990,22 @@ def test_a_dead_build_seat_never_writes_even_with_seat_contract_deleted(
         json={
             "model": "ensemble-agent",
             "messages": [
-                {"role": "user", "content": "write an add function in add.py"}
+                {"role": "user", "content": "write an add function in add.py"},
+                {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "id": "call_g1",
+                            "type": "function",
+                            "function": {
+                                "name": "glob",
+                                "arguments": '{"pattern": "**/*py*"}',
+                            },
+                        }
+                    ],
+                },
+                {"role": "tool", "tool_call_id": "call_g1", "content": ""},
             ],
             "tools": [_WRITE_TOOL],
         },

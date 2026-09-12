@@ -98,3 +98,47 @@ wrong-match hunt on the path-normalisation step (absolute client paths,
 `./` prefixes, Windows separators are out of scope but must not crash).
 One independent review round follows; a report without the three
 self-tests is returned unread.
+
+## Implementation notes (measured, 2026-09-11)
+
+- A fix/update-verb-led ask (`_EXISTING_RE` fires) is UNTOUCHED by this
+  arc: it still requests the read directly, with no glob round, exactly
+  as before. The brief's "exactly as a fix-verb ask does today" describes
+  the OUTCOME the new existence signal reaches for a non-fix-verb ask,
+  not a claim that fix-verb asks now also glob first — an existing pin
+  (`test_fix_turn_without_a_write_takes_the_read_seam_not_the_chain`,
+  empty context, target `need-files` in one round) would have gone red
+  under the other reading, and the ladder's turns 7 and 13 (both
+  fix-verb-led) confirm it live: neither gains a glob round.
+- Ladder-identity table (instrument 5, empty context, independent per
+  prompt): turns 1 ("write a todo item... in todo.py"), 2 ("add a
+  complete_todo function to todo.py"), and 6 ("create storage.py...")
+  gain a first-round `needs_glob` — each names a `.py` file with a build
+  verb and no fix verb. All ten others are unaffected: turn 3 is an
+  explain (discovery never fires under `is_explain`), turns 4/8/9 are
+  tests-primary (out of scope, #123 carries it), turns 5/10 are
+  memory/recall, turns 7/13 are fix-verb-led (see above), turn 11 is a
+  run, and turn 12 already discovers via its own module-stem phrasing
+  (unchanged by this arc). After a rendered empty listing, all three
+  reconverge to byte-identical with main's single round.
+- The read-reports-absent distinction (invariant 5) needed a new helper:
+  `_attempt_reason` (the existing read-failure reader) collapses every
+  "(failed)" read variant to the fixed string "client read failed",
+  discarding the client's actual wording — until this arc no caller
+  needed to tell "file not found" apart from any other read failure (a
+  fix-verb ask already knew the file existed, so any failed read refused).
+  A listing-driven read can legitimately come back absent, so a new
+  `_read_reports_absent` reads the raw trailing text on the
+  `[read ... (failed)]` line directly and checks for the client's own
+  "File not found" prefix (`_render_read_block`'s exact wording) —
+  everything else on that line still refuses as before.
+- A NAMED destination's matched value is never rewritten to the client's
+  absolute listing path, even when the ask gave only a bare basename that
+  resolves via basename equality: the ask's own naming is preserved
+  verbatim (`glob_file = named_file`, unchanged) so the destination write
+  path stays what the user asked for — `todo/storage.py`, not
+  `/Users/.../todo/storage.py` — matching the live row 10 exit-gate
+  wording ("a `write todo/storage.py`"), not the client's own absolute
+  form. This differs from the UNNAMED-file build seam (slice D), which
+  has nothing else to name the destination with and so rewrites to the
+  discovered listing path.

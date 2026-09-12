@@ -80,7 +80,20 @@ def test_unnamed_build_with_no_listing_yet_requests_discovery_first() -> None:
 
 
 def test_filename_is_extracted_from_the_turn_text() -> None:
+    # issue #185 / arc 1: a named destination with no fix/update verb now
+    # requests one glob round before deciding (existence, not the verb,
+    # decides the read) — the file is already known, but the build waits
+    # for the listing; an empty listing then builds exactly as before.
     decision = _classify({"task": "write a function that adds two numbers in add.py"})
+    assert decision["file"] == "add.py"
+    assert decision["build"] is False
+    assert decision["needs_glob"] == "py"
+    decision = _classify(
+        {
+            "task": "write a function that adds two numbers in add.py",
+            "context": "assistant: [globbed py (failed)] empty glob result",
+        }
+    )
     assert decision["file"] == "add.py"
     assert decision["build"] is True
 
@@ -92,7 +105,19 @@ def test_explain_turn_is_non_build_and_routes_away_from_the_code_seat() -> None:
 
 
 def test_a_named_target_file_is_carried_structurally() -> None:
+    # issue #185 / arc 1: "cli.py" comes from the structural ``file`` field
+    # rather than task-text extraction, but existence is decided the same
+    # way either way — one glob round first, then the build.
     decision = _classify({"task": "build a cli", "file": "cli.py"})
+    assert decision["file"] == "cli.py"
+    assert decision["build"] is False
+    decision = _classify(
+        {
+            "task": "build a cli",
+            "file": "cli.py",
+            "context": "assistant: [globbed py (failed)] empty glob result",
+        }
+    )
     assert decision["file"] == "cli.py"
     assert decision["build"] is True
 
@@ -135,7 +160,16 @@ def test_a_question_naming_a_file_routes_to_explain_not_build() -> None:
 
 
 def test_an_imperative_build_request_phrased_politely_still_builds() -> None:
-    decision = _classify({"task": "Can you write a function to add numbers in add.py"})
+    # issue #185 / arc 1: named destination, no fix verb — one glob round
+    # first (existence, not phrasing, decides); an empty listing then
+    # builds as before.
+    context = "assistant: [globbed py (failed)] empty glob result"
+    decision = _classify(
+        {
+            "task": "Can you write a function to add numbers in add.py",
+            "context": context,
+        }
+    )
     assert decision["build"] is True
     assert decision["target"] == "code-seat"
 
@@ -215,8 +249,13 @@ def test_a_named_test_file_routes_to_the_tests_seat() -> None:
 
 def test_with_tests_is_not_test_primary() -> None:
     """'write is_even with tests' wants code (tests as a trailing mention);
-    routing it to the tests-seat would ship only tests."""
-    decision = _classify({"task": "write is_even with tests in even.py"})
+    routing it to the tests-seat would ship only tests. issue #185 / arc 1:
+    even.py is a named destination with no fix verb, so an empty listing
+    round precedes the build."""
+    context = "assistant: [globbed py (failed)] empty glob result"
+    decision = _classify(
+        {"task": "write is_even with tests in even.py", "context": context}
+    )
     assert decision["target"] == "code-seat"
     assert decision["file"] == "even.py"
 
@@ -252,7 +291,19 @@ def test_existing_marker_build_on_invisible_file_requests_a_client_read() -> Non
 
 
 def test_fresh_create_never_requests_a_read() -> None:
+    # issue #185 / arc 1: add.py's existence is now decided from the
+    # workspace listing, so round 1 requests a glob (never a read) rather
+    # than routing straight to code-seat; round 2, over an empty listing,
+    # never requests a read either — the invariant this test pins.
     decision = _classify({"task": "write a function that adds two numbers in add.py"})
+    assert decision["target"] == "need-glob"
+    assert decision["needs_files"] == []
+    decision = _classify(
+        {
+            "task": "write a function that adds two numbers in add.py",
+            "context": "assistant: [globbed py (failed)] empty glob result",
+        }
+    )
     assert decision["target"] == "code-seat"
     assert decision["needs_files"] == []
 
@@ -517,7 +568,17 @@ def test_have_you_question_routes_to_recall_answer() -> None:
 
 
 def test_can_you_write_stays_a_build_turn() -> None:
+    # issue #185 / arc 1: add.py's existence is decided from the listing —
+    # round 1 requests it (never explainer either way); an empty listing
+    # then builds.
     decision = _classify({"task": "can you write a function that adds in add.py"})
+    assert decision["target"] != "explainer"
+    decision = _classify(
+        {
+            "task": "can you write a function that adds in add.py",
+            "context": "assistant: [globbed py (failed)] empty glob result",
+        }
+    )
     assert decision["target"] != "explainer"
     assert decision["build"] is True
 
@@ -1045,9 +1106,12 @@ def test_explain_turn_never_uses_the_build_module_stem_glob() -> None:
 
 
 def test_normal_decisions_carry_empty_glob_fields() -> None:
-    # A named-file build has nothing to discover (issue #182 slice D's new
-    # unnamed-file branch only fires when no file is named).
-    decision = _classify({"task": "write a function that adds two numbers in add.py"})
+    # A fix-verb-led named-file build has nothing to discover: _EXISTING_RE
+    # already established existence, so it requests the read directly, no
+    # glob involved — issue #185 / arc 1 leaves this path untouched (a
+    # named build with NO fix verb now DOES glob first; see
+    # test_named_destination_build_requests_a_glob_round_first).
+    decision = _classify({"task": "fix the bug in calc.py"})
     assert decision["needs_glob"] == ""
     assert decision["glob_failed"] == ""
 
@@ -1149,11 +1213,22 @@ def test_fix_chain_with_run_block_routes_to_run_verdict() -> None:
 
 def test_non_fix_build_with_a_write_does_not_chain() -> None:
     # the caller never resumes a non-fix write; if one ever reaches classify,
-    # routing must stay the plain build decision, not the chain
+    # routing must stay the plain build decision, not the chain. issue
+    # #185 / arc 1: add.py's existence is decided from the listing, so
+    # round 1 requests it (never the chain either way); an empty listing
+    # then builds.
     decision = _classify(
         {
             "task": "write a function that adds two numbers in add.py",
             "wrote_path": "add.py",
+        }
+    )
+    assert decision["target"] == "need-glob"
+    decision = _classify(
+        {
+            "task": "write a function that adds two numbers in add.py",
+            "wrote_path": "add.py",
+            "context": "assistant: [globbed py (failed)] empty glob result",
         }
     )
     assert decision["target"] == "code-seat"
@@ -3817,6 +3892,287 @@ def test_exact_match_camelcase_components_resolve_a_matching_file() -> None:
     assert decision["needs_files"] == ["http_server.py"]
 
 
+# --- issue #185 / arc 1, workspace-aware routing
+# (docs/plans/2026-09-11-workspace-aware-routing-design.md) — a build
+# naming an EXISTING destination with no fix/update verb shipped a BLIND
+# OVERWRITE (docs/plans/2026-09-11-182-d-live-rows/, row 10: "Add a
+# remove(todo_id) method to the TodoStore class in todo/storage.py" wrote
+# a brand-new in-memory TodoStore with no read at all). Whether a NAMED
+# destination already exists is now decided from the same "py"-stem
+# workspace listing slice D added, never from the ask's verb: present in
+# the listing -> the existing read seam fires; absent -> greenfield build,
+# unchanged. A fix/update-verb-led ask (_EXISTING_RE) is untouched — it
+# already requested the read directly, with no glob, before this arc. ---
+
+_ROW_10_ASK = (
+    "Add a remove(todo_id) method to the TodoStore class in todo/storage.py. "
+    "It deletes the todo with that id and raises KeyError if there is no "
+    "such todo."
+)
+_ROW_10_LISTING_WITH_STORAGE = (
+    "assistant: [globbed py]\n"
+    "  todo/__init__.py\n"
+    "  todo/storage.py\n"
+    "  todo/cli.py\n"
+    "  tests/test_storage.py"
+)
+_ROW_10_LISTING_WITHOUT_STORAGE = (
+    "assistant: [globbed py]\n"
+    "  todo/__init__.py\n"
+    "  todo/cli.py\n"
+    "  tests/test_storage.py"
+)
+
+
+def test_named_destination_build_requests_a_glob_round_first() -> None:
+    """Instrument 1: row 10's ask, empty context — red today (a `write
+    todo/storage.py` with no read at all, docs/plans/2026-09-11-182-d-
+    live-rows/ row 10)."""
+    decision = _classify({"task": _ROW_10_ASK})
+    assert decision["needs_glob"] != ""
+    assert decision["build"] is False
+    assert decision["target"] != "code-seat"
+
+
+def test_named_destination_present_in_listing_requests_the_read() -> None:
+    """Instrument 2: the seed listing holds todo/storage.py — existence
+    from the workspace, not the verb ("add" carries no fix/update verb).
+    Mutant check performed by hand: reverting ``_files_to_request``'s
+    ``wants_existing`` to the old ``_EXISTING_RE``-only gate (dropping the
+    ``bool(glob_file)`` clause this arc feeds) turns this red — the build
+    ships with no read requested, row 10's exact harm."""
+    decision = _classify({"task": _ROW_10_ASK, "context": _ROW_10_LISTING_WITH_STORAGE})
+    assert decision["target"] == "need-files"
+    assert decision["needs_files"] == ["todo/storage.py"]
+    assert decision["build"] is False
+
+
+def test_named_destination_absent_from_listing_builds_greenfield() -> None:
+    """Instrument 3: the same ask, but the listing lacks todo/storage.py —
+    greenfield build to todo/storage.py, exactly as today."""
+    decision = _classify(
+        {"task": _ROW_10_ASK, "context": _ROW_10_LISTING_WITHOUT_STORAGE}
+    )
+    assert decision["build"] is True
+    assert decision["target"] == "code-seat"
+    assert decision["file"] == "todo/storage.py"
+    assert decision["needs_files"] == []
+
+
+def test_add_py_existence_decided_by_listing_not_verb() -> None:
+    """Instrument 4: 'write a function that adds two numbers in add.py' —
+    with add.py in the listing the read fires on existence alone (no fix
+    verb in the ask); with a listing lacking it, build proceeds as today."""
+    task = "write a function that adds two numbers in add.py"
+    present = _classify({"task": task, "context": "assistant: [globbed py]\n  add.py"})
+    assert present["target"] == "need-files"
+    assert present["needs_files"] == ["add.py"]
+    assert present["build"] is False
+
+    absent = _classify({"task": task, "context": "assistant: [globbed py]\n  other.py"})
+    assert absent["build"] is True
+    assert absent["file"] == "add.py"
+    assert absent["needs_files"] == []
+
+
+def test_tests_primary_existing_phantom_unaffected_by_this_arc() -> None:
+    """Instrument 6: turn 9's shape ('write tests for existing phantom.py',
+    a listing without it) refuses exactly as today — tests-primary routing
+    is out of scope for this arc (#123 carries it); the read request for a
+    tests-primary turn never goes through the new glob-existence seam
+    (``glob_file`` stays empty), so a subsequent failed read still refuses
+    rather than falling through to greenfield."""
+    context = _ROW_10_LISTING_WITH_STORAGE
+    round1 = _classify(
+        {"task": "write tests for existing phantom.py", "context": context}
+    )
+    assert round1["needs_files"] == ["phantom.py"]
+    assert round1["needs_glob"] == ""
+    failed_context = (
+        context + "\nassistant: [read phantom.py (failed)] File not found: phantom.py"
+    )
+    round2 = _classify(
+        {"task": "write tests for existing phantom.py", "context": failed_context}
+    )
+    assert round2["build"] is False
+    assert round2["needs_files"] == []
+    assert "could not read phantom.py" in round2["read_failed"]
+
+
+def test_named_destination_truncated_listing_requests_the_read_not_absent() -> None:
+    """Instrument 7: a truncated listing means todo/storage.py's presence is
+    UNKNOWN, not absent — request the read anyway rather than claim
+    absence from an incomplete listing (#148's discipline, extended here)."""
+    context = "assistant: [globbed py (truncated)]\n  todo/cli.py"
+    decision = _classify({"task": _ROW_10_ASK, "context": context})
+    assert decision["target"] == "need-files"
+    assert decision["needs_files"] == ["todo/storage.py"]
+    assert decision["build"] is False
+
+
+def test_named_destination_absent_read_after_truncated_listing_falls_through() -> None:
+    """Instrument 5 (of the design brief's mechanism section) completes
+    instrument 7: the read requested off a truncated listing comes back
+    "File not found" — the destination really is absent, so the build now
+    proceeds greenfield rather than refusing (a genuinely absent file must
+    never be refused merely because discovery routed through the glob
+    seam to find out)."""
+    context = (
+        "assistant: [globbed py (truncated)]\n  todo/cli.py\n"
+        "assistant: [read todo/storage.py (failed)] File not found: todo/storage.py"
+    )
+    decision = _classify({"task": _ROW_10_ASK, "context": context})
+    assert decision["build"] is True
+    assert decision["target"] == "code-seat"
+    assert decision["file"] == "todo/storage.py"
+    assert decision["read_failed"] == ""
+
+
+def test_named_destination_other_read_failure_still_refuses() -> None:
+    """The other half of the same bound: a listing-driven read that fails
+    for a reason OTHER than absence (a cap, a permissions error) refuses
+    exactly as today — only "file not found" converts to greenfield."""
+    context = (
+        _ROW_10_LISTING_WITH_STORAGE
+        + "\nassistant: [read todo/storage.py (failed)] Error: permission denied"
+    )
+    decision = _classify({"task": _ROW_10_ASK, "context": context})
+    assert decision["build"] is False
+    assert "could not read todo/storage.py" in decision["read_failed"]
+
+
+def test_named_destination_refusal_never_leaks_server_paths() -> None:
+    """Instrument 8: reason hygiene — a bare-basename ask matching two
+    listed paths refuses naming both (D's bound), and the refusal carries
+    only the client's own listing paths, never a server path, username, or
+    pattern internals."""
+    context = "assistant: [globbed py]\n  lib/storage.py\n  todo/storage.py"
+    decision = _classify({"task": "add a method to storage.py", "context": context})
+    assert decision["build"] is False
+    assert "lib/storage.py" in decision["glob_failed"]
+    assert "todo/storage.py" in decision["glob_failed"]
+    assert "please name one" in decision["glob_failed"]
+
+
+# --- fresh-input wrong-match hunt on the path-normalisation step (required
+# self-test, agreed 2026-09-11): at least eight inputs of the implementer's
+# own devising, each with its measured decision. ---
+
+
+def test_fresh_input_absolute_client_prefix_matches_a_relative_ask() -> None:
+    """1: the client's glob returns an ABSOLUTE path under its own
+    workspace root (docs/plans/2026-09-11-182-d-live-rows/'s own bound);
+    the ask names the file relative, as every ask does. Suffix-normalised
+    path equality still matches."""
+    context = (
+        "assistant: [globbed py]\n"
+        "  /Users/nathan/project/todo/storage.py\n"
+        "  /Users/nathan/project/todo/cli.py"
+    )
+    decision = _classify({"task": _ROW_10_ASK, "context": context})
+    assert decision["target"] == "need-files"
+    assert decision["needs_files"] == ["todo/storage.py"]
+
+
+def test_fresh_input_dot_slash_prefix_ask_still_matches() -> None:
+    """2: the ask itself spells the destination with a './' prefix —
+    _FILE_RE already strips it at extraction (word-boundary anchored), so
+    this is a same-behavior check that nothing downstream re-introduces
+    the prefix and breaks the match."""
+    task = (
+        "Add a remove(todo_id) method to the TodoStore class in "
+        "./todo/storage.py. It raises KeyError if missing."
+    )
+    decision = _classify({"task": task, "context": _ROW_10_LISTING_WITH_STORAGE})
+    assert decision["file"] == "todo/storage.py"
+    assert decision["needs_files"] == ["todo/storage.py"]
+
+
+def test_fresh_input_bare_basename_present_once_matches() -> None:
+    """3: a bare basename (no directory in the ask) present exactly once
+    in the listing — matches, existence confirmed."""
+    decision = _classify(
+        {
+            "task": "add a method to storage.py",
+            "context": "assistant: [globbed py]\n  todo/storage.py",
+        }
+    )
+    assert decision["target"] == "need-files"
+    assert decision["needs_files"] == ["storage.py"]
+
+
+def test_fresh_input_bare_basename_present_twice_refuses() -> None:
+    """4: a bare basename present twice — ambiguous, refuse naming both
+    (D's own bound), never guess."""
+    decision = _classify(
+        {
+            "task": "add a method to storage.py",
+            "context": "assistant: [globbed py]\n  lib/storage.py\n  todo/storage.py",
+        }
+    )
+    assert decision["build"] is False
+    assert "lib/storage.py" in decision["glob_failed"]
+    assert "todo/storage.py" in decision["glob_failed"]
+
+
+def test_fresh_input_bare_basename_present_only_under_tests_dir_matches() -> None:
+    """5: a bare basename that only exists under tests/ — the ask named it
+    explicitly (unlike the unnamed-build MATCH step, this is not an
+    inferred guess), so it counts as present; no test-infrastructure
+    exclusion applies to a NAMED destination."""
+    decision = _classify(
+        {
+            "task": "add a fixture to conftest.py",
+            "context": "assistant: [globbed py]\n  tests/conftest.py",
+        }
+    )
+    assert decision["target"] == "need-files"
+    assert decision["needs_files"] == ["conftest.py"]
+
+
+def test_fresh_input_pyproject_toml_in_listing_never_confuses_a_py_match() -> None:
+    """6: a listing that also holds pyproject.toml (the stem "py" glob's
+    own known side effect, per slice D's Implementation notes) never
+    interferes with an unrelated .py destination's match."""
+    decision = _classify(
+        {
+            "task": _ROW_10_ASK,
+            "context": (
+                "assistant: [globbed py]\n"
+                "  pyproject.toml\n  todo/storage.py\n  todo/cli.py"
+            ),
+        }
+    )
+    assert decision["needs_files"] == ["todo/storage.py"]
+
+
+def test_fresh_input_non_py_named_destination_keeps_verb_based_behavior() -> None:
+    """7: a non-Python destination (the recorded bound: 'the listing is
+    .py-only') never enters the new mechanism at all — an ask naming
+    README.md with no fix verb still builds greenfield with no glob,
+    exactly as today, even when a listing is already present."""
+    decision = _classify(
+        {
+            "task": "add a section to README.md",
+            "context": "assistant: [globbed py]\n  todo/storage.py",
+        }
+    )
+    assert decision["needs_glob"] == ""
+    assert decision["build"] is True
+    assert decision["file"] == "README.md"
+
+
+def test_fresh_input_truncated_listing_is_the_eighth_input() -> None:
+    """8: a truncated listing — covered as its own instrument above
+    (test_named_destination_truncated_listing_requests_the_read_not_absent),
+    restated here as the fresh-input hunt's eighth measured input for the
+    report table: truncated -> read requested, never a false absence."""
+    context = "assistant: [globbed py (truncated)]\n  todo/cli.py"
+    decision = _classify({"task": _ROW_10_ASK, "context": context})
+    assert decision["needs_files"] == ["todo/storage.py"]
+    assert decision["build"] is False
+
+
 # --- instrument 6: the 13-turn ladder must be routing-byte-identical.
 # benchmarks/agentic_serving/ladder_battery.sh's PROMPTS array, verbatim —
 # every one of the thirteen either names a file, or is not a build turn at
@@ -3873,8 +4229,8 @@ def _main_agentic_serving_dir(dest: Path) -> Path:
     return dest
 
 
-def _run_classify_at(script: Path, task: str) -> dict[str, Any]:
-    envelope = json.dumps({"input": json.dumps({"task": task})})
+def _run_classify_at(script: Path, task: str, context: str = "") -> dict[str, Any]:
+    envelope = json.dumps({"input": json.dumps({"task": task, "context": context})})
     out = subprocess.run(
         [sys.executable, str(script)],
         input=envelope,
@@ -3886,11 +4242,43 @@ def _run_classify_at(script: Path, task: str) -> dict[str, Any]:
     return result
 
 
+# Arc 1 (workspace-aware routing, #185): three of the thirteen prompts name a
+# file with a build verb and no fix/update verb — "write a todo item... in
+# todo.py" (1), "add a complete_todo function to todo.py" (2), and "create
+# storage.py..." (6). Under this arc a NAMED destination's existence is
+# decided from the workspace listing rather than the ask's verb, so each of
+# these now requests ONE glob round before deciding, exactly as an unnamed-
+# file build already does (slice D) — the FIRST-round decision differs from
+# main by ``needs_glob`` alone. Every other prompt is unaffected: turn 3 is an
+# explain, turn 4/8/9 are tests-primary (out of scope, #123 carries it),
+# turn 5/10 are memory/recall, turn 7/13 are fix/update-verb-led (the
+# existing ``_EXISTING_RE`` seam, untouched), turn 11 is a run, and turn 12
+# already discovers via its own module-stem phrasing (unchanged by this arc).
+_GAINS_FIRST_ROUND_GLOB = (1, 2, 6)  # 1-indexed positions in _LADDER_PROMPTS
+_EMPTY_GLOB_CONTEXT = "assistant: [globbed py (failed)] empty glob result"
+
+
 def test_ladder_battery_prompts_route_byte_identical_to_main() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         baseline_dir = _main_agentic_serving_dir(Path(tmp))
         baseline_classify = baseline_dir / "classify.py"
-        for prompt in _LADDER_PROMPTS:
+        for index, prompt in enumerate(_LADDER_PROMPTS, start=1):
             before = _run_classify_at(baseline_classify, prompt)
             after = _classify({"task": prompt})
-            assert after == before, prompt
+            if index in _GAINS_FIRST_ROUND_GLOB:
+                assert before["needs_glob"] == "", prompt
+                assert after["needs_glob"] != "", prompt
+                assert after["target"] == "need-glob", prompt
+                assert after["build"] is False, prompt
+                # After a rendered EMPTY listing, both sides converge back
+                # to byte-identical — the SAME context fed to both scripts,
+                # so any conversation-echo in dispatch_input matches too.
+                before_converged = _run_classify_at(
+                    baseline_classify, prompt, context=_EMPTY_GLOB_CONTEXT
+                )
+                after_converged = _classify(
+                    {"task": prompt, "context": _EMPTY_GLOB_CONTEXT}
+                )
+                assert after_converged == before_converged, prompt
+            else:
+                assert after == before, prompt
