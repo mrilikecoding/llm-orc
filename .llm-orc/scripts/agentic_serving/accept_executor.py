@@ -700,6 +700,26 @@ def _safe_relative_path(path: str) -> str | None:
     return path
 
 
+def _unplaceable_workspace_files(workspace: dict[str, str] | None) -> list[str]:
+    """Bare basenames of workspace entries that CANNOT be placed in the
+    sandbox (#184 A2) — an absolute path, or one that would escape the
+    sandbox root, surviving root resolution (two absolute headers sharing
+    no common project root, say). Computed once, statically, alongside the
+    real run (never instead of it — the #171/#182-B-1 precedent): a turn
+    whose workspace could not be fully mirrored must refuse rather than
+    silently run against a partial, or empty, one. Basenames only, never
+    the unplaceable path itself — the refusal this feeds must stay
+    path-free (#168 discipline)."""
+    if not workspace:
+        return []
+    names = [
+        path.rsplit("/", 1)[-1] or path
+        for path in workspace
+        if _safe_relative_path(path) is None
+    ]
+    return sorted(names)
+
+
 def _write_at(tmp: str, relative_path: str, content: str) -> None:
     dest = Path(tmp) / relative_path
     dest.parent.mkdir(parents=True, exist_ok=True)
@@ -1008,6 +1028,11 @@ def main() -> None:
     # ANDs this in as a fourth input and composes the refusal sentence.
     surface_missing = _surface_missing_names(code, prior_surface)
 
+    # #184 A2: a workspace entry that root-resolution could not place in
+    # the sandbox (survives absolute, or would escape it) — same
+    # never-fake-the-verdict precedent as surface_missing above.
+    workspace_unplaced = _unplaceable_workspace_files(workspace)
+
     tests, tests_sanitized = _sanitize_tests(tests)
     tests, tests_excised = _excise_unbound_callable_tests(tests, code)
     tests, tests_removals_guarded = _guard_unconditional_removals(tests, code)
@@ -1036,6 +1061,7 @@ def main() -> None:
                 "participation_reason": participation_reason,
                 "target_file": target_file,
                 "surface_missing": surface_missing,
+                "workspace_unplaced": workspace_unplaced,
             }
         )
     )

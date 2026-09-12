@@ -41,7 +41,10 @@ from _helpers import (  # type: ignore[import-not-found]  # noqa: E402
     workspace,
     workspace_entries,
 )
-from accept_executor import _materialize  # type: ignore[import-not-found]  # noqa: E402
+from accept_executor import (  # type: ignore[import-not-found]  # noqa: E402
+    _materialize,
+    _unplaceable_workspace_files,
+)
 
 _workspace = workspace
 _workspace_entries = workspace_entries
@@ -372,6 +375,70 @@ def test_materialize_still_excludes_solution_and_tests_from_workspace_writes() -
     assert (tmp / "tests.py").read_text(encoding="utf-8") == "REAL_TESTS = 1\n"
 
 
+# --- A2: a workspace entry that can't be placed makes the executor refuse -
+
+
+def test_unplaceable_workspace_files_names_absolute_and_escaping_entries() -> None:
+    names = _unplaceable_workspace_files(
+        {
+            "todo/storage.py": "x",
+            "/Users/u/proj/a.py": "y",
+            "/home/v/other/lib.py": "z",
+            "../escape.py": "w",
+        }
+    )
+    assert names == ["a.py", "escape.py", "lib.py"]
+
+
+def test_unplaceable_workspace_files_empty_when_everything_placed() -> None:
+    assert _unplaceable_workspace_files({"todo/storage.py": "x", "b.py": "y"}) == []
+
+
+def test_a2_two_clients_roots_refuses_instead_of_silently_shipping() -> None:
+    """The reviewer's A2 repro: two absolute headers sharing no common
+    root. Brief bound 4 promised 'refused, nothing materialized' — the
+    materialization half held, but nothing turned the drop into a
+    verdict, so the turn ran against an empty workspace and could ship a
+    wrong-or-untested deliverable. Mutant: dropping the workspace_unplaced
+    check from accept_gate's accept formula turns this red (accept: True)."""
+    gathered = {
+        "requirement": "add a remove method to TodoStore",
+        "code": (
+            "class TodoStore:\n"
+            "    def __init__(self):\n"
+            "        self.items = []\n"
+            "    def remove(self, item):\n"
+            "        self.items.remove(item)\n"
+            "    def list(self):\n"
+            "        return list(self.items)\n"
+        ),
+        "tests": (
+            "def test_remove_clears_the_item():\n"
+            "    store = TodoStore()\n"
+            "    store.items = ['x']\n"
+            "    store.remove('x')\n"
+            "    assert store.list() == []\n"
+        ),
+        "workspace": {
+            "/Users/u/proj/todo/storage.py": "class TodoStore:\n    pass\n",
+            "/home/v/other/lib.py": "def helper():\n    return 1\n",
+        },
+        "target_file": "",
+        "target_path": "",
+        "prior_surface": [],
+    }
+    executor = _executor_from_gather(gathered)
+    assert executor["workspace_unplaced"] == ["lib.py", "storage.py"]
+    judge = _node(SCRIPTS / "adequacy_check.py", {"executor": _dep(executor)})
+    accept_gate = _node(
+        SCRIPTS / "accept_gate.py",
+        {"executor": _dep(executor), "judge": _dep(judge)},
+    )
+    assert accept_gate["accept"] is False
+    assert "could not be placed in the sandbox" in accept_gate["reason"]
+    assert "/" not in accept_gate["reason"]
+
+
 # --- mechanism 1+2+3 together: a real nested package resolves -------------
 
 _TODO_STORE = (
@@ -579,3 +646,53 @@ def test_refix_candidate_imports_a_conversation_written_sibling() -> None:
     diagnostics = envelope["diagnostics"]
     assert diagnostics["accept"] is True, diagnostics["accept_reason"]
     assert "failed to load" not in diagnostics["accept_reason"]
+
+
+def test_a2_refix_refuses_when_a_workspace_file_could_not_be_placed() -> None:
+    """A2's follow-up on the re-fix route: two absolute headers sharing no
+    common root — the workspace stays absolute (nothing materializes), and
+    refix_envelope must refuse rather than let a candidate that never
+    touched the workspace ship anyway. Mutant: dropping the
+    workspace_unplaced check from refix_envelope's accept formula turns
+    this red (accept: True)."""
+    conversation = (
+        "assistant: [read /Users/u/proj/todo/storage.py]\n"
+        "  class TodoStore:\n"
+        "      pass\n"
+        "assistant: [read /home/v/other/lib.py]\n"
+        "  def helper():\n"
+        "      return 1\n"
+        "assistant: [ran pytest -q]\n"
+        "  F.\n"
+        "  E       assert 5 == 8\n"
+        "  1 failed, 1 passed in 0.02s\n"
+        "assistant: [read test_calc.py]\n"
+        "  def test_add_one():\n"
+        "      result = add_one(2)\n"
+        "      assert result == 3"
+    )
+    prior_code = "def add_one(n):\n    return n\n"
+    dispatch_input = (
+        f"Conversation so far:\n{conversation}\n\n"
+        f"{PRIOR_CODE_MARKER}\n{prior_code}\n\n"
+        "Current request: fix add_one in calc.py"
+    )
+    gathered = _node(REFIX_GATHER, {}, input_data=dispatch_input)
+    resolved = gathered["workspace"]
+    assert resolved["/Users/u/proj/todo/storage.py"] == "class TodoStore:\n    pass"
+    assert resolved["/home/v/other/lib.py"] == "def helper():\n    return 1"
+
+    model_edit_response = "```python\ndef add_one(n):\n    return n + 1\n```\n"
+    selected = _node(
+        REFIX_SELECT,
+        {"gather": _dep(gathered), "model_edit": _dep(model_edit_response)},
+    )
+    executor = _node(EXECUTOR, {"select": _dep(selected)})
+    assert executor["workspace_unplaced"] == ["lib.py", "storage.py"]
+    envelope = _node(
+        REFIX_ENVELOPE, {"select": _dep(selected), "executor": _dep(executor)}
+    )
+    diagnostics = envelope["diagnostics"]
+    assert diagnostics["accept"] is False
+    assert "could not be placed in the sandbox" in diagnostics["accept_reason"]
+    assert "/" not in diagnostics["accept_reason"]
