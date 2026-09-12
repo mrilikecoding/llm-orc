@@ -8,7 +8,7 @@ fresh session per row, workspace truth captured after each.
 | row | ask | events on the wire | outcome | truth |
 |---|---|---|---|---|
 | 08 | the probe's turn-6 ask verbatim (priority feature across storage, CLI, tests; no file named) | `glob **/*py*` → listing (todo/storage.py, todo/cli.py, todo/__init__.py, tests/test_storage.py, pyproject.toml) → prose | "Build refused: multiple files could match this ask: …/todo/storage.py, …/todo/cli.py — please name one" | zero `write`; workspace clean; 3 passed. **Turn 6's harm converted**: on main this ask minted and wrote `solution.py`. |
-| 09 | "Add a remove method to TodoStore that deletes a todo by id and raises KeyError when the id is missing." (no file named) | `glob **/*py*` → unique match `todo/storage.py` → `read` → build-gated | "Another round needed: tests did not pass" | zero `write`; workspace clean. **Discovery converted** (glob → match → read fired); the build itself fails on the edit-fragment class, which is slice B-1. |
+| 09 | "Add a remove method to TodoStore that deletes a todo by id and raises KeyError when the id is missing." (no file named) | *stale — measured against the pre-rework prefix-matching MATCH step; not yet re-driven* | **Expectation updated, not yet re-measured**: an independent review found the prefix-matching MATCH step could uniquely (and wrongly) resolve to an unrelated file on other inputs, so it was reworked to exact-equality-only matching. Under the reworked rule `TodoStore` → `{todo, store}` does not equal `storage.py`'s stem/components exactly, so this ask now refuses naming the listing (exact-match rule) rather than uniquely matching `todo/storage.py`. To be re-driven live after merge. | *pending re-drive* |
 
 Bounds observed live (recorded, not closed):
 
