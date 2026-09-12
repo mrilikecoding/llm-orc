@@ -240,3 +240,25 @@ def test_a_fix_that_drops_a_public_name_refuses() -> None:
     result = _executor_result(selected)
 
     assert result["tests_pass"] is False, result["report"]
+
+
+def test_a_fix_that_removes_a_private_helper_still_accepts() -> None:
+    """F-2 (regression, #171 round 2 review): the smoke surface used to be
+    EVERY top-level def/class name, underscore-prefixed ones included, so a
+    legitimate re-fix that inlines or deletes a private helper was refused
+    for dropping a name nothing public ever promised. The surface must be
+    derived from PUBLIC names only (no leading underscore, dunders
+    excluded)."""
+    prior = (
+        "def _round2(v):\n"
+        "    return round(v, 2)\n\n\n"
+        "def discount(price, pct):\n"
+        "    return _round2(price - price * pct / 100)\n"
+    )
+    candidate = (
+        "def discount(price, pct):\n    return round(price - price * pct / 100, 2)\n"
+    )
+    selected = _select_with_model_edit(prior, candidate)
+    result = _executor_result(selected)
+
+    assert result["tests_pass"] is True, result["report"]

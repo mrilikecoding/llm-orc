@@ -17,8 +17,15 @@ The smoke test is internal-only; the deliverable is the code alone.
 Surface-derived (#171): a bare ``def ...(): pass`` references no name, so
 participation was unsatisfiable on this path and any loadable content —
 ``x = 1``, an unrelated def, a comment — shipped. The smoke test now
-asserts the candidate still binds every top-level name the PRIOR module
-(``gather``'s ``prior_code``) defined; a candidate that drops one refuses.
+asserts the candidate still binds every PUBLIC top-level name the PRIOR
+module (``gather``'s ``prior_code``) defined; a candidate that drops one
+refuses.
+
+F-2 (#171 round 2 review): the surface is PUBLIC names only — a leading
+underscore (private helpers and dunders alike) is excluded. A legitimate
+re-fix that inlines or deletes a private helper binds nothing the module's
+public surface ever promised, and refusing it for that is refusing a
+correct fix.
 """
 
 from __future__ import annotations
@@ -36,14 +43,17 @@ from _helpers import terminal as _terminal
 
 def _smoke_test(prior_code: str) -> tuple[str, bool]:
     """(test text, has_surface): a smoke test asserting the candidate
-    imports cleanly and still binds every top-level function/class name
-    ``prior_code`` defined. No prior surface (unparseable, or the prior
-    module bound nothing at module level) degrades to the "loads cleanly"
-    bar alone — deterministic, import/getattr shape only, no behavior
-    claims. ``has_surface`` is False in exactly that degraded case (#171
-    review M3): refix_envelope needs to tell "no surface to check" apart
-    from "these tests happen not to exercise the deliverable" so it can
-    give the surface-less sub-path its own actionable reason."""
+    imports cleanly and still binds every PUBLIC top-level function/class
+    name ``prior_code`` defined (F-2: a leading underscore — private
+    helpers and dunders alike — is excluded; a fix that inlines or drops a
+    private helper binds nothing the public surface ever promised). No
+    prior surface (unparseable, or the prior module's public surface is
+    empty) degrades to the "loads cleanly" bar alone — deterministic,
+    import/getattr shape only, no behavior claims. ``has_surface`` is False
+    in exactly that degraded case (#171 review M3): refix_envelope needs to
+    tell "no surface to check" apart from "these tests happen not to
+    exercise the deliverable" so it can give the surface-less sub-path its
+    own actionable reason."""
     try:
         tree = ast.parse(prior_code)
     except SyntaxError:
@@ -53,6 +63,7 @@ def _smoke_test(prior_code: str) -> tuple[str, bool]:
             n.name
             for n in tree.body
             if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+            and not n.name.startswith("_")
         )
     asserts = "".join(
         f'    assert hasattr(solution, "{name}"), "{name}"\n' for name in names
