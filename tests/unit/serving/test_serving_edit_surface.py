@@ -552,6 +552,34 @@ def test_f5_unparseable_deliverable_reports_the_load_error_not_a_dropped_surface
 # --- the prompt half: the coder is told to ship the whole file on an edit -
 
 
+# --- F7: private names are never part of the required surface -----------
+
+_HELPER_PRIOR = (
+    "def _norm(x):\n    return x.strip()\n\n\ndef clean(x):\n    return _norm(x)\n"
+)
+
+
+def test_f7_deleting_a_private_helper_still_accepts() -> None:
+    """Review F7 (MINOR): no B-1 pin on the BUILD route held the
+    private-name exclusion — only the re-fix suite covered it, for a
+    helper both routes now share via _helpers.public_top_level_names.
+    Mutant: drop the underscore filter there -> red (verified by hand)."""
+    context = _context(
+        "helper.py", _HELPER_PRIOR, "inline _norm into clean in helper.py"
+    )
+    tests_writer = (
+        "```python\nfrom helper import clean\n\n"
+        "def test_clean():\n    assert clean(' x ') == 'x'\n```\n"
+    )
+    code_writer = "```python\ndef clean(x):\n    return x.strip()\n```\n"
+    result = _build_gated_edit(context, code_writer, tests_writer)
+
+    assert result["gather"]["prior_surface"] == ["clean"]
+    assert result["executor"]["surface_missing"] == []
+    assert result["executor"]["tests_pass"] is True, result["executor"]["report"]
+    assert result["accept_gate"]["accept"] is True, result["accept_gate"]["reason"]
+
+
 def test_the_coder_prompt_asks_for_the_whole_file_on_a_visible_edit() -> None:
     """The guard above is what makes the turn honest when this is ignored
     (doctrine 2: structure, not a third prompt rule) — but the prompt
