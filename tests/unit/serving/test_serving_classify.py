@@ -4261,17 +4261,25 @@ _LADDER_PROMPTS = (
 )
 
 
+# The pre-arc-1 main (74bf6023, 2026-09-11): the frozen BEFORE picture the
+# ladder-identity pin diffs against. A moving ref ("main") made the pin
+# vacuous the moment the arc merged — main compared against itself, and the
+# "gains a first-round glob" half of the assertion went red on the merged
+# tree. A hash cannot move.
+_PRE_ARC1_MAIN = "74bf6023"
+
+
 def _main_agentic_serving_dir(dest: Path) -> Path:
-    """A standalone copy of origin/main's ``agentic_serving`` scripts dir
-    (classify.py plus every sibling it imports) so the baseline subprocess
-    resolves its own ``_helpers``/``chain_plan`` imports correctly."""
+    """A standalone copy of the pre-arc-1 main's ``agentic_serving`` scripts
+    dir (classify.py plus every sibling it imports) so the baseline
+    subprocess resolves its own ``_helpers``/``chain_plan`` imports."""
     listing = subprocess.run(
         [
             "git",
             "ls-tree",
             "-r",
             "--name-only",
-            "main",
+            _PRE_ARC1_MAIN,
             "--",
             ".llm-orc/scripts/agentic_serving",
         ],
@@ -4282,7 +4290,7 @@ def _main_agentic_serving_dir(dest: Path) -> Path:
     ).stdout.splitlines()
     for rel in listing:
         content = subprocess.run(
-            ["git", "show", f"main:{rel}"],
+            ["git", "show", f"{_PRE_ARC1_MAIN}:{rel}"],
             cwd=REPO,
             capture_output=True,
             text=True,
