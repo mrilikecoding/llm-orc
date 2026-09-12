@@ -524,6 +524,31 @@ def test_f2_fragment_over_the_config_prior_still_refuses() -> None:
     assert "CONFIG" in result["accept_gate"]["reason"]
 
 
+# --- F5: an unparseable deliverable reports the load error, not a surface -
+
+
+def test_f5_unparseable_deliverable_reports_the_load_error_not_a_dropped_surface() -> (
+    None
+):
+    """Review F5 (MEDIUM): a candidate that fails to PARSE used to read as
+    having dropped every prior name (defined = frozenset() on
+    SyntaxError) — a false claim (the file "defines" nothing because it
+    never loads at all), and it preempted the honest, line-numbered load
+    failure the real sandboxed run reports."""
+    context = _context("storage.py", _STORAGE_PY_PRIOR, _REMOVE_REQUIREMENT)
+    broken = "```python\nclass TodoStore\n    pass\n```\n"  # missing colon
+    result = _build_gated_edit(context, broken, _REMOVE_TESTS)
+
+    assert result["executor"]["surface_missing"] == []
+    assert result["accept_gate"]["accept"] is False
+    assert "no longer defines" not in result["accept_gate"]["reason"]
+    # the honest load failure reaches the retry prompt via the executor's
+    # own report (accept_gate's own reason is the generic "tests did not
+    # pass", unchanged for an ordinary test failure — same as pre-B-1)
+    retry_input = result["envelope"]["diagnostics"]["retry_input"]
+    assert "SyntaxError" in retry_input
+
+
 # --- the prompt half: the coder is told to ship the whole file on an edit -
 
 
