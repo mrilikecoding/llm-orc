@@ -19,8 +19,10 @@ import re
 import sys
 
 from _helpers import PRIOR_CODE_MARKER as _PRIOR_CODE_MARKER
+from _helpers import fold_workspace as _fold_workspace
 from _helpers import latest_ran_block as _latest_ran_block
 from _helpers import payload as _payload
+from _helpers import resolve_workspace_entries as _resolve_workspace_entries
 
 _REQUEST_MARKER = "\n\nCurrent request: "
 
@@ -41,9 +43,7 @@ _FILE_RE = re.compile(r"\b([\w./-]+\.py)\b")
 # discipline every block parser uses (fenced block grammar). ``\n`` after
 # the marker is consumed here so prior_code keeps the write's own leading
 # whitespace.
-_PRIOR_CODE_SPLIT_RE = re.compile(
-    r"(?m)^" + re.escape(_PRIOR_CODE_MARKER) + r"\n"
-)
+_PRIOR_CODE_SPLIT_RE = re.compile(r"(?m)^" + re.escape(_PRIOR_CODE_MARKER) + r"\n")
 
 # A file block in the rendered context ([wrote ...] or [read ...]) — mirrors
 # accept_gather.py's _FILE_HEADER_RE/_workspace: body lines carry a two-
@@ -147,7 +147,16 @@ def main() -> None:
     failure_body = run[3] if run else ""
     visible_test = _visible_test(conversation)
     file_match = _FILE_RE.search(task)
-    target_file = file_match.group(1).rsplit("/", 1)[-1] if file_match else ""
+    target_path = file_match.group(1) if file_match else ""
+    target_file = target_path.rsplit("/", 1)[-1] if target_path else ""
+    # #184 mechanism 4: the re-fix sandbox gets the same conversation
+    # workspace the build routes already do — a candidate importing a
+    # sibling module the conversation wrote (or the client read) this
+    # session now loads, exactly as it does on the client. target_path is
+    # the A1 root-resolution hint (rule b): a lone absolute header naming
+    # THIS turn's own target recovers its real directory.
+    entries, workspace_root_rule = _resolve_workspace_entries(conversation, target_path)
+    workspace = _fold_workspace(entries)
 
     deterministic_code = _deterministic_edit(prior_code, failure_body)
 
@@ -158,6 +167,9 @@ def main() -> None:
                 "failure_body": failure_body,
                 "visible_test": visible_test,
                 "target_file": target_file,
+                "target_path": target_path,
+                "workspace": workspace,
+                "workspace_root_rule": workspace_root_rule,
                 "task": task,
                 "deterministic_code": deterministic_code,
                 "needs_model_edit": not deterministic_code,

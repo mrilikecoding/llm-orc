@@ -130,6 +130,16 @@ def main() -> None:
     else:
         tests = visible_test
 
+    # #184 mechanism 4: gather's conversation workspace rides through
+    # unmodified — the executor (this route's sole dependency, per
+    # re-fix.yaml) is where it actually gets materialized.
+    raw_workspace = gathered.get("workspace")
+    workspace = (
+        {str(k): str(v) for k, v in raw_workspace.items()}
+        if isinstance(raw_workspace, dict)
+        else {}
+    )
+
     print(
         json.dumps(
             {
@@ -137,6 +147,8 @@ def main() -> None:
                 "code": code,
                 "tests": tests,
                 "target_file": str(gathered.get("target_file", "")),
+                "target_path": str(gathered.get("target_path", "")),
+                "workspace": workspace,
                 "edit_kind": edit_kind,
                 "smoke_only": smoke_only,
                 "smoke_surface_empty": smoke_surface_empty,

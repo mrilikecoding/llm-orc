@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import ast
 import json
+import posixpath
 import re
 from typing import Any
 
@@ -38,6 +39,236 @@ _FENCE_RE = re.compile(r"```([a-zA-Z0-9_+-]*)\n(.*?)```", re.DOTALL)
 # prose) and classify (rung 2's failure-shape routing signal), issue #83 /
 # convergent-fix rung 2.
 _RAN_HEADER_RE = re.compile(r"^assistant: \[ran (.+?)( \((failed|truncated)\))?\](.*)$")
+
+# A file block in the rendered context: conversation-written ([wrote ...])
+# or client-read ([read ...], issue #83). '(truncated)' / '(failed)' /
+# '(oversize)' / '(over-budget)' (C1, #145) variants are never
+# materialized; a failed read line carries trailing reason text after ']'
+# and so never matches the anchored $. A variant missing from this
+# alternation isn't rejected — the non-greedy name-group absorbs "
+# (variant)" into the "path" instead, and the header still matches as if
+# unvariant, materializing a corrupted phantom file. Shared by every
+# reader of the conversation workspace (#184: accept_gather, tests_gather,
+# refix_gather) — one grammar, so a variant added for one consumer cannot
+# drift from the others.
+_FILE_HEADER_RE = re.compile(
+    r"^assistant: \[(?:wrote|read) ([^\]]+?)"
+    r"( \((?:truncated|failed|oversize|over-budget)\))?\]$"
+)
+
+
+def raw_workspace_entries(context: str) -> list[tuple[str, str]]:
+    """Ordered (path exactly as rendered, body) for every valid
+    (non-variant) read/write block in ``context`` — the client's OWN path,
+    absolute or relative, exactly as its tool call carried it; never
+    truncated to a basename. ``workspace_entries`` (below) is what every
+    consumer actually reads — it additionally strips a shared absolute
+    prefix when one is present (#184 mechanism 1).
+
+    Fenced block grammar (2026-07-10): body lines carry a two-space indent
+    the renderer added; the indent is stripped on materialization and ANY
+    other non-empty line ends the body. Headers live only at column 0, so a
+    header lookalike inside untrusted file content strips back to plain
+    content and can never materialize a phantom file.
+    """
+    entries: list[tuple[str, str]] = []
+    lines = context.splitlines()
+    index = 0
+    while index < len(lines):
+        header = _FILE_HEADER_RE.match(lines[index])
+        index += 1
+        if not header:
+            continue
+        body_lines = []
+        while index < len(lines):
+            line = lines[index]
+            if line.startswith("  "):
+                body_lines.append(line[2:])
+            elif not line.strip():
+                body_lines.append("")
+            else:
+                break
+            index += 1
+        if not header.group(2):
+            entries.append((header.group(1), "\n".join(body_lines).strip()))
+    return entries
+
+
+# A '[globbed ...]' block (issue #83 discovery grammar, serving_ensemble_
+# caller._render_glob_block) — never itself materialized as workspace
+# content (its header is a distinct shape from _FILE_HEADER_RE and its body
+# is one path per line, not a file body), but read here PURELY as a
+# structural signal for the workspace's true project root (#184 A1 rework,
+# rule a): a repo-wide glob routinely spans several directories, which one
+# or two read/write headers alone cannot.
+_GLOB_HEADER_RE = re.compile(
+    r"^assistant: \[globbed [^\]]+?( \((?:truncated|failed)\))?\]$"
+)
+
+
+def _glob_listing_paths(context: str) -> list[str]:
+    """Path lines from the LATEST usable ``[globbed ...]`` block in
+    ``context`` — "" (failed) blocks carry no real path lines and are
+    skipped; a "(truncated)" listing's paths are still real and kept."""
+    lines = context.splitlines()
+    paths: list[str] = []
+    index = 0
+    while index < len(lines):
+        header = _GLOB_HEADER_RE.match(lines[index])
+        index += 1
+        if not header:
+            continue
+        failed = header.group(1) == " (failed)"
+        body: list[str] = []
+        while index < len(lines) and lines[index].startswith("  "):
+            body.append(lines[index][2:])
+            index += 1
+        if not failed:
+            paths = body  # the LATEST block wins
+    return paths
+
+
+def _glob_listing_root(context: str) -> str:
+    """Rule (a): the longest common directory of the client's own glob
+    listing, when at least two of its paths are absolute — "" when no
+    usable listing is visible, or it does not resolve past the filesystem
+    root itself."""
+    paths = [p for p in _glob_listing_paths(context) if p.startswith("/")]
+    if len(paths) < 2:
+        return ""
+    root = posixpath.commonpath(paths)
+    return root if root not in ("", "/") else ""
+
+
+def _suffix_matched_root(abs_path: str, candidates: list[str]) -> str:
+    """Rule (b): the prefix obtained by matching a KNOWN relative path (the
+    ask's own named destination, or another header already relative in the
+    same render) as a SUFFIX of ``abs_path`` — the longest candidate that
+    matches wins (most specific). "" when none matches."""
+    best = ""
+    for candidate in candidates:
+        if not candidate or candidate.startswith("/"):
+            continue
+        if abs_path.endswith("/" + candidate) and len(candidate) > len(best):
+            best = candidate
+    return abs_path[: -(len(best) + 1)] if best else ""
+
+
+def _resolve_root(
+    raw: list[tuple[str, str]], abs_paths: list[str], target_path: str, context: str
+) -> tuple[str, str]:
+    """(root, rule) — the priority ladder #184's A1 rework replaces the
+    single "longest common directory" computation with:
+
+    (a) the client's own ``[globbed ...]`` listing's common directory, when
+        a useful one is visible;
+    (b) for a SINGLE absolute header, the ask's own named destination or
+        another already-relative header in the same render, matched as a
+        SUFFIX of that absolute path — recovers the true root exactly when
+        the client read the file it is about to edit (the arc's own
+        motivating shape);
+    (c) the longest common directory of 2+ absolute headers (unchanged);
+    (d) none of the above resolves anything: "" — a lone header falls back
+        to its bare basename (a recorded bound, not a silent guess: the
+        caller reports this as the "basename" rule); 2+ headers with no
+        common root stay absolute and UNRESOLVED — #184 A2's executor
+        refusal is what makes that honest rather than a silent drop.
+    """
+    glob_root = _glob_listing_root(context)
+    if glob_root:
+        return glob_root, "glob"
+    if len(abs_paths) == 1:
+        already_relative = [p for p, _ in raw if not p.startswith("/")]
+        candidates = ([target_path] if target_path else []) + already_relative
+        matched = _suffix_matched_root(abs_paths[0], candidates)
+        if matched:
+            return matched, "suffix-match"
+        # (d) basename fallback: the dirname is the root to strip, which
+        # always reduces `_relative_to_root` to the bare basename — the
+        # pre-#184-A1-rework single-header behavior, just reported by name
+        # now instead of silently reached.
+        return abs_paths[0].rsplit("/", 1)[0], "basename"
+    root = posixpath.commonpath(abs_paths)
+    if root not in ("", "/"):
+        return root, "common-prefix"
+    return "", "unresolved"
+
+
+def _relative_to_root(path: str, root: str) -> str:
+    """``path`` with ``root`` stripped, when it actually shares it —
+    unchanged otherwise (a relative header, or an absolute header sharing
+    no common root with the others: left absolute on purpose, #184's
+    path-safety check refuses to materialize it rather than guess)."""
+    if not root:
+        return path
+    if path == root:
+        return path.rsplit("/", 1)[-1]
+    prefix = root + "/"
+    return path[len(prefix) :] if path.startswith(prefix) else path
+
+
+def resolve_workspace_entries(
+    context: str, target_path: str = ""
+) -> tuple[list[tuple[str, str]], str]:
+    """(relativized entries, root_rule) — #184 A1's one workspace reader,
+    with which rule resolved the root reported alongside (never silent):
+    "none" (no absolute headers at all — every header was already
+    relative), "glob", "suffix-match", "common-prefix", "basename" (a lone
+    header, unresolved by (a)/(b)), or "unresolved" (2+ headers sharing no
+    common root — left absolute; #184 A2 is what refuses on this rather
+    than silently running an incomplete workspace)."""
+    raw = raw_workspace_entries(context)
+    abs_paths = [path for path, _ in raw if path.startswith("/")]
+    if not abs_paths:
+        return raw, "none"
+    root, rule = _resolve_root(raw, abs_paths, target_path, context)
+    return [(_relative_to_root(path, root), body) for path, body in raw], rule
+
+
+def workspace_entries(context: str, target_path: str = "") -> list[tuple[str, str]]:
+    """Ordered (RELATIVE path, body) for every read/write block in
+    ``context`` (#184 mechanism 1) — see ``resolve_workspace_entries`` for
+    the rule the root resolved by; this is the entries alone, for callers
+    that do not need the rule reported."""
+    return resolve_workspace_entries(context, target_path)[0]
+
+
+def fold_workspace(entries: list[tuple[str, str]]) -> dict[str, str]:
+    """{relative path: body}, folding ``entries`` in order — the last
+    block for a given path wins. Keyed by the FULL relative path (#184
+    mechanism 1), not a basename — two files sharing a basename in
+    different directories no longer conflate."""
+    files: dict[str, str] = {}
+    for path, body in entries:
+        files[path] = body
+    return files
+
+
+def workspace(context: str, target_path: str = "") -> dict[str, str]:
+    """{relative path: body} for the sandbox — the one workspace reader
+    (#184): shared by ``accept_gather`` (build routes), ``tests_gather``
+    (write-tests, #98), and ``refix_gather`` (re-fix, #184)."""
+    return fold_workspace(workspace_entries(context, target_path))
+
+
+def workspace_unplaced_reason(names: list[str]) -> str:
+    """The path-free refusal sentence for #184 A2: a workspace entry that
+    survived root resolution still absolute (or escaping) never got
+    materialized, and the brief's "refused, nothing materialized" bound
+    was only half true — nothing turned the drop into a verdict, so the
+    turn ran (and could ship) against a partial or empty workspace.
+    ``names`` are bare basenames only, never the unplaceable path itself.
+    Shared by ``accept_gate`` (build routes) and ``refix_envelope``
+    (re-fix) so neither drifts from the other's wording."""
+    listed = names[:3]
+    joined = ", ".join(listed)
+    remaining = len(names) - len(listed)
+    if remaining > 0:
+        joined += f", and {remaining} more"
+    return (
+        f"a workspace file could not be placed in the sandbox ({joined}); "
+        "the original is unchanged"
+    )
 
 
 def payload(raw: str) -> dict[str, Any]:
@@ -104,9 +335,9 @@ def extract_code(text: str, *, drop_test_blocks: bool = False) -> str:
     never sets this (test blocks are its point).
     """
     tagged = _FENCE_RE.findall(text)
-    blocks = [
-        body for lang, body in tagged if lang.lower() not in SHELL_LANGS
-    ] or [body for _, body in tagged]
+    blocks = [body for lang, body in tagged if lang.lower() not in SHELL_LANGS] or [
+        body for _, body in tagged
+    ]
     if drop_test_blocks and len(blocks) > 1:
         non_test = [block for block in blocks if not _is_pure_test_block(block)]
         blocks = non_test or blocks
@@ -221,6 +452,5 @@ def _is_pure_test_block(block: str) -> bool:
     if not named:
         return False
     return all(
-        node.name.startswith("test_") or node.name.startswith("Test")
-        for node in named
+        node.name.startswith("test_") or node.name.startswith("Test") for node in named
     )
