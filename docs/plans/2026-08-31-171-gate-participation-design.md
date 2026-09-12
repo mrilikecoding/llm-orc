@@ -65,6 +65,18 @@ Conditions and bounds:
   asserting `len(open("helpers.py").read()) > 0` passes the control
   with a junk deliverable. The value-bearing adequacy rule is the other
   half of the invariant and already exists; neither subsumes the other.
+- **Named bound (round 2b, re-fix's smoke surface is `hasattr` only):**
+  the surface-derived smoke test (`refix_select._smoke_test`) only ever
+  asserts `hasattr(solution, name)` — it proves a name is bound, not
+  what it is bound TO. A candidate that keeps every public name but
+  destroys every value (`PORT = None`/`DEBUG = None`/`RETRIES = None`
+  over the settings prior, or `discount = 0` replacing a function of
+  the same name) still ships (measured, pre-existing on base,
+  unaffected by round 2b's two fixes below). The value-bearing adequacy
+  rule is the other half of the invariant above and already exists;
+  neither subsumes the other — same shape as the length-assert bound,
+  one level down (re-fix's own smoke check rather than the build-gated
+  ablation control).
 - **Named bound (review F4, control granularity ≠ real-run
   granularity):** the control always runs as ONE combined process; the
   real suite runs per-test isolated (a fresh subprocess, fresh
@@ -144,6 +156,34 @@ Conditions and bounds:
    bypass); `x = 1` against the constants-only prior refuses; a fix
    that deliberately drops one public constant (keeping the others)
    refuses too, the same recorded bound already pinned for functions.
+
+   **Round 2b correction (independent confirmation review): the
+   fallback must apply only to a prior that is PRESENT, PARSEABLE, and
+   PROVABLY has zero public bindings.** `_smoke_test` was returning
+   `has_surface=False` whenever it could not DETERMINE a surface, not
+   only when it could prove there wasn't one — so junk `x = 1` shipped
+   and clobbered the client's file when the prior was unparseable
+   (reachable live via the renderer's `(truncated)`/`(oversize)` write
+   variants) or when the `[PRIOR CODE]` marker was simply missing
+   (`prior_code == ""`, no information at all, not "the file is
+   empty"). Fixed: `_smoke_test` now returns a `prior_status` of
+   `"missing"` / `"unparseable"` / `"ok"`; `refix_envelope` refuses
+   outright (fail closed — honesty-critical paths fail closed) on the
+   first two, with a path-free reason naming which ("no prior content
+   ... was available to check the fix against" / "... could not be
+   read whole, so the fix cannot be checked against it"), never "loads
+   cleanly". Measured: a missing-marker junk edit and an unparseable-
+   prior junk edit both now refuse with the new wording.
+
+   **Named bound (round 2b, recorded not closed): a private/dunder-
+   only prior still falls back.** A prior that IS readable and
+   provably has zero PUBLIC bindings — every top-level name private or
+   dunder (`_helper = 1`, `__version__ = "1.0"`) — has nothing public
+   to derive a real check from, same as an empty or import-only prior,
+   and stays on the pre-#171 loads-cleanly bar. Junk against a
+   private-only module therefore still ships (measured, `x = 1`
+   accepts) — #173's inertness whitelist is what would catch actual
+   junk shapes there, not this widening.
 2. **`_inject_workspace_imports` must not divert.** Skip injection for
    any name the CANDIDATE defines (both call sites — tests and code).
    Two-line guard; removes the self-inflicted diversion class (WA-2/2b).

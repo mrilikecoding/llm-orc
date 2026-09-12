@@ -116,7 +116,7 @@ def _envelope(
     it explicitly (see TestTheGuardDoesNotRejectRealCandidates below).
     """
     smoke_only = not visible_test.strip()
-    smoke_text, smoke_has_surface = _smoke(prior_code)
+    smoke_text, smoke_has_surface, smoke_prior_status = _smoke(prior_code)
     selected = {
         "requirement": "fix calc.py so restock adds one",
         "code": code,
@@ -125,6 +125,7 @@ def _envelope(
         "edit_kind": "model",
         "smoke_only": smoke_only,
         "smoke_surface_empty": smoke_only and not smoke_has_surface,
+        "smoke_prior_status": smoke_prior_status if smoke_only else "ok",
     }
     executor = _node("accept_executor.py", {"select": _dep(selected)})
     envelope = _node(
@@ -203,28 +204,55 @@ class TestTheGuardDoesNotRejectRealCandidates:
         assert envelope["diagnostics"]["accept"] is True
         assert envelope["artifacts"][0]["content"] == _REAL
 
-    def test_a_one_line_edit_with_no_prior_surface_accepts_under_the_fallback_bar(
+    def test_a_junk_edit_with_a_missing_prior_marker_now_refuses(self) -> None:
+        """Round 2b correction (independent confirmation review): supersedes
+        this test's own prior claim (``test_a_one_line_edit_with_no_prior_
+        surface_accepts_under_the_fallback_bar``, which pinned this exact
+        input — ``_envelope("x = 1\\n")``, prior_code defaulting to "" — as
+        accept=True).
+
+        ``prior_code == ""`` means the ``[PRIOR CODE]`` marker was never
+        populated at all — refix_gather has NO information about what the
+        client's file contains, not "the file is empty." Round 1/3 treated
+        that identically to "provably zero public bindings" and fell back
+        to "loads cleanly", which let ``x = 1`` clobber a file whose real
+        content was simply unknown. Honesty-critical paths fail closed: the
+        smoke-only route now refuses outright when the prior marker is
+        missing, with a path-free reason, never "loads cleanly"."""
+        envelope = _envelope("x = 1\n")
+        reason = envelope["diagnostics"]["accept_reason"]
+
+        assert envelope["diagnostics"]["accept"] is False
+        assert "no prior content" in reason.lower()
+        assert "calc.py" in reason, "the refusal must name what was not written"
+
+    def test_a_junk_edit_with_an_unparseable_prior_refuses(self) -> None:
+        """Round 2b correction, the other unreadable shape: the prior IS
+        present but fails to parse — reachable live via the renderer's
+        ``(truncated)``/``(oversize)`` write variants, which garble the
+        file's actual content. There is no way to compute a surface from
+        it, so this must refuse the same as a missing marker, not fall back
+        to "loads cleanly" either."""
+        prior = "def restock(item, n)\n    return n\n"  # missing the colon
+        envelope = _envelope("x = 1\n", prior_code=prior)
+        reason = envelope["diagnostics"]["accept_reason"]
+
+        assert envelope["diagnostics"]["accept"] is False
+        assert "could not be read whole" in reason.lower()
+        assert "calc.py" in reason, "the refusal must name what was not written"
+
+    def test_a_junk_edit_against_a_private_only_prior_still_falls_back(
         self,
     ) -> None:
-        """F-1 (#171 round 2 review): supersedes this test's own prior claim.
-        #171 landed a rule where a surface-less prior refused EVERY
-        candidate: the smoke-only bar degrades to "import solution" alone,
-        which the ablation control satisfies identically with the
-        deliverable's bytes absent (an import-only check observes nothing),
-        so ``participates`` was False for the whole class of surface-less
-        prior modules and the route could never converge.
-
-        Round 3 correction: the fallback is scoped to priors with ZERO
-        PUBLIC BINDINGS OF ANY KIND (an empty module, same as no prior_code
-        known at all — see below for the import-only ``__init__`` shape).
-        A constants-only or dict-only prior is NOT this case any more (the
-        surface now includes top-level assignment targets); this test's own
-        prior is "" (nothing known), which has none. ``x = 1`` is not on
-        #173's inert whitelist (``Assign`` isn't a member), so it accepts
-        here exactly as it did pre-#171 — #173's own whitelist, unchanged,
-        is what still catches genuine junk against a zero-binding prior;
-        this measured case is not that."""
-        envelope = _envelope("x = 1\n")
+        """Named bound (round 2b, recorded not closed): a prior that IS
+        readable and PROVABLY has zero PUBLIC bindings — every top-level
+        name is private or dunder — stays on the pre-#171 fallback bar.
+        Unlike the missing/unparseable cases above, this prior is fully
+        known; there just isn't anything public in it to check a fix
+        against, and #173's inertness whitelist is what still catches
+        genuine junk here (``x = 1`` isn't on it)."""
+        prior = "_helper = 1\n__version__ = '1.0'\n"
+        envelope = _envelope("x = 1\n", prior_code=prior)
 
         assert envelope["diagnostics"]["accept"] is True, envelope["diagnostics"][
             "accept_reason"
