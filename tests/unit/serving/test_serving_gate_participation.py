@@ -153,6 +153,29 @@ def test_workspace_satisfied_tests_no_longer_accept_wrong_code(
     assert result["envelope"]["diagnostics"]["accept"] is False, label
 
 
+def test_workspace_satisfied_tests_no_longer_accept_wrong_code_nested() -> None:
+    """#184 mechanism 2's interaction with #171: the issue's table
+    generalizes to a nested workspace file AND a nested (but different)
+    named target — the control must shadow the target's REAL nested
+    destination, not a flat basename copy that would leave todo/storage.py
+    (what the tests actually import) untouched either way."""
+    result = _build_gated(
+        code_writer="```python\ndef restock(item, n):\n    return n\n```\n",  # wrong
+        tests_writer=(
+            "```python\nfrom todo.storage import restock\n"
+            "def test_restock():\n    assert restock('x', 2) == 3\n```\n"
+        ),
+        requirement="fix restock so it adds two, in todo/helpers.py",
+        workspace_file="todo/storage.py",
+        workspace_body=_RESTOCK_INVENTORY,
+    )
+
+    assert result["executor"]["tests_pass"] is True
+    assert result["accept_gate"]["accept"] is False
+    assert result["accept_gate"]["reason"] == _NONPARTICIPATION_REASON
+    assert result["envelope"]["diagnostics"]["accept"] is False
+
+
 @pytest.mark.parametrize(
     ("label", "junk_code"),
     [
