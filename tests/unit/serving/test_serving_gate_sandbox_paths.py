@@ -423,6 +423,70 @@ def test_a3_nested_tests_module_is_importable_end_to_end() -> None:
     assert result["tests_pass"] is True, result["report"]
 
 
+# --- A4: a directory-shaped header never crashes the executor -------------
+
+
+def test_a4_a_bare_directory_name_alongside_its_own_file_does_not_crash() -> None:
+    """A bare 'todo' entry (a directory read, most likely) collides with
+    'todo/storage.py' at write time — todo/storage.py's mkdir(parents=True)
+    hits a FILE already at that name. Neither path-safety check catches
+    this by SYNTAX (both are ordinary-looking relative paths); _write_at
+    must survive the collision rather than crash the whole executor."""
+    tmp = _materialize_in_tmp(
+        {"todo": "not really a file", "todo/storage.py": "class TodoStore: pass\n"}
+    )
+    assert tmp.exists()  # no exception escaped _materialize
+
+
+def test_a4_a_bare_dot_header_does_not_crash() -> None:
+    tmp = _materialize_in_tmp({".": "whole repo?"})
+    assert tmp.exists()
+
+
+def test_a4_a_trailing_separator_header_does_not_crash() -> None:
+    tmp = _materialize_in_tmp({"todo/": "a directory, not a file"})
+    assert tmp.exists()
+    assert not (tmp / "todo").is_file()
+
+
+def test_a4_a_nul_byte_in_the_header_does_not_crash() -> None:
+    tmp = _materialize_in_tmp({"todo/\x00storage.py": "class TodoStore: pass\n"})
+    assert tmp.exists()
+
+
+def test_a4_end_to_end_through_the_real_executor_subprocess() -> None:
+    """The reviewer's exact repro, through the real accept_gather ->
+    accept_executor chain (subprocess, matching the review's own
+    observation): a bare 'todo' read alongside 'todo/storage.py' must
+    exit 0 with a path-free report, never a raw traceback naming the
+    sandbox's own tmp path."""
+    context = (
+        "assistant: [read todo]\n"
+        "  (a directory)\n"
+        "assistant: [read todo/storage.py]\n"
+        "  class TodoStore:\n"
+        "      pass\n"
+        "\n\nCurrent request: add a remove method to todo/storage.py"
+    )
+    gathered = _node(
+        GATHER,
+        {
+            "code_writer": _dep(
+                _sub_ensemble_response("```python\nclass TodoStore:\n    pass\n```\n")
+            ),
+            "test_writer": _dep(
+                _sub_ensemble_response(
+                    "```python\ndef test_x():\n    assert True\n```\n"
+                )
+            ),
+        },
+        input_data=context,
+    )
+    result = _executor_from_gather(gathered)  # check=True: raises on nonzero exit
+    assert "/" not in result["report"]
+    assert "\\" not in result["report"]
+
+
 # --- A2: a workspace entry that can't be placed makes the executor refuse -
 
 

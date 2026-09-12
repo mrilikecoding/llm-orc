@@ -691,11 +691,19 @@ def _enumerate_tests(tests: str) -> tuple[list[str], bool] | None:
 def _safe_relative_path(path: str) -> str | None:
     """``path`` unchanged when it is a safe sandbox-relative destination;
     ``None`` (refuse — never sanitize, #184 mechanism 2) when it is
-    absolute or contains a ``..`` component that would escape the sandbox
-    root."""
+    absolute, contains a ``..`` component that would escape the sandbox
+    root, or (#184 A4) is a directory-shaped or otherwise degenerate
+    header this check can catch by SYNTAX alone: a NUL byte, a bare ``.``,
+    a trailing separator, or any ``.``/empty path component (``todo//x.py``,
+    ``todo/./x.py``). A header that collides with another at WRITE TIME
+    (a bare ``todo`` alongside ``todo/storage.py`` — both individually
+    look like ordinary relative paths) cannot be caught by syntax; that is
+    ``_write_at``'s job, defensively."""
     if not path or path.startswith("/") or path.startswith("\\"):
         return None
-    if any(part == ".." for part in path.split("/")):
+    if "\x00" in path or path.endswith("/") or path == ".":
+        return None
+    if any(part in ("", ".", "..") for part in path.split("/")):
         return None
     return path
 
@@ -721,9 +729,19 @@ def _unplaceable_workspace_files(workspace: dict[str, str] | None) -> list[str]:
 
 
 def _write_at(tmp: str, relative_path: str, content: str) -> None:
-    dest = Path(tmp) / relative_path
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    dest.write_text(content, encoding="utf-8")
+    """Best-effort write — #184 A4: a workspace collision ``_safe_relative
+    _path`` cannot catch by syntax (a bare ``todo`` entry alongside
+    ``todo/storage.py``: the SECOND write's ``mkdir(parents=True)`` lands
+    on a FILE, not a directory) must never crash the whole executor with
+    an uncaught traceback naming the sandbox's own tmp path. Silently
+    skipped on failure, same fail-safe spirit as a path-safety refusal —
+    this is a placement collision, not a value worth raising over."""
+    try:
+        dest = Path(tmp) / relative_path
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_text(content, encoding="utf-8")
+    except (OSError, ValueError):
+        pass
 
 
 def _materialize(
