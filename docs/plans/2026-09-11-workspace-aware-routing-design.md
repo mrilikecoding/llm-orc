@@ -142,3 +142,19 @@ self-tests is returned unread.
   form. This differs from the UNNAMED-file build seam (slice D), which
   has nothing else to name the destination with and so rewrites to the
   discovered listing path.
+
+## Implementation notes (measured, 2026-09-12, independent review round)
+
+- Review finding 1 (BLOCKED, fixed): `_named_destination_matches`'s suffix
+  match requires the listing path to be AT LEAST as deep as the ask's own
+  naming — a listing SHALLOWER than the ask (bare basenames while the ask
+  names a directory-qualified path, e.g. a workspace-root/glob-anchor
+  mismatch) found zero matches and reported the destination ABSENT,
+  reopening row 10's blind-overwrite harm through a path-depth gap rather
+  than the verb gap. Fixed with a basename-equality fallback in
+  `_named_build_discovery` when the suffix match is empty and the ask
+  names a directory: exactly one basename match is existence UNKNOWN (not
+  confirmed), so it takes the same path as a truncated listing — request
+  the read of the ask's OWN path, never rewritten to the listing's
+  shallower one; two or more basename matches refuse naming them, same as
+  the existing bare-basename ambiguity bound.

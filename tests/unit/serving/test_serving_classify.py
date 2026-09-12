@@ -3947,6 +3947,37 @@ def test_named_destination_present_in_listing_requests_the_read() -> None:
     assert decision["build"] is False
 
 
+def test_named_destination_matches_a_shallower_listing_via_basename() -> None:
+    """Review finding 1 (BLOCKED, independent review of f71d5402): the
+    suffix match requires the listing path to be at least as deep as the
+    ask's own naming — a listing SHALLOWER than the ask (bare basenames,
+    while the ask names a directory-qualified path) found zero matches and
+    reported ABSENT, reopening the blind-overwrite harm through a path-
+    depth gap instead of the verb gap. reviewer's exact repro: row 10's
+    ask against a listing of bare basenames. Mutant check performed by
+    hand: removing the basename fallback (the ``if not matches and "/" in
+    named_file`` branch below) turns this red — the build ships greenfield
+    over todo/storage.py with no read, the exact harm."""
+    context = "assistant: [globbed py]\n  storage.py\n  cli.py\n  __init__.py"
+    decision = _classify({"task": _ROW_10_ASK, "context": context})
+    assert decision["needs_files"] == ["todo/storage.py"]
+    assert decision["build"] is False
+    # the ask's own naming is preserved, never rewritten to the listing's
+    # shallower path
+    assert decision["file"] == "todo/storage.py"
+
+
+def test_named_destination_shallower_listing_ambiguous_basename_refuses() -> None:
+    """The fallback's own ambiguity bound: two listed paths sharing the
+    ask's basename (a shallower listing than the ask's own naming) both
+    match — refuse naming them, never guess."""
+    context = "assistant: [globbed py]\n  storage.py\n  vendor/storage.py"
+    decision = _classify({"task": "add a method to lib/storage.py", "context": context})
+    assert decision["build"] is False
+    assert "storage.py" in decision["glob_failed"]
+    assert "vendor/storage.py" in decision["glob_failed"]
+
+
 def test_named_destination_absent_from_listing_builds_greenfield() -> None:
     """Instrument 3: the same ask, but the listing lacks todo/storage.py —
     greenfield build to todo/storage.py, exactly as today."""

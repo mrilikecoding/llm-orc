@@ -1787,7 +1787,17 @@ def _named_build_discovery(context: str, named_file: str) -> tuple[str, str, str
       today.
     - a bare-basename ask matching two or more listed paths -> refuse naming
       all of them (D's own bound: an honest ask, not a guess).
-    - absent from a complete listing -> greenfield, unchanged: "", "", "".
+    - a directory-qualified ask whose suffix match finds nothing, but the
+      listing is SHALLOWER than the ask's own naming (review finding 1: a
+      workspace-root/glob-anchor mismatch — the client's glob returned bare
+      basenames while the ask named a directory-qualified path) -> fall
+      back to basename equality; exactly one match is existence UNKNOWN,
+      not confirmed, so it takes the SAME path as a truncated listing:
+      request the read of the ask's OWN path (never rewritten to the
+      listing's shallower one) rather than confidently claim absence; two
+      or more basename matches -> refuse naming them.
+    - absent from a complete listing (no suffix match, and no basename
+      fallback match either) -> greenfield, unchanged: "", "", "".
     """
     listing = _latest_glob_listing(context)
     if listing is None:
@@ -1795,6 +1805,11 @@ def _named_build_discovery(context: str, named_file: str) -> tuple[str, str, str
     if listing.truncated:
         return "", named_file, ""
     matches = _named_destination_matches(named_file, listing.paths)
+    if not matches and "/" in named_file:
+        basename = named_file.rsplit("/", 1)[-1]
+        matches = [
+            path for path in listing.paths if path.rsplit("/", 1)[-1] == basename
+        ]
     if len(matches) > 1:
         listed = ", ".join(matches)
         return (
