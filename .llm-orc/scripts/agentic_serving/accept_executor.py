@@ -688,23 +688,56 @@ def _enumerate_tests(tests: str) -> tuple[list[str], bool] | None:
     return names, has_cases
 
 
+def _safe_relative_path(path: str) -> str | None:
+    """``path`` unchanged when it is a safe sandbox-relative destination;
+    ``None`` (refuse — never sanitize, #184 mechanism 2) when it is
+    absolute or contains a ``..`` component that would escape the sandbox
+    root."""
+    if not path or path.startswith("/") or path.startswith("\\"):
+        return None
+    if any(part == ".." for part in path.split("/")):
+        return None
+    return path
+
+
+def _write_at(tmp: str, relative_path: str, content: str) -> None:
+    dest = Path(tmp) / relative_path
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_text(content, encoding="utf-8")
+
+
 def _materialize(
     tmp: str,
     code: str,
     tests: str,
     workspace: dict[str, str] | None,
     target_file: str,
+    target_path: str = "",
 ) -> tuple[Path, Path]:
     """Write one child's fresh sandbox dir: conversation-written workspace
-    files, then the edit turn's target-file shadow, then solution.py and
-    tests.py — exactly the materialization the legacy single run did."""
+    files at their REAL relative paths (creating directories; an absolute
+    or escaping path is refused, never sanitized — #184 mechanism 2), then
+    the edit turn's target-file shadow at its real destination (``
+    target_path`` when given, else the flat ``target_file`` — the re-fix
+    route's back-compat shape), then solution.py and tests.py — the
+    runner's namespace model is unchanged; only real-path materialization
+    is added beside it (#184 mechanism 3: the runner's ``sys.path[0]`` is
+    already the sandbox root, so a package directory placed here is
+    importable, ``__init__.py`` or not)."""
     for name, body in (workspace or {}).items():
-        safe = Path(name).name
-        if safe and safe not in ("solution.py", "tests.py"):
-            (Path(tmp) / safe).write_text(str(body), encoding="utf-8")
-    safe_target = Path(target_file).name if target_file else ""
-    if safe_target and safe_target not in ("solution.py", "tests.py"):
-        (Path(tmp) / safe_target).write_text(code, encoding="utf-8")
+        safe = _safe_relative_path(name)
+        if not safe:
+            continue
+        basename = safe.rsplit("/", 1)[-1]
+        if basename in ("solution.py", "tests.py"):
+            continue
+        _write_at(tmp, safe, str(body))
+    shadow = target_path or target_file
+    safe_shadow = _safe_relative_path(shadow) if shadow else None
+    if safe_shadow:
+        basename = safe_shadow.rsplit("/", 1)[-1]
+        if basename not in ("solution.py", "tests.py"):
+            _write_at(tmp, safe_shadow, code)
     code_path = Path(tmp) / "solution.py"
     tests_path = Path(tmp) / "tests.py"
     code_path.write_text(code, encoding="utf-8")
@@ -719,9 +752,12 @@ def _run_one(
     target_file: str,
     only: str | None,
     timeout: float,
+    target_path: str = "",
 ) -> tuple[bool, str, int, list[str]]:
     with tempfile.TemporaryDirectory() as tmp:
-        code_path, tests_path = _materialize(tmp, code, tests, workspace, target_file)
+        code_path, tests_path = _materialize(
+            tmp, code, tests, workspace, target_file, target_path
+        )
         argv = [sys.executable, str(RUNNER), str(code_path), str(tests_path)]
         if only is not None:
             argv += ["--only", only]
@@ -762,6 +798,7 @@ def _ablation_reason(
     target_file: str,
     timeout: float,
     deadline: float,
+    target_path: str = "",
 ) -> str:
     """The #171 participation reason for a control run starting now: ""
     (participates — the control failed or crashed, proving necessity),
@@ -770,10 +807,13 @@ def _ablation_reason(
     the control does not run at all — FAIL CLOSED with an honest, distinct
     reason rather than silently defaulting to "necessity not disproven").
 
-    ``target_file`` is threaded straight into the control's own
-    materialization WITH the empty ``code`` (F3): the deliverable's bytes
-    must be absent from EVERY destination they were written to, including
-    the target-file shadow. Skipping the shadow instead (reverting the
+    ``target_file``/``target_path`` are threaded straight into the
+    control's own materialization WITH the empty ``code`` (F3): the
+    deliverable's bytes must be absent from EVERY destination they were
+    written to, including the target-file shadow — and (#184 mechanism 2)
+    that shadow is the deliverable's REAL destination, nested directory
+    included, not a flat basename copy that would leave a nested stale
+    file un-emptied. Skipping the shadow instead (reverting the
     destination to the workspace's own stale copy) answers "was this
     necessary GIVEN WHAT THE CLIENT ALREADY HAS", not "were these bytes
     necessary" — measured live turns are additive edits whose suite covers
@@ -783,7 +823,7 @@ def _ablation_reason(
     if time.monotonic() >= deadline:
         return _ABLATION_BUDGET_REASON
     control_ok, _report, _n_tests, _leaked = _run_one(
-        "", tests, workspace, target_file, None, timeout
+        "", tests, workspace, target_file, None, timeout, target_path
     )
     return _NONPARTICIPATION_REASON if control_ok else ""
 
@@ -797,6 +837,7 @@ def _run_children(
     children: list[str | None],
     *,
     control: bool = False,
+    target_path: str = "",
 ) -> tuple[list[str], int, str]:
     """Run each isolated child in turn, stopping early once the aggregate
     wall budget across the suite is spent — the per-child timeout bounds
@@ -840,7 +881,7 @@ def _run_children(
             )
             break
         ok, report, n_tests, leaked = _run_one(
-            code, tests, workspace, target_file, only, timeout
+            code, tests, workspace, target_file, only, timeout, target_path
         )
         total += n_tests
         empty_cases_child = only == "__cases__" and n_tests == 0 and not leaked
@@ -850,7 +891,7 @@ def _run_children(
     participation_reason = ""
     if control and not failures:
         participation_reason = _ablation_reason(
-            tests, workspace, target_file, timeout, start + budget
+            tests, workspace, target_file, timeout, start + budget, target_path
         )
     return failures, total, participation_reason
 
@@ -860,6 +901,7 @@ def _run_sandboxed(
     tests: str,
     workspace: dict[str, str] | None = None,
     target_file: str = "",
+    target_path: str = "",
 ) -> tuple[bool, str, int, str]:
     """Returns (tests_pass, report, n_tests, participation_reason) —
     ``participation_reason`` is "" unless the #171 ablation control (or its
@@ -867,6 +909,10 @@ def _run_sandboxed(
     empty (#166/#169 already refuse that; an ablation there is vacuous and
     would refuse every write-tests turn, #98) or when the real run itself
     already failed — the ablation only ever runs on the would-accept path.
+
+    ``target_path`` (#184 mechanism 2) is the deliverable's REAL
+    destination (nested directory included) — "" falls back to the flat
+    ``target_file`` (the re-fix route's shape today).
     """
     timeout = _timeout()
     budget = _aggregate_budget()
@@ -882,12 +928,12 @@ def _run_sandboxed(
         # covers the genuinely-nothing-to-run half of this branch.
         start = time.monotonic()
         ok, report, n_tests, _leaked = _run_one(
-            code, tests, workspace, target_file, None, timeout
+            code, tests, workspace, target_file, None, timeout, target_path
         )
         if not ok or not code.strip():
             return ok, report, n_tests, ""
         reason = _ablation_reason(
-            tests, workspace, target_file, timeout, start + budget
+            tests, workspace, target_file, timeout, start + budget, target_path
         )
         return ok, report, n_tests, reason
 
@@ -899,7 +945,14 @@ def _run_sandboxed(
 
     run_control = bool(code.strip())
     failures, total, participation_reason = _run_children(
-        code, tests, workspace, target_file, timeout, children, control=run_control
+        code,
+        tests,
+        workspace,
+        target_file,
+        timeout,
+        children,
+        control=run_control,
+        target_path=target_path,
     )
     if capped:
         failures.append(f"…capped at {_MAX_ISOLATED_TESTS} isolated tests")
@@ -937,6 +990,11 @@ def main() -> None:
         else {}
     )
     target_file = str(data.get("target_file", ""))
+    # #184 mechanism 2: the deliverable's REAL destination (nested
+    # directory included) — absent on the re-fix route today, which falls
+    # back to the flat target_file unchanged (_materialize/_run_sandboxed
+    # both treat "" the same way).
+    target_path = str(data.get("target_path", ""))
     raw_prior_surface = data.get("prior_surface")
     prior_surface = (
         [str(name) for name in raw_prior_surface]
@@ -957,7 +1015,7 @@ def main() -> None:
     tests, tests_imports_injected = _inject_test_imports(tests, code)
 
     tests_pass, report, n_tests, participation_reason = _run_sandboxed(
-        code, tests, workspace, target_file
+        code, tests, workspace, target_file, target_path
     )
 
     print(
