@@ -457,7 +457,20 @@ def test_a_mutation_pattern_test_where_the_deliverable_is_the_mutator_accepts() 
 def test_write_tests_shape_skips_the_ablation_on_empty_code() -> None:
     """#98: write-tests turns carry code: "" by design — an ablation there
     is vacuous (there is nothing to prove necessary) and would refuse every
-    write-tests turn."""
+    write-tests turn.
+
+    Doctrine 11 (pin the harm, not the mechanism): this fixture's real run
+    is ALREADY code="" — the tests pass against nothing but the workspace.
+    Confirmed by hand: a mutant that removes the emptiness check (calling
+    the ablation unconditionally, ``run_control = True``) makes the control
+    run the identical ``code=""`` call the real run already made, which
+    also passes — so it reports non-participation and the turn is wrongly
+    refused (red on the assertions below). This pin therefore already
+    flips under THAT mutant, constructed so it does; it is deliberately
+    silent to the OTHER mutant (the control disabled everywhere), which
+    happens to look identical to the correct skip-on-empty behavior from
+    this fixture alone — that regression is the budget pin's job, rewritten
+    (below) to require a workspace-satisfied junk deliverable be caught."""
     gathered: dict[str, Any] = {
         "requirement": "write tests for restock",
         "code": "",
@@ -484,18 +497,31 @@ _ABLATION_BUDGET_REASON = (
 
 def test_the_control_child_is_counted_inside_the_aggregate_budget() -> None:
     """The control is one extra child inside _run_children's aggregate wall
-    budget, not an unbounded add-on — a passing suite plus the control must
-    stay well inside the budget on an ordinary turn."""
+    budget, not an unbounded add-on: a workspace-satisfied junk deliverable
+    must still be CAUGHT (participates False) well inside the budget on an
+    ordinary turn.
+
+    Doctrine 11 (pin the harm, not the mechanism): the prior version of
+    this pin asserted ``participates is True`` over a genuinely-necessary
+    deliverable, which stays green whether or not the control ever runs —
+    if the control never spawns, ``participation_reason`` stays "" and
+    ``participates`` defaults True regardless. Confirmed by hand: patching
+    accept_executor.py's ``run_control = bool(code.strip())`` line to
+    ``run_control = False`` (the control never spawns) left the OLD
+    assertions green. This version asserts the OUTCOME the control exists
+    to produce instead, and the same mutant flips it red (measured):
+    without a control run, a workspace-satisfied junk deliverable would
+    wrongly report ``participates: True``."""
     start = time.monotonic()
     result = _node(
         "accept_executor.py",
         {
             "gather": _dep(
                 {
-                    "requirement": "adds",
-                    "code": "def add(a, b):\n    return a + b\n",
-                    "tests": "def test_add():\n    assert add(1, 2) == 3\n",
-                    "workspace": {},
+                    "requirement": "fix restock so it adds two",
+                    "code": "x = 1",
+                    "tests": _RESTOCK_TESTS_BODY,
+                    "workspace": {"inventory.py": _RESTOCK_INVENTORY},
                     "target_file": "",
                 }
             )
@@ -503,7 +529,10 @@ def test_the_control_child_is_counted_inside_the_aggregate_budget() -> None:
     )
     elapsed = time.monotonic() - start
     assert result["tests_pass"] is True
-    assert result["participates"] is True
+    assert result["participates"] is False, (
+        "the control must catch the workspace-satisfied junk deliverable"
+    )
+    assert result["participation_reason"] == _NONPARTICIPATION_REASON
     assert elapsed < 10, "the control must not meaningfully slow an ordinary turn"
 
 
