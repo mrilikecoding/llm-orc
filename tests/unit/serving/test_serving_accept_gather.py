@@ -658,3 +658,68 @@ def test_gather_prior_surface_empty_when_no_target_file_named() -> None:
     out = _gather("Write is_even(n).", TESTS, CODE)
     assert out["target_file"] == ""
     assert out["prior_surface"] == []
+
+
+# --- review F3: same basename in two directories must never be conflated --
+
+
+def test_prior_surface_ambiguous_basename_across_directories_yields_no_surface() -> (
+    None
+):
+    """Two files sharing a basename in different directories — the LAST
+    rendered block used to win regardless of which one the ask names. A
+    bare-basename ask ('storage.py', no directory) can't disambiguate, so
+    the surface is empty rather than guessed (the named bound)."""
+    criteria = (
+        "Conversation so far:\n"
+        "assistant: [read todo/storage.py]\n"
+        "  class TodoStore:\n"
+        "      def push(self):\n"
+        "          pass\n"
+        "assistant: [read lib/storage.py]\n"
+        "  def helper():\n"
+        "      return 1\n"
+        "\n\nCurrent request: add a complete method to storage.py"
+    )
+    out = _gather(criteria, TESTS, CODE)
+    assert out["target_file"] == "storage.py"
+    assert out["prior_surface"] == []
+
+
+def test_prior_surface_reordered_reads_still_yield_no_surface() -> None:
+    """Same ask, the two reads in the OPPOSITE order — the verdict must
+    not depend on read order (review F3's demonstrated flip)."""
+    criteria = (
+        "Conversation so far:\n"
+        "assistant: [read lib/storage.py]\n"
+        "  def helper():\n"
+        "      return 1\n"
+        "assistant: [read todo/storage.py]\n"
+        "  class TodoStore:\n"
+        "      def push(self):\n"
+        "          pass\n"
+        "\n\nCurrent request: add a complete method to storage.py"
+    )
+    out = _gather(criteria, TESTS, CODE)
+    assert out["target_file"] == "storage.py"
+    assert out["prior_surface"] == []
+
+
+def test_prior_surface_uses_the_full_path_when_the_ask_names_one() -> None:
+    """When the ask names a real directory component, the matching block
+    is the one whose FULL rendered path equals it — never conflated with
+    a same-basename file elsewhere, and independent of read order."""
+    criteria = (
+        "Conversation so far:\n"
+        "assistant: [read todo/storage.py]\n"
+        "  class TodoStore:\n"
+        "      def push(self):\n"
+        "          pass\n"
+        "assistant: [read lib/storage.py]\n"
+        "  def helper():\n"
+        "      return 1\n"
+        "\n\nCurrent request: add a complete method to todo/storage.py"
+    )
+    out = _gather(criteria, TESTS, CODE)
+    assert out["target_file"] == "storage.py"
+    assert out["prior_surface"] == ["TodoStore"]
