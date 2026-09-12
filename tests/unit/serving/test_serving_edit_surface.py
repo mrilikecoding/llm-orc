@@ -32,8 +32,12 @@ import sys
 from pathlib import Path
 from typing import Any
 
+import yaml
+
 REPO = Path(__file__).resolve().parents[3]
 SCRIPTS = REPO / ".llm-orc" / "scripts" / "agentic_serving"
+AGENTIC = REPO / ".llm-orc" / "ensembles" / "agentic-serving"
+CODE_GENERATOR_YAML = AGENTIC / "code-generator.yaml"
 
 # The seed repo's real todo/storage.py (docs/plans/2026-09-11-daily-driver-
 # probe/seed-repo.tgz) — its only top-level PUBLIC name is the class itself
@@ -401,3 +405,17 @@ def test_h_the_refusal_reason_carries_no_path_or_username() -> None:
     # the reason names the DROPPED surface, never the test source that
     # happened to exercise it
     assert "assert" not in reason
+
+
+# --- the prompt half: the coder is told to ship the whole file on an edit -
+
+
+def test_the_coder_prompt_asks_for_the_whole_file_on_a_visible_edit() -> None:
+    """The guard above is what makes the turn honest when this is ignored
+    (doctrine 2: structure, not a third prompt rule) — but the prompt
+    should still ask for the right thing in the first place."""
+    spec = yaml.safe_load(CODE_GENERATOR_YAML.read_text())
+    coder = next(a for a in spec["agents"] if a["name"] == "coder")
+    prompt = coder["system_prompt"]
+    assert "whole" in prompt.lower() or "complete" in prompt.lower()
+    assert "current content" in prompt.lower() or "shown" in prompt.lower()
