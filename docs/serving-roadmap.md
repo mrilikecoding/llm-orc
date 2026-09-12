@@ -127,22 +127,53 @@ the reset; plan delegation in smaller batches).
   fix/update verb overwrites it blind (live row 10: `todo/storage.py`
   replaced by an in-memory class, gate-accepted, seed tests now red).
 
-### Next up (in order)
+### Next up (in order) — practitioner-agreed 2026-09-11: close structures, not instances
 
-1. **#185 — read-before-write for a named existing file** (classify only;
-   rides D's glob seam: listing present → path present → request the
-   read; absent → greenfield; no listing → one glob round). Instruments
-   on the issue; ladder identity pin as in D; live row = probe turn 2 in
-   a fresh session → `read` then a `write` keeping `_load/_save/add/list/
-   complete` and adding `remove`, seed tests green. Then B-1's guard has
-   its prior and the edit shape converts end to end.
-2. **#182 slice A** (package paths in the gate sandbox) and **C** (#123
-   code+tests per turn) — turns 1 and 3 of the probe; brief to write.
-3. **#184** (re-fix materializes the workspace) — small, ANY environment.
-4. #183 A (per-node elapsed), C (`num_ctx`); #181.
-5. Still gated on the practitioner: the push; **#167** volume paid runs
-   (Anthropic arms) and **#141**; a Go-backed comparator arm is an
-   option to raise, not spend.
+Today's ratio (3 merged, 5 filed) is what guards produce: each closed one
+instance and the next live row found the sibling (D closed the unnamed
+mint, row 10 found the named-file blind overwrite, #185). Two structural
+arcs subsume most of the open shape; the 7-turn probe
+(`docs/plans/2026-09-11-daily-driver-probe/`) is the scoreboard — a slice
+is done when its rows convert and no row regresses.
+
+1. **Workspace-aware routing (classify; subsumes #185, D's residual, the
+   routing half of #123).** One listing per session through D's glob
+   seam; every build resolves against it deterministically: named file
+   present → read before write; absent → greenfield; unnamed → exact
+   match or ask. No verb heuristics decide existence. Live: probe turn 2
+   in a fresh session → `read`, then a `write` keeping the prior surface;
+   turns 6 and 9 stay honest asks; ladder routing byte-identical (pin as
+   in D). Then B-1's guard always has its prior.
+2. **The gate sandbox mirrors the workspace (subsumes #182 slice A and
+   #184).** Materialize conversation-written and client-read files at
+   their real relative paths on all four gated routes (build-gated, held,
+   re-fix, write-tests), so package imports resolve and re-fix sees
+   siblings. Live: ladder turn 7's report names the client's pytest
+   result; probe turns 1 and 3 get a correct `tests/test_*.py` destination
+   and `from todo.storage import` (with #123's code+tests routing, turns 1
+   and 3 convert).
+3. #123 code+tests per turn (routing rides arc 1; the two-file emit rides
+   arc 2); then #183 A (per-node elapsed) and C (`num_ctx`); #181.
+4. Still gated on the practitioner: the push; #167 and #141 (Anthropic
+   arms); a Go-backed comparator arm is an option to raise, not spend.
+
+Process changes that come with this (also agreed):
+
+- **Review moves upstream.** The implementer brief REQUIRES three
+  self-tests and the report must show them: every new pin red under a
+  mutant that reintroduces the defect (doctrine 11); every new field or
+  convention traced to every consumer (envelope, ledger, trace, held
+  round, recap) before it exists; a fresh-input wrong-match/wrong-accept
+  hunt on any heuristic. Then one author-independent review round, not
+  three — that is where the token spend went.
+- **Measure by rows converted.** The seeded-package probe is a second
+  battery beside the 13-turn ladder (~10 min); rerun it after every
+  merge. File only what a battery row shows; review minors are recorded
+  as bounds in the brief.
+- **Parallelize on disjoint seams only** (classify vs gate never
+  conflicted today); batch reviews and implementations under the account
+  session limit (~4M subagent tokens/day before it bites; Sonnet
+  implementers, Opus reviews).
 
 ### Owed live rows
 
