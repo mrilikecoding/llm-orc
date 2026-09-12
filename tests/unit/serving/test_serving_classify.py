@@ -3609,32 +3609,26 @@ def test_unnamed_file_build_requests_a_glob_round() -> None:
     assert decision["target"] != "code-seat"
 
 
-def test_unnamed_file_build_refuses_on_ambiguous_identifiers() -> None:
-    """Instrument 2: the same ask with the seed listing rendered — names the
-    two plausible candidates (storage.py via TodoStore, cli.py via CLI),
-    never __init__.py (matches neither ask identifier), never a mint."""
+def test_unnamed_file_build_uniquely_matches_the_exactly_named_cli() -> None:
+    """Instrument 2 (rework — review record docs/plans/2026-09-11-182-d-
+    review/): with EXACT-match only, ask-06's "the CLI" names cli.py
+    exactly, and nothing else in the ask names storage.py exactly (its
+    only mention is via the class "TodoStore", which no longer fuzzy-
+    matches "storage" — see the zero-match test below). One exact match ->
+    the existing read seam fires for it, never __init__.py."""
     decision = _classify({"task": _ASK_06, "context": _SEED_LISTING})
+    assert decision["target"] == "need-files"
+    assert decision["needs_files"] == ["todo/cli.py"]
     assert decision["build"] is False
-    assert decision["file"] == ""
-    assert "todo/cli.py" in decision["glob_failed"]
-    assert "todo/storage.py" in decision["glob_failed"]
-    assert "todo/__init__.py" not in decision["glob_failed"]
 
 
-def test_unnamed_file_build_refusal_never_mints_solution_py() -> None:
-    """Doctrine 11 harm pin: no field of the decision names solution.py on
-    an ambiguous-identifier refusal. Mutant check performed by hand: revert
-    _unnamed_build_discovery's ambiguous-match branch to `return "", "", ""`
-    (the old silent greenfield fallback) — this test goes red, confirming
-    it actually exercises the fix rather than a vacuous truth."""
-    decision = _classify({"task": _ASK_06, "context": _SEED_LISTING})
-    assert "solution.py" not in json.dumps(decision)
-
-
-def test_unnamed_file_build_matches_a_unique_identifier() -> None:
-    """Instrument 3: a class name (TodoStore) uniquely names storage.py —
-    the existing read seam (_files_to_request) fires for it, exactly as if
-    the user had named the file directly."""
+def test_unnamed_file_build_todostore_alone_now_zero_matches() -> None:
+    """Instrument 3 (rework): "TodoStore" no longer fuzzy-resolves to
+    storage.py — {"todo", "store"} does not EQUAL "storage" or any of its
+    _basename_components. Zero matches over a non-empty listing refuses,
+    naming every candidate, rather than guessing. Resolving an identifier
+    to the file that actually DEFINES it is the content-grep rung's job
+    (#121, need-grep) — a follow-up, not this MATCH step."""
     decision = _classify(
         {
             "task": (
@@ -3644,8 +3638,27 @@ def test_unnamed_file_build_matches_a_unique_identifier() -> None:
             "context": _SEED_LISTING,
         }
     )
-    assert decision["target"] == "need-files"
-    assert decision["needs_files"] == ["todo/storage.py"]
+    assert decision["build"] is False
+    assert decision["file"] == ""
+    assert "todo/__init__.py" in decision["glob_failed"]
+    assert "todo/storage.py" in decision["glob_failed"]
+    assert "todo/cli.py" in decision["glob_failed"]
+
+
+def test_unnamed_file_build_refusal_never_mints_solution_py() -> None:
+    """Doctrine 11 harm pin, re-anchored on a genuine two-way EXACT match
+    ("storage" and "cli" both named verbatim): no field of the decision
+    names solution.py. Mutant check performed by hand: revert
+    _unnamed_build_discovery's ambiguous-match branch to `return "", "", ""`
+    (the old silent greenfield fallback) — this test goes red, confirming
+    it actually exercises the fix rather than a vacuous truth."""
+    decision = _classify(
+        {
+            "task": "add logging to the storage and the cli",
+            "context": _SEED_LISTING,
+        }
+    )
+    assert "solution.py" not in json.dumps(decision)
 
 
 def test_unnamed_file_build_refuses_naming_both_ambiguous_matches() -> None:
@@ -3705,6 +3718,77 @@ def test_unnamed_file_build_truncated_listing_never_guesses() -> None:
     assert decision["file"] == ""
     assert "cut at 50 paths" in decision["glob_failed"]
     assert "no file matching" not in decision["glob_failed"]
+
+
+# --- review record docs/plans/2026-09-11-182-d-review/: two measured
+# wrong-unique-match defects in the prefix-stemming MATCH heuristic,
+# reworked to exact-equality-only matching plus a test-infrastructure
+# candidate exclusion. These pin the reviewer's own two repro inputs
+# verbatim so a regression back to fuzzy matching goes red here first. ---
+
+
+def test_finding_1_never_uniquely_matches_a_bare_conftest() -> None:
+    """Review Finding 1 (HIGH): "add a config option to enable verbose
+    output" against a workspace holding only tests/conftest.py used to
+    reach build: True, file: 'tests/conftest.py' — a build silently
+    gated against the project's own pytest fixture file. conftest.py is
+    now excluded from candidacy outright (alongside setup.py and anything
+    under a tests/ or test/ directory); the listing is non-empty but
+    every candidate is test infrastructure, so this refuses rather than
+    falling back to a silent greenfield mint."""
+    decision = _classify(
+        {
+            "task": "add a config option to enable verbose output",
+            "context": "assistant: [globbed py]\n  tests/conftest.py",
+        }
+    )
+    assert decision["build"] is False
+    assert decision["file"] != "tests/conftest.py"
+    assert decision["file"] == ""
+    assert "tests/conftest.py" in decision["glob_failed"]
+
+
+def test_finding_2_store_never_prefix_matches_story_or_storefront() -> None:
+    """Review Finding 2 (MEDIUM): "add error handling to the data store
+    when saving fails" against a workspace holding only story.py (or
+    storefront.py) used to uniquely match on the shared 4-char prefix
+    "stor" — words with no real relationship. Exact-equality-only
+    matching refuses instead: "store" != "story" and "store" !=
+    "storefront"."""
+    for basename in ("story.py", "storefront.py"):
+        decision = _classify(
+            {
+                "task": "add error handling to the data store when saving fails",
+                "context": f"assistant: [globbed py]\n  {basename}",
+            }
+        )
+        assert decision["build"] is False, basename
+        assert decision["file"] == "", basename
+        assert basename in decision["glob_failed"], basename
+
+
+def test_exact_match_still_resolves_a_plainly_named_module() -> None:
+    """Exact equality still matches the ordinary case: a bare English
+    module reference names the file outright (no fix/update verb, so this
+    exercises the unnamed-file build path directly rather than the older
+    module-stem-phrasing seam)."""
+    context = "assistant: [globbed py]\n  storage.py"
+    for task in ("add a feature to the storage module", "add validation in storage"):
+        decision = _classify({"task": task, "context": context})
+        assert decision["target"] == "need-files", task
+        assert decision["needs_files"] == ["storage.py"], task
+
+
+def test_exact_match_camelcase_components_resolve_a_matching_file() -> None:
+    """ "HTTPServer" splits into components {"http", "server"} (an acronym
+    run followed by a capitalized word, not one fused token) — a file
+    whose OWN components are the same set matches exactly."""
+    context = "assistant: [globbed py]\n  http_server.py"
+    decision = _classify(
+        {"task": "add a timeout option to HTTPServer", "context": context}
+    )
+    assert decision["target"] == "need-files"
+    assert decision["needs_files"] == ["http_server.py"]
 
 
 # --- instrument 6: the 13-turn ladder must be routing-byte-identical.
