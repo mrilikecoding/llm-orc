@@ -19,10 +19,13 @@ import sys
 
 import _helpers
 from _helpers import HELD_TESTS_MARKER as _HELD_MARKER
+from _helpers import fold_workspace as _fold_workspace
 from _helpers import payload as _payload
 from _helpers import public_top_level_names as _public_top_level_names
+from _helpers import resolve_workspace_entries as _resolve_workspace_entries
 from _helpers import response as _response
 from _helpers import terminal as _terminal
+from _helpers import workspace_entries as _workspace_entries
 
 
 def _trim_to_parse(code: str, max_drops: int = 10) -> str:
@@ -68,76 +71,20 @@ _FILE_RE = re.compile(
     r"\b([\w./-]+\.(?:py|js|ts|jsx|tsx|json|md|txt|ya?ml|sh|go|rs|java|c|cpp|h))\b"
 )
 
-# A file block in the rendered context: conversation-written ([wrote ...])
-# or client-read ([read ...], issue #83). '(truncated)' / '(failed)' /
-# '(oversize)' / '(over-budget)' (C1, #145) variants are never
-# materialized; a failed read line carries trailing reason text after ']'
-# and so never matches the anchored $. MAJOR 1 (review round 1): a variant
-# missing from this alternation isn't rejected — the non-greedy name-group
-# absorbs " (variant)" into the "path" instead, and the header still
-# matches as if unvariant, materializing a corrupted phantom file (this
-# grammar now has four consumers across the codebase — classify.py,
-# refix_gather.py, and the caller that produces it; a shared vocabulary
-# constant is noted as follow-up, not built here).
-_FILE_HEADER_RE = re.compile(
-    r"^assistant: \[(?:wrote|read) ([^\]]+?)"
-    r"( \((?:truncated|failed|oversize|over-budget)\))?\]$"
-)
-
-
-def _workspace_entries(context: str) -> list[tuple[str, str]]:
-    """Ordered (full path, body) for every valid (non-variant) read/write
-    block in ``context`` — the FULL path exactly as rendered, not
-    truncated to a basename. ``_workspace`` derives its {basename: body}
-    mapping from this (last write for a given basename wins, preserving
-    its existing behavior); ``_prior_surface`` (#182 slice B-1, review F3
-    fix) uses the full paths directly, so two files sharing a basename in
-    different directories are never conflated.
-
-    Fenced block grammar (2026-07-10): body lines carry a two-space indent
-    the renderer added; the indent is stripped on materialization and ANY
-    other non-empty line ends the body. Headers live only at column 0, so a
-    header lookalike inside untrusted file content strips back to plain
-    content and can never materialize a phantom file.
-    """
-    entries: list[tuple[str, str]] = []
-    lines = context.splitlines()
-    index = 0
-    while index < len(lines):
-        header = _FILE_HEADER_RE.match(lines[index])
-        index += 1
-        if not header:
-            continue
-        body_lines = []
-        while index < len(lines):
-            line = lines[index]
-            if line.startswith("  "):
-                body_lines.append(line[2:])
-            elif not line.strip():
-                body_lines.append("")
-            else:
-                break
-            index += 1
-        if not header.group(2):
-            entries.append((header.group(1), "\n".join(body_lines).strip()))
-    return entries
-
-
-def _fold_basenames(entries: list[tuple[str, str]]) -> dict[str, str]:
-    """{basename: body}, folding ``entries`` in order — the last block for
-    a given basename wins."""
-    files: dict[str, str] = {}
-    for path, body in entries:
-        files[path.rsplit("/", 1)[-1]] = body
-    return files
+# The shared file-block grammar and workspace reader now live in
+# _helpers.py (#184 mechanism 1: one workspace reader, relative-path
+# keyed, shared by accept_gather, tests_gather, and refix_gather). Kept as
+# module attributes here for the existing direct-import test surface
+# (``from accept_gather import _workspace``).
+_FILE_HEADER_RE = _helpers._FILE_HEADER_RE
 
 
 def _workspace(context: str) -> dict[str, str]:
-    """Conversation-written and client-read files as {basename: body} for
-    the sandbox — the last block for a given basename wins (unchanged
-    behavior; see ``_workspace_entries`` for the full-path-preserving
-    parse this derives from)."""
-    return _fold_basenames(_workspace_entries(context))
+    """{relative path: body} for the sandbox (#184 mechanism 1) — the
+    last block for a given path wins; a header's own client-relative path
+    is the key, not its basename, so two files sharing a basename in
+    different directories no longer conflate."""
+    return _fold_workspace(_workspace_entries(context))
 
 
 def _top_level_defs(text: str) -> frozenset[str]:
@@ -152,6 +99,19 @@ def _top_level_defs(text: str) -> frozenset[str]:
         for n in tree.body
         if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
     )
+
+
+def _dotted_module_name(filename: str) -> str:
+    """The importable dotted module name for a workspace file's relative
+    path (#184 A6): ``todo/util.py`` -> ``todo.util``; ``todo/__init__.py``
+    -> ``todo`` (the package itself — a real ``import`` never resolves an
+    ``__init__`` module by that name). "" when nothing importable is left
+    (a root-level ``__init__.py``)."""
+    stem = filename.rsplit(".", 1)[0]
+    parts = stem.split("/")
+    if parts and parts[-1] == "__init__":
+        parts = parts[:-1]
+    return ".".join(parts)
 
 
 def _inject_workspace_imports(
@@ -169,6 +129,12 @@ def _inject_workspace_imports(
     import (the runner execs code THEN tests into one shared namespace, so
     the import always wins), retargeting the gate at the workspace's copy
     regardless of whether the candidate was right or wrong.
+
+    The module name is the DOTTED path (#184 A6, ``_dotted_module_name``):
+    a nested workspace file's basename-minus-extension alone
+    (``todo/util.py`` -> ``todo/util``) is never a valid identifier, so
+    before this the injector silently stopped firing exactly for the
+    package shape this arc exists to support.
     """
     try:
         tree = ast.parse(text)
@@ -178,9 +144,11 @@ def _inject_workspace_imports(
     used = {n.id for n in ast.walk(tree) if isinstance(n, ast.Name)}
     prelude: list[str] = []
     for filename, body in workspace.items():
-        module = filename.rsplit(".", 1)[0]
+        module = _dotted_module_name(filename)
+        if not module or not all(part.isidentifier() for part in module.split(".")):
+            continue
         already_imported = f"import {module}" in text or f"from {module} import" in text
-        if already_imported or not module.isidentifier():
+        if already_imported:
             continue
         exported = _top_level_defs(body)
         missing = sorted((used - defined - candidate_defined) & exported)
@@ -241,11 +209,9 @@ def _prior_surface(
 def main() -> None:
     payload = _payload(sys.stdin.read().strip())
     requirement = str(payload.get("input_data", ""))
-    entries: list[tuple[str, str]] = []
+    context = ""
     if _REQUEST_MARKER in requirement:
         context, requirement = requirement.rsplit(_REQUEST_MARKER, 1)
-        entries = _workspace_entries(context)
-    workspace = _fold_basenames(entries)
     deps = payload.get("dependencies", {})
     if not isinstance(deps, dict):
         deps = {}
@@ -256,20 +222,28 @@ def main() -> None:
     # sentinel in user text worst-cases into a reject, never a wrong accept.
     tests_terminal = _terminal(_response(deps.get("test_writer", {})))
     held = not tests_terminal.strip() and _HELD_MARKER in requirement
+    held_block = ""
     if held:
         requirement, _, held_block = requirement.partition(_HELD_MARKER)
         requirement = requirement.strip()
-        tests = _extract_tests(held_block)
-    else:
-        tests = _extract_tests(tests_terminal)
+
+    # #184 A1 rework: the ask's own named destination is a root-resolution
+    # hint (rule b) — computed BEFORE the workspace so a lone absolute
+    # header naming the file the turn is about to edit recovers its real
+    # directory instead of falling all the way to a bare basename.
+    file_match = _FILE_RE.search(requirement)
+    target_path = file_match.group(1) if file_match else ""
+    target_file = target_path.rsplit("/", 1)[-1] if target_path else ""
+
+    entries, workspace_root_rule = _resolve_workspace_entries(context, target_path)
+    workspace = _fold_workspace(entries)
+
+    tests = _extract_tests(held_block) if held else _extract_tests(tests_terminal)
     code = _extract_code(_terminal(_response(deps.get("code_writer", {}))))
     candidate_defined = _top_level_defs(code)
     tests = _inject_workspace_imports(tests, workspace, candidate_defined)
     code = _inject_workspace_imports(code, workspace, candidate_defined)
 
-    file_match = _FILE_RE.search(requirement)
-    target_path = file_match.group(1) if file_match else ""
-    target_file = target_path.rsplit("/", 1)[-1] if target_path else ""
     prior_surface = _prior_surface(entries, target_file, target_path)
 
     print(
@@ -280,7 +254,9 @@ def main() -> None:
                 "tests": tests,
                 "held": held,
                 "workspace": workspace,
+                "workspace_root_rule": workspace_root_rule,
                 "target_file": target_file,
+                "target_path": target_path,
                 "prior_surface": prior_surface,
             }
         )

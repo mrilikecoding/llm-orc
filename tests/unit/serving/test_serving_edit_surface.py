@@ -524,6 +524,30 @@ def test_f2_fragment_over_the_config_prior_still_refuses() -> None:
     assert "CONFIG" in result["accept_gate"]["reason"]
 
 
+def test_dropped_surface_reason_names_no_path_when_the_target_is_nested() -> None:
+    """#184 instrument 7 (reason hygiene): the same fragment-over-a-prior
+    refusal, but the target now lives in a directory (todo/conf.py) — the
+    refusal must still name only the bare filename, never the sandbox or
+    the client's own relative path."""
+    context = _context(
+        "todo/conf.py", _CONFIG_PRIOR, "harden CONFIG loading in todo/conf.py"
+    )
+    tests_writer = (
+        "```python\nfrom todo.conf import get\n\n"
+        "def test_get():\n    assert get('a') == 1\n```\n"
+    )
+    code_writer = "```python\ndef get(k):\n    return {}[k]\n```\n"
+    result = _build_gated_edit(context, code_writer, tests_writer)
+
+    assert result["executor"]["surface_missing"] == ["CONFIG"]
+    assert result["accept_gate"]["accept"] is False
+    reason = result["accept_gate"]["reason"]
+    assert "CONFIG" in reason
+    assert "conf.py" in reason
+    assert "/" not in reason
+    assert "\\" not in reason
+
+
 # --- F5: an unparseable deliverable reports the load error, not a surface -
 
 

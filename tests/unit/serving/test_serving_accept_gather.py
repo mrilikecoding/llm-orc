@@ -408,6 +408,39 @@ def test_gather_injects_missing_workspace_imports() -> None:
     assert out["tests"].startswith("from stack import Stack\n")
 
 
+def test_a6_nested_workspace_file_still_gets_its_import_injected() -> None:
+    """A6 (review, MEDIUM): the injector derived a module name by
+    stripping the extension only — todo/util.py -> "todo/util", never an
+    identifier, so a workspace-import omission silently stopped being
+    repaired exactly for the package shape #184 exists to support. It
+    must derive the DOTTED module name from the relative path instead."""
+    criteria = (
+        "Conversation so far:\n"
+        "assistant: [read todo/util.py]\n"
+        "  def clamp(n):\n"
+        "      return max(0, n)\n"
+        "\n\nCurrent request: add tests for clamp in todo/util.py"
+    )
+    tests_without_import = "def test_clamp():\n    assert clamp(-1) == 0\n"
+    out = _gather(criteria, tests_without_import, CODE)
+    assert out["tests"].startswith("from todo.util import clamp\n")
+
+
+def test_a6_nested_init_module_injects_as_the_package_itself() -> None:
+    """todo/__init__.py resolves to the package "todo", not "todo.__init__"
+    — an import must match how a real interpreter resolves it."""
+    criteria = (
+        "Conversation so far:\n"
+        "assistant: [read todo/__init__.py]\n"
+        "  def get_version():\n"
+        "      return '1.0'\n"
+        "\n\nCurrent request: add tests for get_version in todo/__init__.py"
+    )
+    tests_without_import = "def test_version():\n    assert get_version() == '1.0'\n"
+    out = _gather(criteria, tests_without_import, CODE)
+    assert out["tests"].startswith("from todo import get_version\n")
+
+
 def test_gather_leaves_deliverables_with_imports_untouched() -> None:
     criteria = (
         "Conversation so far:\n"
@@ -723,3 +756,28 @@ def test_prior_surface_uses_the_full_path_when_the_ask_names_one() -> None:
     out = _gather(criteria, TESTS, CODE)
     assert out["target_file"] == "storage.py"
     assert out["prior_surface"] == ["TodoStore"]
+
+
+def test_a1_single_absolute_read_of_the_edit_target_keeps_its_directory() -> None:
+    """A1 (review, MAJOR): the arc's own motivating shape — a client reads
+    exactly the file it is about to edit, and nothing else is visible.
+    Before the fix, the single absolute header's directory was silently
+    lost (the ask's own destination is the rule-b hint that recovers it),
+    which also disabled B-1's dropped-surface protection on exactly this
+    turn shape. Mutant: reverting root resolution to dirname-only (this
+    branch's ORIGINAL single-header rule) turns this red."""
+    criteria = (
+        "Conversation so far:\n"
+        "assistant: [read /Users/u/proj/todo/storage.py]\n"
+        "  class TodoStore:\n"
+        "      def push(self, item):\n"
+        "          pass\n"
+        "\n\nCurrent request: add a remove method to todo/storage.py"
+    )
+    out = _gather(criteria, TESTS, CODE)
+    assert out["workspace"] == {
+        "todo/storage.py": ("class TodoStore:\n    def push(self, item):\n        pass")
+    }
+    assert out["target_path"] == "todo/storage.py"
+    assert out["prior_surface"] == ["TodoStore"]
+    assert out["workspace_root_rule"] == "suffix-match"
