@@ -1,0 +1,8 @@
+exit=0
+--- git status ---
+?? add.py
+--- diff stat ---
+untracked: add.py
+--- pytest (throwaway copy) ---
+...                                                                      [100%]
+3 passed in 0.01s
