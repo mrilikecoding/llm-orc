@@ -106,6 +106,38 @@ todo/storage.py` whose content keeps `add`, `list`, `complete` and adds
 Sequencing: B-1 lands after the #171 rework merges (it reuses the surface
 helper; do not fork it).
 
+Implementation notes (measured):
+
+- The check runs BEFORE the real sandboxed test run, not only before the
+  #171 ablation control. The probe's own turn-2 shape fails the REAL test
+  run first (a NameError/ImportError from the missing class) — the
+  ablation control never runs on an already-failing path, so a check
+  wired in only alongside it never fires for the fragment case. Measured
+  by hand while drafting the fix (an ablation-only placement left test
+  (a) red). The surface check is a pure fact about the deliverable's own
+  source, independent of gather's tests, so nothing is lost by deciding
+  it first.
+- Consequence: `accept_executor.py` short-circuits entirely on a surface
+  miss — no real test run, no ablation subprocess. It reports
+  `tests_pass: true` / `n_tests: 0` as an internal convention (never a
+  claim the tests ran), matching the existing shape where `participates:
+  false` already implies `tests_pass: true` on every #171 scenario — this
+  keeps `accept_gate`'s joined reason a single clean sentence instead of
+  "...no longer defines X; tests did not pass".
+- The seam is `accept_executor.py`, not `accept_gate.py`. `accept_gate.py`
+  does not depend on `gather` in the fresh round (`build-gated-round.yaml`
+  wires `accept_gate: depends_on: [executor, judge]`) — only the held
+  round wires `gather` in. `accept_executor.py` already depends on
+  `gather` on both round shapes, so no new dependency edge was needed.
+- `refix_select._public_top_level_names` / `_assign_target_names` moved to
+  `_helpers.py` (public names `public_top_level_names` /
+  `assign_target_names`) rather than being forked a second time, per the
+  brief's instruction.
+- Confirmed (tests b, c, d): a whole-file edit that keeps every prior name
+  accepts; one that drops a single name among several refuses even when
+  the SURVIVING tests all pass (the ladder-turn-2 bound); a byte-identical
+  resubmission accepts (#171's OK-9 shape, unaffected).
+
 ## Explicitly not doing here
 
 Path fidelity in the gate sandbox (slice A), code+tests per turn (#123 /
