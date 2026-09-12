@@ -47,6 +47,10 @@ _workspace_entries = workspace_entries
 
 GATHER = SCRIPTS / "accept_gather.py"
 EXECUTOR = SCRIPTS / "accept_executor.py"
+REFIX_GATHER = SCRIPTS / "refix_gather.py"
+REFIX_SELECT = SCRIPTS / "refix_select.py"
+REFIX_ENVELOPE = SCRIPTS / "refix_envelope.py"
+PRIOR_CODE_MARKER = "[PRIOR CODE: this turn's write, before the re-fix]"
 
 
 def _node(script: Path, deps: dict[str, Any], input_data: str = "") -> dict[str, Any]:
@@ -420,3 +424,69 @@ def test_edit_shadow_generalizes_to_a_nested_destination() -> None:
     )
     result = _executor_from_gather(gathered)
     assert result["tests_pass"] is True, result["report"]
+
+
+# --- mechanism 4: re-fix gets the workspace, end to end -------------------
+
+
+def test_refix_candidate_imports_a_conversation_written_sibling() -> None:
+    """Instrument 2: the ladder turn-7 shape through the REAL re-fix chain
+    (refix_gather -> refix_select -> accept_executor -> refix_envelope),
+    storage.py conversation-written. Mutant (report in the commit body):
+    refix_gather emitting no workspace turns this red — the candidate's
+    'from storage import save_todos' fails to load, and the envelope's
+    accept_reason names a load failure instead of the real test result."""
+    conversation = (
+        "assistant: [wrote storage.py]\n"
+        "  def save_todos(todos):\n"
+        "      pass\n"
+        "  def load_todos():\n"
+        "      return []\n"
+        "assistant: [ran pytest -q]\n"
+        "  F.\n"
+        "  E       assert 5 == 8\n"
+        "  1 failed, 1 passed in 0.02s\n"
+        "assistant: [read test_todo.py]\n"
+        "  from todo import add_todo\n"
+        "\n"
+        "  def test_add_todo():\n"
+        "      todos = []\n"
+        "      add_todo(todos, 'x')\n"
+        "      assert todos == ['x']"
+    )
+    prior_code = (
+        "from storage import save_todos, load_todos\n\n"
+        "def add_todo(todos, item):\n"
+        "    todos.append(item)\n"
+        "    save_todos(todos)\n"
+    )
+    dispatch_input = (
+        f"Conversation so far:\n{conversation}\n\n"
+        f"{PRIOR_CODE_MARKER}\n{prior_code}\n\n"
+        "Current request: fix add_todo in todo.py"
+    )
+    gathered = _node(REFIX_GATHER, {}, input_data=dispatch_input)
+    assert gathered["workspace"]["storage.py"] == (
+        "def save_todos(todos):\n    pass\ndef load_todos():\n    return []"
+    )
+    assert gathered["needs_model_edit"] is True
+
+    # the model_edit seat regenerates the same correct candidate, still
+    # importing the sibling module the conversation wrote
+    model_edit_response = f"```python\n{prior_code}\n```\n"
+    selected = _node(
+        REFIX_SELECT,
+        {"gather": _dep(gathered), "model_edit": _dep(model_edit_response)},
+    )
+    executor = _node(EXECUTOR, {"select": _dep(selected)})
+    envelope = _node(
+        REFIX_ENVELOPE, {"select": _dep(selected), "executor": _dep(executor)}
+    )
+
+    assert (
+        executor["report"]
+        != "code failed to load: ModuleNotFoundError: No module named 'storage'"
+    )
+    diagnostics = envelope["diagnostics"]
+    assert diagnostics["accept"] is True, diagnostics["accept_reason"]
+    assert "failed to load" not in diagnostics["accept_reason"]

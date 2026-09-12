@@ -317,3 +317,34 @@ def test_a_fix_that_removes_a_private_helper_still_accepts() -> None:
     result = _executor_result(selected)
 
     assert result["tests_pass"] is True, result["report"]
+
+
+# --- #184 mechanism 4: select passes the workspace through to the executor -
+
+
+def test_select_passes_the_workspace_through_unmodified() -> None:
+    gather = {
+        "deterministic_code": "def scale(): pass\n",
+        "visible_test": "def test_x():\n    pass\n",
+        "prior_code": "",
+        "task": "fix scale",
+        "target_file": "storage.py",
+        "target_path": "storage.py",
+        "workspace": {"storage.py": "def save_todos(todos):\n    pass\n"},
+    }
+    selected = _select(gather)
+    assert selected["workspace"] == {"storage.py": "def save_todos(todos):\n    pass\n"}
+    assert selected["target_path"] == "storage.py"
+
+
+def test_select_workspace_defaults_to_empty_when_gather_carries_none() -> None:
+    gather = {
+        "deterministic_code": "def scale(): pass\n",
+        "visible_test": "def test_x():\n    pass\n",
+        "prior_code": "",
+        "task": "fix scale",
+        "target_file": "storage.py",
+    }
+    selected = _select(gather)
+    assert selected["workspace"] == {}
+    assert selected["target_path"] == ""
