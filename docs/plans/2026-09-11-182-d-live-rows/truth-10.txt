@@ -1,0 +1,22 @@
+exit=0
+--- git status ---
+ M todo/storage.py
+--- diff stat ---
+ todo/storage.py | 46 +++++++++-------------------------------------
+ 1 file changed, 9 insertions(+), 37 deletions(-)
+--- pytest (throwaway copy) ---
+___________________________ test_complete_marks_done ___________________________
+
+tmp_path = PosixPath('/private/var/folders/91/yhfbl6_d22sc8ncqln1tj2k00000gn/T/pytest-of-nathangreen/pytest-3757/test_complete_marks_done0')
+
+    def test_complete_marks_done(tmp_path):
+>       store = TodoStore(tmp_path / "t.json")
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       TypeError: TodoStore.__init__() takes 1 positional argument but 2 were given
+
+tests/test_storage.py:17: TypeError
+=========================== short test summary info ============================
+FAILED tests/test_storage.py::test_add_assigns_incrementing_ids - TypeError: ...
+FAILED tests/test_storage.py::test_list_returns_added_todos - TypeError: Todo...
+FAILED tests/test_storage.py::test_complete_marks_done - TypeError: TodoStore...
+3 failed in 0.13s
