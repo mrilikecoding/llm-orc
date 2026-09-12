@@ -8,16 +8,24 @@ accept/another-round loop; this node produces the verdict, it does not iterate).
 The AND lives here (deterministic) rather than in a guard, because the guard
 predicate grammar is truthiness / == literal only.
 
-    accept = tests_pass AND tests_adequate AND participates
+    accept = tests_pass AND tests_adequate AND participates AND surface_kept
 
 The first two catch orthogonal failures: the executor catches wrong code real
 tests exercise; the isolated judge catches trivially-tested or under-covering
 outputs the executor passes (ADR-048 §1). ``participates`` (#171) is the
 executor's own runtime ablation control: a suite that passes identically with
 the deliverable's bytes absent never actually exercised it, which neither of
-the other two inputs can see. Independence: none of the three comes from a
-builder the produced artifact could steer — tests_pass and participates are
-real sandboxed execution, tests_adequate is a fresh-context judge (ADR-048 §3).
+the other two inputs can see. ``surface_kept`` (#182 slice B-1) is a fourth,
+independent fact: whether the deliverable's own top-level names are a superset
+of the prior module's public surface (gather's ``prior_surface``) — an edit
+that silently drops a public name can still pass the OTHER three checks (the
+surviving tests exercise only what's left), so this is not subsumed by them.
+When it fails, the refusal sentence names what was dropped and stands ALONE —
+never joined with "tests did not pass"/"tests inadequate...", which may be
+true only incidentally. Independence: none of the four comes from a builder
+the produced artifact could steer — tests_pass, participates, and
+surface_kept are real sandboxed execution / deterministic AST facts,
+tests_adequate is a fresh-context judge (ADR-048 §3).
 
 Emits JSON: {accept, tests_pass, tests_adequate, reason}
 """
@@ -72,6 +80,42 @@ def _extract_str(resp: str, key: str) -> str:
     return ""
 
 
+def _extract_list(resp: str, key: str) -> list[str]:
+    """The list at ``key`` in ``resp``'s JSON, or [] — same lenient-JSON,
+    no-regex-fallback rule as ``_extract_str`` (the executor is a
+    deterministic script, never a model seat)."""
+    try:
+        obj = json.loads(resp)
+        if isinstance(obj, dict):
+            value = obj.get(key, [])
+            if isinstance(value, list):
+                return [str(v) for v in value]
+    except (json.JSONDecodeError, TypeError):
+        pass
+    return []
+
+
+def _surface_reason(target_file: str, missing: list[str]) -> str:
+    """#182 slice B-1: the refusal sentence for a deliverable that dropped
+    a name the prior module's public surface defined. Composed HERE, not
+    in the executor (review F1 rework) — so it can stand ALONE as the
+    reason. It is never joined with "tests did not pass" or "tests
+    inadequate to verify the requirement", which may be true only
+    incidentally (the surviving tests can still pass, or fail for the
+    unrelated reason the missing surface causes) — the surface loss is
+    what the next round needs to fix, and is the only thing said."""
+    listed = missing[:3]
+    names = ", ".join(listed)
+    remaining = len(missing) - len(listed)
+    if remaining > 0:
+        names += f", and {remaining} more"
+    target = target_file or "the file"
+    return (
+        f"the deliverable for {target} no longer defines {names}; "
+        "an edit must ship the whole updated file"
+    )
+
+
 def _read_deps(raw: str) -> dict[str, object]:
     try:
         envelope = json.loads(raw)
@@ -83,9 +127,7 @@ def _read_deps(raw: str) -> dict[str, object]:
     return {}
 
 
-def _resolve_adequacy(
-    deps: dict[str, object], reasons: list[str]
-) -> tuple[bool, bool]:
+def _resolve_adequacy(deps: dict[str, object], reasons: list[str]) -> tuple[bool, bool]:
     """(tests_adequate, carried) from the judge verdict or the held flag.
 
     The judge is a sub-ensemble seat (#84): its dep response is the nested
@@ -107,6 +149,45 @@ def _resolve_adequacy(
     return False, False
 
 
+def _refusal_reasons(
+    executor_resp: str,
+    reasons: list[str],
+    *,
+    tests_pass: bool,
+    tests_adequate: bool,
+    participates: bool,
+    surface_missing: list[str],
+) -> list[str]:
+    """The refusal reason(s) for a rejected turn.
+
+    A surface loss (#182 slice B-1) stands ALONE — never joined with a
+    tests_pass/tests_adequate clause that may be true only incidentally
+    once the surface itself has gone (the surviving tests can still pass,
+    or fail for the unrelated reason the missing surface causes). The
+    surface loss is what the next round needs to fix, so it is the only
+    thing said.
+
+    Otherwise, the pre-existing orthogonal-catches composition — but only
+    when ``reasons`` is still empty (an unreadable executor/judge verdict
+    already explains itself and is not compounded with the others)."""
+    if surface_missing:
+        target_file = _extract_str(executor_resp, "target_file")
+        return [_surface_reason(target_file, surface_missing)]
+    if reasons:
+        return reasons
+    composed = list(reasons)
+    if not participates:
+        composed.append(
+            _extract_str(executor_resp, "participation_reason")
+            or "the tests never exercise the deliverable"
+        )
+    if not tests_pass:
+        composed.append("tests did not pass")
+    if not tests_adequate:
+        composed.append("tests inadequate to verify the requirement")
+    return composed
+
+
 def main() -> None:
     deps = _read_deps(sys.stdin.read().strip())
 
@@ -125,17 +206,22 @@ def main() -> None:
         participates = True
     tests_adequate, carried = _resolve_adequacy(deps, reasons)
 
-    accept = bool(tests_pass and tests_adequate and participates)
-    if not accept and not reasons:
-        if not participates:
-            reasons.append(
-                _extract_str(executor_resp, "participation_reason")
-                or "the tests never exercise the deliverable"
-            )
-        if not tests_pass:
-            reasons.append("tests did not pass")
-        if not tests_adequate:
-            reasons.append("tests inadequate to verify the requirement")
+    # #182 slice B-1 (review F1 rework): a fourth, independent AND input —
+    # a deterministic fact about the deliverable's own source, computed by
+    # the executor alongside (never instead of) the real run.
+    surface_missing = _extract_list(executor_resp, "surface_missing")
+    surface_kept = not surface_missing
+
+    accept = bool(tests_pass and tests_adequate and participates and surface_kept)
+    if not accept:
+        reasons = _refusal_reasons(
+            executor_resp,
+            reasons,
+            tests_pass=tests_pass,
+            tests_adequate=tests_adequate,
+            participates=participates,
+            surface_missing=surface_missing,
+        )
 
     if reasons:
         reason = "; ".join(reasons)
