@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import ast
 import json
+import posixpath
 import re
 from typing import Any
 
@@ -38,6 +39,125 @@ _FENCE_RE = re.compile(r"```([a-zA-Z0-9_+-]*)\n(.*?)```", re.DOTALL)
 # prose) and classify (rung 2's failure-shape routing signal), issue #83 /
 # convergent-fix rung 2.
 _RAN_HEADER_RE = re.compile(r"^assistant: \[ran (.+?)( \((failed|truncated)\))?\](.*)$")
+
+# A file block in the rendered context: conversation-written ([wrote ...])
+# or client-read ([read ...], issue #83). '(truncated)' / '(failed)' /
+# '(oversize)' / '(over-budget)' (C1, #145) variants are never
+# materialized; a failed read line carries trailing reason text after ']'
+# and so never matches the anchored $. A variant missing from this
+# alternation isn't rejected — the non-greedy name-group absorbs "
+# (variant)" into the "path" instead, and the header still matches as if
+# unvariant, materializing a corrupted phantom file. Shared by every
+# reader of the conversation workspace (#184: accept_gather, tests_gather,
+# refix_gather) — one grammar, so a variant added for one consumer cannot
+# drift from the others.
+_FILE_HEADER_RE = re.compile(
+    r"^assistant: \[(?:wrote|read) ([^\]]+?)"
+    r"( \((?:truncated|failed|oversize|over-budget)\))?\]$"
+)
+
+
+def raw_workspace_entries(context: str) -> list[tuple[str, str]]:
+    """Ordered (path exactly as rendered, body) for every valid
+    (non-variant) read/write block in ``context`` — the client's OWN path,
+    absolute or relative, exactly as its tool call carried it; never
+    truncated to a basename. ``workspace_entries`` (below) is what every
+    consumer actually reads — it additionally strips a shared absolute
+    prefix when one is present (#184 mechanism 1).
+
+    Fenced block grammar (2026-07-10): body lines carry a two-space indent
+    the renderer added; the indent is stripped on materialization and ANY
+    other non-empty line ends the body. Headers live only at column 0, so a
+    header lookalike inside untrusted file content strips back to plain
+    content and can never materialize a phantom file.
+    """
+    entries: list[tuple[str, str]] = []
+    lines = context.splitlines()
+    index = 0
+    while index < len(lines):
+        header = _FILE_HEADER_RE.match(lines[index])
+        index += 1
+        if not header:
+            continue
+        body_lines = []
+        while index < len(lines):
+            line = lines[index]
+            if line.startswith("  "):
+                body_lines.append(line[2:])
+            elif not line.strip():
+                body_lines.append("")
+            else:
+                break
+            index += 1
+        if not header.group(2):
+            entries.append((header.group(1), "\n".join(body_lines).strip()))
+    return entries
+
+
+def _common_absolute_root(paths: list[str]) -> str:
+    """The longest shared absolute DIRECTORY among ``paths`` (#184
+    mechanism 1) — "" when fewer than one path is absolute, or when the
+    only thing they share is the filesystem root itself (a header with no
+    real common project root: recorded fresh-input bound, two clients'
+    absolute trees in one render leave every path exactly as rendered,
+    and downstream materialization refuses an absolute path rather than
+    guess which root it belongs to).
+
+    A single absolute path's own directory counts (the flat-workspace
+    subcase: one file at the client's repo root strips to its bare
+    basename, exactly as basename-keying already did)."""
+    abs_paths = [p for p in paths if p.startswith("/")]
+    if not abs_paths:
+        return ""
+    if len(abs_paths) == 1:
+        root = abs_paths[0].rsplit("/", 1)[0]
+    else:
+        root = posixpath.commonpath(abs_paths)
+    return root if root not in ("", "/") else ""
+
+
+def _relative_to_root(path: str, root: str) -> str:
+    """``path`` with ``root`` stripped, when it actually shares it —
+    unchanged otherwise (a relative header, or an absolute header sharing
+    no common root with the others: left absolute on purpose, #184's
+    path-safety check refuses to materialize it rather than guess)."""
+    if not root:
+        return path
+    if path == root:
+        return path.rsplit("/", 1)[-1]
+    prefix = root + "/"
+    return path[len(prefix) :] if path.startswith(prefix) else path
+
+
+def workspace_entries(context: str) -> list[tuple[str, str]]:
+    """Ordered (RELATIVE path, body) for every read/write block in
+    ``context`` (#184 mechanism 1) — the client's own absolute prefix
+    stripped once (see ``_common_absolute_root``), so ``todo/storage.py``
+    and ``lib/storage.py`` stay two distinct files instead of folding to
+    one ``storage.py`` by basename. A header already relative (the common
+    live shape — the server's own echo mechanism names files by their
+    relative path already) passes through unchanged."""
+    raw = raw_workspace_entries(context)
+    root = _common_absolute_root([path for path, _ in raw])
+    return [(_relative_to_root(path, root), body) for path, body in raw]
+
+
+def fold_workspace(entries: list[tuple[str, str]]) -> dict[str, str]:
+    """{relative path: body}, folding ``entries`` in order — the last
+    block for a given path wins. Keyed by the FULL relative path (#184
+    mechanism 1), not a basename — two files sharing a basename in
+    different directories no longer conflate."""
+    files: dict[str, str] = {}
+    for path, body in entries:
+        files[path] = body
+    return files
+
+
+def workspace(context: str) -> dict[str, str]:
+    """{relative path: body} for the sandbox — the one workspace reader
+    (#184): shared by ``accept_gather`` (build routes), ``tests_gather``
+    (write-tests, #98), and ``refix_gather`` (re-fix, #184)."""
+    return fold_workspace(workspace_entries(context))
 
 
 def payload(raw: str) -> dict[str, Any]:
