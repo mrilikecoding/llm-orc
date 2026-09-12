@@ -174,16 +174,20 @@ def main() -> None:
     # Only checked when something survived .strip(), so this cannot change
     # the emptiness branch below.
     inert = candidate_present and _is_inert(code)
-    # F-1 (#171 round 2 review): a prior module with NO public top-level
-    # def/class (constants-only settings, a dict-only rates table, an
-    # __init__ re-export module) makes the smoke-only bar unconditionally
-    # "loads cleanly" — the ablation control's empty-code run satisfies
-    # that identically (an "import solution" check observes nothing about
-    # the candidate), so `participates` would be False for EVERY candidate
-    # against this whole class of prior and the route could never
-    # converge. Fall back to the pre-#171 bar (load cleanly, plus #173's
-    # inertness whitelist) instead of applying the participation gate when
-    # there is no surface to derive a real check from.
+    # F-1 (#171 round 2/3 review): refix_select's smoke surface now covers
+    # every public top-level BINDING, not just def/class (round 3 widened
+    # constants/dict-only settings modules into the surface instead of
+    # exempting them — round 2's original fallback for those reopened the
+    # exact clobber #173 closed). What is left surface-less is a prior with
+    # ZERO public bindings of any kind (an empty module, or one that only
+    # imports names) — there the smoke-only bar is unconditionally "loads
+    # cleanly", which the ablation control's empty-code run satisfies
+    # identically (an "import solution" check observes nothing about the
+    # candidate), so `participates` would be False for EVERY candidate
+    # against that narrow class and the route could never converge. Fall
+    # back to the pre-#171 bar (load cleanly, plus #173's inertness
+    # whitelist) instead of applying the participation gate in exactly
+    # that case.
     smoke_surface_empty = smoke_only and bool(
         selected.get("smoke_surface_empty", False)
     )

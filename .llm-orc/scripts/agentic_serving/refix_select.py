@@ -26,6 +26,17 @@ underscore (private helpers and dunders alike) is excluded. A legitimate
 re-fix that inlines or deletes a private helper binds nothing the module's
 public surface ever promised, and refusing it for that is refusing a
 correct fix.
+
+F-1, round 3 (widened, not skipped): a constants-only settings module or a
+dict-only rates table has no def/class, so the F-1 fallback originally
+skipped the participation check for it entirely — which reopened the exact
+clobber #173 closed for def-bearing modules (a junk ``x = 1`` shipped
+against a constants-only prior). The surface now also includes top-level
+assignment targets (``Assign``/``AnnAssign`` with a plain ``Name`` target,
+simple tuple/list unpacking too), public ones only, same as def/class. The
+"loads cleanly" fallback is now reserved for a prior with literally ZERO
+public bindings of any kind (an empty module, or one that only imports
+names — imports were never part of the surface, before or after this).
 """
 
 from __future__ import annotations
@@ -41,30 +52,65 @@ from _helpers import response as _response
 from _helpers import terminal as _terminal
 
 
+def _assign_target_names(target: ast.expr) -> set[str]:
+    """Public plain-``Name`` targets an assignment target binds: a bare
+    ``Name`` (excluding a leading underscore, same rule as def/class), or a
+    ``Tuple``/``List`` of them for simple unpacking (``A, B = 1, 2``).
+    Anything else — ``Attribute``, ``Subscript``, ``Starred`` — contributes
+    no name, same as it always has for def/class (this function only ever
+    ADDS names, never removes one the old rule already caught)."""
+    if isinstance(target, ast.Name):
+        return set() if target.id.startswith("_") else {target.id}
+    if isinstance(target, (ast.Tuple, ast.List)):
+        names: set[str] = set()
+        for elt in target.elts:
+            names |= _assign_target_names(elt)
+        return names
+    return set()
+
+
+def _public_top_level_names(tree: ast.Module) -> list[str]:
+    """Every PUBLIC top-level binding ``prior_code`` makes: def/class names
+    (F-2), plus (F-1 round 3, widened rather than skipped) plain-assignment
+    targets — ``Assign`` and ``AnnAssign`` with a ``Name`` target, simple
+    tuple/list unpacking included. A settings module's ``PORT = 8080`` is a
+    public binding exactly the way a function name is; a fix that drops it
+    must refuse for the same reason a fix that drops a function refuses.
+    Import statements bind names too but are deliberately NOT surface here
+    (never were) — an import-only module (an ``__init__`` re-export, say)
+    has zero public bindings by this function's own definition, which is
+    what routes it to the "loads cleanly" fallback below."""
+    names: set[str] = set()
+    for node in tree.body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            if not node.name.startswith("_"):
+                names.add(node.name)
+        elif isinstance(node, ast.Assign):
+            for assign_target in node.targets:
+                names |= _assign_target_names(assign_target)
+        elif isinstance(node, ast.AnnAssign):
+            names |= _assign_target_names(node.target)
+    return sorted(names)
+
+
 def _smoke_test(prior_code: str) -> tuple[str, bool]:
     """(test text, has_surface): a smoke test asserting the candidate
-    imports cleanly and still binds every PUBLIC top-level function/class
-    name ``prior_code`` defined (F-2: a leading underscore — private
-    helpers and dunders alike — is excluded; a fix that inlines or drops a
-    private helper binds nothing the public surface ever promised). No
-    prior surface (unparseable, or the prior module's public surface is
-    empty) degrades to the "loads cleanly" bar alone — deterministic,
-    import/getattr shape only, no behavior claims. ``has_surface`` is False
-    in exactly that degraded case (#171 review M3): refix_envelope needs to
-    tell "no surface to check" apart from "these tests happen not to
-    exercise the deliverable" so it can give the surface-less sub-path its
-    own actionable reason."""
+    imports cleanly and still binds every PUBLIC top-level name
+    ``prior_code`` defined — def/class names, plus top-level assignment
+    targets (F-1 round 3). No prior surface (unparseable, or the prior
+    module has ZERO public bindings of any kind — an empty module, or one
+    that only imports names) degrades to the "loads cleanly" bar alone —
+    deterministic, import/getattr shape only, no behavior claims.
+    ``has_surface`` is False in exactly that degraded case (#171 review
+    M3): refix_envelope needs to tell "no surface to check" apart from
+    "these tests happen not to exercise the deliverable" so it can give
+    the surface-less sub-path its own actionable reason."""
     try:
         tree = ast.parse(prior_code)
     except SyntaxError:
         names: list[str] = []
     else:
-        names = sorted(
-            n.name
-            for n in tree.body
-            if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
-            and not n.name.startswith("_")
-        )
+        names = _public_top_level_names(tree)
     asserts = "".join(
         f'    assert hasattr(solution, "{name}"), "{name}"\n' for name in names
     )
