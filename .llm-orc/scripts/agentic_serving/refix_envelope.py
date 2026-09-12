@@ -191,8 +191,26 @@ def main() -> None:
     smoke_surface_empty = smoke_only and bool(
         selected.get("smoke_surface_empty", False)
     )
+    # Round 2b (independent confirmation review): the fallback above is
+    # only warranted when the prior IS readable and PROVABLY has zero
+    # public bindings — not when its surface could not be determined at
+    # all. `smoke_prior_status` (from refix_select's `_smoke_test`) tells
+    # the two apart: "missing" (no `[PRIOR CODE]` marker — no information,
+    # not "empty file") and "unparseable" (present but fails to parse,
+    # reachable live via the renderer's (truncated)/(oversize) write
+    # variants) both mean "we don't know", and this route must fail
+    # CLOSED rather than silently accept whatever loads. "ok" is the only
+    # status the surface-empty fallback above was ever meant to cover.
+    smoke_prior_status = str(selected.get("smoke_prior_status", "ok"))
+    prior_unreadable = smoke_only and smoke_prior_status in ("missing", "unparseable")
     effective_participates = participates or smoke_surface_empty
-    accept = tests_pass and candidate_present and not inert and effective_participates
+    accept = (
+        tests_pass
+        and candidate_present
+        and not inert
+        and not prior_unreadable
+        and effective_participates
+    )
     # Names the target (review round 1): #166's caller guard names the file
     # it declined to write, and a refusal the client cannot map to a file is
     # worth less. The target comes from select, which took it from gather's
@@ -204,6 +222,20 @@ def main() -> None:
         reason = (
             f"re-fix candidate for {target} has no executable statement; "
             "the original is unchanged"
+        )
+    elif prior_unreadable:
+        # Path-free (#168 discipline) and never "loads cleanly" — the
+        # candidate may well load fine, but there is nothing to check that
+        # against, and this route must not say otherwise.
+        reason = (
+            f"no prior content for {target} was available to check the fix "
+            "against; the original is unchanged"
+            if smoke_prior_status == "missing"
+            else (
+                f"the current version of {target} could not be read whole, "
+                "so the fix cannot be checked against it; the original is "
+                "unchanged"
+            )
         )
     elif not effective_participates:
         # #171: re-fix has no adequacy seat — this is the only place its

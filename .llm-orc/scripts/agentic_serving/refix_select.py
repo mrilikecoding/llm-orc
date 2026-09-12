@@ -37,6 +37,18 @@ simple tuple/list unpacking too), public ones only, same as def/class. The
 "loads cleanly" fallback is now reserved for a prior with literally ZERO
 public bindings of any kind (an empty module, or one that only imports
 names — imports were never part of the surface, before or after this).
+
+Round 2b (independent confirmation review): the fallback above was only
+ever meant for a prior that IS readable and PROVABLY has zero public
+bindings — not for "we could not determine the surface at all". Two such
+undetermined shapes: ``prior_code`` is empty (the ``[PRIOR CODE]`` marker
+was never populated) and ``prior_code`` is present but fails to parse
+(reachable live via the renderer's ``(truncated)``/``(oversize)`` write
+variants). Both now refuse honestly instead of silently degrading to
+"loads cleanly" — see ``_smoke_test``'s ``prior_status`` and
+``refix_envelope``'s handling of it. A prior with only private/dunder
+bindings stays on the fallback (named bound, recorded in the design
+brief, not closed).
 """
 
 from __future__ import annotations
@@ -93,29 +105,41 @@ def _public_top_level_names(tree: ast.Module) -> list[str]:
     return sorted(names)
 
 
-def _smoke_test(prior_code: str) -> tuple[str, bool]:
-    """(test text, has_surface): a smoke test asserting the candidate
-    imports cleanly and still binds every PUBLIC top-level name
-    ``prior_code`` defined — def/class names, plus top-level assignment
-    targets (F-1 round 3). No prior surface (unparseable, or the prior
-    module has ZERO public bindings of any kind — an empty module, or one
-    that only imports names) degrades to the "loads cleanly" bar alone —
-    deterministic, import/getattr shape only, no behavior claims.
-    ``has_surface`` is False in exactly that degraded case (#171 review
-    M3): refix_envelope needs to tell "no surface to check" apart from
-    "these tests happen not to exercise the deliverable" so it can give
-    the surface-less sub-path its own actionable reason."""
+_BARE_SMOKE_TEXT = "def test_refix_candidate_loads_cleanly():\n    import solution\n"
+
+
+def _smoke_test(prior_code: str) -> tuple[str, bool, str]:
+    """(test text, has_surface, prior_status).
+
+    ``prior_status`` is ``"missing"`` when ``prior_code`` is empty (the
+    ``[PRIOR CODE]`` marker was never populated — ``refix_gather`` has NO
+    information about the client's file, not "the file is empty"),
+    ``"unparseable"`` when ``prior_code`` is present but fails to parse
+    (reachable live via the renderer's ``(truncated)``/``(oversize)`` write
+    variants, which garble the file's actual content), or ``"ok"``
+    otherwise.
+
+    Round 2b correction (independent confirmation review): ``has_surface``
+    is only meaningful when ``prior_status`` is ``"ok"`` — "missing" and
+    "unparseable" mean the caller could not determine whether the module
+    had a surface AT ALL, and the caller (refix_envelope) must refuse
+    outright rather than silently degrade to the "loads cleanly" bar; that
+    fallback is reserved for a prior that IS readable and PROVABLY has zero
+    public bindings (an empty module, one that only imports names, or one
+    whose only top-level names are private/dunder — named bound: junk
+    against that last shape still ships under the loads-cleanly bar,
+    recorded not closed, see the design brief)."""
+    if not prior_code:
+        return _BARE_SMOKE_TEXT, False, "missing"
     try:
         tree = ast.parse(prior_code)
     except SyntaxError:
-        names: list[str] = []
-    else:
-        names = _public_top_level_names(tree)
+        return _BARE_SMOKE_TEXT, False, "unparseable"
+    names = _public_top_level_names(tree)
     asserts = "".join(
         f'    assert hasattr(solution, "{name}"), "{name}"\n' for name in names
     )
-    text = "def test_refix_candidate_loads_cleanly():\n    import solution\n" + asserts
-    return text, bool(names)
+    return _BARE_SMOKE_TEXT + asserts, bool(names), "ok"
 
 
 def main() -> None:
@@ -140,8 +164,9 @@ def main() -> None:
     smoke_only = not visible_test.strip()
     prior_code = str(gathered.get("prior_code", ""))
     smoke_surface_empty = False
+    smoke_prior_status = "ok"
     if smoke_only:
-        tests, has_surface = _smoke_test(prior_code)
+        tests, has_surface, smoke_prior_status = _smoke_test(prior_code)
         smoke_surface_empty = not has_surface
     else:
         tests = visible_test
@@ -156,6 +181,7 @@ def main() -> None:
                 "edit_kind": edit_kind,
                 "smoke_only": smoke_only,
                 "smoke_surface_empty": smoke_surface_empty,
+                "smoke_prior_status": smoke_prior_status,
             }
         )
     )
