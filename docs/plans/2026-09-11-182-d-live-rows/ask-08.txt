@@ -1,0 +1,1 @@
+Add priority support to the todo app: each todo has a priority of low, medium, or high (default medium). TodoStore.add takes an optional priority, the CLI add command accepts --priority, list output shows the priority, and the tests cover it.
