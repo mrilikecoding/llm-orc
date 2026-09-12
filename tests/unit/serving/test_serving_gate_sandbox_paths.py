@@ -846,3 +846,25 @@ def test_a2_refix_refuses_when_a_workspace_file_could_not_be_placed() -> None:
     assert diagnostics["accept"] is False
     assert "could not be placed in the sandbox" in diagnostics["accept_reason"]
     assert "/" not in diagnostics["accept_reason"]
+
+
+def test_c1_unplaceable_names_carry_no_separator_or_control_character() -> None:
+    """Review C1: a directory-shaped header (``todo/``) or a header with a
+    NUL byte used to reach the wire verbatim inside the unplaceable list —
+    a path separator and a control character, both of which the
+    path-free refusal discipline forbids. The name that reaches the wire
+    is the last non-empty component with control characters removed, or
+    a fixed token when nothing printable is left."""
+    from accept_executor import _unplaceable_workspace_files
+
+    names = _unplaceable_workspace_files(
+        {"todo/": "x", "sto\x00rage.py": "y", "\x00": "z", "/abs/lib.py": "w"}
+    )
+    assert names
+    for name in names:
+        assert "/" not in name, name
+        assert all(ch.isprintable() for ch in name), repr(name)
+    assert "todo" in names
+    assert "storage.py" in names
+    assert "lib.py" in names
+    assert "(unnamed)" in names

@@ -721,11 +721,19 @@ def _unplaceable_workspace_files(workspace: dict[str, str] | None) -> list[str]:
     if not workspace:
         return []
     names = [
-        path.rsplit("/", 1)[-1] or path
-        for path in workspace
-        if _safe_relative_path(path) is None
+        _wire_name(path) for path in workspace if _safe_relative_path(path) is None
     ]
     return sorted(names)
+
+
+def _wire_name(path: str) -> str:
+    """The last non-empty component of ``path`` with control characters
+    removed, or ``(unnamed)`` — review C1: ``todo/`` used to reach the
+    wire as ``todo/`` and a NUL byte verbatim."""
+    parts = [part for part in path.split("/") if part]
+    last = parts[-1] if parts else ""
+    printable = "".join(ch for ch in last if ch.isprintable())
+    return printable or "(unnamed)"
 
 
 def _write_at(tmp: str, relative_path: str, content: str) -> None:
