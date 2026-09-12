@@ -19,10 +19,12 @@ import sys
 
 import _helpers
 from _helpers import HELD_TESTS_MARKER as _HELD_MARKER
+from _helpers import fold_workspace as _fold_workspace
 from _helpers import payload as _payload
 from _helpers import public_top_level_names as _public_top_level_names
 from _helpers import response as _response
 from _helpers import terminal as _terminal
+from _helpers import workspace_entries as _workspace_entries
 
 
 def _trim_to_parse(code: str, max_drops: int = 10) -> str:
@@ -68,76 +70,20 @@ _FILE_RE = re.compile(
     r"\b([\w./-]+\.(?:py|js|ts|jsx|tsx|json|md|txt|ya?ml|sh|go|rs|java|c|cpp|h))\b"
 )
 
-# A file block in the rendered context: conversation-written ([wrote ...])
-# or client-read ([read ...], issue #83). '(truncated)' / '(failed)' /
-# '(oversize)' / '(over-budget)' (C1, #145) variants are never
-# materialized; a failed read line carries trailing reason text after ']'
-# and so never matches the anchored $. MAJOR 1 (review round 1): a variant
-# missing from this alternation isn't rejected — the non-greedy name-group
-# absorbs " (variant)" into the "path" instead, and the header still
-# matches as if unvariant, materializing a corrupted phantom file (this
-# grammar now has four consumers across the codebase — classify.py,
-# refix_gather.py, and the caller that produces it; a shared vocabulary
-# constant is noted as follow-up, not built here).
-_FILE_HEADER_RE = re.compile(
-    r"^assistant: \[(?:wrote|read) ([^\]]+?)"
-    r"( \((?:truncated|failed|oversize|over-budget)\))?\]$"
-)
-
-
-def _workspace_entries(context: str) -> list[tuple[str, str]]:
-    """Ordered (full path, body) for every valid (non-variant) read/write
-    block in ``context`` — the FULL path exactly as rendered, not
-    truncated to a basename. ``_workspace`` derives its {basename: body}
-    mapping from this (last write for a given basename wins, preserving
-    its existing behavior); ``_prior_surface`` (#182 slice B-1, review F3
-    fix) uses the full paths directly, so two files sharing a basename in
-    different directories are never conflated.
-
-    Fenced block grammar (2026-07-10): body lines carry a two-space indent
-    the renderer added; the indent is stripped on materialization and ANY
-    other non-empty line ends the body. Headers live only at column 0, so a
-    header lookalike inside untrusted file content strips back to plain
-    content and can never materialize a phantom file.
-    """
-    entries: list[tuple[str, str]] = []
-    lines = context.splitlines()
-    index = 0
-    while index < len(lines):
-        header = _FILE_HEADER_RE.match(lines[index])
-        index += 1
-        if not header:
-            continue
-        body_lines = []
-        while index < len(lines):
-            line = lines[index]
-            if line.startswith("  "):
-                body_lines.append(line[2:])
-            elif not line.strip():
-                body_lines.append("")
-            else:
-                break
-            index += 1
-        if not header.group(2):
-            entries.append((header.group(1), "\n".join(body_lines).strip()))
-    return entries
-
-
-def _fold_basenames(entries: list[tuple[str, str]]) -> dict[str, str]:
-    """{basename: body}, folding ``entries`` in order — the last block for
-    a given basename wins."""
-    files: dict[str, str] = {}
-    for path, body in entries:
-        files[path.rsplit("/", 1)[-1]] = body
-    return files
+# The shared file-block grammar and workspace reader now live in
+# _helpers.py (#184 mechanism 1: one workspace reader, relative-path
+# keyed, shared by accept_gather, tests_gather, and refix_gather). Kept as
+# module attributes here for the existing direct-import test surface
+# (``from accept_gather import _workspace``).
+_FILE_HEADER_RE = _helpers._FILE_HEADER_RE
 
 
 def _workspace(context: str) -> dict[str, str]:
-    """Conversation-written and client-read files as {basename: body} for
-    the sandbox — the last block for a given basename wins (unchanged
-    behavior; see ``_workspace_entries`` for the full-path-preserving
-    parse this derives from)."""
-    return _fold_basenames(_workspace_entries(context))
+    """{relative path: body} for the sandbox (#184 mechanism 1) — the
+    last block for a given path wins; a header's own client-relative path
+    is the key, not its basename, so two files sharing a basename in
+    different directories no longer conflate."""
+    return _fold_workspace(_workspace_entries(context))
 
 
 def _top_level_defs(text: str) -> frozenset[str]:
@@ -245,7 +191,7 @@ def main() -> None:
     if _REQUEST_MARKER in requirement:
         context, requirement = requirement.rsplit(_REQUEST_MARKER, 1)
         entries = _workspace_entries(context)
-    workspace = _fold_basenames(entries)
+    workspace = _fold_workspace(entries)
     deps = payload.get("dependencies", {})
     if not isinstance(deps, dict):
         deps = {}
@@ -281,6 +227,7 @@ def main() -> None:
                 "held": held,
                 "workspace": workspace,
                 "target_file": target_file,
+                "target_path": target_path,
                 "prior_surface": prior_surface,
             }
         )

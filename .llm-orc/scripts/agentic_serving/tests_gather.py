@@ -21,8 +21,8 @@ import sys
 from _helpers import payload as _payload
 from _helpers import response as _response
 from _helpers import terminal as _terminal
+from _helpers import workspace as _extract_workspace
 from accept_gather import _REQUEST_MARKER, _extract_tests, _inject_workspace_imports
-from accept_gather import _workspace as _extract_workspace
 
 
 def main() -> None:
