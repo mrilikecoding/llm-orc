@@ -1440,17 +1440,11 @@ def _visible_stem_result(context: str, stem: str) -> tuple[str, str, str] | None
     return None
 
 
-def _discovery(
-    task: str, context: str, tests_primary: bool, has_build_signal: bool
-) -> tuple[str, str, str]:
-    """(glob stem to request, matched path, refusal reason) — at most one is
-    non-empty (issue #83 discovery, design 2026-07-10).
-
-    One glob round per turn: a workspace-needing turn naming a module stem
-    but no source file requests ONE listing; once a ``[globbed]`` block
-    exists the deterministic MATCH step takes over — exactly one candidate
-    becomes the turn's named file (the existing read seam fires next); zero
-    or several candidates refuse honestly, never re-glob.
+def _stem_discovery(context: str, stem: str) -> tuple[str, str, str]:
+    """The module-stem MATCH step (issue #83 discovery), extracted from
+    ``_discovery`` unchanged so issue #182 slice D's unnamed-file fallback
+    (below) can share its listing-scan/truncation/visible-fallback shape
+    without duplicating it.
 
     A truncated listing (issue #148 M3) is a third state: LISTING-based
     matching is disabled, but the visible-file fallback still runs (a prior
@@ -1458,18 +1452,6 @@ def _discovery(
     honest-refusal wording says so truthfully (BLOCKER 1) — never the "no
     file matching" claim, which the truncated block itself may contradict.
     """
-    wants_existing = tests_primary or (
-        has_build_signal and bool(_EXISTING_RE.search(task))
-    )
-    # A turn that names ANY file has nothing to discover — including
-    # test_*-named files, which _named_source_files deliberately excludes
-    # (review blocker 2026-07-10: "tests for test_storage.py" stemmed
-    # "test_storage" and burned a doomed glob round).
-    if not wants_existing or _extract_file(task):
-        return "", "", ""
-    stem = _module_stem(task)
-    if not stem:
-        return "", "", ""
     result = _globbed_candidates(context, stem)
     if result is None:
         visible_result = _visible_stem_result(context, stem)
@@ -1501,6 +1483,34 @@ def _discovery(
             " — please name one"
         ),
     )
+
+
+def _discovery(
+    task: str, context: str, tests_primary: bool, has_build_signal: bool
+) -> tuple[str, str, str]:
+    """(glob stem to request, matched path, refusal reason) — at most one is
+    non-empty (issue #83 discovery, design 2026-07-10).
+
+    One glob round per turn: a workspace-needing turn naming a module stem
+    but no source file requests ONE listing; once a ``[globbed]`` block
+    exists the deterministic MATCH step (``_stem_discovery``) takes over —
+    exactly one candidate becomes the turn's named file (the existing read
+    seam fires next); zero or several candidates refuse honestly, never
+    re-glob.
+    """
+    wants_existing = tests_primary or (
+        has_build_signal and bool(_EXISTING_RE.search(task))
+    )
+    # A turn that names ANY file has nothing to discover — including
+    # test_*-named files, which _named_source_files deliberately excludes
+    # (review blocker 2026-07-10: "tests for test_storage.py" stemmed
+    # "test_storage" and burned a doomed glob round).
+    if _extract_file(task):
+        return "", "", ""
+    stem = _module_stem(task) if wants_existing else ""
+    if stem:
+        return _stem_discovery(context, stem)
+    return "", "", ""
 
 
 # Rung 2, convergent-fix design: a deterministic failure-shape signal over
