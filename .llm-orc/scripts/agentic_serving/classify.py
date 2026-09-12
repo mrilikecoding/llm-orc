@@ -543,9 +543,16 @@ def _files_to_request(
     a file whose read was already attempted and still is not visible refuses.
     ``glob_file`` is the discovery match feeding the same seam — a
     discovering turn names no source file itself, so it is the only entry.
+    A glob match is existing BY CONSTRUCTION (issue #182 slice D: it was
+    just found in the workspace listing), so it counts toward
+    ``wants_existing`` even when the ask itself carries no fix/update-style
+    verb — the unnamed-file build's matched file must still be read before
+    the seat generates code, exactly as if the user had named it.
     """
-    wants_existing = tests_primary or (
-        has_build_signal and bool(_EXISTING_RE.search(task))
+    wants_existing = (
+        tests_primary
+        or (has_build_signal and bool(_EXISTING_RE.search(task)))
+        or bool(glob_file)
     )
     if not wants_existing:
         return [], ""
@@ -1440,17 +1447,208 @@ def _visible_stem_result(context: str, stem: str) -> tuple[str, str, str] | None
     return None
 
 
-def _discovery(
-    task: str, context: str, tests_primary: bool, has_build_signal: bool
-) -> tuple[str, str, str]:
-    """(glob stem to request, matched path, refusal reason) — at most one is
-    non-empty (issue #83 discovery, design 2026-07-10).
+# --- issue #182 slice D: discovery before an unnamed-file build ----------
+# docs/plans/2026-09-11-182-existing-repo-shape-design.md; the daily-driver
+# probe's turn 6 harm (docs/plans/2026-09-11-daily-driver-probe/): a build
+# turn naming no file, and whose module-stem phrasing never even fires (no
+# "existing" verb, no stem phrasing to extract), minted a parallel
+# `solution.py` beside a package that already implemented the domain. The
+# glob round reuses the SAME single-stem seam _module_stem's turns already
+# issue — the stem "py", since every non-test .py basename's own extension
+# trivially contains the substring "py", so `**/*py*` (the existing
+# template) discovers the whole non-test .py surface without a second
+# pattern shape (``_globbed_candidates`` already filters to ``.py``,
+# non-``test_*``).
+_UNNAMED_BUILD_GLOB_STEM = "py"
 
-    One glob round per turn: a workspace-needing turn naming a module stem
-    but no source file requests ONE listing; once a ``[globbed]`` block
-    exists the deterministic MATCH step takes over — exactly one candidate
-    becomes the turn's named file (the existing read seam fires next); zero
-    or several candidates refuse honestly, never re-glob.
+# The unnamed-file build has no module stem to substring-match against (the
+# ask never named one) — the MATCH signal is instead which candidate paths
+# name a domain word the ask ALSO names, exactly (review record
+# docs/plans/2026-09-11-182-d-review/ — see the design brief's slice-D
+# Implementation notes for the two measured wrong-match findings that
+# retired the earlier prefix-stemming approach). Split each identifier-
+# shaped token on underscores AND CamelCase boundaries (including an
+# acronym run followed by a capitalized word, so "HTTPServer" contributes
+# {"http", "server"}, not one fused token) so "TodoStore" contributes
+# {"todo", "store"} the same way "add_priority" contributes {"add",
+# "priority"} — the ask-side sibling of ``_basename_components``'s
+# component discipline (len >= 3, non-digit).
+_IDENTIFIER_TOKEN_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+_CAMEL_SPLIT_RE = re.compile(r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])")
+
+# Test-infrastructure paths a domain-word match must never land on (review
+# Finding 1): a basename starting with test_ was already excluded by
+# _globbed_candidates; this adds the common non-test_*-named pytest
+# fixtures — any path under a tests/ or test/ directory, plus the
+# conftest.py/setup.py basenames wherever they sit — so an ask with no real
+# match never uniquely resolves to the project's own test plumbing.
+_EXCLUDED_UNNAMED_BUILD_BASENAMES = frozenset({"conftest.py", "setup.py"})
+_EXCLUDED_UNNAMED_BUILD_DIRS = frozenset({"tests", "test"})
+
+
+def _is_unnamed_build_candidate(path: str) -> bool:
+    """True unless ``path`` is test infrastructure (Finding 1): a basename
+    of ``conftest.py``/``setup.py``, or any path with a ``tests``/``test``
+    directory component. Applied ON TOP OF ``_globbed_candidates``'s own
+    ``.py``/not-``test_*`` filter, never in place of it."""
+    parts = path.split("/")
+    if parts[-1] in _EXCLUDED_UNNAMED_BUILD_BASENAMES:
+        return False
+    return not any(part in _EXCLUDED_UNNAMED_BUILD_DIRS for part in parts[:-1])
+
+
+def _identifier_word_parts(token: str) -> list[str]:
+    """Split one identifier-shaped token on underscores and CamelCase
+    boundaries: "TodoStore" -> ["Todo", "Store"]; "HTTPServer" -> ["HTTP",
+    "Server"]; "add_priority" -> ["add", "priority"]; a plain lowercase
+    word survives whole."""
+    parts: list[str] = []
+    for chunk in token.split("_"):
+        if chunk:
+            parts.extend(_CAMEL_SPLIT_RE.split(chunk))
+    return parts
+
+
+def _ask_identifier_components(task: str) -> set[str]:
+    """Every identifier-shaped token's word-components across the whole ask,
+    unioned (issue #182 slice D's unnamed-file MATCH step). Scans the
+    ORIGINAL-case task text — lowercasing first (as ``_explain_stems``
+    does) would erase the CamelCase boundaries the split above relies on.
+    Filler words and build verbs (``_STEM_STOPWORDS``, the same curated set
+    ``_module_stem`` already excludes from stem candidacy) are dropped —
+    they never name a domain concept.
+    """
+    components: set[str] = set()
+    for match in _IDENTIFIER_TOKEN_RE.finditer(task):
+        for part in _identifier_word_parts(match.group(0)):
+            lowered = part.lower()
+            if (
+                len(lowered) >= 3
+                and not lowered.isdigit()
+                and lowered not in _STEM_STOPWORDS
+            ):
+                components.add(lowered)
+    return components
+
+
+def _identifier_match(ask_components: set[str], path: str) -> bool:
+    """True when an ask identifier EQUALS ``path``'s whole basename-stem, or
+    one of its ``_basename_components``, exactly (review rework: no prefix
+    or substring matching of any length — Finding 2 measured a 4-char-
+    prefix stand-in for stemming confidently matching unrelated words,
+    "store" against both "story.py" and "storefront.py"). Resolving an
+    identifier like ``TodoStore`` to the file that actually DEFINES it
+    (rather than one that merely shares a naming root) is the content-grep
+    rung's job (#121, the ``need-grep`` seam) — a follow-up, not this MATCH
+    step."""
+    basename = path.rsplit("/", 1)[-1]
+    stem = basename[:-3].lower() if basename.endswith(".py") else basename.lower()
+    if stem in ask_components:
+        return True
+    return bool(_basename_components(basename) & ask_components)
+
+
+_CANDIDATE_LIST_CAP = 10
+
+
+def _format_candidate_list(paths: list[str]) -> str:
+    """A capped, human-readable listing of candidate paths — #148's
+    truncation-wording discipline (cap, "and N more") extended to the
+    unnamed-file build's refusal."""
+    shown = paths[:_CANDIDATE_LIST_CAP]
+    listed = ", ".join(shown)
+    remainder = len(paths) - len(shown)
+    if remainder > 0:
+        listed += f", and {remainder} more"
+    return listed
+
+
+def _unnamed_build_discovery(task: str, context: str) -> tuple[str, str, str]:
+    """(glob stem to request, matched path, refusal reason) for an unnamed-
+    file build turn (issue #182 slice D) — the harm turn 6 of the daily-
+    driver probe recorded: no file named, no "existing" verb or matched
+    module-stem phrasing, so the turn built greenfield beside a package
+    that already implemented the domain and shipped a parallel
+    `solution.py`.
+
+    One glob round for the whole non-test .py surface (the "py" stem
+    above), then a MATCH step keyed on the ask's own identifiers rather
+    than a named stem:
+    - no listing yet -> request the glob round.
+    - a truncated listing -> the #148 wording, never a false "no match".
+    - the RAW listing holds no `test_*`-excluded candidate at all (empty,
+      or every path `test_*`-named) -> greenfield, unchanged (solution.py
+      downstream) — the recorded bound: a workspace whose only .py files
+      are `test_*`-shaped still mints solution.py.
+    - the raw listing holds candidates, but EVERY one is test
+      infrastructure by Finding 1's exclusion (`conftest.py`, `setup.py`,
+      or under a `tests`/`test` directory) -> an honest refusal naming
+      them, never a silent match against the project's own test plumbing.
+    - exactly one (non-test-infrastructure) candidate's stem or components
+      EXACTLY match one of the ask's own identifiers -> that path becomes
+      the turn's named file (the existing read seam takes over).
+    - several candidates match, or none do over a non-empty candidate
+      listing -> an honest refusal naming the files, never a guess.
+    """
+    result = _globbed_candidates(context, _UNNAMED_BUILD_GLOB_STEM)
+    if result is None:
+        return _UNNAMED_BUILD_GLOB_STEM, "", ""
+    raw_candidates, truncated = result
+    if truncated:
+        return (
+            "",
+            "",
+            (
+                "the workspace listing was cut at "
+                f"{_GLOB_MAX_PATHS} paths, so I can't tell which files "
+                "match — please name the file"
+            ),
+        )
+    if not raw_candidates:
+        return "", "", ""
+    candidates = [path for path in raw_candidates if _is_unnamed_build_candidate(path)]
+    if not candidates:
+        # Finding 1: the listing was non-empty, but every match is test
+        # infrastructure (conftest.py/setup.py/under tests or test) — the
+        # workspace does hold SOMETHING, so this is distinct from the
+        # genuinely-empty/only-test_*-named greenfield case above; refuse
+        # honestly rather than mint past it.
+        listed = _format_candidate_list(raw_candidates)
+        return (
+            "",
+            "",
+            (
+                "the workspace only holds test infrastructure for this "
+                f"ask: {listed}. Please name the file"
+            ),
+        )
+    ask_components = _ask_identifier_components(task)
+    matched = [path for path in candidates if _identifier_match(ask_components, path)]
+    if len(matched) == 1:
+        return "", matched[0], ""
+    if not matched:
+        listed = _format_candidate_list(candidates)
+        return (
+            "",
+            "",
+            (
+                "no file in the workspace matches this ask — the workspace "
+                f"holds: {listed}. Please name the file"
+            ),
+        )
+    listed = _format_candidate_list(matched)
+    return (
+        "",
+        "",
+        f"multiple files could match this ask: {listed} — please name one",
+    )
+
+
+def _stem_discovery(context: str, stem: str) -> tuple[str, str, str]:
+    """The module-stem MATCH step (issue #83 discovery), extracted from
+    ``_discovery`` unchanged so issue #182 slice D's unnamed-file fallback
+    (below) can share its listing-scan/truncation/visible-fallback shape
+    without duplicating it.
 
     A truncated listing (issue #148 M3) is a third state: LISTING-based
     matching is disabled, but the visible-file fallback still runs (a prior
@@ -1458,18 +1656,6 @@ def _discovery(
     honest-refusal wording says so truthfully (BLOCKER 1) — never the "no
     file matching" claim, which the truncated block itself may contradict.
     """
-    wants_existing = tests_primary or (
-        has_build_signal and bool(_EXISTING_RE.search(task))
-    )
-    # A turn that names ANY file has nothing to discover — including
-    # test_*-named files, which _named_source_files deliberately excludes
-    # (review blocker 2026-07-10: "tests for test_storage.py" stemmed
-    # "test_storage" and burned a doomed glob round).
-    if not wants_existing or _extract_file(task):
-        return "", "", ""
-    stem = _module_stem(task)
-    if not stem:
-        return "", "", ""
     result = _globbed_candidates(context, stem)
     if result is None:
         visible_result = _visible_stem_result(context, stem)
@@ -1501,6 +1687,49 @@ def _discovery(
             " — please name one"
         ),
     )
+
+
+def _discovery(
+    task: str,
+    context: str,
+    tests_primary: bool,
+    has_build_signal: bool,
+    named_file: str = "",
+) -> tuple[str, str, str]:
+    """(glob stem to request, matched path, refusal reason) — at most one is
+    non-empty (issue #83 discovery, design 2026-07-10).
+
+    One glob round per turn: a workspace-needing turn naming a module stem
+    but no source file requests ONE listing; once a ``[globbed]`` block
+    exists the deterministic MATCH step (``_stem_discovery``) takes over —
+    exactly one candidate becomes the turn's named file (the existing read
+    seam fires next); zero or several candidates refuse honestly, never
+    re-glob.
+
+    Issue #182 slice D: a build turn with no module-stem phrasing to match
+    (no "existing" verb, or one with no stem the phrasings could extract)
+    falls through to ``_unnamed_build_discovery`` instead of silently
+    skipping discovery — never for ``tests_primary``, which already had its
+    shot above via ``wants_existing``. ``named_file`` is the turn's ALREADY
+    -known target (``turn["file"]`` or a task-text extraction) — a turn
+    that names one has nothing to discover regardless of which of those two
+    sources it came from.
+    """
+    wants_existing = tests_primary or (
+        has_build_signal and bool(_EXISTING_RE.search(task))
+    )
+    # A turn that names ANY file has nothing to discover — including
+    # test_*-named files, which _named_source_files deliberately excludes
+    # (review blocker 2026-07-10: "tests for test_storage.py" stemmed
+    # "test_storage" and burned a doomed glob round).
+    if named_file or _extract_file(task):
+        return "", "", ""
+    stem = _module_stem(task) if wants_existing else ""
+    if stem:
+        return _stem_discovery(context, stem)
+    if has_build_signal and not tests_primary:
+        return _unnamed_build_discovery(task, context)
+    return "", "", ""
 
 
 # Rung 2, convergent-fix design: a deterministic failure-shape signal over
@@ -1930,7 +2159,7 @@ def _discover_and_read(
     if explain_stems:
         return _explain_discover(context, explain_stems, self_reference)
     needs_glob, glob_file, glob_failed = _discovery(
-        task, context, tests_primary, has_build_signal
+        task, context, tests_primary, has_build_signal, named_file
     )
     if glob_file:
         # issue #83 discovery MATCH step: the single candidate is the turn's
@@ -2310,6 +2539,14 @@ def main() -> None:
             file = f"test_{named_basename}"
         else:
             file = "test_solution.py"
+    elif glob_failed:
+        # issue #182 slice D (doctrine 11): a genuine refusal must never
+        # carry a solution.py destination, even inertly — the harm this
+        # closes is a MINTED file, so the field itself stays empty on a
+        # refusal rather than merely being unused downstream (build is
+        # already False here, so nothing was ever going to write it, but
+        # the decision must say so on its face).
+        file = named_file
     else:
         file = named_file or "solution.py"
 

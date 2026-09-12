@@ -71,6 +71,94 @@ Instruments:
    on disk; then the same ask naming the two files ships (or refuses
    honestly under #123's bound — record which).
 
+Implementation notes (measured, 2026-09-12):
+
+- `needs_glob` carries the stem `"py"`, not the literal `**/*.py"` this
+  brief names — the caller's glob-pattern template (`_glob_pattern`,
+  `serving_ensemble_caller.py`) only accepts a single identifier-shaped
+  stem (or a comma-joined brace form), never a bare extension. Every
+  non-test `.py` basename's own extension trivially contains the substring
+  `"py"`, so `**/*py*` (the template any module-stem turn already issues)
+  discovers the whole `.py` surface through the SAME single-stem seam,
+  with no second pattern shape added to the caller.
+- REWORKED after an independent review of this slice (2026-09-12, verdict
+  BLOCKED, findings recorded outside the repo). The first cut's MATCH step
+  used a 4-char-shared-prefix stand-in for stemming (`_shares_root`) so
+  `TodoStore` → `{todo, store}` could relate to `storage.py`'s `{storage}`.
+  Measured
+  wrong-match defects: "add a config option to enable verbose output"
+  against a workspace holding only `tests/conftest.py` uniquely matched it
+  and reached `build: true, file: 'tests/conftest.py'` (Finding 1); "add
+  error handling to the data store" uniquely matched `story.py` and
+  `storefront.py` on the shared prefix `"stor"` alone (Finding 2) — words
+  with no real relationship. `_shares_root` is deleted. The MATCH step is
+  now EXACT equality only: an ask identifier (CamelCase-split, snake_case-
+  split, case-insensitive) must equal the file's whole basename-stem or one
+  of its `_basename_components` verbatim — no prefix or substring matching
+  of any length. Consequence accepted: "Add a remove method to TodoStore
+  ..." against the probe seed now has ZERO matches (`todo`/`store` ≠
+  `storage`, `cli`) and refuses naming the listing — honest, not a guess.
+  Resolving an identifier like `TodoStore` to the file that actually
+  DEFINES it is the content-grep rung's job (#121, the `need-grep` seam), a
+  follow-up, not this MATCH step. The CamelCase splitter was also widened
+  to split an acronym run followed by a capitalized word (`HTTPServer` →
+  `["HTTP", "Server"]`, not one fused token) — needed for exact-equality
+  matching to reach acronym-prefixed names at all.
+- Candidate exclusion widened (Finding 1): besides `test_*` basenames
+  (already excluded), a candidate is also dropped when its basename is
+  `conftest.py`/`setup.py`, or it sits under a `tests`/`test` directory
+  component. A RAW listing that is empty (or `test_*`-only) still
+  greenfields, unchanged; a raw listing that holds candidates but every one
+  is test infrastructure by this new exclusion refuses honestly instead
+  (distinct branch — Finding 1's exact repro must never silently fall back
+  to minting `solution.py` past a real, excluded file).
+- Refusal wording is match-count-shaped, not "always the whole listing":
+  zero matches over a non-empty candidate listing names the full listing
+  (nothing more specific to point at); two or more matches names only the
+  matched candidates (more actionable, and keeps a non-matching file like
+  `todo/__init__.py` out of the refusal); all-test-infrastructure names the
+  excluded files themselves (Finding 1's shape).
+- Mutant-count correction (review Finding 3): the "two pins go red" note
+  this section originally carried did not reproduce. Measured against the
+  reworked suite: restoring the silent `return "", "", ""` fallback in only
+  the zero-match branch turns 3 tests red; in only the multi-match branch,
+  2 red; in both branches together, 5 red. The guard itself holds in every
+  variant — this corrects the count, not the mechanism.
+- The mechanism turned out broader than "an existing-verb build with no
+  stem match": turn 6's own ask uses "Add", not a fix/update-style verb,
+  so the fallback fires for ANY unnamed-file build once the old
+  stem/`wants_existing` path yields nothing — including plain "write/add/
+  create" asks with empty context. That changed three existing classify
+  unit tests' first-round routing (`test_build_turn_routes_to_the_code_generation_seat`,
+  the renamed `test_fresh_create_module_turn_globs_once_then_falls_back_to_code_seat`,
+  `test_normal_decisions_carry_empty_glob_fields`); each got a
+  same-behavior round-trip variant plus (where the old test's own name
+  asserted the retired invariant) a new test naming the intentional
+  change.
+- Fixed a latent gap the new fallback exposed rather than introduced:
+  `_discovery` re-derived `_extract_file(task)` instead of accepting the
+  turn's already-known `named_file` (e.g. `turn["file"]` set directly,
+  never appearing in the task text) — a named-via-field turn could have
+  reached the new branch and globbed for a file already known. `_discovery`
+  now takes `named_file` and skips discovery whenever it is set, from
+  whichever source.
+- `_files_to_request`'s `wants_existing` gate now also treats a glob MATCH
+  as existing (`bool(glob_file)`), a no-op for the old stem path (it was
+  already true there) — without it the matched file's read request never
+  fired for a build with no fix/update verb, contradicting "the existing
+  read seam takes over".
+- The `file` field's blanket `named_file or "solution.py"` default is left
+  in place for a PENDING glob round (needed elsewhere —
+  `test_conceptual_explain_never_gates_despite_the_solution_py_default`
+  pins it for bare-symbol explain discovery) but is suppressed specifically
+  when `glob_failed` is set: a refusal must never carry a `solution.py`
+  destination even inertly, which is what instrument 2's harm pin actually
+  checks.
+- `docs/serving.md`'s classify row was not touched — its one-line summary
+  ("deterministic where the signal is structural … emits `needs_decider`
+  when not") already omits discovery mechanics for the pre-existing
+  module-stem case, so this slice adds no new drift there.
+
 ## Slice B-1 — an edit never drops the prior module's surface (turn 2)
 
 Today: on a build whose target the turn read (`[read todo/storage.py]`
