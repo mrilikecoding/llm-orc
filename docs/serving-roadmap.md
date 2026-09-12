@@ -59,146 +59,110 @@ layer is the insulation that keeps an eventual hardening cheap, and
 "frozen component" status is the trigger, tracked informally the way the
 buy-back ledger tracks hosted seats.
 
-## State (2026-09-11 evening handoff)
+## State (2026-09-12 early-morning handoff)
 
 **Ranked index:** the GitHub project "llm-orc kanban"
 (https://github.com/users/mrilikecoding/projects/2). THIS DOCUMENT
 GOVERNS; the board is its index. Board "Done" = merged on LOCAL main;
-nothing is pushed (the push and the issue-closing that rides on it still
-await the practitioner's explicit go; ~120 unpushed commits).
+nothing is pushed (~135 unpushed commits; the push and the issue-closing
+that rides on it await the practitioner's explicit go).
 
-**Practitioner directive (2026-09-11):** the target is an effective daily
-driver for long-running tasks; drive real OpenCode sessions; OpenCode Go
-spend is pre-authorized when justified; delegate to cheaper subagents and
-to llm-orc ensembles where confident; meter usage (a Sonnet subagent hit
-the account session limit at 19:20 PT — subagents are unavailable until
-the reset; plan delegation in smaller batches).
+**Practitioner directives (2026-09-11):** the target is an effective daily
+driver for long-running tasks on EXISTING repos; drive real OpenCode
+sessions; OpenCode Go spend and paid comparison runs are authorized
+within reason; delegate to cheaper subagents; meter usage (the account
+session limit bit once at 19:20 PT after ~4.5M subagent tokens; it
+resets nightly). Agreed process (see §Process): close structures, not
+instances; self-tests in the implementer brief, ONE independent review
+round; measure by probe rows converted; parallelize on disjoint seams.
 
 ### Merged on local main this session (each with an author-independent review)
 
-- **#171** — the deliverable must participate (runtime ablation control;
-  re-fix smoke surface = every PUBLIC top-level binding incl. constants;
-  fail-closed on an unparseable/absent prior). Four review rounds; final
-  confirmation re-probed by the lead with the reviewer's harness (10/10).
-  Merged tree 4215 passed. Follow-ups filed: **#181** (verified bytes ≠
-  shipped bytes: injected imports never reach the client).
-- **#182 slice D** — discovery before an unnamed-file build: one glob
-  round, EXACT-match only (the first cut's 4-char prefix heuristic was
-  BLOCKED by review for matching `tests/conftest.py` and `story.py`),
-  tests dirs excluded, honest refusal naming the listing, `solution.py`
-  minted only in an empty workspace. Ladder routing byte-identical
-  (pinned over all 13 prompts). Live: the probe's turn-6 harm converted
-  (was a gate-accepted parallel `solution.py`; now a refusal, nothing
-  written). 4232 passed.
+- **#171** — the deliverable must participate (ablation control; re-fix
+  surface = every public top-level binding; fail-closed on an
+  unparseable/absent prior). Four rounds. Filed #181.
+- **#182 slice D** — discovery before an unnamed-file build (exact match
+  only after a BLOCKED review; tests dirs excluded). Live: the probe's
+  turn-6 harm converted.
 - **#182 slice B-1** — an edit never drops the prior module's public
-  surface (deliverable-side liberal, prior-side strict; full-path match
-  for same-basename priors; real suite always runs — the first cut's
-  fake `tests_pass: true` was caught by review leaking into the #114
-  ledger). 4255 passed. Live: see #185 below — the guard needs a prior
-  in context, and a fresh-session "add ... in F" never reads F.
-- **#183 slice B measured, not adopted as filed**: `think: false` on
-  all three code-generator agents halves ladder wall clock (464/468/377 s
-  vs 954 s) but refused ladder turn 6 in 3/3 runs where the think-on
-  control shipped it, and lost turn 1 once (7/13). Coder thinking
-  restored (3be5c82a); critic+synthesizer stay think-off (2/2 runs ship
-  13/13 deliverables, oracles 3/3, ~1000 s — no measurable gain or loss).
-  Six-run record: `docs/plans/2026-09-11-ladder-runs-171-thinkoff/`.
-  The latency lever is NOT `think`; #183 slices A (per-node elapsed in
-  the trace) and C (`num_ctx` on the profiles) remain.
-- **#90 evaluated — no** (`docs/plans/2026-09-11-90-llamacpp-eval/`):
-  Ollama 0.31.1 already runs `llama-server`; same-GGUF A/B is −2 %;
-  82 % of a build turn is qwen3:8b generation. Reframed on the issue as
-  packaging/bootstrap only.
+  surface (deliverable-side liberal, prior-side strict; the real suite
+  always runs — a fake `tests_pass` was caught leaking into the ledger).
+- **Arc 1, workspace-aware routing** (#185 closed; D's residual; the
+  routing half of #123): existence comes from the listing, never the
+  verb; a named `.py` destination with no listing costs one glob round;
+  present → read before build; absent → greenfield; shallower listing →
+  read anyway (never "absent"); a same-session write/read establishes
+  existence. Review BLOCKED once (depth mismatch), then APPROVE. Live
+  (`docs/plans/2026-09-11-arc1-live-rows/`): the blind-overwrite ask now
+  globs, reads, and writes the whole module with every prior method kept
+  and `remove` added, seed tests green (dogfood entry 12).
+- **Arc 2, the gate sandbox mirrors the workspace** (#184 closed; #182
+  slice A): workspace files and the deliverable materialize at real
+  relative paths on all gated routes; root resolution is a named ladder
+  (glob listing → suffix match → common prefix → basename, trace-visible);
+  an unplaceable entry REFUSES path-free; re-fix gets the workspace; the
+  import injector derives dotted names. Review APPROVE-with-rework (A1-A8),
+  then APPROVE; C1 fixed by the lead; C2 recorded (a write-time collision
+  is swallowed by `_write_at`, not counted in `workspace_unplaced`).
+  Merged tree 4322 passed, lint 0.
+- **#183 slice B measured**: think-off on the coder halves wall clock but
+  refused ladder turn 6 in 3/3 runs; coder thinking restored, critic and
+  synthesizer think-off (no measurable gain or loss). #90: no (Ollama
+  already runs llama-server; the time is qwen3:8b generation).
 
-### Evidence this session
+### Evidence
 
-- **Daily-driver probe** (`docs/plans/2026-09-11-daily-driver-probe/`,
-  dogfood entry 11): seven real-OpenCode turns on a seeded existing
-  package — 1/7, the one being the greenfield control. Four mechanisms,
-  one shape (#182): two-deliverable asks route to one seat; edits ship
-  fragments; the gate sandbox is one flat directory (package paths
-  unrepresentable); no discovery before an unnamed build.
-- **Six ladder runs** (above). No #171 ablation refusal fired on the
-  ladder; honesty column 0 in all six (mechanical, not J-scored).
-- **Comparator row on the existing-repo probe (paid, authorized):**
-  `opencode-go/qwen3.8-max` 7/7 for $0.27 and `opencode/claude-sonnet-5`
-  7/7 for $0.38 on the seven asks where the serve went 1/7. Their trace
-  is invariant: discover → read → surgical edit → run the project's own
-  suite → honest summary. Confirms arcs 1-2 and names the two after them:
-  edit delegation (#122) and verified acceptance IN the workspace (run
-  the workspace's own suite after a build). Table in the probe README.
-- **#184 filed**: ladder turn 7's chained fix reports "code failed to
-  load: No module named 'storage'" while the shipped file is correct,
-  3/3 live — the re-fix sandbox materializes no workspace.
-- **#185 filed (the next task)**: a build naming an EXISTING file with no
-  fix/update verb overwrites it blind (live row 10: `todo/storage.py`
-  replaced by an in-memory class, gate-accepted, seed tests now red).
+- **Comparator row on the existing-repo probe (paid, authorized):** Go
+  `qwen3.8-max` 7/7 ($0.27), Sonnet 5 7/7 ($0.38) vs the serve 1/7 at
+  17:00. Their invariant trace: discover → read → surgical edit → run the
+  project's own suite → honest summary. Not a model-size gap.
+- **Serve on the probe now:** turns 2 and 7 correct (rows 12-13); 6 and
+  9-shape honest asks; 1 and 3 still refuse (tests-primary route writes
+  tests for a method that does not exist yet — #123); 4 honest; 5 prose
+  (#124).
+- **Ladder** (`docs/plans/2026-09-11-ladder-runs-171-thinkoff/`): runs 5-6
+  (pre-arcs, coder on) 13/13 deliverables; run 7 (arcs merged) 10/13 —
+  T1/T6 the recurring variance shapes, T13 an honest refusal of a wrong
+  fix (`"empty input"` vs the seeded `"no values"`), no sandbox-, surface-
+  or ablation-specific reason fired; run 8 (second sample) was launched
+  at handoff — score it first (`score_run.score_run_dir` + `tally_oracles`
+  on the scratch dir named in the last session's log, or rerun: seed per
+  the battery header, ~17 min, free).
 
-### Next up (in order) — practitioner-agreed 2026-09-11: close structures, not instances
+### Next up (in order)
 
-Today's ratio (3 merged, 5 filed) is what guards produce: each closed one
-instance and the next live row found the sibling (D closed the unnamed
-mint, row 10 found the named-file blind overwrite, #185). Two structural
-arcs subsume most of the open shape; the 7-turn probe
-(`docs/plans/2026-09-11-daily-driver-probe/`) is the scoreboard — a slice
-is done when its rows convert and no row regresses.
-
-1. **Workspace-aware routing (classify; subsumes #185, D's residual, the
-   routing half of #123).** One listing per session through D's glob
-   seam; every build resolves against it deterministically: named file
-   present → read before write; absent → greenfield; unnamed → exact
-   match or ask. No verb heuristics decide existence. Live: probe turn 2
-   in a fresh session → `read`, then a `write` keeping the prior surface;
-   turns 6 and 9 stay honest asks; ladder routing byte-identical (pin as
-   in D). Then B-1's guard always has its prior.
-2. **The gate sandbox mirrors the workspace (subsumes #182 slice A and
-   #184).** Materialize conversation-written and client-read files at
-   their real relative paths on all four gated routes (build-gated, held,
-   re-fix, write-tests), so package imports resolve and re-fix sees
-   siblings. Live: ladder turn 7's report names the client's pytest
-   result; probe turns 1 and 3 get a correct `tests/test_*.py` destination
-   and `from todo.storage import` (with #123's code+tests routing, turns 1
-   and 3 convert).
-3. #123 code+tests per turn (routing rides arc 1; the two-file emit rides
-   arc 2); then #183 A (per-node elapsed) and C (`num_ctx`); #181.
-4. Still gated on the practitioner: the push; #167 and #141 (Anthropic
-   arms); a Go-backed comparator arm is an option to raise, not spend.
-
-Process changes that come with this (also agreed):
-
-- **Review moves upstream.** The implementer brief REQUIRES three
-  self-tests and the report must show them: every new pin red under a
-  mutant that reintroduces the defect (doctrine 11); every new field or
-  convention traced to every consumer (envelope, ledger, trace, held
-  round, recap) before it exists; a fresh-input wrong-match/wrong-accept
-  hunt on any heuristic. Then one author-independent review round, not
-  three — that is where the token spend went.
-- **Measure by rows converted.** The seeded-package probe is a second
-  battery beside the 13-turn ladder (~10 min); rerun it after every
-  merge. File only what a battery row shows; review minors are recorded
-  as bounds in the brief.
-- **Parallelize on disjoint seams only** (classify vs gate never
-  conflicted today); batch reviews and implementations under the account
-  session limit (~4M subagent tokens/day before it bites; Sonnet
-  implementers, Opus reviews).
+1. **Score ladder run 8.** If T13 refuses again with a wrong-message fix,
+   it is the coder ignoring the visible seeded test — a prompt/shape
+   question for the fix route, not a gate defect; record either way.
+2. **#123 code + tests per turn** (the routing half rides arc 1; the
+   destination rule `tests/test_<stem>.py` + dotted import is arc 2's
+   deferred mechanism 5, classify-owned): converts probe turns 1 and 3.
+   Brief to write; one Sonnet implementer; one review.
+3. **#122 edit delegation** (surgical `edit` tool_calls with post-edit
+   gate parity) and **verified acceptance in the workspace** (run the
+   workspace's own suite after a build, not only the sandbox's) — the two
+   comparator behaviours still missing. Brief both; disjoint seams
+   (emit/caller vs gate).
+4. #183 A (per-node elapsed in the trace) and C (`num_ctx`); #181; C2.
+5. Gated on the practitioner: the push; #167/#141 (Anthropic arms).
 
 ### Owed live rows
 
-#166 #169 #173 #171 (constructed non-participating shape, fault-injected
-per the #168 template), #172 #176, #175. #182 D and B-1 have theirs.
+#166 #169 #173 #171 (constructed non-participating shape via fault
+injection), #172 #176, #175. Arcs 1-2, D, B-1 have theirs.
 
-### Process notes
+### Process (agreed 2026-09-11, holding)
 
-Every first review this session found real blockers again (D: BLOCKED;
-B-1: APPROVE-with-rework with a design defect; #171 rounds 2, 2b): the
-record is ten-for-ten. Two lessons paid for today: (1) a "harmless
-internal convention" in a gate field is never internal — trace every
-consumer before inventing one (B-1 F1); (2) a fuzzy match that reads
-then overwrites the wrong file is worse than an honest ask — determinism
-over guessing, and resolve identifiers to files with the grep rung, not
-prefixes (D rework). Ops: subagent budget — the account session limit
-bites after roughly 4-5M subagent tokens in a day; batch reviews and
-implementations, prefer Sonnet implementers, keep Opus for reviews.
+Reviews found real blockers 12 of 12 first rounds this session; with the
+three self-tests required in the implementer brief, arcs 1 and 2 each
+closed in ONE rework round. Lessons paid for: a moving git ref in a pin
+makes it vacuous after merge (pin to a hash — acfaf427); a "harmless
+internal convention" in a gate field is never internal; a fuzzy match
+that reads then overwrites the wrong file is worse than an honest ask;
+existence is a workspace fact, never a verb. Ops: subagent budget ~4-5M
+tokens/day before the limit; Sonnet implementers, Opus reviews; ladder
+~17 min at coder-on, probe ~10 min; one serve per tree, restart before
+every gate.
 
 ## Timeline
 
@@ -272,7 +236,8 @@ Remaining, in order:
   anchored so PATH cannot re-resolve; identity names bytes AND location)
 - [x] #171 merged (ablation control + public-binding re-fix surface; four rounds)
 - [x] #182 D + B-1 merged (discovery before an unnamed build; edits keep the prior surface); #183 B measured (coder keeps thinking)
-- [ ] #185 read-before-write for a named existing file; #182 A/C; #184; #183 A/C; #181
+- [x] Arc 1 workspace-aware routing (#185) and arc 2 the sandbox mirrors the workspace (#184, #182 A) merged 2026-09-12
+- [ ] #123 code+tests per turn (+ tests destination); #122 edit delegation; verified acceptance in the workspace; #183 A/C; #181
 - [ ] #161 #162 #165 — script-cache purity/imports and the -n auto flake;
   #155 Arcs B/C remainder
 - [ ] North star: parity on real work, honesty column held at zero
