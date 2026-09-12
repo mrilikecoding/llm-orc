@@ -1,0 +1,17 @@
+exit=0
+--- git status ---
+ M tests/test_storage.py
+ M todo/cli.py
+ M todo/storage.py
+?? add.py
+?? tests/test_cli.py
+--- diff stat ---
+ tests/test_storage.py | 31 +++++++++++++++++++++++++++++++
+ todo/cli.py           | 14 ++++++++++----
+ todo/storage.py       | 18 ++++++++++++++++--
+ 3 files changed, 57 insertions(+), 6 deletions(-)
+untracked: add.py
+untracked: tests/test_cli.py
+--- pytest (throwaway copy) ---
+...............                                                          [100%]
+15 passed in 0.03s

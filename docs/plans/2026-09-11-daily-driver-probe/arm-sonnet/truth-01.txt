@@ -1,0 +1,11 @@
+exit=0
+--- git status ---
+ M tests/test_storage.py
+ M todo/storage.py
+--- diff stat ---
+ tests/test_storage.py | 15 +++++++++++++++
+ todo/storage.py       |  9 +++++++++
+ 2 files changed, 24 insertions(+)
+--- pytest (throwaway copy) ---
+.....                                                                    [100%]
+5 passed in 0.01s

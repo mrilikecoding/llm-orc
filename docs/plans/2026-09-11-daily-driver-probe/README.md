@@ -66,3 +66,29 @@ wall clock per turn (excludes client bootstrap); `dd-turn.sh` the driver;
 `seed-repo.tgz` the seeded repo (turn-7's `add.py` and the turn-6
 `solution.py` excluded/removed). Serve trace rows for these turns are the
 last seven records of `.llm-orc/.serve-trace/turns.jsonl` as of 17:55.
+
+## Comparator arms on the same seven asks (2026-09-11, practitioner-authorized paid runs)
+
+Same seed, same asks, same driver (`dd-turn.sh` with `DD_MODEL`), fresh
+clone per arm, turn 2 continuing turn 1's session, turns 3-7 fresh.
+Costs are OpenCode's own per-step `cost` field summed per turn.
+
+| turn | serve (arm 0, free) | `opencode-go/qwen3.8-max` (Go) | `opencode/claude-sonnet-5` (Zen) |
+|---|---|---|---|
+| 1 remove() + tests | refused | ls, glob, 2 reads, 4 edits, pytest → 5 passed ($0.076) | 2 reads, 3 edits, pytest → 5 passed ($0.098) |
+| 2 pure edit (continued) | refused | read → "already done" ($0.012) | read → "already exists, no change" ($0.015) |
+| 3 CLI `done` + new test file | refused | reads, edits, write tests/test_cli.py, pytest → 8 passed ($0.055) | same → 8 passed ($0.064) |
+| 4 run the tests | honest verdict | `python -m pytest` → 8 passed ($0.021) | 8 passed ($0.021) |
+| 5 run ruff | prose, nothing run | ran ruff → clean ($0.010) | ran ruff → clean ($0.008) |
+| 6 priority feature | minted solution.py | glob, 4 reads, 7 edits, pytest → 13 passed ($0.059) | reads, todowrite plan, 6 edits, pytest → 15 passed ($0.161) |
+| 7 control add.py | correct | write + ruff + pytest ($0.040) | write ($0.015) |
+| **total** | **1/7** | **7/7, $0.27** | **7/7, $0.38** |
+
+What the comparators do, every time: discover (ls/glob) → read the
+files they will touch → surgical `edit` (never a whole-file rewrite of an
+existing file) → run the project's own suite → summarize honestly with
+line references. Four structures, none of which is model size: a Go-tier
+model does it at cents. Arcs 1 and 2 (workspace-aware routing; the
+sandbox mirrors the workspace) are the first two; edit delegation (#122)
+and running the workspace's own suite after a build (verified acceptance
+in the workspace, not only in the sandbox) are the next two.
