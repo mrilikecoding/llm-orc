@@ -1,0 +1,21 @@
+s1-main-thinkon	8765	126.9	Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+    import json,sys; d=json.load(open('/private/tmp/claude-501/-Users-nathangreen-Development-eddi-lab-llm-orc/32dba98e-5297-4a48-8e23-9f8b5e88d5e8/scratchpad/think-ab/s1-main-thinkon.json')); m=d['choices'][0]['message']; print(m.get('tool_calls') and 'tool_calls:'+m['tool_calls'][0]['function']['name'] or 'stop:'+(m.get('content') or '')[:60].replace(chr(10),' '))
+                       ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/nathangreen/.pyenv/versions/3.13.4/lib/python3.13/json/__init__.py", line 293, in load
+    return loads(fp.read(),
+        cls=cls, object_hook=object_hook,
+        parse_float=parse_float, parse_int=parse_int,
+        parse_constant=parse_constant, object_pairs_hook=object_pairs_hook, **kw)
+  File "/Users/nathangreen/.pyenv/versions/3.13.4/lib/python3.13/json/__init__.py", line 346, in loads
+    return _default_decoder.decode(s)
+           ~~~~~~~~~~~~~~~~~~~~~~~^^^
+  File "/Users/nathangreen/.pyenv/versions/3.13.4/lib/python3.13/json/decoder.py", line 348, in decode
+    raise JSONDecodeError("Extra data", s, end)
+json.decoder.JSONDecodeError: Extra data: line 1 column 546 (char 545)
+s1-thinkoff	8777	44.9	tool_calls:write
+s2-thinkoff	8777	59.5	tool_calls:write
+s2-main-thinkon	8765	166.5	tool_calls:write
+s1b-main-thinkon	8765	82.8	tool_calls:write
+s1b-thinkoff	8777	38.2	tool_calls:write
+DONE
