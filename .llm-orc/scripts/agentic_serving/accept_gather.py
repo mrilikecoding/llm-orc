@@ -22,6 +22,7 @@ from _helpers import HELD_TESTS_MARKER as _HELD_MARKER
 from _helpers import fold_workspace as _fold_workspace
 from _helpers import payload as _payload
 from _helpers import public_top_level_names as _public_top_level_names
+from _helpers import resolve_workspace_entries as _resolve_workspace_entries
 from _helpers import response as _response
 from _helpers import terminal as _terminal
 from _helpers import workspace_entries as _workspace_entries
@@ -187,11 +188,9 @@ def _prior_surface(
 def main() -> None:
     payload = _payload(sys.stdin.read().strip())
     requirement = str(payload.get("input_data", ""))
-    entries: list[tuple[str, str]] = []
+    context = ""
     if _REQUEST_MARKER in requirement:
         context, requirement = requirement.rsplit(_REQUEST_MARKER, 1)
-        entries = _workspace_entries(context)
-    workspace = _fold_workspace(entries)
     deps = payload.get("dependencies", {})
     if not isinstance(deps, dict):
         deps = {}
@@ -202,20 +201,28 @@ def main() -> None:
     # sentinel in user text worst-cases into a reject, never a wrong accept.
     tests_terminal = _terminal(_response(deps.get("test_writer", {})))
     held = not tests_terminal.strip() and _HELD_MARKER in requirement
+    held_block = ""
     if held:
         requirement, _, held_block = requirement.partition(_HELD_MARKER)
         requirement = requirement.strip()
-        tests = _extract_tests(held_block)
-    else:
-        tests = _extract_tests(tests_terminal)
+
+    # #184 A1 rework: the ask's own named destination is a root-resolution
+    # hint (rule b) — computed BEFORE the workspace so a lone absolute
+    # header naming the file the turn is about to edit recovers its real
+    # directory instead of falling all the way to a bare basename.
+    file_match = _FILE_RE.search(requirement)
+    target_path = file_match.group(1) if file_match else ""
+    target_file = target_path.rsplit("/", 1)[-1] if target_path else ""
+
+    entries, workspace_root_rule = _resolve_workspace_entries(context, target_path)
+    workspace = _fold_workspace(entries)
+
+    tests = _extract_tests(held_block) if held else _extract_tests(tests_terminal)
     code = _extract_code(_terminal(_response(deps.get("code_writer", {}))))
     candidate_defined = _top_level_defs(code)
     tests = _inject_workspace_imports(tests, workspace, candidate_defined)
     code = _inject_workspace_imports(code, workspace, candidate_defined)
 
-    file_match = _FILE_RE.search(requirement)
-    target_path = file_match.group(1) if file_match else ""
-    target_file = target_path.rsplit("/", 1)[-1] if target_path else ""
     prior_surface = _prior_surface(entries, target_file, target_path)
 
     print(
@@ -226,6 +233,7 @@ def main() -> None:
                 "tests": tests,
                 "held": held,
                 "workspace": workspace,
+                "workspace_root_rule": workspace_root_rule,
                 "target_file": target_file,
                 "target_path": target_path,
                 "prior_surface": prior_surface,

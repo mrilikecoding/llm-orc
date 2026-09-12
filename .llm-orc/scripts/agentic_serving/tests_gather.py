@@ -18,10 +18,11 @@ from __future__ import annotations
 import json
 import sys
 
+from _helpers import fold_workspace as _fold_workspace
 from _helpers import payload as _payload
+from _helpers import resolve_workspace_entries as _resolve_workspace_entries
 from _helpers import response as _response
 from _helpers import terminal as _terminal
-from _helpers import workspace as _extract_workspace
 from accept_gather import _REQUEST_MARKER, _extract_tests, _inject_workspace_imports
 
 
@@ -29,9 +30,12 @@ def main() -> None:
     payload = _payload(sys.stdin.read().strip())
     requirement = str(payload.get("input_data", ""))
     workspace: dict[str, str] = {}
+    workspace_root_rule = "none"
     if _REQUEST_MARKER in requirement:
         context, requirement = requirement.rsplit(_REQUEST_MARKER, 1)
-        workspace = _extract_workspace(context)
+        # write-tests names no target file (#98) — no root-resolution hint
+        entries, workspace_root_rule = _resolve_workspace_entries(context)
+        workspace = _fold_workspace(entries)
     deps = payload.get("dependencies", {})
     if not isinstance(deps, dict):
         deps = {}
@@ -46,6 +50,7 @@ def main() -> None:
                 "code": "",
                 "tests": tests,
                 "workspace": workspace,
+                "workspace_root_rule": workspace_root_rule,
                 "target_file": "",
                 "held": False,
             }

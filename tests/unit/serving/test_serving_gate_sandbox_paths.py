@@ -37,6 +37,7 @@ SCRIPTS = REPO / ".llm-orc" / "scripts" / "agentic_serving"
 
 sys.path.insert(0, str(SCRIPTS))
 from _helpers import (  # type: ignore[import-not-found]  # noqa: E402
+    resolve_workspace_entries,
     workspace,
     workspace_entries,
 )
@@ -44,6 +45,7 @@ from accept_executor import _materialize  # type: ignore[import-not-found]  # no
 
 _workspace = workspace
 _workspace_entries = workspace_entries
+_resolve_workspace_entries = resolve_workspace_entries
 
 GATHER = SCRIPTS / "accept_gather.py"
 EXECUTOR = SCRIPTS / "accept_executor.py"
@@ -124,6 +126,93 @@ def test_single_absolute_header_strips_to_its_bare_basename() -> None:
     )
     ws = _workspace(context)
     assert ws == {"storage.py": "def put(k, v):\n    return (k, v)"}
+
+
+# --- A1 rework: a single absolute header recovers its real directory ------
+
+
+def test_a1_single_absolute_header_matches_the_named_destination_as_a_suffix() -> None:
+    """The reviewer's A1 repro: ONE absolute header, no glob listing — the
+    ask's own named destination (todo/storage.py) matches as a suffix of
+    the absolute path, recovering the true root. Mutant: reverting to
+    dirname-only (this branch's ORIGINAL single-header rule) loses the
+    todo/ directory -> red."""
+    context = (
+        "assistant: [read /Users/u/proj/todo/storage.py]\n"
+        "  class TodoStore:\n"
+        "      pass"
+    )
+    entries, rule = _resolve_workspace_entries(context, target_path="todo/storage.py")
+    assert dict(entries) == {"todo/storage.py": "class TodoStore:\n    pass"}
+    assert rule == "suffix-match"
+
+
+def test_a1_an_unrelated_relative_sibling_is_not_a_coincidental_suffix_match() -> None:
+    """The suffix candidates include every already-relative header in the
+    same render, not only the ask's own target — but an unrelated sibling
+    must not coincidentally match, and this stays an honest basename
+    fallback rather than a false positive."""
+    context = (
+        "assistant: [read todo/other.py]\n"
+        "  OTHER = 1\n"
+        "assistant: [read /Users/u/proj/todo/storage.py]\n"
+        "  class TodoStore:\n"
+        "      pass\n"
+    )
+    entries, rule = _resolve_workspace_entries(context, target_path="")
+    resolved = dict(entries)
+    assert resolved["todo/other.py"] == "OTHER = 1"
+    assert "storage.py" in resolved
+    assert rule == "basename"
+
+
+def test_a1_glob_listing_recovers_the_root_even_with_a_single_read_header() -> None:
+    """Rule (a): a visible glob listing outranks everything else — its
+    paths routinely span several directories, giving a much more reliable
+    root than one or two read/write headers alone."""
+    context = (
+        "assistant: [globbed py]\n"
+        "  /Users/u/proj/todo/storage.py\n"
+        "  /Users/u/proj/todo/cli.py\n"
+        "  /Users/u/proj/tests/test_storage.py\n"
+        "assistant: [read /Users/u/proj/todo/storage.py]\n"
+        "  class TodoStore:\n"
+        "      pass\n"
+    )
+    entries, rule = _resolve_workspace_entries(context, target_path="")
+    assert dict(entries) == {"todo/storage.py": "class TodoStore:\n    pass"}
+    assert rule == "glob"
+
+
+def test_a1_no_glob_no_suffix_match_falls_back_to_basename_honestly() -> None:
+    """(d): when nothing recovers the real root, the single header still
+    resolves (never left unmaterialized) — but as a NAMED, reported
+    fallback, not a silent guess."""
+    context = (
+        "assistant: [read /Users/u/proj/todo/storage.py]\n"
+        "  class TodoStore:\n"
+        "      pass"
+    )
+    entries, rule = _resolve_workspace_entries(context, target_path="")
+    assert dict(entries) == {"storage.py": "class TodoStore:\n    pass"}
+    assert rule == "basename"
+
+
+def test_a1_two_absolute_headers_still_use_common_prefix_when_no_glob() -> None:
+    context = (
+        "assistant: [read /Users/u/proj/todo/storage.py]\n"
+        "  class TodoStore:\n"
+        "      pass\n"
+        "assistant: [read /Users/u/proj/tests/test_storage.py]\n"
+        "  def test_x():\n"
+        "      pass\n"
+    )
+    entries, rule = _resolve_workspace_entries(context, target_path="")
+    assert dict(entries) == {
+        "todo/storage.py": "class TodoStore:\n    pass",
+        "tests/test_storage.py": "def test_x():\n    pass",
+    }
+    assert rule == "common-prefix"
 
 
 def test_multiple_absolute_headers_strip_the_shared_project_root() -> None:
