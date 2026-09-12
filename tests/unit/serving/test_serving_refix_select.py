@@ -147,9 +147,14 @@ def test_smoke_test_is_derived_from_the_prior_modules_surface() -> None:
 
 
 def test_missing_prior_code_still_injects_a_loads_cleanly_smoke_test() -> None:
-    """No prior_code known (or nothing to preserve) degrades to the old
-    "loads cleanly" bar rather than crashing or emitting an unsatisfiable
-    test — the existing smoke-only pins above never supply prior_code."""
+    """No prior_code known (or nothing to preserve) makes ``_smoke_test``
+    emit the "loads cleanly" bar alone — an ``import solution`` assertion
+    with no per-name checks, rather than crashing or emitting an
+    unsatisfiable test — the existing smoke-only pins above never supply
+    prior_code. This pins only the TEXT this function emits; the
+    downstream ACCEPT decision for a surface-less prior is refix_envelope's
+    F-1 fallback (pre-#171 bar: load cleanly plus #173's inertness), pinned
+    in test_serving_refix_envelope.py, not here."""
     selected = _select(
         {
             "deterministic_code": "def f(): return 1\n",

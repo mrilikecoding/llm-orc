@@ -174,7 +174,21 @@ def main() -> None:
     # Only checked when something survived .strip(), so this cannot change
     # the emptiness branch below.
     inert = candidate_present and _is_inert(code)
-    accept = tests_pass and candidate_present and not inert and participates
+    # F-1 (#171 round 2 review): a prior module with NO public top-level
+    # def/class (constants-only settings, a dict-only rates table, an
+    # __init__ re-export module) makes the smoke-only bar unconditionally
+    # "loads cleanly" — the ablation control's empty-code run satisfies
+    # that identically (an "import solution" check observes nothing about
+    # the candidate), so `participates` would be False for EVERY candidate
+    # against this whole class of prior and the route could never
+    # converge. Fall back to the pre-#171 bar (load cleanly, plus #173's
+    # inertness whitelist) instead of applying the participation gate when
+    # there is no surface to derive a real check from.
+    smoke_surface_empty = smoke_only and bool(
+        selected.get("smoke_surface_empty", False)
+    )
+    effective_participates = participates or smoke_surface_empty
+    accept = tests_pass and candidate_present and not inert and effective_participates
     # Names the target (review round 1): #166's caller guard names the file
     # it declined to write, and a refusal the client cannot map to a file is
     # worth less. The target comes from select, which took it from gather's
@@ -187,20 +201,15 @@ def main() -> None:
             f"re-fix candidate for {target} has no executable statement; "
             "the original is unchanged"
         )
-    elif not participates:
+    elif not effective_participates:
         # #171: re-fix has no adequacy seat — this is the only place its
         # own accept formula can catch a suite the deliverable never
-        # touched (the smoke-only path's own "loads cleanly" bar, or a
-        # visible test the target module never appears in).
-        #
-        # Review M3: a surface-less prior (select found no top-level name
-        # to preserve) gets its OWN actionable reason — it isn't that
-        # these particular tests happen not to exercise the deliverable,
-        # it's that there was no surface to derive a real check from.
-        if smoke_only and bool(selected.get("smoke_surface_empty", False)):
-            reason = "the prior module defines no public surface to check"
-        else:
-            reason = participation_reason or "the tests never exercise the deliverable"
+        # touched. Scoped to a REAL surface now (F-1): a surface-less
+        # prior is exempted from this gate above, so what reaches here is
+        # a visible test the target module never appears in, or a
+        # smoke-only surface the candidate genuinely failed to satisfy
+        # some other way the ablation caught.
+        reason = participation_reason or "the tests never exercise the deliverable"
     elif smoke_only:
         reason = (
             "candidate loads cleanly; no visible test, the client run verifies"
