@@ -300,6 +300,13 @@ class TestTheGuardDoesNotRefuseHealthyBuilds:
     """
 
     def test_a_healthy_build_still_writes(self) -> None:
+        """The stale workspace copy and the healthy new content are BYTE-
+        IDENTICAL here on purpose (#171 review F3): the ablation control
+        must empty the DESTINATION entirely, not fall back to whatever the
+        workspace already had there — so an identical resubmission still
+        proves necessity (a control's own empty file differs from ANY real
+        content, matching or not) and this pin does not depend on the
+        stale copy being wrong."""
         envelope = _build_gated_envelope(
             f"```python\n{_HEALTHY}```\n", "fix inventory.py so restock adds one"
         )

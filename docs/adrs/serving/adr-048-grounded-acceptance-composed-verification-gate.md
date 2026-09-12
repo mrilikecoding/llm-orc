@@ -33,6 +33,21 @@
 > a criteria-*present* invariant on the generation side (WP-C8 / shape-catalog), threaded into
 > this gate as a criteria-contract input, not built as a gate seat.
 
+> **Amendment (#171, 2026-08-31): the AND gains a third, executor-owned input.**
+> The composed gate's two deterministic inputs could not observe that the
+> deliverable itself never ran: the executor's materialization shadowed the
+> named target file only, so tests satisfied entirely by the conversation
+> workspace passed against any deliverable at all, and the adequacy check is a
+> static read of the tests alone. The fix is a runtime ablation control inside
+> the executor (`accept_executor.py`) — on the would-accept path, one more
+> child runs with the same workspace and repaired tests but the deliverable's
+> bytes absent from every destination they were written to; a control that
+> also passes proves the suite never needed them. `accept = tests_pass AND
+> tests_adequate AND participates`. `participates` comes from the same
+> builder-independent seat as `tests_pass` (real sandboxed execution), so §1's
+> independence posture and §3's isolation are both unchanged — this is a third
+> orthogonal catch on the executor's own input, not a new seat.
+
 ## Context
 
 Q2 (§6.2b) is the DECIDE item after Q4 (ADR-047). ADR-046 settled the per-turn handler

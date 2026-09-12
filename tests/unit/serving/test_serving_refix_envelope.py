@@ -27,10 +27,12 @@ import pytest
 REPO = Path(__file__).resolve().parents[3]
 SCRIPTS = REPO / ".llm-orc" / "scripts" / "agentic_serving"
 
-# _SMOKE below is the PRODUCTION constant, not a copy, so the pins in THIS
+# _smoke below is the PRODUCTION function, not a copy, so the pins in THIS
 # file cannot go green for a reason unrelated to the guard if the smoke test
 # changes. #169's own issue lists "make the smoke test assert something about
-# the candidate" as the alternative fix, so that edit is likely.
+# the candidate" as the alternative fix, so that edit is likely — and #171
+# made it: the smoke test is now surface-derived from prior_code, so it is
+# no longer a bare string constant.
 #
 # Round 1 justified this with a measurement that review round 2 falsified:
 # it claimed the whole suite stayed green when refix_select._SMOKE_TEST was
@@ -38,9 +40,14 @@ SCRIPTS = REPO / ".llm-orc" / "scripts" / "agentic_serving"
 # test_serving_refix_select.py and test_serving_ensemble_endpoint.py catch
 # both. What the import actually buys is local: these pins stop depending on
 # a copy that could silently diverge from the constant they are about.
+#
+# Every fixture in this file calls ``_smoke("")`` (no prior surface known) —
+# this file is about #169/#173's emptiness/inertness guards, which are
+# orthogonal to #171's participation guard; #171's own pins live in
+# test_serving_refix_select.py and test_serving_gate_participation.py.
 sys.path.insert(0, str(SCRIPTS))
 
-from refix_select import _SMOKE_TEST as _SMOKE  # type: ignore  # noqa: E402
+from refix_select import _smoke_test as _smoke  # type: ignore  # noqa: E402
 
 # A visible test that does NOT reference the target module. Realistic: rung
 # 1.5's "visible test" is whatever test_<stem>.py was found, and a suite
@@ -48,6 +55,9 @@ from refix_select import _SMOKE_TEST as _SMOKE  # type: ignore  # noqa: E402
 # empty candidate this passes, which is what makes the pin below able to fail.
 _VISIBLE_TEST = "def test_unrelated():\n    assert 1 + 1 == 2\n"
 _REAL = "def restock(n):\n    return n + 1\n"
+# The buggy stale version _REAL fixes — #171's smoke test is surface-
+# derived from prior_code, so a genuine fix pin needs one to preserve.
+_PRIOR_RESTOCK = "def restock(n):\n    return n\n"
 
 # #173 review round 1: measured through the real chain, all 15 clobber under
 # the pre-round-2 predicate ("every statement is a bare string"). Each binds
@@ -90,21 +100,32 @@ def _dep(value: Any) -> dict[str, str]:
     return {"response": value if isinstance(value, str) else json.dumps(value)}
 
 
-def _envelope(code: str, *, visible_test: str = "") -> dict[str, Any]:
+def _envelope(
+    code: str, *, visible_test: str = "", prior_code: str = ""
+) -> dict[str, Any]:
     """executor -> envelope, both real, over a SYNTHESIZED select output.
 
     ``refix_select.py`` is not run here — the dict below is built to the
     shape it emits, verified key-for-key against the real node — so the
-    smoke test comes from the production constant rather than from select
+    smoke test comes from the production function rather than from select
     having injected it. ``code`` is the candidate and the only fault.
+
+    ``prior_code`` defaults to "" (no surface known) — every fixture in
+    this file is about #169/#173's emptiness/inertness guards, which do not
+    need one; the #171 participation pins that DO need a real surface pass
+    it explicitly (see TestTheGuardDoesNotRejectRealCandidates below).
     """
+    smoke_only = not visible_test.strip()
+    smoke_text, smoke_has_surface, smoke_prior_status = _smoke(prior_code)
     selected = {
         "requirement": "fix calc.py so restock adds one",
         "code": code,
-        "tests": visible_test or _SMOKE,
+        "tests": visible_test or smoke_text,
         "target_file": "calc.py",
         "edit_kind": "model",
-        "smoke_only": not visible_test,
+        "smoke_only": smoke_only,
+        "smoke_surface_empty": smoke_only and not smoke_has_surface,
+        "smoke_prior_status": smoke_prior_status if smoke_only else "ok",
     }
     executor = _node("accept_executor.py", {"select": _dep(selected)})
     envelope = _node(
@@ -173,19 +194,177 @@ class TestTheGuardDoesNotRejectRealCandidates:
     they are here so the fix does not become "reject every re-fix"."""
 
     def test_a_real_candidate_on_the_smoke_only_path_still_accepts(self) -> None:
-        envelope = _envelope(_REAL)
+        """#171: the smoke test is surface-derived from prior_code, so a
+        genuine fix needs a prior surface to preserve — without one an
+        "import solution"-only check cannot prove participation for
+        anything, real or junk (the shape the tests just above this class
+        exist to refuse)."""
+        envelope = _envelope(_REAL, prior_code=_PRIOR_RESTOCK)
 
         assert envelope["diagnostics"]["accept"] is True
         assert envelope["artifacts"][0]["content"] == _REAL
 
-    def test_a_one_line_real_fix_still_accepts(self) -> None:
-        """#173's scope is inert candidates only — real code carrying any
-        statement (assignment, import, def...) is untouched, even a single
-        line. #171 is the general "does the deliverable participate" fix
-        and is out of scope here."""
-        envelope = _envelope("x = 1\n")
+    def test_a_junk_edit_with_a_missing_prior_marker_now_refuses(self) -> None:
+        """Round 2b correction (independent confirmation review): supersedes
+        this test's own prior claim (``test_a_one_line_edit_with_no_prior_
+        surface_accepts_under_the_fallback_bar``, which pinned this exact
+        input — ``_envelope("x = 1\\n")``, prior_code defaulting to "" — as
+        accept=True).
 
-        assert envelope["diagnostics"]["accept"] is True
+        ``prior_code == ""`` means the ``[PRIOR CODE]`` marker was never
+        populated at all — refix_gather has NO information about what the
+        client's file contains, not "the file is empty." Round 1/3 treated
+        that identically to "provably zero public bindings" and fell back
+        to "loads cleanly", which let ``x = 1`` clobber a file whose real
+        content was simply unknown. Honesty-critical paths fail closed: the
+        smoke-only route now refuses outright when the prior marker is
+        missing, with a path-free reason, never "loads cleanly"."""
+        envelope = _envelope("x = 1\n")
+        reason = envelope["diagnostics"]["accept_reason"]
+
+        assert envelope["diagnostics"]["accept"] is False
+        assert "no prior content" in reason.lower()
+        assert "calc.py" in reason, "the refusal must name what was not written"
+
+    def test_a_junk_edit_with_an_unparseable_prior_refuses(self) -> None:
+        """Round 2b correction, the other unreadable shape: the prior IS
+        present but fails to parse — reachable live via the renderer's
+        ``(truncated)``/``(oversize)`` write variants, which garble the
+        file's actual content. There is no way to compute a surface from
+        it, so this must refuse the same as a missing marker, not fall back
+        to "loads cleanly" either."""
+        prior = "def restock(item, n)\n    return n\n"  # missing the colon
+        envelope = _envelope("x = 1\n", prior_code=prior)
+        reason = envelope["diagnostics"]["accept_reason"]
+
+        assert envelope["diagnostics"]["accept"] is False
+        assert "could not be read whole" in reason.lower()
+        assert "calc.py" in reason, "the refusal must name what was not written"
+
+    def test_a_junk_edit_against_a_private_only_prior_still_falls_back(
+        self,
+    ) -> None:
+        """Named bound (round 2b, recorded not closed): a prior that IS
+        readable and PROVABLY has zero PUBLIC bindings — every top-level
+        name is private or dunder — stays on the pre-#171 fallback bar.
+        Unlike the missing/unparseable cases above, this prior is fully
+        known; there just isn't anything public in it to check a fix
+        against, and #173's inertness whitelist is what still catches
+        genuine junk here (``x = 1`` isn't on it)."""
+        prior = "_helper = 1\n__version__ = '1.0'\n"
+        envelope = _envelope("x = 1\n", prior_code=prior)
+
+        assert envelope["diagnostics"]["accept"] is True, envelope["diagnostics"][
+            "accept_reason"
+        ]
+
+    def test_an_import_only_prior_also_falls_back_to_the_loads_cleanly_bar(
+        self,
+    ) -> None:
+        """The other zero-public-binding shape (an ``__init__`` re-export
+        module): imports were never part of the surface, before or after
+        the round-3 widening, so a prior that only imports names still has
+        nothing to check and falls back to the pre-#171 bar."""
+        prior = "from foo import bar\nfrom baz import qux\n"
+        envelope = _envelope("x = 1\n", prior_code=prior)
+
+        assert envelope["diagnostics"]["accept"] is True, envelope["diagnostics"][
+            "accept_reason"
+        ]
+
+    def test_a_constants_only_prior_with_a_legitimate_fix_accepts(self) -> None:
+        """F-1's own repro, round 3 (widened, not skipped): a constants-only
+        settings module's top-level assignment targets (PORT/DEBUG/RETRIES)
+        are now PART of the smoke surface — a legitimate one-value fix that
+        keeps every name still accepts, via the genuine per-name check, not
+        a bypass."""
+        prior = "PORT = 8080\nDEBUG = False\nRETRIES = 3\n"
+        fixed = "PORT = 9090\nDEBUG = False\nRETRIES = 3\n"
+        envelope = _envelope(fixed, prior_code=prior)
+
+        assert envelope["diagnostics"]["accept"] is True, envelope["diagnostics"][
+            "accept_reason"
+        ]
+
+    def test_a_dict_only_rates_table_fix_accepts(self) -> None:
+        """F-1's second repro shape, round 3: a dict-only rates table's
+        ``RATES`` binding is part of the widened surface; a fix that keeps
+        the name (only the dict's value changes) accepts."""
+        prior = "RATES = {'a': 1, 'b': 2}\n"
+        fixed = "RATES = {'a': 1, 'b': 3}\n"
+        envelope = _envelope(fixed, prior_code=prior)
+
+        assert envelope["diagnostics"]["accept"] is True, envelope["diagnostics"][
+            "accept_reason"
+        ]
+
+    def test_a_bare_annotation_does_not_poison_the_surface(self) -> None:
+        """Round 2b, fix 2 (independent confirmation review): a bare
+        ``PORT: int`` (annotation only, no ``=``) does not bind PORT at
+        module level at all — executing that statement creates no
+        attribute. ``_public_top_level_names`` collected it anyway, adding
+        an UNSATISFIABLE name to the surface: ``hasattr(solution, "PORT")``
+        is False even for the prior module's own bare annotation, so a
+        legitimate fix to a sibling name (``DEBUG``) was refused with "no
+        longer defines PORT" — a name the prior itself never bound.
+        ``AnnAssign`` with ``value is None`` must be excluded."""
+        prior = "PORT: int\nDEBUG = False\n"
+        fixed = "PORT: int\nDEBUG = True\n"
+        envelope = _envelope(fixed, prior_code=prior)
+
+        assert envelope["diagnostics"]["accept"] is True, envelope["diagnostics"][
+            "accept_reason"
+        ]
+
+    def test_a_junk_edit_against_a_constants_only_prior_now_refuses(self) -> None:
+        """Round 3 correction (the coordinator's own finding): F-1's
+        fallback re-opened the exact clobber #173 closed for def-bearing
+        modules — ``x = 1`` shipped against a constants-only prior. The
+        surface is widened instead of skipped: PORT/DEBUG/RETRIES are
+        public top-level bindings same as a function name, so a junk
+        deliverable that drops all three refuses, with the same
+        dropped-name reason wording a dropped function gets (F-2)."""
+        prior = "PORT = 8080\nDEBUG = False\nRETRIES = 3\n"
+        envelope = _envelope("x = 1\n", prior_code=prior)
+        reason = envelope["diagnostics"]["accept_reason"]
+
+        assert envelope["diagnostics"]["accept"] is False
+        assert "no longer defines" in reason
+        assert any(name in reason for name in ("PORT", "DEBUG", "RETRIES"))
+
+    def test_a_fix_that_drops_a_public_constant_refuses(self) -> None:
+        """Recorded bound, same as functions (F-2's own dropped-name bound,
+        now extended to constants): a fix that intentionally drops a public
+        constant the prior module exported refuses, whichever was the
+        right call to make."""
+        prior = "PORT = 8080\nDEBUG = False\nRETRIES = 3\n"
+        candidate = "PORT = 9090\nDEBUG = False\n"
+        envelope = _envelope(candidate, prior_code=prior)
+        reason = envelope["diagnostics"]["accept_reason"]
+
+        assert envelope["diagnostics"]["accept"] is False
+        assert "RETRIES" in reason
+
+    def test_a_dropped_name_reason_states_the_fact_without_quoting_test_source(
+        self,
+    ) -> None:
+        """Review M3: the smoke-only reason used to say "failed to load"
+        for a candidate that loaded FINE but dropped a name the prior
+        module provided, and it quoted the internal smoke test's own
+        assert source line — an implementation detail of the ablation's
+        OWN test, not something the user wrote. Naming the dropped name is
+        fine; quoting internal test source is not."""
+        prior = (
+            "def restock(item, n):\n    return n + 1\n"
+            "def audit(item):\n    return item\n"
+        )
+        envelope = _envelope(_REAL, prior_code=prior)
+        reason = envelope["diagnostics"]["accept_reason"]
+
+        assert envelope["diagnostics"]["accept"] is False
+        assert "failed to load" not in reason, reason
+        assert "assert hasattr" not in reason, reason
+        assert "audit" in reason, reason
 
 
 class TestAnInertCandidateIsNeverAccepted:

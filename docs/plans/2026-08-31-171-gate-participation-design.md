@@ -65,6 +65,45 @@ Conditions and bounds:
   asserting `len(open("helpers.py").read()) > 0` passes the control
   with a junk deliverable. The value-bearing adequacy rule is the other
   half of the invariant and already exists; neither subsumes the other.
+- **Named bound (round 2b, re-fix's smoke surface is `hasattr` only):**
+  the surface-derived smoke test (`refix_select._smoke_test`) only ever
+  asserts `hasattr(solution, name)` — it proves a name is bound, not
+  what it is bound TO. A candidate that keeps every public name but
+  destroys every value (`PORT = None`/`DEBUG = None`/`RETRIES = None`
+  over the settings prior, or `discount = 0` replacing a function of
+  the same name) still ships (measured, pre-existing on base,
+  unaffected by round 2b's two fixes below). The value-bearing adequacy
+  rule is the other half of the invariant above and already exists;
+  neither subsumes the other — same shape as the length-assert bound,
+  one level down (re-fix's own smoke check rather than the build-gated
+  ablation control).
+- **Named bound (review F4, control granularity ≠ real-run
+  granularity):** the control always runs as ONE combined process; the
+  real suite runs per-test isolated (a fresh subprocess, fresh
+  workspace copy, per test). A workspace module with cross-test state
+  can pass every test in isolation yet fail when the SAME tests run
+  together in the control's one process, for a reason unrelated to the
+  deliverable — the control then reads "necessary" and non-
+  participating junk ships. Measured live rate: 0/46 recorded turns hit
+  this shape; matching granularity would cost one extra per-test-
+  isolated subprocess set on every ablation run for a divergence not
+  yet observed live, so this is recorded rather than closed.
+- **Named bound (review round 2, F-3, module-LOAD granularity ≠
+  assertion granularity):** participation is decided at module-LOAD
+  granularity — any top-level `from solution import X` in the tests
+  makes the control fail on ImportError, "proving" necessity, even when
+  every ASSERTION in the tests actually routes through a workspace
+  module instead. Repro: `code = "def discount(price, pct):\n    return
+  0\n"`, `tests = "from solution import discount\nimport pricing\ndef
+  test_d():\n    assert pricing.discount(200, 10) == 180\n"`, workspace
+  `pricing.py` holding the correct implementation → `accept: true` on
+  both base and this branch, with a wrong `discount` that the one real
+  assertion never touches. Pinned as documented behavior
+  (`test_named_bound_load_granularity_ships_wrong_code_via_a_workspace_module`
+  in `test_serving_gate_participation.py`), not fixed — matching
+  granularity would mean tracing which names each assertion actually
+  reaches at runtime, not just which names load, a materially bigger
+  mechanism than this control.
 
 ## Two companion slices (independent, same arc)
 
@@ -77,6 +116,74 @@ Conditions and bounds:
    a candidate that drops the surface fails it. Measured: real fix
    passes, all five junk shapes fail. Recorded bound: a fix that
    intentionally drops a public name refuses.
+
+   **Round 2 review, F-2:** the surface was every top-level def/class
+   name, underscore-prefixed ones included, so inlining or deleting a
+   private helper refused a legitimate fix for dropping a name nothing
+   public ever promised. Fixed: the surface is PUBLIC names only (a
+   leading underscore, dunders included, is excluded).
+
+   **Round 2 review, F-1, real scope of the surface-less fallback (round
+   1) — SUPERSEDED by round 3, below.** When the prior module has no
+   public top-level def/class at all (constants-only settings, a
+   dict-only rates table, an `__init__` re-export module), the
+   smoke-only bar degraded to "loads cleanly" alone — and the ablation
+   control's empty-code run satisfied that identically, so
+   `participates` was False for EVERY candidate against this whole
+   class and the route could never converge. Round 1's fix fell back to
+   the PRE-#171 bar (loads cleanly, plus #173's inertness whitelist) for
+   exactly this case. Measured at the time: a constants-only one-value
+   fix accepts, a dict-only rate change accepts, and `x = 1`-style junk
+   against a constants-only prior ALSO accepted (`Assign` isn't on
+   #173's inert whitelist) — this reopened the exact clobber #173 closed
+   for def-bearing modules, and is why round 3 replaced the skip below.
+
+   **Round 3 correction (coordinator finding): widen the surface, don't
+   skip the check.** The consistent rule is that the re-fix smoke
+   surface is every PUBLIC top-level BINDING, not only def/class:
+   `refix_select._public_top_level_names` now also collects `Assign`/
+   `AnnAssign` targets that are a plain `Name` (simple tuple/list
+   unpacking included), public ones only (leading underscore excluded,
+   same as def/class). A settings module's `PORT = 8080` is now as much
+   a surface member as a function name — a constants edit that keeps
+   its names still accepts, and `x = 1` against that same prior now
+   REFUSES with the same dropped-name wording a dropped function gets.
+   The "loads cleanly" fallback is now reserved for a prior with
+   literally ZERO public bindings of any kind (an empty module, or one
+   that only imports names — imports were never surface, before or
+   after this). Measured: the constants fix and the dict-only rate
+   change still accept (via the genuine per-name check now, not a
+   bypass); `x = 1` against the constants-only prior refuses; a fix
+   that deliberately drops one public constant (keeping the others)
+   refuses too, the same recorded bound already pinned for functions.
+
+   **Round 2b correction (independent confirmation review): the
+   fallback must apply only to a prior that is PRESENT, PARSEABLE, and
+   PROVABLY has zero public bindings.** `_smoke_test` was returning
+   `has_surface=False` whenever it could not DETERMINE a surface, not
+   only when it could prove there wasn't one — so junk `x = 1` shipped
+   and clobbered the client's file when the prior was unparseable
+   (reachable live via the renderer's `(truncated)`/`(oversize)` write
+   variants) or when the `[PRIOR CODE]` marker was simply missing
+   (`prior_code == ""`, no information at all, not "the file is
+   empty"). Fixed: `_smoke_test` now returns a `prior_status` of
+   `"missing"` / `"unparseable"` / `"ok"`; `refix_envelope` refuses
+   outright (fail closed — honesty-critical paths fail closed) on the
+   first two, with a path-free reason naming which ("no prior content
+   ... was available to check the fix against" / "... could not be
+   read whole, so the fix cannot be checked against it"), never "loads
+   cleanly". Measured: a missing-marker junk edit and an unparseable-
+   prior junk edit both now refuse with the new wording.
+
+   **Named bound (round 2b, recorded not closed): a private/dunder-
+   only prior still falls back.** A prior that IS readable and
+   provably has zero PUBLIC bindings — every top-level name private or
+   dunder (`_helper = 1`, `__version__ = "1.0"`) — has nothing public
+   to derive a real check from, same as an empty or import-only prior,
+   and stays on the pre-#171 loads-cleanly bar. Junk against a
+   private-only module therefore still ships (measured, `x = 1`
+   accepts) — #173's inertness whitelist is what would catch actual
+   junk shapes there, not this widening.
 2. **`_inject_workspace_imports` must not divert.** Skip injection for
    any name the CANDIDATE defines (both call sites — tests and code).
    Two-line guard; removes the self-inflicted diversion class (WA-2/2b).
@@ -101,6 +208,16 @@ Conditions and bounds:
    the corpus expectation — 0 wrong-rejects held over the 71
    recorded/labelled contracts (13 build/re-fix replays, 42 write-tests
    replays, 16 judge_adequacy fixtures).
+
+   **Correction (review round 1):** the pre-flight's own "0
+   wrong-rejects over 71" figure was itself measured with the
+   destination's stale copy WITHHELD at the control (skip the shadow)
+   rather than emptied — production shape includes it. Under that
+   control, 14/55 recorded pairs flip accept→refuse (two are genuine
+   live additive-edit turns whose suite covers only the unchanged half
+   of the deliverable, F3 below). The briefed control — shadow the
+   target file with EMPTY bytes too, never skip it — gives 13/13 on the
+   build/re-fix replay subset with the stale copy correctly present.
 3. The import-dialect wrong-accept set (`import X` + attribute, aliased
    import, star import, facade re-export, injected-import diversion)
    all refuse — these killed the static rule and are the fixture set
