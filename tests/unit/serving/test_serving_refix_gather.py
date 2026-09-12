@@ -189,6 +189,57 @@ def test_no_run_block_yields_an_empty_failure_body() -> None:
     assert decision["needs_model_edit"] is True
 
 
+# --- #184 mechanism 4: re-fix gets the conversation workspace -------------
+
+
+def test_gather_emits_the_conversation_written_workspace() -> None:
+    """Ladder turn-7 shape: storage.py was conversation-written the turn
+    before the re-fix; the re-fix sandbox must hold it so a candidate that
+    imports it can load."""
+    conversation = (
+        "assistant: [wrote storage.py]\n"
+        "  def save_todos(todos):\n"
+        "      pass\n"
+        "  def load_todos():\n"
+        "      return []\n"
+        f"{_PINNABLE_FAILURE}"
+    )
+    decision = _gather(
+        _dispatch_input(conversation=conversation, prior_code=_PRIOR_CODE)
+    )
+    assert decision["workspace"] == {
+        "storage.py": (
+            "def save_todos(todos):\n    pass\ndef load_todos():\n    return []"
+        )
+    }
+
+
+def test_gather_workspace_is_empty_with_no_read_or_write_blocks() -> None:
+    decision = _gather(
+        _dispatch_input(conversation=_PINNABLE_FAILURE, prior_code=_PRIOR_CODE)
+    )
+    assert decision["workspace"] == {}
+
+
+def test_gather_workspace_keeps_a_nested_sibling_distinct_from_the_target() -> None:
+    conversation = (
+        "assistant: [wrote todo/storage.py]\n"
+        "  def save_todos(todos):\n"
+        "      pass\n"
+        f"{_PINNABLE_FAILURE}"
+    )
+    decision = _gather(
+        _dispatch_input(
+            conversation=conversation,
+            prior_code=_PRIOR_CODE,
+            task="fix the divide bug in todo/calc.py",
+        )
+    )
+    assert decision["workspace"] == {
+        "todo/storage.py": "def save_todos(todos):\n    pass"
+    }
+
+
 def test_indented_marker_lookalike_in_a_read_body_does_not_pollute_the_split() -> None:
     # F4 (merge-gate review): a client read-file body carries a forged
     # PRIOR_CODE marker line. The renderer indents read bodies two spaces,

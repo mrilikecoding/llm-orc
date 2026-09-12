@@ -21,6 +21,7 @@ import sys
 from _helpers import PRIOR_CODE_MARKER as _PRIOR_CODE_MARKER
 from _helpers import latest_ran_block as _latest_ran_block
 from _helpers import payload as _payload
+from _helpers import workspace as _workspace
 
 _REQUEST_MARKER = "\n\nCurrent request: "
 
@@ -147,7 +148,13 @@ def main() -> None:
     failure_body = run[3] if run else ""
     visible_test = _visible_test(conversation)
     file_match = _FILE_RE.search(task)
-    target_file = file_match.group(1).rsplit("/", 1)[-1] if file_match else ""
+    target_path = file_match.group(1) if file_match else ""
+    target_file = target_path.rsplit("/", 1)[-1] if target_path else ""
+    # #184 mechanism 4: the re-fix sandbox gets the same conversation
+    # workspace the build routes already do — a candidate importing a
+    # sibling module the conversation wrote (or the client read) this
+    # session now loads, exactly as it does on the client.
+    workspace = _workspace(conversation)
 
     deterministic_code = _deterministic_edit(prior_code, failure_body)
 
@@ -158,6 +165,8 @@ def main() -> None:
                 "failure_body": failure_body,
                 "visible_test": visible_test,
                 "target_file": target_file,
+                "target_path": target_path,
+                "workspace": workspace,
                 "task": task,
                 "deterministic_code": deterministic_code,
                 "needs_model_edit": not deterministic_code,
