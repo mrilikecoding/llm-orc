@@ -101,6 +101,19 @@ def _top_level_defs(text: str) -> frozenset[str]:
     )
 
 
+def _dotted_module_name(filename: str) -> str:
+    """The importable dotted module name for a workspace file's relative
+    path (#184 A6): ``todo/util.py`` -> ``todo.util``; ``todo/__init__.py``
+    -> ``todo`` (the package itself — a real ``import`` never resolves an
+    ``__init__`` module by that name). "" when nothing importable is left
+    (a root-level ``__init__.py``)."""
+    stem = filename.rsplit(".", 1)[0]
+    parts = stem.split("/")
+    if parts and parts[-1] == "__init__":
+        parts = parts[:-1]
+    return ".".join(parts)
+
+
 def _inject_workspace_imports(
     text: str,
     workspace: dict[str, str],
@@ -116,6 +129,12 @@ def _inject_workspace_imports(
     import (the runner execs code THEN tests into one shared namespace, so
     the import always wins), retargeting the gate at the workspace's copy
     regardless of whether the candidate was right or wrong.
+
+    The module name is the DOTTED path (#184 A6, ``_dotted_module_name``):
+    a nested workspace file's basename-minus-extension alone
+    (``todo/util.py`` -> ``todo/util``) is never a valid identifier, so
+    before this the injector silently stopped firing exactly for the
+    package shape this arc exists to support.
     """
     try:
         tree = ast.parse(text)
@@ -125,9 +144,11 @@ def _inject_workspace_imports(
     used = {n.id for n in ast.walk(tree) if isinstance(n, ast.Name)}
     prelude: list[str] = []
     for filename, body in workspace.items():
-        module = filename.rsplit(".", 1)[0]
+        module = _dotted_module_name(filename)
+        if not module or not all(part.isidentifier() for part in module.split(".")):
+            continue
         already_imported = f"import {module}" in text or f"from {module} import" in text
-        if already_imported or not module.isidentifier():
+        if already_imported:
             continue
         exported = _top_level_defs(body)
         missing = sorted((used - defined - candidate_defined) & exported)
