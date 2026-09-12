@@ -118,18 +118,41 @@ def _workspace(context: str) -> dict[str, str]:
     return files
 
 
-def _inject_workspace_imports(text: str, workspace: dict[str, str]) -> str:
+def _top_level_defs(text: str) -> frozenset[str]:
+    """Function/class names bound at MODULE level of ``text``, or empty when
+    it doesn't parse."""
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        return frozenset()
+    return frozenset(
+        n.name
+        for n in tree.body
+        if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+    )
+
+
+def _inject_workspace_imports(
+    text: str,
+    workspace: dict[str, str],
+    candidate_defined: frozenset[str] = frozenset(),
+) -> str:
     """Prepend imports for workspace-module names a deliverable uses but never
-    imports (a common small-model omission caught by the accept gate)."""
+    imports (a common small-model omission caught by the accept gate).
+
+    ``candidate_defined`` (#171, WA-2b): names the CANDIDATE deliverable
+    already binds at module level — never a re-injection target, on either
+    call site. Without this, a bare-name test reference that would have
+    bound the deliverable got rebound to a workspace module by the injected
+    import (the runner execs code THEN tests into one shared namespace, so
+    the import always wins), retargeting the gate at the workspace's copy
+    regardless of whether the candidate was right or wrong.
+    """
     try:
         tree = ast.parse(text)
     except SyntaxError:
         return text
-    defined = {
-        n.name
-        for n in tree.body
-        if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
-    }
+    defined = _top_level_defs(text)
     used = {n.id for n in ast.walk(tree) if isinstance(n, ast.Name)}
     prelude: list[str] = []
     for filename, body in workspace.items():
@@ -139,15 +162,8 @@ def _inject_workspace_imports(text: str, workspace: dict[str, str]) -> str:
         )
         if already_imported or not module.isidentifier():
             continue
-        try:
-            exported = {
-                n.name
-                for n in ast.parse(body).body
-                if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
-            }
-        except SyntaxError:
-            continue
-        missing = sorted((used - defined) & exported)
+        exported = _top_level_defs(body)
+        missing = sorted((used - defined - candidate_defined) & exported)
         if missing:
             prelude.append(f"from {module} import {', '.join(missing)}")
     return "\n".join(prelude) + "\n" + text if prelude else text
@@ -177,8 +193,9 @@ def main() -> None:
     else:
         tests = _extract_tests(tests_terminal)
     code = _extract_code(_terminal(_response(deps.get("code_writer", {}))))
-    tests = _inject_workspace_imports(tests, workspace)
-    code = _inject_workspace_imports(code, workspace)
+    candidate_defined = _top_level_defs(code)
+    tests = _inject_workspace_imports(tests, workspace, candidate_defined)
+    code = _inject_workspace_imports(code, workspace, candidate_defined)
 
     file_match = _FILE_RE.search(requirement)
     target_file = file_match.group(1).rsplit("/", 1)[-1] if file_match else ""

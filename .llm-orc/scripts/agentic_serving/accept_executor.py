@@ -64,6 +64,25 @@ _CHILD_ENV: dict[str, str] = {}
 # surfaced — no silent caps.
 _MAX_ISOLATED_TESTS = 20
 
+# #171: the runtime ablation control's honest, path-free refusal reason —
+# the tests passed, but they would have passed identically with the
+# deliverable's bytes absent, so `accept: true` would be a claim about a
+# file that never participated. Flows through accept_gate (build-gated) and
+# refix_envelope (re-fix) as accept_reason unchanged; a single constant so
+# neither downstream consumer can drift from the wording the other reads.
+_NONPARTICIPATION_REASON = "the tests never exercise the deliverable"
+
+# #171 review F2: a control that CANNOT run (the aggregate budget is spent
+# by the time we would spawn it) must never silently default to
+# "necessity not disproven" — that is indistinguishable on the wire from a
+# control that genuinely ran and failed, and reports "all passed" for a
+# verdict that was never reached. Distinct from _NONPARTICIPATION_REASON so
+# an operator (or a test) can tell "proven unnecessary" from "never
+# checked" apart.
+_ABLATION_BUDGET_REASON = (
+    "the runtime ablation control could not run within the aggregate budget"
+)
+
 # A bare-name assert on a name the tests never assign (``assert load`` /
 # ``assert load, "msg"``) checks only module-object truthiness — a defined
 # function is always truthy, so the line carries no test value, and the
@@ -650,6 +669,38 @@ def _run_one(
     )
 
 
+def _ablation_reason(
+    tests: str,
+    workspace: dict[str, str] | None,
+    target_file: str,
+    timeout: float,
+    deadline: float,
+) -> str:
+    """The #171 participation reason for a control run starting now: ""
+    (participates — the control failed or crashed, proving necessity),
+    ``_NONPARTICIPATION_REASON`` (the control also passed), or
+    ``_ABLATION_BUDGET_REASON`` (F2: ``deadline`` has already passed, so
+    the control does not run at all — FAIL CLOSED with an honest, distinct
+    reason rather than silently defaulting to "necessity not disproven").
+
+    ``target_file`` is threaded straight into the control's own
+    materialization WITH the empty ``code`` (F3): the deliverable's bytes
+    must be absent from EVERY destination they were written to, including
+    the target-file shadow. Skipping the shadow instead (reverting the
+    destination to the workspace's own stale copy) answers "was this
+    necessary GIVEN WHAT THE CLIENT ALREADY HAS", not "were these bytes
+    necessary" — measured live turns are additive edits whose suite covers
+    only the unchanged half, and reverting to the stale copy wrongly
+    refused both.
+    """
+    if time.monotonic() >= deadline:
+        return _ABLATION_BUDGET_REASON
+    control_ok, _report, _n_tests, _leaked = _run_one(
+        "", tests, workspace, target_file, None, timeout
+    )
+    return _NONPARTICIPATION_REASON if control_ok else ""
+
+
 def _run_children(
     code: str,
     tests: str,
@@ -657,7 +708,9 @@ def _run_children(
     target_file: str,
     timeout: float,
     children: list[str | None],
-) -> tuple[list[str], int]:
+    *,
+    control: bool = False,
+) -> tuple[list[str], int, str]:
     """Run each isolated child in turn, stopping early once the aggregate
     wall budget across the suite is spent — the per-child timeout bounds
     one runaway test, this bounds the whole suite (review finding: 21
@@ -677,6 +730,14 @@ def _run_children(
     it must not be swallowed by the empty-cases allowance. The verdict
     comes from the tests that actually ran; ``_run_sandboxed`` separately
     refuses when NOTHING ran at all.
+
+    ``control`` (#171 runtime ablation): when every real child above
+    passed, run ONE more child inside this SAME loop's budget — see
+    ``_ablation_reason`` for its exact semantics, including the F2
+    fail-closed budget guard. The third return value is that reason (""
+    when the suite participates); never requested (``control=False``,
+    e.g. an empty deliverable) or the real children already failed both
+    also return "".
     """
     budget = _aggregate_budget()
     start = time.monotonic()
@@ -698,7 +759,13 @@ def _run_children(
         empty_cases_child = only == "__cases__" and n_tests == 0 and not leaked
         if not ok and not empty_cases_child:
             failures.append(report)
-    return failures, total
+
+    participation_reason = ""
+    if control and not failures:
+        participation_reason = _ablation_reason(
+            tests, workspace, target_file, timeout, start + budget
+        )
+    return failures, total, participation_reason
 
 
 def _run_sandboxed(
@@ -706,17 +773,36 @@ def _run_sandboxed(
     tests: str,
     workspace: dict[str, str] | None = None,
     target_file: str = "",
-) -> tuple[bool, str, int]:
+) -> tuple[bool, str, int, str]:
+    """Returns (tests_pass, report, n_tests, participation_reason) —
+    ``participation_reason`` is "" unless the #171 ablation control (or its
+    own budget guard, F2) refuses. It is always "" when the deliverable is
+    empty (#166/#169 already refuse that; an ablation there is vacuous and
+    would refuse every write-tests turn, #98) or when the real run itself
+    already failed — the ablation only ever runs on the would-accept path.
+    """
     timeout = _timeout()
+    budget = _aggregate_budget()
     enumerated = _enumerate_tests(tests)
     if enumerated is None or (not enumerated[0] and not enumerated[1]):
-        # unparseable or nothing enumerable: one legacy run reports it.
-        # #176 F8 (review round 2, N-1): the runner's own leak scan
-        # already covers this path — nothing further needed here.
+        # F1 (review BLOCKER): this branch is NOT only "unparseable or
+        # nothing enumerable" — `_enumerate_tests` also returns None for
+        # ANY nested `test_*` def, which is every unittest.TestCase
+        # method. That shape parses fine and regularly reaches the
+        # would-accept path (9/55 recorded live suites, review), so it
+        # needs the SAME ablation the isolated path gets below. #176 F8
+        # (review round 2, N-1): the runner's own leak scan already
+        # covers the genuinely-nothing-to-run half of this branch.
+        start = time.monotonic()
         ok, report, n_tests, _leaked = _run_one(
             code, tests, workspace, target_file, None, timeout
         )
-        return ok, report, n_tests
+        if not ok or not code.strip():
+            return ok, report, n_tests, ""
+        reason = _ablation_reason(
+            tests, workspace, target_file, timeout, start + budget
+        )
+        return ok, report, n_tests, reason
 
     names, has_cases = enumerated
     capped = len(names) > _MAX_ISOLATED_TESTS
@@ -724,8 +810,9 @@ def _run_sandboxed(
     if has_cases:
         children.append("__cases__")
 
-    failures, total = _run_children(
-        code, tests, workspace, target_file, timeout, children
+    run_control = bool(code.strip())
+    failures, total, participation_reason = _run_children(
+        code, tests, workspace, target_file, timeout, children, control=run_control
     )
     if capped:
         failures.append(f"…capped at {_MAX_ISOLATED_TESTS} isolated tests")
@@ -733,14 +820,14 @@ def _run_sandboxed(
     # a load failure repeats identically in every child — report it once
     deduped = list(dict.fromkeys(failures))
     if deduped:
-        return False, "; ".join(deduped), total
+        return False, "; ".join(deduped), total, ""
     if total == 0:
         # #176 review round 1 INVARIANT: a file whose classes yield no
         # runnable tests is judged by its remaining tests (handled
         # above); a file with no runnable tests AT ALL refuses, same
         # reason the legacy path already gives.
-        return False, "no test_* functions or TestCase classes found", 0
-    return True, "all passed", total
+        return False, "no test_* functions or TestCase classes found", 0, ""
+    return True, "all passed", total, participation_reason
 
 
 def main() -> None:
@@ -770,7 +857,9 @@ def main() -> None:
 
     target_file = str(data.get("target_file", ""))
 
-    tests_pass, report, n_tests = _run_sandboxed(code, tests, workspace, target_file)
+    tests_pass, report, n_tests, participation_reason = _run_sandboxed(
+        code, tests, workspace, target_file
+    )
 
     print(
         json.dumps(
@@ -786,6 +875,8 @@ def main() -> None:
                 "tests_raises_rewritten": tests_raises_rewritten,
                 "tests_imports_injected": tests_imports_injected,
                 "report": report,
+                "participates": not participation_reason,
+                "participation_reason": participation_reason,
             }
         )
     )

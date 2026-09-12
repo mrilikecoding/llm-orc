@@ -421,6 +421,32 @@ def test_gather_leaves_deliverables_with_imports_untouched() -> None:
     assert out["tests"] == tests_with_import.strip()
 
 
+def test_injector_never_diverts_a_name_the_candidate_already_defines() -> None:
+    """#171 (WA-2b): the injector had no visibility into the CODE when it
+    processed the TESTS, so a bare-name test reference got a workspace
+    import prepended even when the candidate already defined that name
+    itself — retargeting the gate at the workspace's copy regardless of
+    whether the candidate was right or wrong. The runner execs code THEN
+    tests into one shared namespace, so an injected import always wins.
+    """
+    criteria = (
+        "Conversation so far:\n"
+        "assistant: [wrote inventory.py]\n"
+        "  def restock(item, n):\n"
+        "      return n + 1\n"
+        "\n\nCurrent request: fix restock in solution.py"
+    )
+    wrong_code = "def restock(item, n):\n    return n\n"  # missing + 1
+    tests_bare = "def test_restock():\n    assert restock('x', 2) == 3\n"
+    out = _gather(criteria, tests_bare, wrong_code)
+    assert out["tests"] == tests_bare.strip(), (
+        "no import should divert to the workspace copy"
+    )
+
+    result = _executor_from_gather(out)
+    assert result["tests_pass"] is False, "the WRONG candidate must be the one tested"
+
+
 def test_executor_materializes_workspace_files_in_the_sandbox() -> None:
     """Tests that import a conversation-built module pass when the workspace
     carries it — the sandbox is no longer blind to conversation-known files."""

@@ -14,7 +14,9 @@ description: |
     executor      deterministic, sandboxed: runs the tests against the
                   materialized workspace
     judge         deterministic: value-bearing-assert analysis (#84)
-    accept_gate   accept = tests_pass AND tests_adequate
+    accept_gate   accept = tests_pass AND tests_adequate AND participates
+                  (participates is always true here — the executor's #171
+                  ablation is skipped on the empty-code write-tests turn)
     envelope      the executor-echoed tests as the ADR-024 primary
 
 # The retry-loop body — not registry-facing (no topaz_skill, no serves);

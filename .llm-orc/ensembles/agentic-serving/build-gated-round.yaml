@@ -12,7 +12,9 @@ description: |
     gather        assemble {requirement, code, tests} for the executor
     executor      deterministic, sandboxed: runs the tests against the code
     judge         deterministic: value-bearing-assert analysis of the tests
-    accept_gate   accept = tests_pass AND tests_adequate (orthogonal catches)
+    accept_gate   accept = tests_pass AND tests_adequate AND participates
+                  (orthogonal catches; participates is the executor's own
+                  runtime ablation control, #171)
     envelope      ADR-024 deliverable + accept verdict in diagnostics
 
   Independence (ADR-048 §3): the verifier seats (executor, judge) receive only

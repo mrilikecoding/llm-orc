@@ -19,11 +19,18 @@ from __future__ import annotations
 
 import ast
 import json
+import re
 import sys
 
 from _helpers import deps as _deps
 from _helpers import payload as _payload
 from _helpers import response as _response
+
+# The surface-derived smoke test's own assert message IS the dropped name
+# (refix_select's `assert hasattr(solution, "<name>"), "<name>"`) — #171
+# review M3: on the smoke-only path this is the ONLY test that can fail, so
+# a report matching this shape names a dropped name, never a user assertion.
+_DROPPED_NAME_RE = re.compile(r"AssertionError: ([A-Za-z_]\w*)\b")
 
 # #173 review round 1's adjudicated predicate: a closed whitelist of node
 # types that can bind no name and call nothing. Structure (Module, Pass, If,
@@ -91,14 +98,44 @@ def _is_inert(code: str) -> bool:
     return all(isinstance(node, _INERT_NODE_TYPES) for node in ast.walk(tree))
 
 
-def _executor_verdict(deps: dict[str, object]) -> tuple[bool, str]:
+def _smoke_failure_reason(target: str, report: str) -> str:
+    """A plain statement of what the surface-derived smoke test found
+    (#171 review M3). The smoke-only candidate can fail this gate two
+    ways: it does not load at all, or it loads fine but no longer defines
+    a name the prior module provided. "Failed to load" is only true of
+    the first — the second used to say it anyway, and quoted the smoke
+    test's own internal assert source line (an implementation detail of
+    the ablation's own check, not anything the user wrote). Naming the
+    DROPPED name is fine; that is the fact the check exists to report.
+    """
+    dropped = _DROPPED_NAME_RE.search(report)
+    if dropped:
+        return (
+            f"re-fix candidate for {target} no longer defines "
+            f"{dropped.group(1)}, which the prior module provided"
+        )
+    return f"re-fix candidate for {target} failed to load: {report}"
+
+
+def _executor_verdict(deps: dict[str, object]) -> tuple[bool, str, bool, str]:
+    """(tests_pass, report, participates, participation_reason). Re-fix has
+    no adequacy seat at all — this route's own accept formula is the only
+    place the #171 ablation's verdict can land. ``participates`` defaults
+    True (an executor response predating the field, or the ablation never
+    ran): necessity not disproven, never a free pass nor a refusal for a
+    missing key."""
     try:
         parsed = json.loads(_response(deps.get("executor", {})))
     except (json.JSONDecodeError, TypeError):
         parsed = {}
     if not isinstance(parsed, dict):
         parsed = {}
-    return bool(parsed.get("tests_pass", False)), str(parsed.get("report", ""))
+    return (
+        bool(parsed.get("tests_pass", False)),
+        str(parsed.get("report", "")),
+        bool(parsed.get("participates", True)),
+        str(parsed.get("participation_reason", "")),
+    )
 
 
 def main() -> None:
@@ -121,7 +158,7 @@ def main() -> None:
     # smoke test so the executor still confirms the candidate LOADS cleanly
     # before it can clobber the original. A candidate that fails either gate
     # is rejected here -> honest-red terminal, original preserved.
-    tests_pass, report = _executor_verdict(deps)
+    tests_pass, report, participates, participation_reason = _executor_verdict(deps)
     # #169: an EMPTY candidate is never a fix, and the executor cannot say
     # so. The injected smoke test's body is `pass`, which passes against any
     # code including none, so an empty model_edit used to report accept:true
@@ -137,7 +174,43 @@ def main() -> None:
     # Only checked when something survived .strip(), so this cannot change
     # the emptiness branch below.
     inert = candidate_present and _is_inert(code)
-    accept = tests_pass and candidate_present and not inert
+    # F-1 (#171 round 2/3 review): refix_select's smoke surface now covers
+    # every public top-level BINDING, not just def/class (round 3 widened
+    # constants/dict-only settings modules into the surface instead of
+    # exempting them — round 2's original fallback for those reopened the
+    # exact clobber #173 closed). What is left surface-less is a prior with
+    # ZERO public bindings of any kind (an empty module, or one that only
+    # imports names) — there the smoke-only bar is unconditionally "loads
+    # cleanly", which the ablation control's empty-code run satisfies
+    # identically (an "import solution" check observes nothing about the
+    # candidate), so `participates` would be False for EVERY candidate
+    # against that narrow class and the route could never converge. Fall
+    # back to the pre-#171 bar (load cleanly, plus #173's inertness
+    # whitelist) instead of applying the participation gate in exactly
+    # that case.
+    smoke_surface_empty = smoke_only and bool(
+        selected.get("smoke_surface_empty", False)
+    )
+    # Round 2b (independent confirmation review): the fallback above is
+    # only warranted when the prior IS readable and PROVABLY has zero
+    # public bindings — not when its surface could not be determined at
+    # all. `smoke_prior_status` (from refix_select's `_smoke_test`) tells
+    # the two apart: "missing" (no `[PRIOR CODE]` marker — no information,
+    # not "empty file") and "unparseable" (present but fails to parse,
+    # reachable live via the renderer's (truncated)/(oversize) write
+    # variants) both mean "we don't know", and this route must fail
+    # CLOSED rather than silently accept whatever loads. "ok" is the only
+    # status the surface-empty fallback above was ever meant to cover.
+    smoke_prior_status = str(selected.get("smoke_prior_status", "ok"))
+    prior_unreadable = smoke_only and smoke_prior_status in ("missing", "unparseable")
+    effective_participates = participates or smoke_surface_empty
+    accept = (
+        tests_pass
+        and candidate_present
+        and not inert
+        and not prior_unreadable
+        and effective_participates
+    )
     # Names the target (review round 1): #166's caller guard names the file
     # it declined to write, and a refusal the client cannot map to a file is
     # worth less. The target comes from select, which took it from gather's
@@ -150,11 +223,34 @@ def main() -> None:
             f"re-fix candidate for {target} has no executable statement; "
             "the original is unchanged"
         )
+    elif prior_unreadable:
+        # Path-free (#168 discipline) and never "loads cleanly" — the
+        # candidate may well load fine, but there is nothing to check that
+        # against, and this route must not say otherwise.
+        reason = (
+            f"no prior content for {target} was available to check the fix "
+            "against; the original is unchanged"
+            if smoke_prior_status == "missing"
+            else (
+                f"the current version of {target} could not be read whole, "
+                "so the fix cannot be checked against it; the original is "
+                "unchanged"
+            )
+        )
+    elif not effective_participates:
+        # #171: re-fix has no adequacy seat — this is the only place its
+        # own accept formula can catch a suite the deliverable never
+        # touched. Scoped to a REAL surface now (F-1): a surface-less
+        # prior is exempted from this gate above, so what reaches here is
+        # a visible test the target module never appears in, or a
+        # smoke-only surface the candidate genuinely failed to satisfy
+        # some other way the ablation caught.
+        reason = participation_reason or "the tests never exercise the deliverable"
     elif smoke_only:
         reason = (
             "candidate loads cleanly; no visible test, the client run verifies"
             if accept
-            else f"re-fix candidate failed to load: {report}"
+            else _smoke_failure_reason(target, report)
         )
     else:
         reason = report or ("tests pass" if accept else "tests did not pass")
