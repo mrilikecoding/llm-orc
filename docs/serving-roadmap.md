@@ -124,16 +124,19 @@ round; measure by probe rows converted; parallelize on disjoint seams.
   (pre-arcs, coder on) 13/13 deliverables; run 7 (arcs merged) 10/13 —
   T1/T6 the recurring variance shapes, T13 an honest refusal of a wrong
   fix (`"empty input"` vs the seeded `"no values"`), no sandbox-, surface-
-  or ablation-specific reason fired; run 8 (second sample) was launched
-  at handoff — score it first (`score_run.score_run_dir` + `tally_oracles`
-  on the scratch dir named in the last session's log, or rerun: seed per
-  the battery header, ~17 min, free).
+  or ablation-specific reason fired; run 8 (second sample): 8/13, T13
+  FIXED (run 7's miss was variance), T1 refused again and cascaded. T1 is
+  the rung that decides the ladder now: 3 correct / 2 broken / 3 refused
+  over eight runs, refusals pre-date the arcs (run 3); greenfield
+  first-turn shape, honest refusals; instrument T1 alone at r≥5 before
+  touching the build round.
 
 ### Next up (in order)
 
-1. **Score ladder run 8.** If T13 refuses again with a wrong-message fix,
-   it is the coder ignoring the visible seeded test — a prompt/shape
-   question for the fix route, not a gate defect; record either way.
+1. **T1 instrument** (free, ~10 min): drive the ladder's turn-1 ask alone
+   r≥5 through the serve (curl with tools is enough) and record the
+   correct/broken/refused split; only then decide whether the greenfield
+   first-round build shape needs work. Do not fold this into #123.
 2. **#123 code + tests per turn** (the routing half rides arc 1; the
    destination rule `tests/test_<stem>.py` + dotted import is arc 2's
    deferred mechanism 5, classify-owned): converts probe turns 1 and 3.
