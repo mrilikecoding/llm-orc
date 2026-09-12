@@ -3748,6 +3748,32 @@ def test_finding_1_never_uniquely_matches_a_bare_conftest() -> None:
     assert "tests/conftest.py" in decision["glob_failed"]
 
 
+def test_tests_dir_exclusion_refuses_an_exact_identifier_match() -> None:
+    """Confirmation-round finding: Finding 1's own pin above never actually
+    exercises the tests/test-directory exclusion — "config" doesn't equal
+    "conftest" under exact matching either way, so that test refuses the
+    same whether or not the exclusion exists. This pin picks an ask whose
+    identifier EXACTLY equals the excluded file's stem ("helpers"), so
+    without the exclusion it would uniquely match and read/build against
+    tests/helpers.py; with it, this refuses, naming the excluded file, and
+    never yields a file under tests/ or build: True. Mutant check performed
+    by hand: removing the tests/test directory component check from
+    _is_unnamed_build_candidate (keeping only the conftest.py/setup.py
+    basename check) turns this red — the ask uniquely matches
+    tests/helpers.py instead of refusing — confirming the exclusion has
+    its own guard, not just the basename one Finding 1 already covers."""
+    decision = _classify(
+        {
+            "task": "fix helpers",
+            "context": "assistant: [globbed py]\n  tests/helpers.py",
+        }
+    )
+    assert decision["build"] is False
+    assert decision["file"] == ""
+    assert not decision["file"].startswith("tests/")
+    assert "tests/helpers.py" in decision["glob_failed"]
+
+
 def test_finding_2_store_never_prefix_matches_story_or_storefront() -> None:
     """Review Finding 2 (MEDIUM): "add error handling to the data store
     when saving fails" against a workspace holding only story.py (or
