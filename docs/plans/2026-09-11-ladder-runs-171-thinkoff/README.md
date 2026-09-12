@@ -19,6 +19,7 @@ turn in a throwaway copy (`capture_truth.sh`). Scored with
 | 5 | main 3be5c82a (coder ON, critic+synth OFF) | coder ON | 1004 s | 17 | 0 | none on disk (oracles 3/3, every deliverable shipped); T7's last text says "another round needed: code failed to load: ModuleNotFoundError: No module named 'storage'" while the shipped todo.py is correct (oracle true) — see #184 |
 | 6 | main 3be5c82a | coder ON | 1026 s | 17 | 0 | same as run 5: all shipped, oracles 3/3, T7's text wrong-direction |
 | 7 | main 01b59026 (arcs 1+2 merged) | coder ON | 920 s | 15 | 0 | T1 REFUSED (tests did not pass, after the new glob round); T6 REFUSED (tests inadequate); T7 cascade; T13 REFUSED: the coder wrote `raise ValueError("empty input")` where the seeded test expects `match="no values"` — an honest refusal of a wrong fix, first time this rung missed in seven runs. No sandbox-, surface-, or ablation-specific reason fired. n=1; run 8 is the second sample. |
+| 8 | main 01b59026 (arcs 1+2 merged) | coder ON | 666 s | 16 | 0 | T1 REFUSED (tests did not pass) → T2/T3/T4/T7 cascade (no todo.py ever lands); T6 shipped correct; T13 FIXED (10 passed) — run 7's T13 miss was variance. 8/13. |
 
 What the four say (n is small; doctrine 6 applies to any single turn):
 
@@ -54,3 +55,18 @@ What the four say (n is small; doctrine 6 applies to any single turn):
   the strict reading. Whether #171 itself moved the rate needs runs on a
   pre-#171 tree under the same seed — not done here; recorded as the open
   question.
+
+**After runs 7-8 (the merged arcs):** T13 fixed in run 8, so run 7's miss
+there was variance. The rung that decides the ladder now is **T1**
+("write a function that adds a todo item to a list in todo.py"): over
+eight runs it shipped correct 3 times (4, 5, 6), shipped broken twice
+(1, 2), and refused three times (3, 7, 8); every refusal cascades into
+T2/T3/T4/T7 because nothing named `todo.py` exists afterwards. The
+refusal is honest (the coder's module fails the test-writer's tests) and
+predates the arcs (run 3), but both post-arc runs hit it — n=2, doctrine
+6 forbids a per-turn verdict. It is the greenfield first-turn shape, not
+an existing-repo one: worth its own instrument (r≥5 of T1 alone against
+the seat, ~1 min each) before any change to the build round. No sandbox-,
+surface-, participation-, or workspace-refusal reason fired in either
+post-arc run.
+
