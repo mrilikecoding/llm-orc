@@ -76,6 +76,22 @@ Conditions and bounds:
   this shape; matching granularity would cost one extra per-test-
   isolated subprocess set on every ablation run for a divergence not
   yet observed live, so this is recorded rather than closed.
+- **Named bound (review round 2, F-3, module-LOAD granularity ≠
+  assertion granularity):** participation is decided at module-LOAD
+  granularity — any top-level `from solution import X` in the tests
+  makes the control fail on ImportError, "proving" necessity, even when
+  every ASSERTION in the tests actually routes through a workspace
+  module instead. Repro: `code = "def discount(price, pct):\n    return
+  0\n"`, `tests = "from solution import discount\nimport pricing\ndef
+  test_d():\n    assert pricing.discount(200, 10) == 180\n"`, workspace
+  `pricing.py` holding the correct implementation → `accept: true` on
+  both base and this branch, with a wrong `discount` that the one real
+  assertion never touches. Pinned as documented behavior
+  (`test_named_bound_load_granularity_ships_wrong_code_via_a_workspace_module`
+  in `test_serving_gate_participation.py`), not fixed — matching
+  granularity would mean tracing which names each assertion actually
+  reaches at runtime, not just which names load, a materially bigger
+  mechanism than this control.
 
 ## Two companion slices (independent, same arc)
 
@@ -88,6 +104,29 @@ Conditions and bounds:
    a candidate that drops the surface fails it. Measured: real fix
    passes, all five junk shapes fail. Recorded bound: a fix that
    intentionally drops a public name refuses.
+
+   **Round 2 review, F-2:** the surface was every top-level def/class
+   name, underscore-prefixed ones included, so inlining or deleting a
+   private helper refused a legitimate fix for dropping a name nothing
+   public ever promised. Fixed: the surface is PUBLIC names only (a
+   leading underscore, dunders included, is excluded).
+
+   **Round 2 review, F-1, real scope of the surface-less fallback:**
+   when the prior module has no public top-level def/class at all
+   (constants-only settings, a dict-only rates table, an `__init__`
+   re-export module), the smoke-only bar degrades to "loads cleanly"
+   alone — and the ablation control's empty-code run satisfies that
+   identically, so `participates` was False for EVERY candidate against
+   this whole class and the route could never converge. Fixed by
+   falling back to the PRE-#171 bar (loads cleanly, plus #173's
+   inertness whitelist) for exactly this case — the participation gate
+   is bypassed only when `smoke_surface_empty` is set, never for a
+   prior that has a real surface to check. Measured scope of the
+   fallback: a constants-only one-value fix accepts, a dict-only rate
+   change accepts, and `x = 1`-style junk against a surface-less prior
+   ALSO accepts now (unchanged from pre-#171: `Assign` isn't on #173's
+   inert whitelist, and this fix does not widen that whitelist) — the
+   fallback is a return to the pre-#171 bar, not a new, stricter one.
 2. **`_inject_workspace_imports` must not divert.** Skip injection for
    any name the CANDIDATE defines (both call sites — tests and code).
    Two-line guard; removes the self-inflicted diversion class (WA-2/2b).

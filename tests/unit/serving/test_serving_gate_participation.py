@@ -693,6 +693,34 @@ def test_named_bound_a_length_only_assert_cannot_distinguish_content() -> None:
     assert result["accept_gate"]["accept"] is True
 
 
+def test_named_bound_load_granularity_ships_wrong_code_via_a_workspace_module() -> None:
+    """NAMED BOUND (#171 round 2 review, F-3 — documented, not fixed).
+    Participation is decided at module-LOAD granularity: any top-level
+    ``from solution import X`` in the tests makes the control fail on
+    ImportError alone, proving "necessity" for the wrong reason — even
+    when every ASSERTION in the tests actually routes through a workspace
+    module instead of the name that was imported.
+
+    Repro: solution.py's ``discount`` is wrong (always 0) and never
+    called; the one real assertion calls ``pricing.discount`` — a
+    correct, separate workspace module. The control (solution.py emptied)
+    fails at ``from solution import discount`` before the real assertion
+    ever runs, so the control "fails" and the wrong deliverable ships."""
+    pricing = "def discount(price, pct):\n    return price - price * pct / 100\n"
+    result = _build_gated(
+        code_writer="```python\ndef discount(price, pct):\n    return 0\n```\n",
+        tests_writer=(
+            "```python\nfrom solution import discount\nimport pricing\n"
+            "def test_d():\n    assert pricing.discount(200, 10) == 180\n```\n"
+        ),
+        requirement="fix discount",
+        workspace_file="pricing.py",
+        workspace_body=pricing,
+    )
+    assert result["executor"]["tests_pass"] is True
+    assert result["accept_gate"]["accept"] is True
+
+
 # --- end to end through the real serving chain (#155's lesson) ------------
 
 
