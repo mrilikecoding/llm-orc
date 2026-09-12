@@ -1,0 +1,1 @@
+Add a remove method to TodoStore that deletes a todo by id and raises KeyError when the id is missing.
