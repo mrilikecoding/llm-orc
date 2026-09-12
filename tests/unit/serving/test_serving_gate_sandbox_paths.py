@@ -28,7 +28,6 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
-import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -315,38 +314,62 @@ def test_a_dotdot_header_is_kept_as_a_plain_relative_string_by_the_reader() -> N
 
 
 def _materialize_in_tmp(
+    tmp_path: Path,
     workspace: dict[str, str],
     target_file: str = "",
     target_path: str = "",
     code: str = "CODE = 1\n",
     tests: str = "TESTS = 1\n",
 ) -> Path:
-    tmp = tempfile.mkdtemp()
-    _materialize(tmp, code, tests, workspace, target_file, target_path)
-    return Path(tmp)
+    """The sandbox sits at ``tmp_path / "sandbox"`` — pytest's own
+    per-test ``tmp_path`` fixture (never the shared system temp dir) so an
+    escape mutant's write, and pytest's own cleanup of it, both stay
+    inside a directory this test already owns and pytest already manages
+    (#184 A5: the prior version used a bare ``tempfile.mkdtemp()`` with no
+    cleanup, and asserted against ITS parent — the shared ``$TMPDIR`` —
+    so a guard-off run left permanent debris that reddened every later
+    run on the same machine)."""
+    tmp = tmp_path / "sandbox"
+    tmp.mkdir()
+    _materialize(str(tmp), code, tests, workspace, target_file, target_path)
+    return tmp
 
 
-def test_materialize_creates_nested_directories_for_a_workspace_file() -> None:
-    tmp = _materialize_in_tmp({"todo/storage.py": "class TodoStore:\n    pass"})
+def test_materialize_creates_nested_directories_for_a_workspace_file(
+    tmp_path: Path,
+) -> None:
+    tmp = _materialize_in_tmp(
+        tmp_path, {"todo/storage.py": "class TodoStore:\n    pass"}
+    )
     written = tmp / "todo" / "storage.py"
     assert written.read_text(encoding="utf-8") == "class TodoStore:\n    pass"
 
 
-def test_materialize_refuses_an_absolute_workspace_path() -> None:
+def test_materialize_refuses_an_absolute_workspace_path(tmp_path: Path) -> None:
     # A harmless absolute path outside the sandbox root — never a real
     # system path: this must be REFUSED, not sanitized into a relative one.
-    tmp = _materialize_in_tmp({"/nonexistent-184-probe/evil.py": "EVIL = True"})
+    tmp = _materialize_in_tmp(
+        tmp_path, {"/nonexistent-184-probe/evil.py": "EVIL = True"}
+    )
     assert not any(p.name == "evil.py" for p in tmp.rglob("*"))
 
 
-def test_materialize_refuses_a_path_that_escapes_the_sandbox_root() -> None:
-    tmp = _materialize_in_tmp({"../evil.py": "EVIL = True"})
+def test_materialize_refuses_a_path_that_escapes_the_sandbox_root(
+    tmp_path: Path,
+) -> None:
+    tmp = _materialize_in_tmp(tmp_path, {"../evil.py": "EVIL = True"})
+    # tmp.parent is tmp_path itself — pytest's own per-test directory, not
+    # the shared system temp dir (#184 A5) — so an escape mutant's write
+    # lands, and is found, inside a directory pytest already cleans up.
     assert not (tmp.parent / "evil.py").exists()
     assert not any(p.name == "evil.py" for p in tmp.rglob("*"))
 
 
-def test_materialize_writes_the_deliverable_at_target_path_not_just_basename() -> None:
+def test_materialize_writes_the_deliverable_at_target_path_not_just_basename(
+    tmp_path: Path,
+) -> None:
     tmp = _materialize_in_tmp(
+        tmp_path,
         {},
         target_file="storage.py",
         target_path="todo/storage.py",
@@ -358,15 +381,22 @@ def test_materialize_writes_the_deliverable_at_target_path_not_just_basename() -
     assert not (tmp / "storage.py").exists()
 
 
-def test_materialize_falls_back_to_target_file_when_target_path_is_empty() -> None:
+def test_materialize_falls_back_to_target_file_when_target_path_is_empty(
+    tmp_path: Path,
+) -> None:
     """Back-compat for the re-fix route (flat targets only, today):
     passing no target_path shadows at the bare target_file, unchanged."""
-    tmp = _materialize_in_tmp({}, target_file="todo.py", target_path="", code="X = 1\n")
+    tmp = _materialize_in_tmp(
+        tmp_path, {}, target_file="todo.py", target_path="", code="X = 1\n"
+    )
     assert (tmp / "todo.py").read_text(encoding="utf-8") == "X = 1\n"
 
 
-def test_materialize_still_excludes_solution_and_tests_from_workspace_writes() -> None:
+def test_materialize_still_excludes_solution_and_tests_from_workspace_writes(
+    tmp_path: Path,
+) -> None:
     tmp = _materialize_in_tmp(
+        tmp_path,
         {"solution.py": "HACK = True", "tests.py": "HACK2 = True"},
         code="REAL_CODE = 1\n",
         tests="REAL_TESTS = 1\n",
@@ -375,13 +405,16 @@ def test_materialize_still_excludes_solution_and_tests_from_workspace_writes() -
     assert (tmp / "tests.py").read_text(encoding="utf-8") == "REAL_TESTS = 1\n"
 
 
-def test_a3_a_nested_tests_dot_py_is_not_dropped_for_sharing_a_root_basename() -> None:
+def test_a3_a_nested_tests_dot_py_is_not_dropped_for_sharing_a_root_basename(
+    tmp_path: Path,
+) -> None:
     """A3 (review, MEDIUM): the solution.py/tests.py skip compared only the
     BASENAME, so todo/tests.py — a real package module, unrelated to the
     runner's own root-level tests.py — vanished the same way. Nested
     namesakes must survive; only the bare root-level names are reserved."""
     tmp = _materialize_in_tmp(
-        {"todo/tests.py": "FIXTURES = 1\n", "pkg/solution.py": "ANSWER = 42\n"}
+        tmp_path,
+        {"todo/tests.py": "FIXTURES = 1\n", "pkg/solution.py": "ANSWER = 42\n"},
     )
     assert (tmp / "todo" / "tests.py").read_text(encoding="utf-8") == "FIXTURES = 1\n"
     assert (tmp / "pkg" / "solution.py").read_text(encoding="utf-8") == "ANSWER = 42\n"
@@ -426,31 +459,36 @@ def test_a3_nested_tests_module_is_importable_end_to_end() -> None:
 # --- A4: a directory-shaped header never crashes the executor -------------
 
 
-def test_a4_a_bare_directory_name_alongside_its_own_file_does_not_crash() -> None:
+def test_a4_a_bare_directory_name_alongside_its_own_file_does_not_crash(
+    tmp_path: Path,
+) -> None:
     """A bare 'todo' entry (a directory read, most likely) collides with
     'todo/storage.py' at write time — todo/storage.py's mkdir(parents=True)
     hits a FILE already at that name. Neither path-safety check catches
     this by SYNTAX (both are ordinary-looking relative paths); _write_at
     must survive the collision rather than crash the whole executor."""
     tmp = _materialize_in_tmp(
-        {"todo": "not really a file", "todo/storage.py": "class TodoStore: pass\n"}
+        tmp_path,
+        {"todo": "not really a file", "todo/storage.py": "class TodoStore: pass\n"},
     )
     assert tmp.exists()  # no exception escaped _materialize
 
 
-def test_a4_a_bare_dot_header_does_not_crash() -> None:
-    tmp = _materialize_in_tmp({".": "whole repo?"})
+def test_a4_a_bare_dot_header_does_not_crash(tmp_path: Path) -> None:
+    tmp = _materialize_in_tmp(tmp_path, {".": "whole repo?"})
     assert tmp.exists()
 
 
-def test_a4_a_trailing_separator_header_does_not_crash() -> None:
-    tmp = _materialize_in_tmp({"todo/": "a directory, not a file"})
+def test_a4_a_trailing_separator_header_does_not_crash(tmp_path: Path) -> None:
+    tmp = _materialize_in_tmp(tmp_path, {"todo/": "a directory, not a file"})
     assert tmp.exists()
     assert not (tmp / "todo").is_file()
 
 
-def test_a4_a_nul_byte_in_the_header_does_not_crash() -> None:
-    tmp = _materialize_in_tmp({"todo/\x00storage.py": "class TodoStore: pass\n"})
+def test_a4_a_nul_byte_in_the_header_does_not_crash(tmp_path: Path) -> None:
+    tmp = _materialize_in_tmp(
+        tmp_path, {"todo/\x00storage.py": "class TodoStore: pass\n"}
+    )
     assert tmp.exists()
 
 
