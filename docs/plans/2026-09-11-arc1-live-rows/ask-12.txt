@@ -1,0 +1,1 @@
+Add a remove(todo_id) method to the TodoStore class in todo/storage.py. It deletes the todo with that id and raises KeyError if there is no such todo.
