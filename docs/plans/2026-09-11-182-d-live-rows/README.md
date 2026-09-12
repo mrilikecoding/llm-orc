@@ -22,3 +22,10 @@ Bounds observed live (recorded, not closed):
   `*py*`-named non-Python file (`mypy.ini`, `pytest.ini`, untracked
   `.pyc`) against the 50-path cap. OpenCode's glob honoured `.gitignore`
   here (no `__pycache__` entries).
+
+## Rows on merged main `a232f9a7` (#171 + D rework + B-1), fresh sessions, seed reset before each
+
+| row | ask | events | outcome |
+|---|---|---|---|
+| 10 | the probe's turn-2 ask verbatim ("Add a remove(todo_id) method to the TodoStore class in todo/storage.py ...") | `write todo/storage.py` — NO read | **BLIND OVERWRITE**: a new in-memory `TodoStore` replaced the client's JSON-backed one; gate-accepted against its own tests; `M todo/storage.py`. B-1's guard cannot fire without a prior in context, and "add ... in F" carries no fix/update verb so no read is requested. Filed **#185**. |
+| 11 | "Add a remove method to TodoStore that deletes a todo by id and raises KeyError when the id is missing." (no file named) | `glob **/*py*` → prose | "Build refused: no file in the workspace matches this ask — the workspace holds: …/todo/storage.py, …/todo/cli.py, …" — the exact-match rule; nothing written. Row 09's expectation converted. |
