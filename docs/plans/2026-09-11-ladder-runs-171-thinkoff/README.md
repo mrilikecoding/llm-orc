@@ -18,6 +18,7 @@ turn in a throwaway copy (`capture_truth.sh`). Scored with
 | 4 | main 8f7e9780 | all OFF | 377 s | 14 | 0 | T6 REFUSED (tests did not pass); T7 cascade; T12 REFUSED |
 | 5 | main 3be5c82a (coder ON, critic+synth OFF) | coder ON | 1004 s | 17 | 0 | none on disk (oracles 3/3, every deliverable shipped); T7's last text says "another round needed: code failed to load: ModuleNotFoundError: No module named 'storage'" while the shipped todo.py is correct (oracle true) — see #184 |
 | 6 | main 3be5c82a | coder ON | 1026 s | 17 | 0 | same as run 5: all shipped, oracles 3/3, T7's text wrong-direction |
+| 7 | main 01b59026 (arcs 1+2 merged) | coder ON | 920 s | 15 | 0 | T1 REFUSED (tests did not pass, after the new glob round); T6 REFUSED (tests inadequate); T7 cascade; T13 REFUSED: the coder wrote `raise ValueError("empty input")` where the seeded test expects `match="no values"` — an honest refusal of a wrong fix, first time this rung missed in seven runs. No sandbox-, surface-, or ablation-specific reason fired. n=1; run 8 is the second sample. |
 
 What the four say (n is small; doctrine 6 applies to any single turn):
 

@@ -11,3 +11,10 @@ Real OpenCode, fresh session per row, probe seed reset before each
 Exit gate of `docs/plans/2026-09-11-workspace-aware-routing-design.md`
 met on both rows. The 13-turn ladder rerun rides the arc-2 merge (one
 ladder validates both arcs).
+
+## Arc 2 rows on merged main `01b59026` (2026-09-12, early)
+
+| row | ask | events | outcome |
+|---|---|---|---|
+| 14 | probe turn 1 (add `remove()` to `todo/storage.py` AND tests in `tests/test_storage.py`) | `read todo/storage.py` → tests-seat | "Another round needed: tests did not pass" — unchanged: the tests-primary route still writes tests for a method that does not exist yet. Arc 2 changes what the sandbox looks like, not which seat runs; this row converts with #123 (code + tests per turn) and the tests-destination rule (arc 2 mechanism 5, deferred to classify). |
+| 15 | probe turn 3 (`done` CLI command AND `tests/test_cli.py`) | `read todo/cli.py` → tests-seat | same |

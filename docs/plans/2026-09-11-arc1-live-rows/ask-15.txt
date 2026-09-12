@@ -1,0 +1,1 @@
+Add a 'done' command to the CLI in todo/cli.py that marks a todo complete by id using TodoStore.complete, and add tests for it in a new file tests/test_cli.py.
