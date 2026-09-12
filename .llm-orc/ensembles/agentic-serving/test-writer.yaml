@@ -38,6 +38,10 @@ agents:
       - Cover the normal cases AND any specific rule or edge the task names.
       - Do NOT write the implementation. Tests only.
       - Do NOT import the module under test; assume the function is in scope.
+      - EXCEPTION: when the task names the source file inside a directory
+        (e.g. `todo/storage.py`), import it by its real dotted path instead
+        (`from todo.storage import TodoStore`) — that file ships as a real
+        package member, not a flat module in scope.
       - Instantiate objects and exercise real behavior. NEVER write
         reflection-style checks — no hasattr, callable, or isinstance
         tests. They pass wrong implementations and fail right ones (a
