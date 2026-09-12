@@ -20,6 +20,7 @@ import sys
 import _helpers
 from _helpers import HELD_TESTS_MARKER as _HELD_MARKER
 from _helpers import payload as _payload
+from _helpers import public_top_level_names as _public_top_level_names
 from _helpers import response as _response
 from _helpers import terminal as _terminal
 
@@ -169,6 +170,29 @@ def _inject_workspace_imports(
     return "\n".join(prelude) + "\n" + text if prelude else text
 
 
+def _prior_surface(workspace: dict[str, str], target_file: str) -> list[str]:
+    """The target file's PRIOR public top-level names (#182 slice B-1),
+    when its prior body is visible in the rendered context — a
+    conversation-written ``[wrote <path>]`` block or a client ``[read
+    <path>]`` block whose basename equals the target's basename.
+    ``_workspace`` already keys both into one {basename: body} mapping, so
+    a hit there IS the prior body (materialization shadows it with the
+    candidate separately, same as ``_inject_workspace_imports`` reads it).
+    Empty when no prior is visible (no target named, or the target's
+    basename never appeared in a read/write block) or when the prior does
+    not parse — the gate must never refuse over indeterminate surface."""
+    if not target_file:
+        return []
+    prior_body = workspace.get(target_file, "")
+    if not prior_body:
+        return []
+    try:
+        tree = ast.parse(prior_body)
+    except SyntaxError:
+        return []
+    return _public_top_level_names(tree)
+
+
 def main() -> None:
     payload = _payload(sys.stdin.read().strip())
     requirement = str(payload.get("input_data", ""))
@@ -199,6 +223,7 @@ def main() -> None:
 
     file_match = _FILE_RE.search(requirement)
     target_file = file_match.group(1).rsplit("/", 1)[-1] if file_match else ""
+    prior_surface = _prior_surface(workspace, target_file)
 
     print(
         json.dumps(
@@ -209,6 +234,7 @@ def main() -> None:
                 "held": held,
                 "workspace": workspace,
                 "target_file": target_file,
+                "prior_surface": prior_surface,
             }
         )
     )
