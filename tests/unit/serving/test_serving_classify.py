@@ -14,6 +14,7 @@ import json
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -56,9 +57,26 @@ def _classify(turn: dict[str, Any]) -> dict[str, Any]:
 
 
 def test_build_turn_routes_to_the_code_generation_seat() -> None:
-    decision = _classify({"task": "write a function that adds two numbers"})
+    # issue #182 slice D: an unnamed-file build now discovers before
+    # minting — a round-trip that finds no non-test .py candidate (an
+    # empty listing, as this would render after the glob request below)
+    # still falls back to code-seat exactly as before.
+    context = "assistant: [globbed py (failed)] empty glob result"
+    decision = _classify(
+        {"task": "write a function that adds two numbers", "context": context}
+    )
     assert decision["target"] == "code-seat"
     assert decision["build"] is True
+
+
+def test_unnamed_build_with_no_listing_yet_requests_discovery_first() -> None:
+    # issue #182 slice D: the FIRST call (no listing rendered yet) requests
+    # the glob round rather than routing straight to code-seat — the harm
+    # turn 6 of the daily-driver probe recorded (docs/plans/2026-09-11-
+    # daily-driver-probe/) minted solution.py with no discovery at all.
+    decision = _classify({"task": "write a function that adds two numbers"})
+    assert decision["target"] == "need-glob"
+    assert decision["build"] is False
 
 
 def test_filename_is_extracted_from_the_turn_text() -> None:
@@ -690,10 +708,24 @@ def test_visible_stem_file_suppresses_the_glob_trigger() -> None:
     assert decision["target"] == "tests-seat"
 
 
-def test_fresh_create_module_turn_never_globs() -> None:
-    decision = _classify({"task": "write a storage module with put and get"})
+def test_fresh_create_module_turn_globs_once_then_falls_back_to_code_seat() -> None:
+    # issue #182 slice D retires the old "write/create never globs"
+    # assumption for the UNNAMED-file case — turn 6's harm ask ("Add
+    # priority support...") uses the same fresh-create-shaped verb yet
+    # named an existing package's file. A round-trip that finds nothing
+    # still converges to code-seat, unchanged.
+    context = "assistant: [globbed py (failed)] empty glob result"
+    decision = _classify(
+        {"task": "write a storage module with put and get", "context": context}
+    )
     assert decision["needs_glob"] == ""
     assert decision["target"] == "code-seat"
+
+
+def test_fresh_create_module_turn_requests_discovery_first() -> None:
+    decision = _classify({"task": "write a storage module with put and get"})
+    assert decision["needs_glob"] != ""
+    assert decision["target"] == "need-glob"
 
 
 def test_anaphoric_tests_for_it_never_globs() -> None:
@@ -1013,7 +1045,9 @@ def test_explain_turn_never_uses_the_build_module_stem_glob() -> None:
 
 
 def test_normal_decisions_carry_empty_glob_fields() -> None:
-    decision = _classify({"task": "write a function that adds two numbers"})
+    # A named-file build has nothing to discover (issue #182 slice D's new
+    # unnamed-file branch only fires when no file is named).
+    decision = _classify({"task": "write a function that adds two numbers in add.py"})
     assert decision["needs_glob"] == ""
     assert decision["glob_failed"] == ""
 
@@ -3533,3 +3567,220 @@ def test_hidden_basename_and_absolute_rows_never_enter_the_menu() -> None:
     )
     decision = _classify({"task": _GREP_QUESTION, "context": context})
     assert decision["pick_menu"] == {}
+
+
+# --- issue #182 slice D: discovery before an unnamed-file build
+# (docs/plans/2026-09-11-182-existing-repo-shape-design.md) — the daily-
+# driver probe's turn 6 harm: a build turn naming no file, whose module-
+# stem phrasing never even fires (no "existing" verb, no stem phrasing),
+# minted a parallel `solution.py` beside a package that already
+# implemented the domain (`docs/plans/2026-09-11-daily-driver-probe/`,
+# ask-06.txt / turn-06.jsonl). classify now issues ONE glob round for the
+# whole non-test .py surface first (the "py" stem — every .py basename
+# ends in it, so **/*py*, the existing single-stem glob seam, discovers
+# the surface without a second pattern shape) and MATCHES on the ask's
+# own identifiers rather than guessing. ---
+
+_ASK_06 = (
+    "Add priority support to the todo app: each todo has a priority of "
+    "low, medium, or high (default medium). TodoStore.add takes an "
+    "optional priority, the CLI add command accepts --priority, list "
+    "output shows the priority, and the tests cover it."
+)
+
+# The probe's seed listing, rendered as classify would see it after the
+# new discovery round's glob resolves.
+_SEED_LISTING = (
+    "assistant: [globbed py]\n"
+    "  todo/__init__.py\n"
+    "  todo/storage.py\n"
+    "  todo/cli.py\n"
+    "  tests/test_storage.py"
+)
+
+
+def test_unnamed_file_build_requests_a_glob_round() -> None:
+    """Instrument 1: the probe's turn-6 ask, empty context — red today (turn
+    6 minted solution.py with no discovery at all: no named file, no
+    "existing" verb, so the old wants_existing gate never even looked)."""
+    decision = _classify({"task": _ASK_06})
+    assert decision["needs_glob"] != ""
+    assert decision["build"] is False
+    assert decision["target"] != "code-seat"
+
+
+def test_unnamed_file_build_refuses_on_ambiguous_identifiers() -> None:
+    """Instrument 2: the same ask with the seed listing rendered — names the
+    two plausible candidates (storage.py via TodoStore, cli.py via CLI),
+    never __init__.py (matches neither ask identifier), never a mint."""
+    decision = _classify({"task": _ASK_06, "context": _SEED_LISTING})
+    assert decision["build"] is False
+    assert decision["file"] == ""
+    assert "todo/cli.py" in decision["glob_failed"]
+    assert "todo/storage.py" in decision["glob_failed"]
+    assert "todo/__init__.py" not in decision["glob_failed"]
+
+
+def test_unnamed_file_build_refusal_never_mints_solution_py() -> None:
+    """Doctrine 11 harm pin: no field of the decision names solution.py on
+    an ambiguous-identifier refusal. Mutant check performed by hand: revert
+    _unnamed_build_discovery's ambiguous-match branch to `return "", "", ""`
+    (the old silent greenfield fallback) — this test goes red, confirming
+    it actually exercises the fix rather than a vacuous truth."""
+    decision = _classify({"task": _ASK_06, "context": _SEED_LISTING})
+    assert "solution.py" not in json.dumps(decision)
+
+
+def test_unnamed_file_build_matches_a_unique_identifier() -> None:
+    """Instrument 3: a class name (TodoStore) uniquely names storage.py —
+    the existing read seam (_files_to_request) fires for it, exactly as if
+    the user had named the file directly."""
+    decision = _classify(
+        {
+            "task": (
+                "Add a remove method to TodoStore that raises KeyError "
+                "when the id is missing"
+            ),
+            "context": _SEED_LISTING,
+        }
+    )
+    assert decision["target"] == "need-files"
+    assert decision["needs_files"] == ["todo/storage.py"]
+
+
+def test_unnamed_file_build_refuses_naming_both_ambiguous_matches() -> None:
+    """Instrument 4a: an ask naming two domain words matches two files."""
+    decision = _classify(
+        {
+            "task": "add logging to the storage and the cli",
+            "context": _SEED_LISTING,
+        }
+    )
+    assert decision["build"] is False
+    assert "todo/storage.py" in decision["glob_failed"]
+    assert "todo/cli.py" in decision["glob_failed"]
+
+
+def test_unnamed_file_build_refuses_naming_the_listing_on_zero_matches() -> None:
+    """Instrument 4b: an ask matching no file names the workspace's own
+    non-test files (the recorded bound) so the user can name one."""
+    decision = _classify(
+        {
+            "task": "add a helper that formats dates",
+            "context": _SEED_LISTING,
+        }
+    )
+    assert decision["build"] is False
+    assert "todo/storage.py" in decision["glob_failed"]
+    assert "todo/cli.py" in decision["glob_failed"]
+    assert "todo/__init__.py" in decision["glob_failed"]
+
+
+def test_unnamed_file_build_empty_workspace_still_mints_solution_py() -> None:
+    """Instrument 5a: greenfield — an empty glob listing still mints
+    solution.py, unchanged, after the one extra discovery round."""
+    context = "assistant: [globbed py (failed)] empty glob result"
+    decision = _classify({"task": _ASK_06, "context": context})
+    assert decision["target"] == "code-seat"
+    assert decision["file"] == "solution.py"
+    assert decision["build"] is True
+
+
+def test_unnamed_file_build_only_tests_in_listing_still_mints_solution_py() -> None:
+    """Instrument 5b: a workspace whose only .py file is a test still mints
+    solution.py (the recorded bound: never closed here)."""
+    context = "assistant: [globbed py]\n  tests/test_x.py"
+    decision = _classify({"task": _ASK_06, "context": context})
+    assert decision["target"] == "code-seat"
+    assert decision["file"] == "solution.py"
+    assert decision["build"] is True
+
+
+def test_unnamed_file_build_truncated_listing_never_guesses() -> None:
+    """Instrument 7: a truncated listing keeps #148's wording, never a false
+    "no file matching" claim, never a mint."""
+    context = "assistant: [globbed py (truncated)]\n  todo/storage.py"
+    decision = _classify({"task": _ASK_06, "context": context})
+    assert decision["build"] is False
+    assert decision["file"] == ""
+    assert "cut at 50 paths" in decision["glob_failed"]
+    assert "no file matching" not in decision["glob_failed"]
+
+
+# --- instrument 6: the 13-turn ladder must be routing-byte-identical.
+# benchmarks/agentic_serving/ladder_battery.sh's PROMPTS array, verbatim —
+# every one of the thirteen either names a file, or is not a build turn at
+# all (explain, memory-interrogative, recall, run, tests-primary — which
+# already discovers via wants_existing) — so none reaches the new
+# unnamed-file branch. Pinned against origin/main's classify.py, run as a
+# subprocess exactly like this module's own _classify helper. ---
+
+_LADDER_PROMPTS = (
+    "write a function that adds a todo item to a list in todo.py",
+    "add a complete_todo function to todo.py that marks a todo done",
+    "explain how todo.py stores its state",
+    "write tests for todo.py",
+    "did you see my previous query?",
+    "create storage.py with save_todos and load_todos functions using json",
+    "update todo.py to persist todos using storage.py",
+    "write tests for existing calc.py",
+    "write tests for existing phantom.py",
+    "what did the first thing I asked you to build do?",
+    "run the tests",
+    "write tests for the metrics module",
+    "fix the bug in buggy.py",
+)
+
+
+def _main_agentic_serving_dir(dest: Path) -> Path:
+    """A standalone copy of origin/main's ``agentic_serving`` scripts dir
+    (classify.py plus every sibling it imports) so the baseline subprocess
+    resolves its own ``_helpers``/``chain_plan`` imports correctly."""
+    listing = subprocess.run(
+        [
+            "git",
+            "ls-tree",
+            "-r",
+            "--name-only",
+            "main",
+            "--",
+            ".llm-orc/scripts/agentic_serving",
+        ],
+        cwd=REPO,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.splitlines()
+    for rel in listing:
+        content = subprocess.run(
+            ["git", "show", f"main:{rel}"],
+            cwd=REPO,
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
+        (dest / Path(rel).name).write_text(content)
+    return dest
+
+
+def _run_classify_at(script: Path, task: str) -> dict[str, Any]:
+    envelope = json.dumps({"input": json.dumps({"task": task})})
+    out = subprocess.run(
+        [sys.executable, str(script)],
+        input=envelope,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    result: dict[str, Any] = json.loads(out)
+    return result
+
+
+def test_ladder_battery_prompts_route_byte_identical_to_main() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        baseline_dir = _main_agentic_serving_dir(Path(tmp))
+        baseline_classify = baseline_dir / "classify.py"
+        for prompt in _LADDER_PROMPTS:
+            before = _run_classify_at(baseline_classify, prompt)
+            after = _classify({"task": prompt})
+            assert after == before, prompt
