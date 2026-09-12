@@ -64,6 +64,12 @@ def _classify(task: str) -> dict[str, Any]:
 
 _ORIGIN_MAIN = "origin/main routing, byte-identical"
 _NEW_BEHAVIOR = "NEW_BEHAVIOR: #133/#134 memory/recap answer"
+# issue #185 / arc 1 (docs/plans/2026-09-11-workspace-aware-routing-design.md):
+# a build turn naming a `.py` destination with no fix/update verb now
+# requests one glob round before deciding — existence, not the verb, decides
+# the read. Three ladder prompts fit this shape (rows below); every other
+# row keeps its prior provenance unchanged.
+_ARC1_NEW_BEHAVIOR = "NEW_BEHAVIOR: #185 workspace-aware routing (glob-first)"
 
 # (task, target, needs_decider, build, needs_glob, provenance)
 CORPUS: list[tuple[str, str, bool, bool, str, str]] = [
@@ -71,19 +77,19 @@ CORPUS: list[tuple[str, str, bool, bool, str, str]] = [
     # ladder_battery.sh) ---
     (
         "write a function that adds a todo item to a list in todo.py",
-        "code-seat",
+        "need-glob",
         False,
-        True,
-        "",
-        _ORIGIN_MAIN,
+        False,
+        "py",
+        _ARC1_NEW_BEHAVIOR,
     ),
     (
         "add a complete_todo function to todo.py that marks a todo done",
-        "code-seat",
+        "need-glob",
         False,
-        True,
-        "",
-        _ORIGIN_MAIN,
+        False,
+        "py",
+        _ARC1_NEW_BEHAVIOR,
     ),
     (
         "explain how todo.py stores its state",
@@ -104,11 +110,11 @@ CORPUS: list[tuple[str, str, bool, bool, str, str]] = [
     ),
     (
         "create storage.py with save_todos and load_todos functions using json",
-        "code-seat",
+        "need-glob",
         False,
-        True,
-        "",
-        _ORIGIN_MAIN,
+        False,
+        "py",
+        _ARC1_NEW_BEHAVIOR,
     ),
     (
         "update todo.py to persist todos using storage.py",

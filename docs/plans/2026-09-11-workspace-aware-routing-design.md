@@ -98,3 +98,75 @@ wrong-match hunt on the path-normalisation step (absolute client paths,
 `./` prefixes, Windows separators are out of scope but must not crash).
 One independent review round follows; a report without the three
 self-tests is returned unread.
+
+## Implementation notes (measured, 2026-09-11)
+
+- A fix/update-verb-led ask (`_EXISTING_RE` fires) is UNTOUCHED by this
+  arc: it still requests the read directly, with no glob round, exactly
+  as before. The brief's "exactly as a fix-verb ask does today" describes
+  the OUTCOME the new existence signal reaches for a non-fix-verb ask,
+  not a claim that fix-verb asks now also glob first — an existing pin
+  (`test_fix_turn_without_a_write_takes_the_read_seam_not_the_chain`,
+  empty context, target `need-files` in one round) would have gone red
+  under the other reading, and the ladder's turns 7 and 13 (both
+  fix-verb-led) confirm it live: neither gains a glob round.
+- Ladder-identity table (instrument 5, empty context, independent per
+  prompt): turns 1 ("write a todo item... in todo.py"), 2 ("add a
+  complete_todo function to todo.py"), and 6 ("create storage.py...")
+  gain a first-round `needs_glob` — each names a `.py` file with a build
+  verb and no fix verb. All ten others are unaffected: turn 3 is an
+  explain (discovery never fires under `is_explain`), turns 4/8/9 are
+  tests-primary (out of scope, #123 carries it), turns 5/10 are
+  memory/recall, turns 7/13 are fix-verb-led (see above), turn 11 is a
+  run, and turn 12 already discovers via its own module-stem phrasing
+  (unchanged by this arc). After a rendered empty listing, all three
+  reconverge to byte-identical with main's single round.
+- The read-reports-absent distinction (invariant 5) needed a new helper:
+  `_attempt_reason` (the existing read-failure reader) collapses every
+  "(failed)" read variant to the fixed string "client read failed",
+  discarding the client's actual wording — until this arc no caller
+  needed to tell "file not found" apart from any other read failure (a
+  fix-verb ask already knew the file existed, so any failed read refused).
+  A listing-driven read can legitimately come back absent, so a new
+  `_read_reports_absent` reads the raw trailing text on the
+  `[read ... (failed)]` line directly and checks for the client's own
+  "File not found" prefix (`_render_read_block`'s exact wording) —
+  everything else on that line still refuses as before.
+- A NAMED destination's matched value is never rewritten to the client's
+  absolute listing path, even when the ask gave only a bare basename that
+  resolves via basename equality: the ask's own naming is preserved
+  verbatim (`glob_file = named_file`, unchanged) so the destination write
+  path stays what the user asked for — `todo/storage.py`, not
+  `/Users/.../todo/storage.py` — matching the live row 10 exit-gate
+  wording ("a `write todo/storage.py`"), not the client's own absolute
+  form. This differs from the UNNAMED-file build seam (slice D), which
+  has nothing else to name the destination with and so rewrites to the
+  discovered listing path.
+
+## Implementation notes (measured, 2026-09-12, independent review round)
+
+- Review finding 1 (BLOCKED, fixed): `_named_destination_matches`'s suffix
+  match requires the listing path to be AT LEAST as deep as the ask's own
+  naming — a listing SHALLOWER than the ask (bare basenames while the ask
+  names a directory-qualified path, e.g. a workspace-root/glob-anchor
+  mismatch) found zero matches and reported the destination ABSENT,
+  reopening row 10's blind-overwrite harm through a path-depth gap rather
+  than the verb gap. Fixed with a basename-equality fallback in
+  `_named_build_discovery` when the suffix match is empty and the ask
+  names a directory: exactly one basename match is existence UNKNOWN (not
+  confirmed), so it takes the same path as a truncated listing — request
+  the read of the ask's OWN path, never rewritten to the listing's
+  shallower one; two or more basename matches refuse naming them, same as
+  the existing bare-basename ambiguity bound.
+- Review finding 2 (LOW/MEDIUM, fixed): `_named_build_discovery` consulted
+  only the glob listing, never `_visibility()` — a same-session
+  `[wrote ...]`/`[read ...]` block for the same basename already
+  establishes existence (and, for a write, the content itself), so
+  requesting a glob round anyway was a wasted round today and a latent
+  false-absence risk if a later glob's scope ever missed the just-written
+  path (gitignore, a write outside the glob's root). Fixed: a visibility
+  check runs before the listing check; a visible basename returns as
+  existing immediately (glob_file = named_file, unchanged), and
+  `_files_to_request`'s own visibility check already skips a redundant
+  read once that seam takes over — no new mechanism needed there, only
+  the missing check ahead of the listing lookup.
