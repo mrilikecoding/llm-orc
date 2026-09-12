@@ -28,6 +28,8 @@ import tempfile
 import time
 from pathlib import Path
 
+from _helpers import public_top_level_names as _public_top_level_names
+
 RUNNER = Path(__file__).with_name("accept_executor_runner.py")
 DEFAULT_TIMEOUT = 15.0
 
@@ -82,6 +84,49 @@ _NONPARTICIPATION_REASON = "the tests never exercise the deliverable"
 _ABLATION_BUDGET_REASON = (
     "the runtime ablation control could not run within the aggregate budget"
 )
+
+
+def _surface_reason(code: str, target_file: str, prior_surface: list[str]) -> str:
+    """#182 slice B-1: an edit must never drop a name the prior module's
+    public surface (its top-level def/class/assignment names, #171's
+    ``public_top_level_names``) already defined.
+
+    Checked BEFORE any sandboxed execution — a pure AST comparison, no
+    subprocess, ahead of both the real test run and the #171 ablation
+    control below. This is the cheapest correct seam: a candidate that
+    already dropped a prior public name is disqualified by a fact about
+    its own source, independent of whatever the tests say — so a bare
+    fragment (probe turn 2: a single method emitted at module top level,
+    the class gone) refuses naming what it dropped, rather than whatever
+    incidental NameError/ImportError the missing surface happens to cause
+    once the tests run.
+
+    "" when there is no prior surface to check (``prior_surface`` empty —
+    greenfield, or the target's prior body was never visible in context)
+    or the deliverable's own top-level public names are a superset of it
+    (a real edit, or a byte-identical resubmission)."""
+    if not prior_surface:
+        return ""
+    try:
+        tree = ast.parse(code)
+    except SyntaxError:
+        defined: frozenset[str] = frozenset()
+    else:
+        defined = frozenset(_public_top_level_names(tree))
+    missing = sorted(name for name in prior_surface if name not in defined)
+    if not missing:
+        return ""
+    listed = missing[:3]
+    names = ", ".join(listed)
+    remaining = len(missing) - len(listed)
+    if remaining > 0:
+        names += f", and {remaining} more"
+    target = target_file or "the file"
+    return (
+        f"the deliverable for {target} no longer defines {names}; "
+        "an edit must ship the whole updated file"
+    )
+
 
 # A bare-name assert on a name the tests never assign (``assert load`` /
 # ``assert load, "msg"``) checks only module-object truthiness — a defined
@@ -843,19 +888,55 @@ def main() -> None:
     requirement = str(data.get("requirement", ""))
     code = str(data.get("code", ""))
     tests = str(data.get("tests", ""))
-    tests, tests_sanitized = _sanitize_tests(tests)
-    tests, tests_excised = _excise_unbound_callable_tests(tests, code)
-    tests, tests_removals_guarded = _guard_unconditional_removals(tests, code)
-    tests, tests_raises_rewritten = _rewrite_inverted_expectations(tests)
-    tests, tests_imports_injected = _inject_test_imports(tests, code)
     raw_workspace = data.get("workspace")
     workspace = (
         {str(k): str(v) for k, v in raw_workspace.items()}
         if isinstance(raw_workspace, dict)
         else {}
     )
-
     target_file = str(data.get("target_file", ""))
+    raw_prior_surface = data.get("prior_surface")
+    prior_surface = (
+        [str(name) for name in raw_prior_surface]
+        if isinstance(raw_prior_surface, list)
+        else []
+    )
+
+    # #182 slice B-1: the cheapest correct seam. This is a pure AST fact
+    # about the deliverable itself, so it is checked BEFORE any sandboxed
+    # execution — no test run, no #171 ablation control — and it refuses
+    # for the reason that matters (what the edit dropped) instead of
+    # whatever incidental test failure the missing surface would otherwise
+    # cause downstream (a fragment missing its class NameErrors on every
+    # test that touches it; "tests did not pass" was true but useless).
+    surface_reason = _surface_reason(code, target_file, prior_surface)
+    if surface_reason:
+        print(
+            json.dumps(
+                {
+                    "requirement": requirement,
+                    "code": code,
+                    "tests": tests,
+                    "tests_pass": True,
+                    "n_tests": 0,
+                    "tests_sanitized": 0,
+                    "tests_excised": 0,
+                    "tests_removals_guarded": 0,
+                    "tests_raises_rewritten": 0,
+                    "tests_imports_injected": 0,
+                    "report": "",
+                    "participates": False,
+                    "participation_reason": surface_reason,
+                }
+            )
+        )
+        return
+
+    tests, tests_sanitized = _sanitize_tests(tests)
+    tests, tests_excised = _excise_unbound_callable_tests(tests, code)
+    tests, tests_removals_guarded = _guard_unconditional_removals(tests, code)
+    tests, tests_raises_rewritten = _rewrite_inverted_expectations(tests)
+    tests, tests_imports_injected = _inject_test_imports(tests, code)
 
     tests_pass, report, n_tests, participation_reason = _run_sandboxed(
         code, tests, workspace, target_file
