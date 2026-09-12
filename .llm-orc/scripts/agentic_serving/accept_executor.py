@@ -28,7 +28,7 @@ import tempfile
 import time
 from pathlib import Path
 
-from _helpers import public_top_level_names as _public_top_level_names
+from _helpers import assign_target_names as _assign_target_names
 
 RUNNER = Path(__file__).with_name("accept_executor_runner.py")
 DEFAULT_TIMEOUT = 15.0
@@ -86,27 +86,75 @@ _ABLATION_BUDGET_REASON = (
 )
 
 
+def _stmt_scope_names(node: ast.stmt) -> set[str]:
+    """The public module-scope names ONE statement binds or recurses
+    into — the per-node half of ``_module_scope_names`` (split out to
+    keep both functions simply-branched)."""
+    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+        return set() if node.name.startswith("_") else {node.name}
+    if isinstance(node, ast.Assign):
+        names: set[str] = set()
+        for target in node.targets:
+            names |= _assign_target_names(target)
+        return names
+    if isinstance(node, ast.AnnAssign):
+        return _assign_target_names(node.target) if node.value is not None else set()
+    if isinstance(node, ast.If):
+        return _module_scope_names(node.body) | _module_scope_names(node.orelse)
+    if isinstance(node, ast.Try):
+        names = _module_scope_names(node.body)
+        for handler in node.handlers:
+            names |= _module_scope_names(handler.body)
+        names |= _module_scope_names(node.orelse)
+        names |= _module_scope_names(node.finalbody)
+        return names
+    if isinstance(node, (ast.With, ast.AsyncWith)):
+        return _module_scope_names(node.body)
+    if isinstance(node, (ast.For, ast.AsyncFor, ast.While)):
+        return _module_scope_names(node.body) | _module_scope_names(node.orelse)
+    return set()
+
+
+def _module_scope_names(stmts: list[ast.stmt]) -> set[str]:
+    """Public names bound anywhere inside ``stmts`` while staying in
+    MODULE scope (#182 slice B-1, review F2 fix).
+
+    Recurses into control-flow bodies that do NOT introduce a new scope —
+    ``if``/``else``, ``try``/``except``/``else``/``finally``, ``with``,
+    ``for``/``while`` (and their ``async`` forms) — so a name moved into
+    one of these (an ordinary hardening edit: ``CONFIG = {...}`` wrapped
+    in a ``try/except`` to survive a bad env) still counts as defined.
+    Does NOT recurse into a def/class's OWN body — that introduces local
+    scope and its names are not module-level bindings."""
+    names: set[str] = set()
+    for node in stmts:
+        names |= _stmt_scope_names(node)
+    return names
+
+
 def _surface_missing_names(code: str, prior_surface: list[str]) -> list[str]:
     """#182 slice B-1: names the prior module's public surface (gather's
-    ``prior_surface``, #171's ``public_top_level_names`` applied to the
-    prior body) that the deliverable's own top-level names no longer
-    include.
+    ``prior_surface``, #171's strict ``public_top_level_names`` applied
+    to the PRIOR body only) that the deliverable no longer binds anywhere
+    at module scope.
+
+    Review F2 fix (wrong-reject): the two sides are asymmetric on
+    purpose. The PRIOR's promise is read strictly (``public_top_level_names``,
+    ``tree.body`` only) — that is what the surface commits to. The
+    DELIVERABLE is read liberally (``_module_scope_names``, recursing
+    into if/try/with/for) — an ordinary edit that moves a top-level
+    assignment into a ``try/except`` for hardening still binds the name
+    at runtime, and refusing that is a wrong-reject of a real edit, not a
+    caught fragment.
 
     Review F1 (rework): this is emitted as ITS OWN field alongside the
     real sandboxed run, never instead of it — the accept gate is what
     ANDs it into the final verdict and composes the refusal sentence.
-    Earlier this node short-circuited the whole run and faked
-    ``tests_pass``/``n_tests`` to keep the reason clean; that fake data
-    escaped into the ADR-024 diagnostics the #114 ledger preserves
-    verbatim (a turn whose suite never ran read as "the tests passed")
-    and made ``n_tests`` 0, which threw away round 1's adequate tests
-    instead of holding them for the retry. No node may emit invented
-    verdict fields; the gate does the composing.
 
     [] when there is no prior surface to check (``prior_surface`` empty —
     greenfield, or the target's prior body was never visible in context)
-    or the deliverable's own top-level public names are a superset of it
-    (a real edit, or a byte-identical resubmission)."""
+    or the deliverable's own names are a superset of it (a real edit, or
+    a byte-identical resubmission)."""
     if not prior_surface:
         return []
     try:
@@ -114,7 +162,7 @@ def _surface_missing_names(code: str, prior_surface: list[str]) -> list[str]:
     except SyntaxError:
         defined: frozenset[str] = frozenset()
     else:
-        defined = frozenset(_public_top_level_names(tree))
+        defined = frozenset(_module_scope_names(tree.body))
     return sorted(name for name in prior_surface if name not in defined)
 
 

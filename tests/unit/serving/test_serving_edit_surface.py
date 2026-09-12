@@ -468,6 +468,62 @@ def test_f1_no_dangling_executor_report_sentence() -> None:
     assert "Executor report: ." not in retry_input
 
 
+# --- F2: the deliverable side is liberal; the prior side stays strict ----
+
+_CONFIG_PRIOR = (
+    "import sys\n\nCONFIG = {'a': 1}\n\n\ndef get(k):\n    return CONFIG[k]\n"
+)
+
+
+def test_f2_moving_a_top_level_assignment_into_a_try_block_still_counts() -> None:
+    """Review F2 (wrong-reject): public_top_level_names walks tree.body
+    only. Applied to BOTH sides, an ordinary hardening edit that moves a
+    module-level assignment into a try/except refuses for "dropping" a
+    name that is still bound at runtime. The DELIVERABLE side must be
+    liberal — a name bound anywhere inside a top-level if/try/with/for
+    still counts — while the PRIOR side stays strict (what it
+    unconditionally promised)."""
+    context = _context("conf.py", _CONFIG_PRIOR, "harden CONFIG loading in conf.py")
+    tests_writer = (
+        "```python\nfrom conf import get\n\n"
+        "def test_get():\n    assert get('a') == 1\n```\n"
+    )
+    code_writer = (
+        "```python\n"
+        "import sys\n\n"
+        "try:\n"
+        "    CONFIG = {'a': 1}\n"
+        "except Exception:\n"
+        "    CONFIG = {}\n\n\n"
+        "def get(k):\n"
+        "    return CONFIG[k]\n"
+        "```\n"
+    )
+    result = _build_gated_edit(context, code_writer, tests_writer)
+
+    assert result["gather"]["prior_surface"] == ["CONFIG", "get"]
+    assert result["executor"]["surface_missing"] == []
+    assert result["executor"]["tests_pass"] is True, result["executor"]["report"]
+    assert result["accept_gate"]["accept"] is True, result["accept_gate"]["reason"]
+
+
+def test_f2_fragment_over_the_config_prior_still_refuses() -> None:
+    """Liberalizing the deliverable side must not turn into an amnesty —
+    a bare fragment with no CONFIG binding at all still refuses."""
+    context = _context("conf.py", _CONFIG_PRIOR, "harden CONFIG loading in conf.py")
+    tests_writer = (
+        "```python\nfrom conf import get\n\n"
+        "def test_get():\n    assert get('a') == 1\n```\n"
+    )
+    code_writer = "```python\ndef get(k):\n    return {}[k]\n```\n"
+    result = _build_gated_edit(context, code_writer, tests_writer)
+
+    assert result["gather"]["prior_surface"] == ["CONFIG", "get"]
+    assert result["executor"]["surface_missing"] == ["CONFIG"]
+    assert result["accept_gate"]["accept"] is False
+    assert "CONFIG" in result["accept_gate"]["reason"]
+
+
 # --- the prompt half: the coder is told to ship the whole file on an edit -
 
 
