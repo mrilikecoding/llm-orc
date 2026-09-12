@@ -1463,28 +1463,45 @@ _UNNAMED_BUILD_GLOB_STEM = "py"
 
 # The unnamed-file build has no module stem to substring-match against (the
 # ask never named one) — the MATCH signal is instead which candidate paths
-# share a domain word with the ask's own identifiers. Split each
-# identifier-shaped token on underscores AND CamelCase boundaries so
-# "TodoStore" contributes {"todo", "store"} the same way "add_priority"
-# contributes {"add", "priority"} — the ask-side sibling of
-# ``_basename_components``'s component discipline (len >= 3, non-digit).
+# name a domain word the ask ALSO names, exactly (review record
+# docs/plans/2026-09-11-182-d-review/ — see the design brief's slice-D
+# Implementation notes for the two measured wrong-match findings that
+# retired the earlier prefix-stemming approach). Split each identifier-
+# shaped token on underscores AND CamelCase boundaries (including an
+# acronym run followed by a capitalized word, so "HTTPServer" contributes
+# {"http", "server"}, not one fused token) so "TodoStore" contributes
+# {"todo", "store"} the same way "add_priority" contributes {"add",
+# "priority"} — the ask-side sibling of ``_basename_components``'s
+# component discipline (len >= 3, non-digit).
 _IDENTIFIER_TOKEN_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
-_CAMEL_SPLIT_RE = re.compile(r"(?<=[a-z0-9])(?=[A-Z])")
-# A component pair counts as the same domain word when they're identical,
-# or when both are at least this long and share that many leading
-# characters — a deliberately narrow stand-in for real stemming (e.g. a
-# class named ``TodoStore`` and its module ``storage.py`` share no exact
-# component, but do share the root "stor") so a handful of common-root
-# pairs are recognized without hand-mapping every one. Below the floor,
-# only exact equality counts — a short word like "cli" must be named
-# exactly.
-_ROOT_PREFIX_MIN_LEN = 4
+_CAMEL_SPLIT_RE = re.compile(r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])")
+
+# Test-infrastructure paths a domain-word match must never land on (review
+# Finding 1): a basename starting with test_ was already excluded by
+# _globbed_candidates; this adds the common non-test_*-named pytest
+# fixtures — any path under a tests/ or test/ directory, plus the
+# conftest.py/setup.py basenames wherever they sit — so an ask with no real
+# match never uniquely resolves to the project's own test plumbing.
+_EXCLUDED_UNNAMED_BUILD_BASENAMES = frozenset({"conftest.py", "setup.py"})
+_EXCLUDED_UNNAMED_BUILD_DIRS = frozenset({"tests", "test"})
+
+
+def _is_unnamed_build_candidate(path: str) -> bool:
+    """True unless ``path`` is test infrastructure (Finding 1): a basename
+    of ``conftest.py``/``setup.py``, or any path with a ``tests``/``test``
+    directory component. Applied ON TOP OF ``_globbed_candidates``'s own
+    ``.py``/not-``test_*`` filter, never in place of it."""
+    parts = path.split("/")
+    if parts[-1] in _EXCLUDED_UNNAMED_BUILD_BASENAMES:
+        return False
+    return not any(part in _EXCLUDED_UNNAMED_BUILD_DIRS for part in parts[:-1])
 
 
 def _identifier_word_parts(token: str) -> list[str]:
     """Split one identifier-shaped token on underscores and CamelCase
-    boundaries: "TodoStore" -> ["Todo", "Store"]; "add_priority" -> ["add",
-    "priority"]; a plain lowercase word survives whole."""
+    boundaries: "TodoStore" -> ["Todo", "Store"]; "HTTPServer" -> ["HTTP",
+    "Server"]; "add_priority" -> ["add", "priority"]; a plain lowercase
+    word survives whole."""
     parts: list[str] = []
     for chunk in token.split("_"):
         if chunk:
@@ -1499,8 +1516,7 @@ def _ask_identifier_components(task: str) -> set[str]:
     does) would erase the CamelCase boundaries the split above relies on.
     Filler words and build verbs (``_STEM_STOPWORDS``, the same curated set
     ``_module_stem`` already excludes from stem candidacy) are dropped —
-    they never name a domain concept, so keeping them would only add
-    accidental collision surface to the root-prefix match below.
+    they never name a domain concept.
     """
     components: set[str] = set()
     for match in _IDENTIFIER_TOKEN_RE.finditer(task):
@@ -1515,27 +1531,21 @@ def _ask_identifier_components(task: str) -> set[str]:
     return components
 
 
-def _shares_root(a: str, b: str) -> bool:
-    """True when two lowercase word-components name the same domain word:
-    equal outright, or both at least ``_ROOT_PREFIX_MIN_LEN`` long and
-    sharing that many leading characters."""
-    if a == b:
-        return True
-    return (
-        len(a) >= _ROOT_PREFIX_MIN_LEN
-        and len(b) >= _ROOT_PREFIX_MIN_LEN
-        and a[:_ROOT_PREFIX_MIN_LEN] == b[:_ROOT_PREFIX_MIN_LEN]
-    )
-
-
 def _identifier_match(ask_components: set[str], path: str) -> bool:
-    """True when ``path``'s basename shares a domain word with the ask."""
-    file_components = _basename_components(path.rsplit("/", 1)[-1])
-    return bool(file_components) and any(
-        _shares_root(ask, file_component)
-        for ask in ask_components
-        for file_component in file_components
-    )
+    """True when an ask identifier EQUALS ``path``'s whole basename-stem, or
+    one of its ``_basename_components``, exactly (review rework: no prefix
+    or substring matching of any length — Finding 2 measured a 4-char-
+    prefix stand-in for stemming confidently matching unrelated words,
+    "store" against both "story.py" and "storefront.py"). Resolving an
+    identifier like ``TodoStore`` to the file that actually DEFINES it
+    (rather than one that merely shares a naming root) is the content-grep
+    rung's job (#121, the ``need-grep`` seam) — a follow-up, not this MATCH
+    step."""
+    basename = path.rsplit("/", 1)[-1]
+    stem = basename[:-3].lower() if basename.endswith(".py") else basename.lower()
+    if stem in ask_components:
+        return True
+    return bool(_basename_components(basename) & ask_components)
 
 
 _CANDIDATE_LIST_CAP = 10
@@ -1566,19 +1576,24 @@ def _unnamed_build_discovery(task: str, context: str) -> tuple[str, str, str]:
     than a named stem:
     - no listing yet -> request the glob round.
     - a truncated listing -> the #148 wording, never a false "no match".
-    - the listing holds no non-test .py candidate at all (empty, or every
-      path test_*-named or non-.py) -> greenfield, unchanged (solution.py
+    - the RAW listing holds no `test_*`-excluded candidate at all (empty,
+      or every path `test_*`-named) -> greenfield, unchanged (solution.py
       downstream) — the recorded bound: a workspace whose only .py files
-      are tests still mints solution.py.
-    - exactly one candidate shares a domain word with the ask -> that path
-      becomes the turn's named file (the existing read seam takes over).
+      are `test_*`-shaped still mints solution.py.
+    - the raw listing holds candidates, but EVERY one is test
+      infrastructure by Finding 1's exclusion (`conftest.py`, `setup.py`,
+      or under a `tests`/`test` directory) -> an honest refusal naming
+      them, never a silent match against the project's own test plumbing.
+    - exactly one (non-test-infrastructure) candidate's stem or components
+      EXACTLY match one of the ask's own identifiers -> that path becomes
+      the turn's named file (the existing read seam takes over).
     - several candidates match, or none do over a non-empty candidate
       listing -> an honest refusal naming the files, never a guess.
     """
     result = _globbed_candidates(context, _UNNAMED_BUILD_GLOB_STEM)
     if result is None:
         return _UNNAMED_BUILD_GLOB_STEM, "", ""
-    candidates, truncated = result
+    raw_candidates, truncated = result
     if truncated:
         return (
             "",
@@ -1589,8 +1604,24 @@ def _unnamed_build_discovery(task: str, context: str) -> tuple[str, str, str]:
                 "match — please name the file"
             ),
         )
-    if not candidates:
+    if not raw_candidates:
         return "", "", ""
+    candidates = [path for path in raw_candidates if _is_unnamed_build_candidate(path)]
+    if not candidates:
+        # Finding 1: the listing was non-empty, but every match is test
+        # infrastructure (conftest.py/setup.py/under tests or test) — the
+        # workspace does hold SOMETHING, so this is distinct from the
+        # genuinely-empty/only-test_*-named greenfield case above; refuse
+        # honestly rather than mint past it.
+        listed = _format_candidate_list(raw_candidates)
+        return (
+            "",
+            "",
+            (
+                "the workspace only holds test infrastructure for this "
+                f"ask: {listed}. Please name the file"
+            ),
+        )
     ask_components = _ask_identifier_components(task)
     matched = [path for path in candidates if _identifier_match(ask_components, path)]
     if len(matched) == 1:
