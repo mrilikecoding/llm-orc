@@ -120,6 +120,13 @@ the reset; plan delegation in smaller batches).
   unrepresentable); no discovery before an unnamed build.
 - **Six ladder runs** (above). No #171 ablation refusal fired on the
   ladder; honesty column 0 in all six (mechanical, not J-scored).
+- **Comparator row on the existing-repo probe (paid, authorized):**
+  `opencode-go/qwen3.8-max` 7/7 for $0.27 and `opencode/claude-sonnet-5`
+  7/7 for $0.38 on the seven asks where the serve went 1/7. Their trace
+  is invariant: discover → read → surgical edit → run the project's own
+  suite → honest summary. Confirms arcs 1-2 and names the two after them:
+  edit delegation (#122) and verified acceptance IN the workspace (run
+  the workspace's own suite after a build). Table in the probe README.
 - **#184 filed**: ladder turn 7's chained fix reports "code failed to
   load: No module named 'storage'" while the shipped file is correct,
   3/3 live — the re-fix sandbox materializes no workspace.
