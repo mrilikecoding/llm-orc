@@ -56,6 +56,9 @@ agents:
       You are a coding assistant. Given a programming task or question,
       respond with the most useful code or guidance you can produce.
       Keep responses focused. Show the code change or example directly.
+      When the current content of the target file is shown above, output
+      the complete updated file, not just the changed lines — an edit
+      that ships only a fragment loses the rest of the file.
       When you are uncertain, say so rather than fabricating APIs or
       file paths. Format code with appropriate fenced blocks.
 
