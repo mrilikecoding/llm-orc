@@ -94,26 +94,104 @@ def raw_workspace_entries(context: str) -> list[tuple[str, str]]:
     return entries
 
 
-def _common_absolute_root(paths: list[str]) -> str:
-    """The longest shared absolute DIRECTORY among ``paths`` (#184
-    mechanism 1) — "" when fewer than one path is absolute, or when the
-    only thing they share is the filesystem root itself (a header with no
-    real common project root: recorded fresh-input bound, two clients'
-    absolute trees in one render leave every path exactly as rendered,
-    and downstream materialization refuses an absolute path rather than
-    guess which root it belongs to).
+# A '[globbed ...]' block (issue #83 discovery grammar, serving_ensemble_
+# caller._render_glob_block) — never itself materialized as workspace
+# content (its header is a distinct shape from _FILE_HEADER_RE and its body
+# is one path per line, not a file body), but read here PURELY as a
+# structural signal for the workspace's true project root (#184 A1 rework,
+# rule a): a repo-wide glob routinely spans several directories, which one
+# or two read/write headers alone cannot.
+_GLOB_HEADER_RE = re.compile(
+    r"^assistant: \[globbed [^\]]+?( \((?:truncated|failed)\))?\]$"
+)
 
-    A single absolute path's own directory counts (the flat-workspace
-    subcase: one file at the client's repo root strips to its bare
-    basename, exactly as basename-keying already did)."""
-    abs_paths = [p for p in paths if p.startswith("/")]
-    if not abs_paths:
+
+def _glob_listing_paths(context: str) -> list[str]:
+    """Path lines from the LATEST usable ``[globbed ...]`` block in
+    ``context`` — "" (failed) blocks carry no real path lines and are
+    skipped; a "(truncated)" listing's paths are still real and kept."""
+    lines = context.splitlines()
+    paths: list[str] = []
+    index = 0
+    while index < len(lines):
+        header = _GLOB_HEADER_RE.match(lines[index])
+        index += 1
+        if not header:
+            continue
+        failed = header.group(1) == " (failed)"
+        body: list[str] = []
+        while index < len(lines) and lines[index].startswith("  "):
+            body.append(lines[index][2:])
+            index += 1
+        if not failed:
+            paths = body  # the LATEST block wins
+    return paths
+
+
+def _glob_listing_root(context: str) -> str:
+    """Rule (a): the longest common directory of the client's own glob
+    listing, when at least two of its paths are absolute — "" when no
+    usable listing is visible, or it does not resolve past the filesystem
+    root itself."""
+    paths = [p for p in _glob_listing_paths(context) if p.startswith("/")]
+    if len(paths) < 2:
         return ""
-    if len(abs_paths) == 1:
-        root = abs_paths[0].rsplit("/", 1)[0]
-    else:
-        root = posixpath.commonpath(abs_paths)
+    root = posixpath.commonpath(paths)
     return root if root not in ("", "/") else ""
+
+
+def _suffix_matched_root(abs_path: str, candidates: list[str]) -> str:
+    """Rule (b): the prefix obtained by matching a KNOWN relative path (the
+    ask's own named destination, or another header already relative in the
+    same render) as a SUFFIX of ``abs_path`` — the longest candidate that
+    matches wins (most specific). "" when none matches."""
+    best = ""
+    for candidate in candidates:
+        if not candidate or candidate.startswith("/"):
+            continue
+        if abs_path.endswith("/" + candidate) and len(candidate) > len(best):
+            best = candidate
+    return abs_path[: -(len(best) + 1)] if best else ""
+
+
+def _resolve_root(
+    raw: list[tuple[str, str]], abs_paths: list[str], target_path: str, context: str
+) -> tuple[str, str]:
+    """(root, rule) — the priority ladder #184's A1 rework replaces the
+    single "longest common directory" computation with:
+
+    (a) the client's own ``[globbed ...]`` listing's common directory, when
+        a useful one is visible;
+    (b) for a SINGLE absolute header, the ask's own named destination or
+        another already-relative header in the same render, matched as a
+        SUFFIX of that absolute path — recovers the true root exactly when
+        the client read the file it is about to edit (the arc's own
+        motivating shape);
+    (c) the longest common directory of 2+ absolute headers (unchanged);
+    (d) none of the above resolves anything: "" — a lone header falls back
+        to its bare basename (a recorded bound, not a silent guess: the
+        caller reports this as the "basename" rule); 2+ headers with no
+        common root stay absolute and UNRESOLVED — #184 A2's executor
+        refusal is what makes that honest rather than a silent drop.
+    """
+    glob_root = _glob_listing_root(context)
+    if glob_root:
+        return glob_root, "glob"
+    if len(abs_paths) == 1:
+        already_relative = [p for p, _ in raw if not p.startswith("/")]
+        candidates = ([target_path] if target_path else []) + already_relative
+        matched = _suffix_matched_root(abs_paths[0], candidates)
+        if matched:
+            return matched, "suffix-match"
+        # (d) basename fallback: the dirname is the root to strip, which
+        # always reduces `_relative_to_root` to the bare basename — the
+        # pre-#184-A1-rework single-header behavior, just reported by name
+        # now instead of silently reached.
+        return abs_paths[0].rsplit("/", 1)[0], "basename"
+    root = posixpath.commonpath(abs_paths)
+    if root not in ("", "/"):
+        return root, "common-prefix"
+    return "", "unresolved"
 
 
 def _relative_to_root(path: str, root: str) -> str:
@@ -129,17 +207,30 @@ def _relative_to_root(path: str, root: str) -> str:
     return path[len(prefix) :] if path.startswith(prefix) else path
 
 
-def workspace_entries(context: str) -> list[tuple[str, str]]:
-    """Ordered (RELATIVE path, body) for every read/write block in
-    ``context`` (#184 mechanism 1) — the client's own absolute prefix
-    stripped once (see ``_common_absolute_root``), so ``todo/storage.py``
-    and ``lib/storage.py`` stay two distinct files instead of folding to
-    one ``storage.py`` by basename. A header already relative (the common
-    live shape — the server's own echo mechanism names files by their
-    relative path already) passes through unchanged."""
+def resolve_workspace_entries(
+    context: str, target_path: str = ""
+) -> tuple[list[tuple[str, str]], str]:
+    """(relativized entries, root_rule) — #184 A1's one workspace reader,
+    with which rule resolved the root reported alongside (never silent):
+    "none" (no absolute headers at all — every header was already
+    relative), "glob", "suffix-match", "common-prefix", "basename" (a lone
+    header, unresolved by (a)/(b)), or "unresolved" (2+ headers sharing no
+    common root — left absolute; #184 A2 is what refuses on this rather
+    than silently running an incomplete workspace)."""
     raw = raw_workspace_entries(context)
-    root = _common_absolute_root([path for path, _ in raw])
-    return [(_relative_to_root(path, root), body) for path, body in raw]
+    abs_paths = [path for path, _ in raw if path.startswith("/")]
+    if not abs_paths:
+        return raw, "none"
+    root, rule = _resolve_root(raw, abs_paths, target_path, context)
+    return [(_relative_to_root(path, root), body) for path, body in raw], rule
+
+
+def workspace_entries(context: str, target_path: str = "") -> list[tuple[str, str]]:
+    """Ordered (RELATIVE path, body) for every read/write block in
+    ``context`` (#184 mechanism 1) — see ``resolve_workspace_entries`` for
+    the rule the root resolved by; this is the entries alone, for callers
+    that do not need the rule reported."""
+    return resolve_workspace_entries(context, target_path)[0]
 
 
 def fold_workspace(entries: list[tuple[str, str]]) -> dict[str, str]:
@@ -153,11 +244,11 @@ def fold_workspace(entries: list[tuple[str, str]]) -> dict[str, str]:
     return files
 
 
-def workspace(context: str) -> dict[str, str]:
+def workspace(context: str, target_path: str = "") -> dict[str, str]:
     """{relative path: body} for the sandbox — the one workspace reader
     (#184): shared by ``accept_gather`` (build routes), ``tests_gather``
     (write-tests, #98), and ``refix_gather`` (re-fix, #184)."""
-    return fold_workspace(workspace_entries(context))
+    return fold_workspace(workspace_entries(context, target_path))
 
 
 def payload(raw: str) -> dict[str, Any]:
@@ -224,9 +315,9 @@ def extract_code(text: str, *, drop_test_blocks: bool = False) -> str:
     never sets this (test blocks are its point).
     """
     tagged = _FENCE_RE.findall(text)
-    blocks = [
-        body for lang, body in tagged if lang.lower() not in SHELL_LANGS
-    ] or [body for _, body in tagged]
+    blocks = [body for lang, body in tagged if lang.lower() not in SHELL_LANGS] or [
+        body for _, body in tagged
+    ]
     if drop_test_blocks and len(blocks) > 1:
         non_test = [block for block in blocks if not _is_pure_test_block(block)]
         blocks = non_test or blocks
@@ -341,6 +432,5 @@ def _is_pure_test_block(block: str) -> bool:
     if not named:
         return False
     return all(
-        node.name.startswith("test_") or node.name.startswith("Test")
-        for node in named
+        node.name.startswith("test_") or node.name.startswith("Test") for node in named
     )
