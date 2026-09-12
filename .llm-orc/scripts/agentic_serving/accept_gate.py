@@ -9,6 +9,7 @@ The AND lives here (deterministic) rather than in a guard, because the guard
 predicate grammar is truthiness / == literal only.
 
     accept = tests_pass AND tests_adequate AND participates AND surface_kept
+              AND workspace_placed
 
 The first two catch orthogonal failures: the executor catches wrong code real
 tests exercise; the isolated judge catches trivially-tested or under-covering
@@ -37,6 +38,7 @@ import re
 import sys
 
 from _helpers import terminal as _terminal
+from _helpers import workspace_unplaced_reason as _workspace_unplaced_reason
 
 
 def _dep_response(deps: dict[str, object], name: str) -> str:
@@ -157,10 +159,16 @@ def _refusal_reasons(
     tests_adequate: bool,
     participates: bool,
     surface_missing: list[str],
+    workspace_unplaced: list[str],
 ) -> list[str]:
     """The refusal reason(s) for a rejected turn.
 
-    A surface loss (#182 slice B-1) stands ALONE — never joined with a
+    A workspace-placement failure (#184 A2) stands ALONE and is checked
+    FIRST — a workspace this incomplete makes every other input (the
+    surface lookup included) unreliable, so nothing else is worth naming
+    alongside it.
+
+    A surface loss (#182 slice B-1) stands ALONE too — never joined with a
     tests_pass/tests_adequate clause that may be true only incidentally
     once the surface itself has gone (the surviving tests can still pass,
     or fail for the unrelated reason the missing surface causes). The
@@ -170,6 +178,8 @@ def _refusal_reasons(
     Otherwise, the pre-existing orthogonal-catches composition — but only
     when ``reasons`` is still empty (an unreadable executor/judge verdict
     already explains itself and is not compounded with the others)."""
+    if workspace_unplaced:
+        return [_workspace_unplaced_reason(workspace_unplaced)]
     if surface_missing:
         target_file = _extract_str(executor_resp, "target_file")
         return [_surface_reason(target_file, surface_missing)]
@@ -212,7 +222,19 @@ def main() -> None:
     surface_missing = _extract_list(executor_resp, "surface_missing")
     surface_kept = not surface_missing
 
-    accept = bool(tests_pass and tests_adequate and participates and surface_kept)
+    # #184 A2: a fifth, independent AND input — a workspace entry the
+    # executor could not place in the sandbox (survived root resolution
+    # still absolute, or escaping) makes the whole run untrustworthy.
+    workspace_unplaced = _extract_list(executor_resp, "workspace_unplaced")
+    workspace_placed = not workspace_unplaced
+
+    accept = bool(
+        tests_pass
+        and tests_adequate
+        and participates
+        and surface_kept
+        and workspace_placed
+    )
     if not accept:
         reasons = _refusal_reasons(
             executor_resp,
@@ -221,6 +243,7 @@ def main() -> None:
             tests_adequate=tests_adequate,
             participates=participates,
             surface_missing=surface_missing,
+            workspace_unplaced=workspace_unplaced,
         )
 
     if reasons:

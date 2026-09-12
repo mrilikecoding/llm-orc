@@ -251,6 +251,26 @@ def workspace(context: str, target_path: str = "") -> dict[str, str]:
     return fold_workspace(workspace_entries(context, target_path))
 
 
+def workspace_unplaced_reason(names: list[str]) -> str:
+    """The path-free refusal sentence for #184 A2: a workspace entry that
+    survived root resolution still absolute (or escaping) never got
+    materialized, and the brief's "refused, nothing materialized" bound
+    was only half true — nothing turned the drop into a verdict, so the
+    turn ran (and could ship) against a partial or empty workspace.
+    ``names`` are bare basenames only, never the unplaceable path itself.
+    Shared by ``accept_gate`` (build routes) and ``refix_envelope``
+    (re-fix) so neither drifts from the other's wording."""
+    listed = names[:3]
+    joined = ", ".join(listed)
+    remaining = len(names) - len(listed)
+    if remaining > 0:
+        joined += f", and {remaining} more"
+    return (
+        f"a workspace file could not be placed in the sandbox ({joined}); "
+        "the original is unchanged"
+    )
+
+
 def payload(raw: str) -> dict[str, Any]:
     """The script-node stdin payload as a dict ({} on anything malformed)."""
     try:

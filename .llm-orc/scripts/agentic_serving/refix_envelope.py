@@ -25,6 +25,7 @@ import sys
 from _helpers import deps as _deps
 from _helpers import payload as _payload
 from _helpers import response as _response
+from _helpers import workspace_unplaced_reason as _workspace_unplaced_reason
 
 # The surface-derived smoke test's own assert message IS the dropped name
 # (refix_select's `assert hasattr(solution, "<name>"), "<name>"`) — #171
@@ -117,10 +118,13 @@ def _smoke_failure_reason(target: str, report: str) -> str:
     return f"re-fix candidate for {target} failed to load: {report}"
 
 
-def _executor_verdict(deps: dict[str, object]) -> tuple[bool, str, bool, str]:
-    """(tests_pass, report, participates, participation_reason). Re-fix has
-    no adequacy seat at all — this route's own accept formula is the only
-    place the #171 ablation's verdict can land. ``participates`` defaults
+def _executor_verdict(
+    deps: dict[str, object],
+) -> tuple[bool, str, bool, str, list[str]]:
+    """(tests_pass, report, participates, participation_reason,
+    workspace_unplaced). Re-fix has no adequacy seat at all — this route's
+    own accept formula is the only place the #171 ablation's verdict (and
+    #184 A2's workspace-placement fact) can land. ``participates`` defaults
     True (an executor response predating the field, or the ablation never
     ran): necessity not disproven, never a free pass nor a refusal for a
     missing key."""
@@ -130,11 +134,16 @@ def _executor_verdict(deps: dict[str, object]) -> tuple[bool, str, bool, str]:
         parsed = {}
     if not isinstance(parsed, dict):
         parsed = {}
+    raw_unplaced = parsed.get("workspace_unplaced", [])
+    workspace_unplaced = (
+        [str(name) for name in raw_unplaced] if isinstance(raw_unplaced, list) else []
+    )
     return (
         bool(parsed.get("tests_pass", False)),
         str(parsed.get("report", "")),
         bool(parsed.get("participates", True)),
         str(parsed.get("participation_reason", "")),
+        workspace_unplaced,
     )
 
 
@@ -158,7 +167,10 @@ def main() -> None:
     # smoke test so the executor still confirms the candidate LOADS cleanly
     # before it can clobber the original. A candidate that fails either gate
     # is rejected here -> honest-red terminal, original preserved.
-    tests_pass, report, participates, participation_reason = _executor_verdict(deps)
+    tests_pass, report, participates, participation_reason, workspace_unplaced = (
+        _executor_verdict(deps)
+    )
+    workspace_placed = not workspace_unplaced
     # #169: an EMPTY candidate is never a fix, and the executor cannot say
     # so. The injected smoke test's body is `pass`, which passes against any
     # code including none, so an empty model_edit used to report accept:true
@@ -208,6 +220,7 @@ def main() -> None:
         tests_pass
         and candidate_present
         and not inert
+        and workspace_placed
         and not prior_unreadable
         and effective_participates
     )
@@ -223,6 +236,12 @@ def main() -> None:
             f"re-fix candidate for {target} has no executable statement; "
             "the original is unchanged"
         )
+    elif not workspace_placed:
+        # #184 A2: a workspace entry root-resolution could not place in the
+        # sandbox (still absolute, or escaping) makes the whole run
+        # untrustworthy — checked before prior_unreadable/participation,
+        # same priority accept_gate gives it on the build routes.
+        reason = _workspace_unplaced_reason(workspace_unplaced)
     elif prior_unreadable:
         # Path-free (#168 discipline) and never "loads cleanly" — the
         # candidate may well load fine, but there is nothing to check that
