@@ -59,170 +59,108 @@ layer is the insulation that keeps an eventual hardening cheap, and
 "frozen component" status is the trigger, tracked informally the way the
 buy-back ledger tracks hosted seats.
 
-## State (2026-09-11 handoff update; the work is the 2026-08-31 session)
+## State (2026-09-11 evening handoff)
 
 **Ranked index:** the GitHub project "llm-orc kanban"
-(https://github.com/users/mrilikecoding/projects/2 — view 2 is the
-Priority board, view 4 the Roadmap view, both grouped by Priority)
-mirrors this document as of 2026-09-11: P0 = #171 (in progress) +
-#167/#141 (Ready, gated on the practitioner's go), P1 = the Timeline's
-next tier, P2 = hardening/on-signal/flanks, Done = merged-on-local-main
-(closes on push). THIS DOCUMENT GOVERNS — the board is an index of it,
-carries no checklists or gates, and its "Done" means merged locally,
-not closed. A session that merges or files work updates both.
+(https://github.com/users/mrilikecoding/projects/2). THIS DOCUMENT
+GOVERNS; the board is its index. Board "Done" = merged on LOCAL main;
+nothing is pushed (the push and the issue-closing that rides on it still
+await the practitioner's explicit go; ~120 unpushed commits).
 
-### Next up
+**Practitioner directive (2026-09-11):** the target is an effective daily
+driver for long-running tasks; drive real OpenCode sessions; OpenCode Go
+spend is pre-authorized when justified; delegate to cheaper subagents and
+to llm-orc ensembles where confident; meter usage (a Sonnet subagent hit
+the account session limit at 19:20 PT — subagents are unavailable until
+the reset; plan delegation in smaller batches).
 
-The practitioner delegated the 08-30 fork ("work through any well-scoped
-work"); this session took fork 2, the arc-sized trio, all three briefed
-by the lead (`docs/plans/2026-08-31-{174,177,171}-*.md`) and delegated:
+### Merged on local main this session (each with an author-independent review)
 
-- **#174 MERGED** (`fix/174-dead-seat-envelope`): a dead seat refuses
-  honestly on every route. Two review rounds + a delta confirmation
-  (round 1 APPROVE-with-rework: the accept branch outranked the dead-seat
-  refusal and quoted a path from the dead terminal; whole-stderr trace
-  retention was unbounded — 4MB/turn measured; round 2 confirmed, then
-  the stderr cap's head-only truncation was flipped to head+tail after a
-  capture showed the traceback falling past the cap). Merged tree: 4145
-  passed, lint 0. Named bounds recorded in the brief (NB-3 statusful
-  envelope with no extractable deliverable, NB-4 `{"value": prose}` loop
-  wrap, Note-6 empty-stdout seat).
-- **#177 MERGED** (`fix/177-one-classifier`) after four rounds: round 1
-  BLOCKED (classification re-derived per stat — a vanished bare-name file
-  flipped FILE→INLINE and ran a PATH impostor via `bash -c`); round 2
-  BLOCKED (the fix closed the inline door; slashless `bash <name>`
-  re-resolved on PATH through the FILE branch — fixed by anchoring
-  `./name` at the single resolve seam); round 3 BLOCKED on a regression
-  the LEAD's own rework brief caused (identity keyed on the ref collided
-  byte-identical scripts across projects — a measured stale serve; keyed
-  back on the resolved location); round 4 APPROVED, every pin
-  outcome-asserting and red under its mutant. `resolve_and_classify` is
-  the one observation; `is_inline_content` deleted (zero callers).
-  Merged tree: 4163 passed, lint 0.
-- **#171 REWORK COMPLETE, CONFIRMATION NOT RUN — the next session's
-  first task.** History: the v1 static design was refuted by a measured
-  pre-flight (8/8 constructed non-participation shapes shipped under it;
-  the adequacy seam is absent on held/re-fix routes; the shadow moved
-  0/32 recorded turns); v2 is a runtime ablation control in
-  `accept_executor` plus a surface-derived re-fix smoke test and an
-  injector guard. Implementation round 1 BLOCKED with four measured
-  findings (F1 TestCase suites bypassed the control entirely — 16% of
-  recorded live suites; F2 a last-child budget overrun silently skipped
-  the control into accept; F3 the control kept the stale target copy,
-  wrong-rejecting real additive edits — the reviewer corrected its OWN
-  pre-flight baseline here; F4 granularity divergence, recorded as a
-  bound at 0/46 live rate) plus minors. All addressed on branch
-  `worktree-agent-ad938c49404eb13c7` (tip `435d3fcf`, four commits;
-  author-reported 4159 passed / lint 0). The round-2 confirmation was
-  dispatched and DIED on the reviewer's session limit before starting.
-  DO NOT MERGE without it. The confirmation checklist (author-
-  independent, re-probe not re-read): production-shape corpus replay
-  13/13 accept with WA-1..8 refusing and the additive-edit (OK-8) and
-  byte-identical-resubmit (OK-9) shapes accepting, incl. the two live
-  turns arm0-run2/turn-07 and 138-arm0-calibration/turn-L2; TestCase-
-  dialect junk sweep refuses on build-gated AND held while a healthy
-  TestCase suite accepts; last-child overrun refuses with the budget
-  constant (never a silent accept) and a normal budget still runs the
-  control; mutant-check the F1/F2/F3 pins (legacy-branch control call
-  removed / silent-skip restored / control target_file reverted to "");
-  no quoted internal-test source on any re-fix refusal; independent
-  make test + make lint. Precedent: #172/#176 round 4 was lead-run on
-  fresh inputs after that reviewer hit its limit; a fresh session's
-  reviewer is naturally independent (doctrine 1).
+- **#171** — the deliverable must participate (runtime ablation control;
+  re-fix smoke surface = every PUBLIC top-level binding incl. constants;
+  fail-closed on an unparseable/absent prior). Four review rounds; final
+  confirmation re-probed by the lead with the reviewer's harness (10/10).
+  Merged tree 4215 passed. Follow-ups filed: **#181** (verified bytes ≠
+  shipped bytes: injected imports never reach the client).
+- **#182 slice D** — discovery before an unnamed-file build: one glob
+  round, EXACT-match only (the first cut's 4-char prefix heuristic was
+  BLOCKED by review for matching `tests/conftest.py` and `story.py`),
+  tests dirs excluded, honest refusal naming the listing, `solution.py`
+  minted only in an empty workspace. Ladder routing byte-identical
+  (pinned over all 13 prompts). Live: the probe's turn-6 harm converted
+  (was a gate-accepted parallel `solution.py`; now a refusal, nothing
+  written). 4232 passed.
+- **#182 slice B-1** — an edit never drops the prior module's public
+  surface (deliverable-side liberal, prior-side strict; full-path match
+  for same-basename priors; real suite always runs — the first cut's
+  fake `tests_pass: true` was caught by review leaking into the #114
+  ledger). 4255 passed. Live: see #185 below — the guard needs a prior
+  in context, and a fresh-session "add ... in F" never reads F.
+- **#183 slice B measured, not adopted as filed**: `think: false` on
+  all three code-generator agents halves ladder wall clock (464/468/377 s
+  vs 954 s) but refused ladder turn 6 in 3/3 runs where the think-on
+  control shipped it, and lost turn 1 once (7/13). Coder thinking
+  restored (3be5c82a); critic+synthesizer stay think-off (2/2 runs ship
+  13/13 deliverables, oracles 3/3, ~1000 s — no measurable gain or loss).
+  Six-run record: `docs/plans/2026-09-11-ladder-runs-171-thinkoff/`.
+  The latency lever is NOT `think`; #183 slices A (per-node elapsed in
+  the trace) and C (`num_ctx` on the profiles) remain.
+- **#90 evaluated — no** (`docs/plans/2026-09-11-90-llamacpp-eval/`):
+  Ollama 0.31.1 already runs `llama-server`; same-GGUF A/B is −2 %;
+  82 % of a build turn is qwen3:8b generation. Reframed on the issue as
+  packaging/bootstrap only.
 
-The push (now 94 unpushed commits) and the GitHub issue-closing that rides
-on it still await the practitioner's explicit go. CI has never seen the
-drift checker; #179 fixed the latent red that would have surfaced on
-first push. The remaining-live-rows fork (#166 #169 #173 #172 #176 #175,
-now + #174) still needs the seat-level injection design.
+### Evidence this session
 
-**#172 #176 merged** after four review rounds (first review: four blockers,
-including the #176 heuristic converting wrong-REJECT into wrong-ACCEPT;
-round 2: the fix went structural — the runner's real namespace decides, not
-AST guesses; round 3 caught the scan wrong-REJECTing produced-code classes
-with `test_*`-named production methods; round 4 confirmed the code-name
-snapshot fix on fresh probes). The merge into main was semantic — #168
-rewrote the same runner functions — and every emitted string kept #168's
-`_wire_safe` discipline; cross-arc probes on the merged tree confirm the
-leak refusal and both load-error paths stay path-free. The round-4
-confirmation was lead-run on fresh inputs after the reviewer's session hit
-its model limit mid-round; that same reviewer had already pre-verified the
-identical patch on its 46-shape matrix in round 3.
+- **Daily-driver probe** (`docs/plans/2026-09-11-daily-driver-probe/`,
+  dogfood entry 11): seven real-OpenCode turns on a seeded existing
+  package — 1/7, the one being the greenfield control. Four mechanisms,
+  one shape (#182): two-deliverable asks route to one seat; edits ship
+  fragments; the gate sandbox is one flat directory (package paths
+  unrepresentable); no discovery before an unnamed build.
+- **Six ladder runs** (above). No #171 ablation refusal fired on the
+  ladder; honesty column 0 in all six (mechanical, not J-scored).
+- **#184 filed**: ladder turn 7's chained fix reports "code failed to
+  load: No module named 'storage'" while the shipped file is correct,
+  3/3 live — the re-fix sandbox materializes no workspace.
+- **#185 filed (the next task)**: a build naming an EXISTING file with no
+  fix/update verb overwrites it blind (live row 10: `todo/storage.py`
+  replaced by an in-memory class, gate-accepted, seed tests now red).
 
-**Merged to local main this session, each with an author-independent
-APPROVE after a wrong-accept hunt:**
+### Next up (in order)
 
-- **#163** — an undigestable script is never cached. The confirmation round
-  found no wrong-accept (~25 fresh probes; all 15 named instruments went red
-  under their claimed mutants) and blocked once on two doc claims that did
-  not derive; fixed and re-verified by the same reviewer.
-- **#168** — a refusal reason names no absolute path; eight rounds and a
-  three-part confirmation. The confirmation found the round-7 fix regressed
-  round 5 (ndiff context lines are indented, so ordinary assertEqual diffs
-  lost their evidence), so **#178 was taken in-arc**: the traceback parser
-  is deleted and a `TestResult` subclass keeps the live exception at capture
-  time. Found on the way: `addSubTest` does not delegate, so subtest
-  failures were silently dropped — closed and pinned. Round 8b's residuals:
-  a raising `__str__` no longer kills the runner child (guard in-arc);
-  **#180 filed** (the report is unbounded and produced code controls the
-  bound — 76KB measured; #114/#175 family); the vacuous-pass shapes
-  (all-skipped suite reports all-passed) recorded on #84.
-- **#173** — an inert re-fix candidate is never accepted, at source. The
-  first review found the round-1 guard caught 2 of a 15-member class
-  (`pass` alone — the injected smoke test's own body — still clobbered);
-  reworked to a closed AST whitelist (structure and constants only), which
-  supersedes #169's one-character pin explicitly. End-to-end pin included;
-  zero wrong-rejects across 16 real-code shapes.
-- **#179** (new, filed and fixed this session) — the doc-drift check knew
-  zero names inside agent worktrees: `_SKIP` matched "worktrees" against
-  absolute path parts, so rule 19's instrument was blind exactly where
-  delegated agents run, and 4 of its own tests failed there. Relative parts
-  close it; the breadth pin now names a tracked benchmarks instrument
-  instead of a gitignored session artifact.
+1. **#185 — read-before-write for a named existing file** (classify only;
+   rides D's glob seam: listing present → path present → request the
+   read; absent → greenfield; no listing → one glob round). Instruments
+   on the issue; ladder identity pin as in D; live row = probe turn 2 in
+   a fresh session → `read` then a `write` keeping `_load/_save/add/list/
+   complete` and adding `remove`, seed tests green. Then B-1's guard has
+   its prior and the edit shape converts end to end.
+2. **#182 slice A** (package paths in the gate sandbox) and **C** (#123
+   code+tests per turn) — turns 1 and 3 of the probe; brief to write.
+3. **#184** (re-fix materializes the workspace) — small, ANY environment.
+4. #183 A (per-node elapsed), C (`num_ctx`); #181.
+5. Still gated on the practitioner: the push; **#167** volume paid runs
+   (Anthropic arms) and **#141**; a Go-backed comparator arm is an
+   option to raise, not spend.
 
-Prior handoff's merges (#166 #169 #170, rules 13-19) unchanged beneath.
+### Owed live rows
 
-### Process
+#166 #169 #173 #171 (constructed non-participating shape, fault-injected
+per the #168 template), #172 #176, #175. #182 D and B-1 have theirs.
 
-Every first review this session found real blockers — the record is now
-seven-for-seven — and both long-arc confirmations found their blocker by
-RE-PROBING earlier findings with fresh inputs, not by re-reading. Rule 4's
-re-verify clause is the one earning its keep. The #168 confirmation is the
-sharpest datum: the round-7 fix traded one defect for a regression of round
-5 on an equally ordinary input, which is what finally forced the structural
-fix rule 18 had been pointing at since round 6.
+### Process notes
 
-### Open, and which are small
-
-- **#175** — the env-scrub slice is MERGED (produced code runs under an
-  empty environment; the child's true census — PEP 538's LC_CTYPE plus
-  macOS's UID-bearing __CF_USER_TEXT_ENCODING — is pinned, and the
-  pwd-route username is pinned as the accepted bound). The issue stays
-  open for the closed-report-vocabulary half, riding #180/#142.
-- **#180** — filed this session from #168 round 8b: the accept report is
-  unbounded and unittest itself teaches the model to inflate it
-  (`maxDiff = None`). #114/#175 family.
-- **#171** — in implementation review (see Next up); **#174 #177 merged**.
-- Untouched: **#165**, **#155** Arcs B/C, **#161/#162**, **#149 #151**.
-- Still blocked on the practitioner: **#167** (volume paid runs) and
-  **#141** (CLAUDE.md-confound spike's None condition).
-
-### Queued, not skipped
-
-**#168's live row LANDED** (dogfood entry 10; record
-`docs/plans/2026-08-30-168-live-gate/`): a live-injected resolve crash
-whose message named an absolute path reached the wire as
-`(resolve: exited non-zero, status 1)` — both legs, direct wire and
-`opencode run`, zero tool_use, nothing written. Found on the way: entry
-9's PATH-broken precondition is EXTINCT on this main (#154), so that
-replay now builds normally; live fault injection with a
-confirmed-live mutant is the template for future rows. Also: a stale
-serve from 08-17 was found still on :8765 — restart the serve before
-every gate, a long-running serve validates the wrong code.
-
-Still owed: rows for **#166 #169 #173** (re-fix/build refusal shapes),
-**#172 #176** (library source, gate participants), **#175** (env
-scrub) — each changes client-visible behaviour.
+Every first review this session found real blockers again (D: BLOCKED;
+B-1: APPROVE-with-rework with a design defect; #171 rounds 2, 2b): the
+record is ten-for-ten. Two lessons paid for today: (1) a "harmless
+internal convention" in a gate field is never internal — trace every
+consumer before inventing one (B-1 F1); (2) a fuzzy match that reads
+then overwrites the wrong file is worse than an honest ask — determinism
+over guessing, and resolve identifiers to files with the grep rung, not
+prefixes (D rework). Ops: subagent budget — the account session limit
+bites after roughly 4-5M subagent tokens in a day; batch reviews and
+implementations, prefer Sonnet implementers, keep Opus for reviews.
 
 ## Timeline
 
@@ -294,7 +232,9 @@ Remaining, in order:
   refusal outranks accept/validity; stderr retained head+tail capped)
 - [x] #177 merged (one resolve-and-classify observation; bare CWD refs
   anchored so PATH cannot re-resolve; identity names bytes AND location)
-- [ ] #171 — the deliverable must participate (in review)
+- [x] #171 merged (ablation control + public-binding re-fix surface; four rounds)
+- [x] #182 D + B-1 merged (discovery before an unnamed build; edits keep the prior surface); #183 B measured (coder keeps thinking)
+- [ ] #185 read-before-write for a named existing file; #182 A/C; #184; #183 A/C; #181
 - [ ] #161 #162 #165 — script-cache purity/imports and the -n auto flake;
   #155 Arcs B/C remainder
 - [ ] North star: parity on real work, honesty column held at zero
