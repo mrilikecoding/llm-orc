@@ -1,0 +1,45 @@
+{
+ "turn": 13,
+ "files": [
+  "buggy.py",
+  "calc.py",
+  "metrics.py",
+  "storage.py",
+  "test_buggy.py",
+  "test_calc.py",
+  "test_todo.py",
+  "todo.py",
+  "todos.json"
+ ],
+ "manifest": {
+  "buggy.py": "b79ec97f02bb4323d21b1180b054cf85d0859da4c37a6a08714b299e37c763a6",
+  "calc.py": "9b4886a7d55129066d955cc4d606da83bdcea42c883d1c3e4305711f9bedb7a4",
+  "metrics.py": "b1c829eadce845cd99f644c1a9c042053d04ac88c3a40e204e75fde59a713050",
+  "storage.py": "cc6d0563ac40f2c76cb621cbc30359f9a3d3c872ef1b0d730d6c340e89539a11",
+  "test_buggy.py": "4c870f0f6efbc45ad19f375858810be6dc2e09049b86421736af458321f4fbbe",
+  "test_calc.py": "ac0d9932f7da3c4a72306b5b8e0964fc728a8c498f4c07499b46be9e72747ac2",
+  "test_todo.py": "4e2577e1884045583827d8f78066478e0a47ee7517366f62d6b44e12d5b86106",
+  "todo.py": "0eb3f1ef043a0f280d6e554546cc0667e92a1330338e2c5ebe39876c8bef1209",
+  "todos.json": "075957ae3bc10c3acf0a1454212cc8d6bd352479ab3602a3afdc98ab1ea48908"
+ },
+ "post_manifest": {
+  "buggy.py": "b79ec97f02bb4323d21b1180b054cf85d0859da4c37a6a08714b299e37c763a6",
+  "calc.py": "9b4886a7d55129066d955cc4d606da83bdcea42c883d1c3e4305711f9bedb7a4",
+  "metrics.py": "b1c829eadce845cd99f644c1a9c042053d04ac88c3a40e204e75fde59a713050",
+  "storage.py": "cc6d0563ac40f2c76cb621cbc30359f9a3d3c872ef1b0d730d6c340e89539a11",
+  "test_buggy.py": "4c870f0f6efbc45ad19f375858810be6dc2e09049b86421736af458321f4fbbe",
+  "test_calc.py": "ac0d9932f7da3c4a72306b5b8e0964fc728a8c498f4c07499b46be9e72747ac2",
+  "test_todo.py": "4e2577e1884045583827d8f78066478e0a47ee7517366f62d6b44e12d5b86106",
+  "todo.py": "0eb3f1ef043a0f280d6e554546cc0667e92a1330338e2c5ebe39876c8bef1209",
+  "todos.json": "075957ae3bc10c3acf0a1454212cc8d6bd352479ab3602a3afdc98ab1ea48908"
+ },
+ "suite": {
+  "rc": 0,
+  "tail": "........                                                                 [100%]\n8 passed in 0.01s"
+ },
+ "seeded": {
+  "rc": 0,
+  "tail": "..                                                                       [100%]\n2 passed in 0.00s"
+ },
+ "oracle": null
+}
