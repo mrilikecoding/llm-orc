@@ -408,6 +408,39 @@ def test_gather_injects_missing_workspace_imports() -> None:
     assert out["tests"].startswith("from stack import Stack\n")
 
 
+def test_a6_nested_workspace_file_still_gets_its_import_injected() -> None:
+    """A6 (review, MEDIUM): the injector derived a module name by
+    stripping the extension only — todo/util.py -> "todo/util", never an
+    identifier, so a workspace-import omission silently stopped being
+    repaired exactly for the package shape #184 exists to support. It
+    must derive the DOTTED module name from the relative path instead."""
+    criteria = (
+        "Conversation so far:\n"
+        "assistant: [read todo/util.py]\n"
+        "  def clamp(n):\n"
+        "      return max(0, n)\n"
+        "\n\nCurrent request: add tests for clamp in todo/util.py"
+    )
+    tests_without_import = "def test_clamp():\n    assert clamp(-1) == 0\n"
+    out = _gather(criteria, tests_without_import, CODE)
+    assert out["tests"].startswith("from todo.util import clamp\n")
+
+
+def test_a6_nested_init_module_injects_as_the_package_itself() -> None:
+    """todo/__init__.py resolves to the package "todo", not "todo.__init__"
+    — an import must match how a real interpreter resolves it."""
+    criteria = (
+        "Conversation so far:\n"
+        "assistant: [read todo/__init__.py]\n"
+        "  def get_version():\n"
+        "      return '1.0'\n"
+        "\n\nCurrent request: add tests for get_version in todo/__init__.py"
+    )
+    tests_without_import = "def test_version():\n    assert get_version() == '1.0'\n"
+    out = _gather(criteria, tests_without_import, CODE)
+    assert out["tests"].startswith("from todo import get_version\n")
+
+
 def test_gather_leaves_deliverables_with_imports_untouched() -> None:
     criteria = (
         "Conversation so far:\n"
