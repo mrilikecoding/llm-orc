@@ -212,15 +212,17 @@ class TestTheGuardDoesNotRejectRealCandidates:
         which the ablation control satisfies identically with the
         deliverable's bytes absent (an import-only check observes nothing),
         so ``participates`` was False for the whole class of surface-less
-        prior modules (constants-only settings, a dict-only rates table, an
-        ``__init__`` re-export module) and the route could never converge.
+        prior modules and the route could never converge.
 
-        F-1's fix: when the prior module has no public surface, fall back
-        to the pre-#171 bar (load cleanly, plus #173's inertness whitelist)
-        instead of applying the participation gate. ``x = 1`` is not on
+        Round 3 correction: the fallback is scoped to priors with ZERO
+        PUBLIC BINDINGS OF ANY KIND (an empty module, same as no prior_code
+        known at all — see below for the import-only ``__init__`` shape).
+        A constants-only or dict-only prior is NOT this case any more (the
+        surface now includes top-level assignment targets); this test's own
+        prior is "" (nothing known), which has none. ``x = 1`` is not on
         #173's inert whitelist (``Assign`` isn't a member), so it accepts
         here exactly as it did pre-#171 — #173's own whitelist, unchanged,
-        is what still catches genuine junk against a surface-less prior;
+        is what still catches genuine junk against a zero-binding prior;
         this measured case is not that."""
         envelope = _envelope("x = 1\n")
 
@@ -228,11 +230,26 @@ class TestTheGuardDoesNotRejectRealCandidates:
             "accept_reason"
         ]
 
+    def test_an_import_only_prior_also_falls_back_to_the_loads_cleanly_bar(
+        self,
+    ) -> None:
+        """The other zero-public-binding shape (an ``__init__`` re-export
+        module): imports were never part of the surface, before or after
+        the round-3 widening, so a prior that only imports names still has
+        nothing to check and falls back to the pre-#171 bar."""
+        prior = "from foo import bar\nfrom baz import qux\n"
+        envelope = _envelope("x = 1\n", prior_code=prior)
+
+        assert envelope["diagnostics"]["accept"] is True, envelope["diagnostics"][
+            "accept_reason"
+        ]
+
     def test_a_constants_only_prior_with_a_legitimate_fix_accepts(self) -> None:
-        """F-1's own repro: a constants-only settings module (no public
-        def/class) has no surface to derive a real smoke check from, so the
-        participation gate is bypassed for it (see the fallback-bar test
-        above) — a legitimate one-value fix must still accept."""
+        """F-1's own repro, round 3 (widened, not skipped): a constants-only
+        settings module's top-level assignment targets (PORT/DEBUG/RETRIES)
+        are now PART of the smoke surface — a legitimate one-value fix that
+        keeps every name still accepts, via the genuine per-name check, not
+        a bypass."""
         prior = "PORT = 8080\nDEBUG = False\nRETRIES = 3\n"
         fixed = "PORT = 9090\nDEBUG = False\nRETRIES = 3\n"
         envelope = _envelope(fixed, prior_code=prior)
@@ -242,8 +259,9 @@ class TestTheGuardDoesNotRejectRealCandidates:
         ]
 
     def test_a_dict_only_rates_table_fix_accepts(self) -> None:
-        """F-1's second repro shape: a dict-only rates table, same reasoning
-        as the constants-only settings module above."""
+        """F-1's second repro shape, round 3: a dict-only rates table's
+        ``RATES`` binding is part of the widened surface; a fix that keeps
+        the name (only the dict's value changes) accepts."""
         prior = "RATES = {'a': 1, 'b': 2}\n"
         fixed = "RATES = {'a': 1, 'b': 3}\n"
         envelope = _envelope(fixed, prior_code=prior)
@@ -251,6 +269,35 @@ class TestTheGuardDoesNotRejectRealCandidates:
         assert envelope["diagnostics"]["accept"] is True, envelope["diagnostics"][
             "accept_reason"
         ]
+
+    def test_a_junk_edit_against_a_constants_only_prior_now_refuses(self) -> None:
+        """Round 3 correction (the coordinator's own finding): F-1's
+        fallback re-opened the exact clobber #173 closed for def-bearing
+        modules — ``x = 1`` shipped against a constants-only prior. The
+        surface is widened instead of skipped: PORT/DEBUG/RETRIES are
+        public top-level bindings same as a function name, so a junk
+        deliverable that drops all three refuses, with the same
+        dropped-name reason wording a dropped function gets (F-2)."""
+        prior = "PORT = 8080\nDEBUG = False\nRETRIES = 3\n"
+        envelope = _envelope("x = 1\n", prior_code=prior)
+        reason = envelope["diagnostics"]["accept_reason"]
+
+        assert envelope["diagnostics"]["accept"] is False
+        assert "no longer defines" in reason
+        assert any(name in reason for name in ("PORT", "DEBUG", "RETRIES"))
+
+    def test_a_fix_that_drops_a_public_constant_refuses(self) -> None:
+        """Recorded bound, same as functions (F-2's own dropped-name bound,
+        now extended to constants): a fix that intentionally drops a public
+        constant the prior module exported refuses, whichever was the
+        right call to make."""
+        prior = "PORT = 8080\nDEBUG = False\nRETRIES = 3\n"
+        candidate = "PORT = 9090\nDEBUG = False\n"
+        envelope = _envelope(candidate, prior_code=prior)
+        reason = envelope["diagnostics"]["accept_reason"]
+
+        assert envelope["diagnostics"]["accept"] is False
+        assert "RETRIES" in reason
 
     def test_a_dropped_name_reason_states_the_fact_without_quoting_test_source(
         self,

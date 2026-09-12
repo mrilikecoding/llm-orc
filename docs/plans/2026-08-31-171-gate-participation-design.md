@@ -111,22 +111,39 @@ Conditions and bounds:
    public ever promised. Fixed: the surface is PUBLIC names only (a
    leading underscore, dunders included, is excluded).
 
-   **Round 2 review, F-1, real scope of the surface-less fallback:**
-   when the prior module has no public top-level def/class at all
-   (constants-only settings, a dict-only rates table, an `__init__`
-   re-export module), the smoke-only bar degrades to "loads cleanly"
-   alone — and the ablation control's empty-code run satisfies that
-   identically, so `participates` was False for EVERY candidate against
-   this whole class and the route could never converge. Fixed by
-   falling back to the PRE-#171 bar (loads cleanly, plus #173's
-   inertness whitelist) for exactly this case — the participation gate
-   is bypassed only when `smoke_surface_empty` is set, never for a
-   prior that has a real surface to check. Measured scope of the
-   fallback: a constants-only one-value fix accepts, a dict-only rate
-   change accepts, and `x = 1`-style junk against a surface-less prior
-   ALSO accepts now (unchanged from pre-#171: `Assign` isn't on #173's
-   inert whitelist, and this fix does not widen that whitelist) — the
-   fallback is a return to the pre-#171 bar, not a new, stricter one.
+   **Round 2 review, F-1, real scope of the surface-less fallback (round
+   1) — SUPERSEDED by round 3, below.** When the prior module has no
+   public top-level def/class at all (constants-only settings, a
+   dict-only rates table, an `__init__` re-export module), the
+   smoke-only bar degraded to "loads cleanly" alone — and the ablation
+   control's empty-code run satisfied that identically, so
+   `participates` was False for EVERY candidate against this whole
+   class and the route could never converge. Round 1's fix fell back to
+   the PRE-#171 bar (loads cleanly, plus #173's inertness whitelist) for
+   exactly this case. Measured at the time: a constants-only one-value
+   fix accepts, a dict-only rate change accepts, and `x = 1`-style junk
+   against a constants-only prior ALSO accepted (`Assign` isn't on
+   #173's inert whitelist) — this reopened the exact clobber #173 closed
+   for def-bearing modules, and is why round 3 replaced the skip below.
+
+   **Round 3 correction (coordinator finding): widen the surface, don't
+   skip the check.** The consistent rule is that the re-fix smoke
+   surface is every PUBLIC top-level BINDING, not only def/class:
+   `refix_select._public_top_level_names` now also collects `Assign`/
+   `AnnAssign` targets that are a plain `Name` (simple tuple/list
+   unpacking included), public ones only (leading underscore excluded,
+   same as def/class). A settings module's `PORT = 8080` is now as much
+   a surface member as a function name — a constants edit that keeps
+   its names still accepts, and `x = 1` against that same prior now
+   REFUSES with the same dropped-name wording a dropped function gets.
+   The "loads cleanly" fallback is now reserved for a prior with
+   literally ZERO public bindings of any kind (an empty module, or one
+   that only imports names — imports were never surface, before or
+   after this). Measured: the constants fix and the dict-only rate
+   change still accept (via the genuine per-name check now, not a
+   bypass); `x = 1` against the constants-only prior refuses; a fix
+   that deliberately drops one public constant (keeping the others)
+   refuses too, the same recorded bound already pinned for functions.
 2. **`_inject_workspace_imports` must not divert.** Skip injection for
    any name the CANDIDATE defines (both call sites — tests and code).
    Two-line guard; removes the self-inflicted diversion class (WA-2/2b).

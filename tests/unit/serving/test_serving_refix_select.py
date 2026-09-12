@@ -146,6 +146,27 @@ def test_smoke_test_is_derived_from_the_prior_modules_surface() -> None:
     assert "restock" in selected["tests"]
 
 
+_PRIOR_CONSTANTS_ONLY = "PORT = 8080\nDEBUG = False\nRETRIES = 3\n"
+
+
+def test_smoke_surface_includes_top_level_constant_assignments() -> None:
+    """F-1, round 3 (widened, not skipped): a constants-only settings
+    module has no def/class, but PORT/DEBUG/RETRIES are still public
+    top-level bindings — the surface must include them, or a junk
+    deliverable that drops them all satisfies "loads cleanly" for free."""
+    selected = _select(
+        {
+            "deterministic_code": "",
+            "visible_test": "",
+            "prior_code": _PRIOR_CONSTANTS_ONLY,
+            "task": "change the port in settings.py",
+        }
+    )
+    assert "PORT" in selected["tests"]
+    assert "DEBUG" in selected["tests"]
+    assert "RETRIES" in selected["tests"]
+
+
 def test_missing_prior_code_still_injects_a_loads_cleanly_smoke_test() -> None:
     """No prior_code known (or nothing to preserve) makes ``_smoke_test``
     emit the "loads cleanly" bar alone — an ``import solution`` assertion
@@ -191,6 +212,35 @@ def test_smoke_surface_empty_flag_is_false_with_a_real_prior_surface() -> None:
         }
     )
     assert selected["smoke_surface_empty"] is False
+
+
+def test_smoke_surface_empty_flag_is_false_with_constants_only_surface() -> None:
+    """Round 3: a constants-only prior has a public surface now (its
+    assignment targets), so it is NOT the surface-less degraded case."""
+    selected = _select(
+        {
+            "deterministic_code": "",
+            "visible_test": "",
+            "prior_code": _PRIOR_CONSTANTS_ONLY,
+            "task": "change the port in settings.py",
+        }
+    )
+    assert selected["smoke_surface_empty"] is False
+
+
+def test_smoke_surface_empty_flag_is_true_with_an_import_only_prior() -> None:
+    """Imports were never part of the surface, before or after round 3 —
+    a prior that only imports names has ZERO public bindings and still
+    degrades to the loads-cleanly bar."""
+    selected = _select(
+        {
+            "deterministic_code": "def f(): return 1\n",
+            "visible_test": "",
+            "prior_code": "from foo import bar\nfrom baz import qux\n",
+            "task": "fix f in f.py",
+        }
+    )
+    assert selected["smoke_surface_empty"] is True
 
 
 def test_smoke_surface_empty_flag_is_false_with_a_visible_test() -> None:
