@@ -50,6 +50,8 @@ default_task: |
 agents:
   - name: coder
     model_profile: agentic-tier-cheap-general
+    options:
+      think: false
     system_prompt: |
       You are a coding assistant. Given a programming task or question,
       respond with the most useful code or guidance you can produce.
@@ -59,6 +61,8 @@ agents:
 
   - name: critic
     model_profile: agentic-tier-cheap-general
+    options:
+      think: false
     # depends_on makes the review real: without it the critic ran in
     # parallel with the coder and reviewed a response it never saw
     # (confabulated critiques observed in the WP-LB-G captured artifact).
@@ -73,6 +77,8 @@ agents:
 
   - name: synthesizer
     model_profile: agentic-tier-cheap-general
+    options:
+      think: false
     depends_on: [coder, critic]
     system_prompt: |
       Combine the coder's response and the critic's review into a
