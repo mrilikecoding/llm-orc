@@ -4,6 +4,10 @@
       "command": "uv",
       "args": ["run", "llm-orc", "mcp", "serve"],
       "env": {}
+    },
+    "llm-orc-ng-mini": {
+      "type": "http",
+      "url": "https://llm-orc.homelab.nate.green/mcp"
     }
   }
 }
