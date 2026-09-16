@@ -142,15 +142,21 @@ the llama-server backend yet — that is the regression gate below.
    Deployed and accepted on the rig (design doc, Result). **Released
    as v0.20.1** on the practitioner's go (push, PyPI, GitHub release,
    formula bump). Policy from the practitioner: the mini runs releases,
-   not checkouts. Doing that surfaced #197 (P0): a clean install of
-   0.20.1 resolves `mcp` 2.x and dies at import (lock hid it; pinned
-   `<2` on local main, 0.20.2 bump staged, push gated), and the brew
-   formula cannot build on the Intel mini (no `cryptography>=49`
-   x86_64 wheel vs the PYSEC constraint; needs Rust or a decision).
-   The mini currently runs the 0.20.1 release via `uv tool install` with
-   `mcp<2` and `cryptography<49` (pre-advisory, knowingly). #196: the
-   serving project (`.llm-orc/`) is not in the wheel, so the plist's
-   WorkingDirectory stays the checkout. Follow-up #195.
+   not checkouts. Doing that surfaced #197 (P0, closed the same
+   evening): a clean install of 0.20.1 resolved `mcp` 2.x and died at
+   import (the lock hid it). **v0.20.2** pins `mcp<2` (clean resolve
+   verified from PyPI). The brew formula could not build on the Intel
+   mini (cryptography>=49 has no x86_64 wheel; rust has no Intel bottle
+   either, hours from source); the tap formula now constrains
+   `cryptography<49` on Intel only, with the reasoning (PYSEC-2026-3552
+   is a PKCS#7 decryption oracle; llm-orc uses only Fernet). **The mini
+   runs `brew install llm-orchestra` 0.20.2** (30 s build), health and
+   `/mcp` verified over https; the interim `uv tool` install is removed.
+   Lesson, binding: a release is verified by a clean install from PyPI,
+   never from the checkout. #196: the serving project (`.llm-orc/`) is
+   not in the wheel, so the plist's WorkingDirectory stays the checkout.
+   Follow-up #195. The practitioner may move the mini to Linux; Intel
+   macOS support is dwindling upstream.
 2. **Regression gate on the new backend** (laptop or ng-mini): the ladder
    (T1 alone at r≥5 first, then the full run) and the 7-turn probe.
    Chat templating and tool-call parsing moved from Ollama's Go templates
