@@ -1,5 +1,5 @@
 agents:
-- model_profile: ollama-gemma3-12b
+- model_profile: local-qwen3-14b
   name: backend-reviewer
   system_prompt: 'You are a backend architecture reviewer specializing in Python web
     frameworks, REST API design, and real-time communication patterns.
@@ -24,7 +24,7 @@ agents:
 
     Be specific and cite sections of the ADR. Identify both strengths and potential
     issues.'
-- model_profile: ollama-llama3
+- model_profile: local-qwen3-8b
   name: frontend-reviewer
   system_prompt: 'You are a frontend architecture reviewer specializing in modern
     JavaScript frameworks, build tooling, and web performance.
@@ -49,7 +49,7 @@ agents:
 
     Be specific and cite sections of the ADR. Identify both strengths and potential
     issues.'
-- model_profile: ollama-llama3
+- model_profile: local-qwen3-8b
   name: ux-reviewer
   system_prompt: 'You are a UX architecture reviewer focusing on user flows, information
     architecture, and feature completeness.
@@ -74,7 +74,7 @@ agents:
 
     Be specific and cite sections of the ADR. Identify both strengths and gaps in
     the user experience design.'
-- model_profile: ollama-gemma3-12b
+- model_profile: local-qwen3-14b
   name: security-reviewer
   system_prompt: 'You are a security reviewer focusing on web application security,
     especially for local-first applications.
@@ -104,7 +104,7 @@ agents:
   - frontend-reviewer
   - ux-reviewer
   - security-reviewer
-  model_profile: ollama-gemma3-12b
+  model_profile: local-qwen3-14b
   name: synthesizer
   system_prompt: 'You are a technical lead synthesizing multiple reviewer perspectives
     into a cohesive ADR review.

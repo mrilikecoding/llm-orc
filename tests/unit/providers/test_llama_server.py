@@ -60,7 +60,7 @@ class TestRenderPreset:
         """A section with neither hf-repo nor a model path is invalid to the
         router, so it is left out and reported instead of emitted."""
         profiles: dict[str, dict[str, Any]] = {
-            "ollama-llama3": {"model": "qwen3-8b", "provider": "llama-server"},
+            "local-qwen3-8b": {"model": "qwen3-8b", "provider": "llama-server"},
         }
 
         preset = render_preset(profiles)

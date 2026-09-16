@@ -1,5 +1,5 @@
 model: qwen3-14b
 hf_repo: unsloth/Qwen3-14B-GGUF:Q4_K_M
-name: ollama-gemma3-12b
+name: local-qwen3-14b
 provider: llama-server
 timeout_seconds: 120
