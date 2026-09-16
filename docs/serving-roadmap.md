@@ -118,13 +118,20 @@ the llama-server backend yet — that is the regression gate below.
 
 ### Next up (in order)
 
-1. **Bring the serve up on ng-mini** (needs the practitioner: my ssh key
-   is refused for `nathanielgreen@ng-mini`; `ssh-copy-id ng-mini` once,
-   or run `deploy/ng-mini/README.md` by hand). The checkout there must be
-   local main (origin is ~150 commits behind; a git remote from the
-   laptop to the ng-mini checkout moves it without touching origin).
-   Then `homelab https:enable llm-orc` on the server. Then pull the four
-   tiers through `/api/models/{name}/pull` over the tailnet.
+1. **Serve is up on ng-mini (2026-09-16 afternoon).** launchd agent,
+   v0.20.0 from origin main, llama.cpp b10964 x64 binary (no Intel brew
+   bottles; see `deploy/ng-mini/README.md`). http://llm-orc.homelab.nate.green
+   answers 200; four tiers pulled over the tailnet; acceptance 1 and 2 of
+   the handoff pass (tool call parsed through the tailnet URL). Measured
+   on the box (i7-8700B, CPU-only): qwen3-8b 23 prompt tok/s, 4-6 gen
+   tok/s; the trivial write_file turn took 560 s end to end because the
+   serving ensemble ran classify + build-gated round + tests at that
+   speed, and classified "create a text file" as a python_module build.
+   Both numbers feed the gate below. **Still owed:** HTTPS. The homelab
+   wildcard cert expired 2026-08-23 (every app is on it); `certbot renew
+   --dry-run` succeeds, so `homelab https:renew` then `https:enable
+   llm-orc` is the fix, gated on the practitioner (re-certs all ten apps).
+   Full record: `docs/plans/2026-09-16-ng-mini-remote-serve-handoff.md`.
 2. **Regression gate on the new backend** (laptop or ng-mini): the ladder
    (T1 alone at r≥5 first, then the full run) and the 7-turn probe.
    Chat templating and tool-call parsing moved from Ollama's Go templates

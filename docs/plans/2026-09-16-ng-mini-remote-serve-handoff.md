@@ -143,3 +143,51 @@ last pulled is "loaded".
 MCP over the tailnet (separate launchd unit and proxy path; the SSE
 transport is the older protocol). `llm-orc web` owning the router.
 Tuning `num_ctx`/`--models-max` for throughput; measure first.
+
+## Result (2026-09-16, afternoon)
+
+Steps 0-4 and 6 done; step 5 (HTTPS) open; acceptance 1-2 pass, 3-4 not run.
+
+Unknowns resolved:
+
+1. ssh: practitioner appended the key by hand (`ssh-copy-id` from the
+   `!` prefix has no TTY for the password prompt).
+2. Toolchain: ng-mini is a 2018 Intel mini (i7-8700B, 6c/12t, AVX2,
+   UHD 630, macOS 15.7.3). Homebrew 6 has no Intel bottles for
+   `llama.cpp` or `uv`, so both came from upstream binaries (uv 0.12.15
+   via the astral installer; llama.cpp b10964 macos-x64 release tarball,
+   symlinked into `/usr/local/bin`). 456 GB free.
+3. RAM: 32 GB; the preset stands as rendered (`c = 40960`, one resident).
+4. A gui-domain launchd agent is right: the console is owned by a
+   logged-in session and `caffeinate` already holds sleep off.
+5. `https:enable` is `dokku certs:add` with `~/homelab/dokku/certs/`.
+   That cert (and every other app's) expired 2026-08-23. `homelab
+   https:renew` runs certbot with the dns-cloudflare plugin; a dry run
+   succeeded. Renewal re-certs all ten apps, so it waits for the
+   practitioner's go.
+
+Measured on ng-mini, CPU-only, direct to the router:
+
+| seat | prompt tok/s | gen tok/s |
+|---|---|---|
+| qwen3-1.7b | 88 | 23 |
+| qwen3-8b (27-token prompt) | 27 | 5.7 |
+| qwen3-8b (2.8k-token prompt) | 23 | 3.9 |
+
+Acceptance 2 through the tailnet URL: `finish_reason: tool_calls`, one
+parsed `write_file` call, 560 s wall. The serve ran the full serving
+ensemble (classify, resolve, build-gated seat with a round and tests) and
+classified the request as a `python_module` build, so the argument was a
+Python snippet under `filePath`, not the literal text under `path`.
+Routing quality belongs to the regression gate; the wall time is the
+box. A fresh 40960-token window fills in roughly 30 minutes at 23 tok/s;
+prompt-cache reuse across turns is what makes multi-turn viable here.
+
+Observed once, not chased: the first `qwen3-8b` pull returned
+`"unloaded"` after the download while the router was still swapping the
+1.7b out, and the next two pulls got a 503 (`router ... HTTP Error 500`)
+for a few seconds. A retry loaded it in 10 s. `usage` in the `/v1`
+response is all zeros.
+
+Ollama 0.4.2 is still installed and listening on 11434 (brew service);
+nothing uses it.
