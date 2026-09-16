@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.20.1] - 2026-09-16
+
+### Added
+- `llm-orc serve` exposes the full MCP tool set at `/mcp` over
+  streamable HTTP (#194), sharing one `OrchestraService` with the REST
+  and `/v1` routes, so a remote MCP client (for example a `.mcp.json`
+  entry of `{"type": "http", "url": "https://<serve>/mcp"}`) can list,
+  create, update, delete, and invoke ensembles on the serve's project.
+  FastMCP's DNS-rebinding guard is disabled for this app so the serve
+  works behind a reverse proxy; the serve has no auth, so keep it on a
+  private network. `set_project` over MCP changes the serve's project
+  for every client.
+
+### Fixed
+- README named the wrong Homebrew tap; it is `mrilikecoding/llm-orchestra`.
+
 ## [0.20.0] - 2026-09-16
 
 Minor rather than patch because a provider is removed and an agent
