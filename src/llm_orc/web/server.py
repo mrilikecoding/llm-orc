@@ -5,6 +5,8 @@ with WebSocket support for streaming execution updates.
 """
 
 import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from importlib.metadata import version
 from pathlib import Path
 from typing import Any
@@ -14,10 +16,12 @@ from fastapi.exceptions import HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.routing import Route
 
 from llm_orc.web.api import (
     artifacts,
     ensembles,
+    get_mcp_server,
     models,
     profiles,
     scripts,
@@ -45,10 +49,22 @@ def create_app() -> FastAPI:
     Returns:
         Configured FastAPI application instance.
     """
+    # Built once here so REST, /v1, and the /mcp mount below all share
+    # the same OrchestraService (docs/plans/2026-09-16-mcp-in-serve.md).
+    mcp_server = get_mcp_server()
+    mcp_app = mcp_server.streamable_http_app()
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        """Keep the MCP session manager running for the app's lifetime."""
+        async with mcp_server.session_manager.run():
+            yield
+
     app = FastAPI(
         title="llm-orc",
         description="Web UI for llm-orc ensemble management",
         version=get_version(),
+        lifespan=lifespan,
     )
 
     # CORS middleware - localhost only by default
@@ -89,6 +105,18 @@ def create_app() -> FastAPI:
     app.include_router(models.router)
     app.include_router(v1_models.router)
     app.include_router(v1_chat_completions.router)
+
+    # MCP tool set (invoke, create/update/delete ensembles, profiles,
+    # scripts, library, promotion) over the streamable HTTP transport.
+    # On by default: no flag, no auth -- the tailnet is the boundary.
+    #
+    # Registered as an exact-path route rather than a `Mount`: the MCP
+    # app's own route already lives at "/mcp" (FastMCP's default), and
+    # a `Mount("/mcp", ...)` would double that prefix. An exact route
+    # also avoids Starlette's trailing-slash redirect for a bare
+    # request to "/mcp" being pre-empted by the SPA catch-all route
+    # below, which claims a same-path partial match first.
+    app.routes.append(Route("/mcp", endpoint=mcp_app))
 
     @app.get("/health")
     async def health() -> dict[str, str]:
