@@ -158,7 +158,7 @@ mcp__llm-orc__list_ensembles        # See available ensembles
 **Provider Discovery** - Check what's available before running
 | Tool | Description |
 |------|-------------|
-| `get_provider_status` | Show available providers and Ollama models |
+| `get_provider_status` | Show available providers and the local router's models |
 | `check_ensemble_runnable` | Check if ensemble can run, suggest local alternatives |
 
 **Ensemble Management**
@@ -210,7 +210,7 @@ mcp__llm-orc__list_ensembles        # See available ensembles
 ```
 # 1. Check what's available
 mcp__llm-orc__get_provider_status
-# → Shows Ollama running with llama3, mistral models
+# → Shows the llama-server router with qwen3-8b, qwen3-14b models
 
 # 2. Find an ensemble
 mcp__llm-orc__library_search query="code review"
@@ -314,15 +314,17 @@ Model profiles simplify ensemble configuration by providing named shortcuts for 
 # In ~/.config/llm-orc/config.yaml or .llm-orc/config.yaml
 model_profiles:
   free-local:
-    model: llama3
-    provider: ollama
+    model: qwen3-8b
+    provider: llama-server
+    hf_repo: unsloth/Qwen3-8B-GGUF:Q4_K_M   # GGUF the router fetches on first load
     cost_per_token: 0.0
     system_prompt: "You are a helpful assistant that provides concise, accurate responses for local development and testing."
     timeout_seconds: 30
     temperature: 0.7
     max_tokens: 500
-    options:              # Provider-specific parameters (Ollama)
-      num_ctx: 4096
+    options:              # Provider-specific parameters
+      num_ctx: 4096       # per-model context in the router preset
+      think: false        # thinking off for interactive latency
       top_k: 40
 
   default-claude:
@@ -348,9 +350,9 @@ model_profiles:
     timeout_seconds: 30
 
   openai-local:
-    model: llama3:latest
+    model: my-model
     provider: openai-compatible       # Any OpenAI-compatible server
-    base_url: http://localhost:11434/v1  # Ollama, vLLM, LM Studio, etc.
+    base_url: http://localhost:8000/v1   # vLLM, LM Studio, a remote llama-server, etc.
     cost_per_token: 0.0
     timeout_seconds: 30
 ```
@@ -495,7 +497,7 @@ Agents can reference and execute other ensembles, enabling hierarchical composit
 name: topic-analysis
 agents:
   - name: analyst
-    model_profile: ollama-gemma-small
+    model_profile: local-qwen3-1.7b
     system_prompt: "Analyze the given topic in 2-3 sentences."
 
 # parent ensemble
@@ -572,7 +574,7 @@ llm-orc config check
 
 **Provider Availability Detection:**
 - **Authenticated providers** - Checks for valid API credentials
-- **Ollama service** - Tests connection to local Ollama instance (localhost:11434)
+- **llama-server router** - Asks `LLAMA_SERVER_URL` (default localhost:8080) what it serves
 - **Configuration validation** - Verifies model profiles reference available providers
 
 **Example Output:**
@@ -582,15 +584,15 @@ Configuration Status Legend:
 
 === Global Configuration Status ===
 📁 Model Profiles:
-🟢 local-free (llama3 via ollama)
+🟢 local-free (qwen3-8b via llama-server)
 🟢 quality (claude-sonnet-4 via anthropic-api)  
 🟥 high-context (claude-3-5-sonnet via anthropic-api)
 
-🌐 Available Providers: anthropic-api, ollama
+🌐 Available Providers: anthropic-api, llama-server
 
 === Local Configuration Status: My Project ===
 📁 Model Profiles:
-🟢 security-auditor (llama3 via ollama)
+🟢 security-auditor (qwen3-8b via llama-server)
 🟢 senior-reviewer (claude-sonnet-4 via anthropic-api)
 ```
 

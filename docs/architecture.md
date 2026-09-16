@@ -19,7 +19,7 @@ LLM Orchestra is a multi-agent LLM communication system designed for ensemble or
 - **Timeout Management**: Per-agent timeout configuration with performance tuning
 
 ### Model Abstraction
-- **Provider Agnostic**: Support for Anthropic, Google, Ollama, and extensible interfaces
+- **Provider Agnostic**: Support for Anthropic, Google, a llm-orc-owned llama-server router, OpenAI-compatible endpoints, and extensible interfaces
 - **Model Profiles**: Named shortcuts combining model + provider + configuration
 - **Cost Optimization**: Intelligent routing based on task complexity and model capabilities
 - **Authentication Management**: Secure credential storage with OAuth support
@@ -152,7 +152,7 @@ Fan-out is woven into the existing phase-based execution pipeline in `EnsembleEx
 
 #### Model Abstractions (`llm_orc/models/`)
 - **Base interface**: Common API across all model providers
-- **Provider-specific implementations**: Anthropic, Google, Ollama, OpenAI-compatible support
+- **Provider-specific implementations**: Anthropic, Google, OpenAI-compatible (which the llama-server router speaks) support
 - **Authentication handling**: OAuth flows and API key management
 - **Response streaming**: Real-time progress updates during execution
 
@@ -202,7 +202,7 @@ LLM Orchestra implements a Model Context Protocol (MCP) server using the FastMCP
 - `analyze_execution` - Analyze execution artifact data
 
 *Provider Discovery:*
-- `get_provider_status` - Show available providers and Ollama models
+- `get_provider_status` - Show available providers and the models the local router serves
 - `check_ensemble_runnable` - Check if ensemble can run with current providers, suggest alternatives
 
 *Ensemble CRUD:*
