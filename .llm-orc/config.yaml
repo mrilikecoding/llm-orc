@@ -26,7 +26,7 @@ performance:
 model_profiles:
   # Test profile with non-existent model to test fallbacks
   test-fallback:
-    model: nonexistent-model:999b
+    model: nonexistent-model-999b
     provider: llama-server
     cost_per_token: 0.0
     system_prompt: This model doesn't exist - should fallback!

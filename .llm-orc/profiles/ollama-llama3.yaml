@@ -1,4 +1,5 @@
 model: qwen3-8b
+hf_repo: unsloth/Qwen3-8B-GGUF:Q4_K_M
 name: ollama-llama3
 provider: llama-server
 timeout_seconds: 90
