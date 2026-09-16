@@ -105,7 +105,7 @@ class HelpHandler:
                     "output_format",
                     "timeout_seconds",
                     "options",
-                    "ollama_format",
+                    "response_format",
                 ],
             },
         }

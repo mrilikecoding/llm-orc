@@ -98,7 +98,7 @@ class TestModelFactory:
                 temperature=None,
                 max_tokens=None,
                 options=None,
-                ollama_format=None,
+                response_format=None,
                 base_url=None,
             )
             assert result is not None
@@ -125,7 +125,7 @@ class TestModelFactory:
                 temperature=None,
                 max_tokens=None,
                 options=None,
-                ollama_format=None,
+                response_format=None,
             )
             assert result is not None
 
@@ -148,7 +148,7 @@ class TestModelFactory:
                 temperature=None,
                 max_tokens=None,
                 options=None,
-                ollama_format=None,
+                response_format=None,
             )
             assert result is not None
 
@@ -176,7 +176,7 @@ class TestModelFactory:
                 temperature=0.7,
                 max_tokens=500,
                 options=None,
-                ollama_format=None,
+                response_format=None,
             )
 
     async def test_load_model_from_agent_config_missing_model(
@@ -806,7 +806,7 @@ class TestOptionsPassThrough:
                 temperature=None,
                 max_tokens=None,
                 options={"num_ctx": 8192, "top_k": 20},
-                ollama_format=None,
+                response_format=None,
             )
 
     async def test_load_model_from_agent_config_no_options(
@@ -823,7 +823,7 @@ class TestOptionsPassThrough:
                 temperature=None,
                 max_tokens=None,
                 options=None,
-                ollama_format=None,
+                response_format=None,
             )
 
     async def test_load_model_from_agent_config_merges_profile_options(
@@ -854,7 +854,7 @@ class TestOptionsPassThrough:
                 temperature=None,
                 max_tokens=None,
                 options={"num_ctx": 8192, "top_k": 20, "top_p": 0.8},
-                ollama_format=None,
+                response_format=None,
                 base_url=None,
             )
 
@@ -888,8 +888,8 @@ class TestOptionsPassThrough:
         assert isinstance(model, ClaudeModel)
 
 
-class TestOllamaFormatPassThrough:
-    """Scenario: ollama_format threaded from agent config to the router-backed model."""
+class TestResponseFormatPassThrough:
+    """Scenario: response_format threaded from agent config to the local model."""
 
     @pytest.fixture
     def factory(self) -> ModelFactory:
@@ -898,15 +898,15 @@ class TestOllamaFormatPassThrough:
         credential_storage.get_auth_method.return_value = None
         return ModelFactory(config_manager, credential_storage)
 
-    async def test_ollama_format_extracted_from_agent_config(
+    async def test_response_format_extracted_from_agent_config(
         self, factory: ModelFactory
     ) -> None:
-        """ollama_format from agent config dict reaches load_model."""
+        """response_format from agent config dict reaches load_model."""
         schema = {"type": "object", "properties": {"name": {"type": "string"}}}
         agent_config = {
             "model": "qwen3:14b",
             "provider": "llama-server",
-            "ollama_format": schema,
+            "response_format": schema,
         }
 
         with patch.object(factory, "load_model", return_value=AsyncMock()) as mock_load:
@@ -917,11 +917,13 @@ class TestOllamaFormatPassThrough:
                 temperature=None,
                 max_tokens=None,
                 options=None,
-                ollama_format=schema,
+                response_format=schema,
             )
 
-    async def test_ollama_format_none_when_absent(self, factory: ModelFactory) -> None:
-        """No ollama_format passes None (backward compat)."""
+    async def test_response_format_none_when_absent(
+        self, factory: ModelFactory
+    ) -> None:
+        """No response_format passes None (backward compat)."""
         agent_config = {"model": "llama3", "provider": "llama-server"}
 
         with patch.object(factory, "load_model", return_value=AsyncMock()) as mock_load:
@@ -932,7 +934,7 @@ class TestOllamaFormatPassThrough:
                 temperature=None,
                 max_tokens=None,
                 options=None,
-                ollama_format=None,
+                response_format=None,
             )
 
     async def test_load_model_forwards_format_to_llama_server(
@@ -943,7 +945,7 @@ class TestOllamaFormatPassThrough:
         model = await factory.load_model(
             "qwen3-14b",
             "llama-server",
-            ollama_format=schema,
+            response_format=schema,
         )
 
         assert isinstance(model, OpenAICompatibleModel)
@@ -956,7 +958,7 @@ class TestOllamaFormatPassThrough:
         model = await factory.load_model(
             "qwen3-14b",
             "llama-server",
-            ollama_format="json",
+            response_format="json",
         )
 
         assert isinstance(model, OpenAICompatibleModel)

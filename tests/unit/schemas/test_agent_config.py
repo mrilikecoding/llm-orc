@@ -487,7 +487,7 @@ class TestOptionsFieldAccepted:
 
 
 class TestOllamaFormatFieldAccepted:
-    """Scenario: ollama_format accepted on LLM agent config."""
+    """Scenario: response_format accepted on LLM agent config."""
 
     def test_llm_agent_with_schema_format(self) -> None:
         schema: dict[str, Any] = {
@@ -498,27 +498,27 @@ class TestOllamaFormatFieldAccepted:
         data: dict[str, Any] = {
             "name": "extractor",
             "model_profile": "local-qwen",
-            "ollama_format": schema,
+            "response_format": schema,
         }
         config = parse_agent_config(data)
         assert isinstance(config, LlmAgentConfig)
-        assert config.ollama_format == schema
+        assert config.response_format == schema
 
     def test_llm_agent_with_string_format(self) -> None:
         data: dict[str, Any] = {
             "name": "extractor",
             "model_profile": "local-qwen",
-            "ollama_format": "json",
+            "response_format": "json",
         }
         config = parse_agent_config(data)
         assert isinstance(config, LlmAgentConfig)
-        assert config.ollama_format == "json"
+        assert config.response_format == "json"
 
-    def test_llm_agent_without_ollama_format(self) -> None:
+    def test_llm_agent_without_response_format(self) -> None:
         data: dict[str, Any] = {"name": "analyzer", "model_profile": "gpt4"}
         config = parse_agent_config(data)
         assert isinstance(config, LlmAgentConfig)
-        assert config.ollama_format is None
+        assert config.response_format is None
 
 
 class TestEnsembleAgentInDependencyChain:
