@@ -1,5 +1,6 @@
 """Tests for OpenAI-compatible model implementation."""
 
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -531,3 +532,279 @@ class TestOpenAICompatibleModelToolCalling:
             ),
         ):
             await model.generate_with_tools(messages=[], tools=[])
+
+
+class TestOpenAICompatibleModelOptions:
+    """Scenario: provider options that ``OllamaModel`` carried (#90).
+
+    ``think`` is a chat-template switch, not a sampling option: llama-server
+    reads it as ``chat_template_kwargs.enable_thinking`` (spike 2026-09-16,
+    issue #90: 1.2 s / 28 tokens with it off vs 76 s / 1500 with it on).
+    """
+
+    @pytest.fixture
+    def mock_success_response(self) -> MagicMock:
+        response = MagicMock()
+        response.status_code = 200
+        response.json.return_value = {
+            "choices": [{"message": {"content": "x"}}],
+            "usage": {"prompt_tokens": 1, "completion_tokens": 1},
+        }
+        return response
+
+    @pytest.mark.asyncio
+    async def test_think_lifted_from_options_to_chat_template_kwargs(
+        self, mock_success_response: MagicMock
+    ) -> None:
+        model = OpenAICompatibleModel(
+            model_name="qwen3-8b",
+            base_url="http://localhost:8080/v1",
+            options={"think": False},
+        )
+        mock_client = AsyncMock()
+        mock_client.post.return_value = mock_success_response
+
+        with patch(
+            "llm_orc.models.openai_compat.HTTPConnectionPool.get_httpx_client",
+            return_value=mock_client,
+        ):
+            await model.generate_response("hello", role_prompt="system prompt")
+
+        body = mock_client.post.call_args[1]["json"]
+        assert body["chat_template_kwargs"] == {"enable_thinking": False}
+        assert "think" not in body
+
+    @pytest.mark.asyncio
+    async def test_no_chat_template_kwargs_when_think_not_configured(
+        self, mock_success_response: MagicMock
+    ) -> None:
+        model = OpenAICompatibleModel(
+            model_name="qwen3-8b",
+            base_url="http://localhost:8080/v1",
+            options={"seed": 11},
+        )
+        mock_client = AsyncMock()
+        mock_client.post.return_value = mock_success_response
+
+        with patch(
+            "llm_orc.models.openai_compat.HTTPConnectionPool.get_httpx_client",
+            return_value=mock_client,
+        ):
+            await model.generate_response("hello", role_prompt="system prompt")
+
+        body = mock_client.post.call_args[1]["json"]
+        assert "chat_template_kwargs" not in body
+
+    @pytest.mark.asyncio
+    async def test_remaining_options_pass_through_without_overriding_explicit(
+        self, mock_success_response: MagicMock
+    ) -> None:
+        """Sampling options ride at the top level of the OpenAI-compat body
+        (llama-server accepts ``seed``, ``top_p``, ``top_k``, ...); an explicit
+        ``temperature`` keeps precedence over one smuggled in via options."""
+        model = OpenAICompatibleModel(
+            model_name="qwen3-8b",
+            base_url="http://localhost:8080/v1",
+            temperature=0.0,
+            options={"seed": 11, "top_p": 0.9, "temperature": 0.7},
+        )
+        mock_client = AsyncMock()
+        mock_client.post.return_value = mock_success_response
+
+        with patch(
+            "llm_orc.models.openai_compat.HTTPConnectionPool.get_httpx_client",
+            return_value=mock_client,
+        ):
+            await model.generate_response("hello", role_prompt="system prompt")
+
+        body = mock_client.post.call_args[1]["json"]
+        assert body["seed"] == 11
+        assert body["top_p"] == 0.9
+        assert body["temperature"] == 0.0
+
+    @pytest.mark.asyncio
+    async def test_tool_calling_path_applies_the_same_options(
+        self, mock_success_response: MagicMock
+    ) -> None:
+        mock_success_response.json.return_value = {
+            "choices": [{"message": {"content": "x"}, "finish_reason": "stop"}],
+            "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+        }
+        model = OpenAICompatibleModel(
+            model_name="qwen3-8b",
+            base_url="http://localhost:8080/v1",
+            options={"think": False, "seed": 11},
+        )
+        mock_client = AsyncMock()
+        mock_client.post.return_value = mock_success_response
+
+        with patch(
+            "llm_orc.models.openai_compat.HTTPConnectionPool.get_httpx_client",
+            return_value=mock_client,
+        ):
+            await model.generate_with_tools(
+                messages=[{"role": "user", "content": "hi"}], tools=[]
+            )
+
+        body = mock_client.post.call_args[1]["json"]
+        assert body["chat_template_kwargs"] == {"enable_thinking": False}
+        assert body["seed"] == 11
+
+
+class TestOpenAICompatibleModelResponseFormat:
+    """Scenario: the ``format`` an agent config carries (a JSON schema dict, or
+    the string ``json``) maps onto OpenAI's ``response_format`` (#90 spike:
+    llama-server honors ``json_schema`` and returned schema-valid JSON)."""
+
+    @pytest.fixture
+    def mock_success_response(self) -> MagicMock:
+        response = MagicMock()
+        response.status_code = 200
+        response.json.return_value = {
+            "choices": [{"message": {"content": "{}"}}],
+            "usage": {"prompt_tokens": 1, "completion_tokens": 1},
+        }
+        return response
+
+    @pytest.mark.asyncio
+    async def test_schema_dict_becomes_json_schema_response_format(
+        self, mock_success_response: MagicMock
+    ) -> None:
+        schema = {"type": "object", "properties": {"verdict": {"type": "string"}}}
+        model = OpenAICompatibleModel(
+            model_name="qwen3-8b",
+            base_url="http://localhost:8080/v1",
+            response_format=schema,
+        )
+        mock_client = AsyncMock()
+        mock_client.post.return_value = mock_success_response
+
+        with patch(
+            "llm_orc.models.openai_compat.HTTPConnectionPool.get_httpx_client",
+            return_value=mock_client,
+        ):
+            await model.generate_response("hello", role_prompt="system prompt")
+
+        body = mock_client.post.call_args[1]["json"]
+        assert body["response_format"] == {
+            "type": "json_schema",
+            "json_schema": {"name": "response", "schema": schema},
+        }
+
+    @pytest.mark.asyncio
+    async def test_json_string_becomes_json_object_response_format(
+        self, mock_success_response: MagicMock
+    ) -> None:
+        model = OpenAICompatibleModel(
+            model_name="qwen3-8b",
+            base_url="http://localhost:8080/v1",
+            response_format="json",
+        )
+        mock_client = AsyncMock()
+        mock_client.post.return_value = mock_success_response
+
+        with patch(
+            "llm_orc.models.openai_compat.HTTPConnectionPool.get_httpx_client",
+            return_value=mock_client,
+        ):
+            await model.generate_response("hello", role_prompt="system prompt")
+
+        body = mock_client.post.call_args[1]["json"]
+        assert body["response_format"] == {"type": "json_object"}
+
+
+class TestOpenAICompatibleModelTimings:
+    """Scenario: llama-server's ``timings`` block carries the raw counts the
+    serve's truncation backstop reads (turn_trace, C2 #145 / #151) under the
+    keys ``OllamaModel`` used. ``prompt_n + cache_n`` is the full prompt as
+    processed (cache hits are still prompt tokens); ``predicted_n`` is the
+    generation. Only present when the server actually returned them."""
+
+    def _response(self, timings: dict[str, Any] | None) -> MagicMock:
+        response = MagicMock()
+        response.status_code = 200
+        payload: dict[str, Any] = {
+            "choices": [{"message": {"content": "x"}, "finish_reason": "stop"}],
+            "usage": {"prompt_tokens": 45, "completion_tokens": 28},
+        }
+        if timings is not None:
+            payload["timings"] = timings
+        response.json.return_value = payload
+        return response
+
+    @pytest.mark.asyncio
+    async def test_timings_recorded_as_raw_counts_and_durations(self) -> None:
+        model = OpenAICompatibleModel(
+            model_name="qwen3-8b", base_url="http://localhost:8080/v1"
+        )
+        mock_client = AsyncMock()
+        mock_client.post.return_value = self._response(
+            {
+                "prompt_n": 3,
+                "cache_n": 42,
+                "predicted_n": 28,
+                "prompt_ms": 12.5,
+                "predicted_ms": 1100.0,
+            }
+        )
+
+        with patch(
+            "llm_orc.models.openai_compat.HTTPConnectionPool.get_httpx_client",
+            return_value=mock_client,
+        ):
+            await model.generate_response("hello", role_prompt="system prompt")
+
+        usage = model.get_last_usage()
+        assert usage is not None
+        assert usage["prompt_eval_count"] == 45
+        assert usage["eval_count"] == 28
+        assert usage["prompt_eval_duration_ns"] == 12_500_000
+        assert usage["eval_duration_ns"] == 1_100_000_000
+
+    @pytest.mark.asyncio
+    async def test_no_raw_counts_when_server_sends_no_timings(self) -> None:
+        model = OpenAICompatibleModel(
+            model_name="gpt-4o", base_url="https://api.openai.com/v1"
+        )
+        mock_client = AsyncMock()
+        mock_client.post.return_value = self._response(None)
+
+        with patch(
+            "llm_orc.models.openai_compat.HTTPConnectionPool.get_httpx_client",
+            return_value=mock_client,
+        ):
+            await model.generate_response("hello", role_prompt="system prompt")
+
+        usage = model.get_last_usage()
+        assert usage is not None
+        assert "prompt_eval_count" not in usage
+        assert "eval_count" not in usage
+
+    @pytest.mark.asyncio
+    async def test_tool_calling_path_records_timings_too(self) -> None:
+        model = OpenAICompatibleModel(
+            model_name="qwen3-8b", base_url="http://localhost:8080/v1"
+        )
+        mock_client = AsyncMock()
+        mock_client.post.return_value = self._response(
+            {
+                "prompt_n": 174,
+                "cache_n": 0,
+                "predicted_n": 30,
+                "prompt_ms": 400.0,
+                "predicted_ms": 900.0,
+            }
+        )
+
+        with patch(
+            "llm_orc.models.openai_compat.HTTPConnectionPool.get_httpx_client",
+            return_value=mock_client,
+        ):
+            await model.generate_with_tools(
+                messages=[{"role": "user", "content": "hi"}], tools=[]
+            )
+
+        usage = model.get_last_usage()
+        assert usage is not None
+        assert usage["prompt_eval_count"] == 174
+        assert usage["eval_count"] == 30
