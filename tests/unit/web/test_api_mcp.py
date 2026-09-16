@@ -122,42 +122,53 @@ class TestMcpToolParity:
 
 
 class TestMcpSharedService:
-    """/mcp and /api/ensembles agree: one OrchestraService behind both."""
+    """/mcp and /api/ensembles share one OrchestraService, not two.
 
-    def test_list_ensembles_matches_rest_endpoint(
+    Listing ensembles from a shared cwd (the earlier version of this
+    test) is a wrong-accept: two independent OrchestraService
+    instances constructed against the same cwd list the same
+    ensembles anyway, so it passes even when the wiring is split. This
+    version discriminates: it changes project via `set_project` over
+    /mcp, pointing at a directory REST was never told about. REST only
+    sees the new ensemble if it reads through the same service
+    instance the MCP tool call mutated.
+    """
+
+    def test_set_project_over_mcp_is_visible_to_rest(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.chdir(tmp_path)
-        ensembles_dir = tmp_path / ".llm-orc" / "ensembles"
-        ensembles_dir.mkdir(parents=True)
-        (ensembles_dir / "demo.yaml").write_text(
-            "name: demo\ndescription: Demo ensemble\nagents: []\n"
+        other_project = tmp_path / "other-project"
+        other_ensembles = other_project / ".llm-orc" / "ensembles"
+        other_ensembles.mkdir(parents=True)
+        (other_ensembles / "only-in-other.yaml").write_text(
+            "name: only-in-other\ndescription: Only in other\nagents: []\n"
         )
 
         with TestClient(create_app()) as client:
             _, session_id = _initialize(client)
 
-            mcp_response = client.post(
+            set_project_response = client.post(
                 "/mcp",
                 headers={**_ACCEPT_HEADERS, "mcp-session-id": session_id},
                 json={
                     "jsonrpc": "2.0",
                     "id": 3,
                     "method": "tools/call",
-                    "params": {"name": "list_ensembles", "arguments": {}},
+                    "params": {
+                        "name": "set_project",
+                        "arguments": {"path": str(other_project)},
+                    },
                 },
             )
             rest_response = client.get("/api/ensembles")
 
-        mcp_body = _parse_rpc_body(mcp_response)
-        structured = mcp_body["result"]["structuredContent"]
-        mcp_names = {ensemble["name"] for ensemble in structured["result"]}
+        set_project_body = _parse_rpc_body(set_project_response)
+        status = set_project_body["result"]["structuredContent"]["status"]
+        assert status == "ok"
 
         rest_names = {ensemble["name"] for ensemble in rest_response.json()}
-
-        assert "demo" in mcp_names
-        assert "demo" in rest_names
-        assert mcp_names == rest_names
+        assert "only-in-other" in rest_names
 
 
 class TestMcpHostHeaderGuard:
