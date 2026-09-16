@@ -233,7 +233,7 @@ class ModelFactory:
                 resolved_model, resolved_provider = (
                     self._config_manager.resolve_model_profile(fallback_profile)
                 )
-                if resolved_provider == "ollama":
+                if resolved_provider == LLAMA_SERVER_PROVIDER:
                     try:
                         return await self.load_model(resolved_model, resolved_provider)
                     except (ValueError, OSError):
@@ -245,15 +245,20 @@ class ModelFactory:
             except (ValueError, KeyError):
                 pass
 
-        fallback_model = default_models.get("fallback", "llama3")
-        fallback_provider = default_models.get("fallback_provider", "ollama")
+        fallback_model = default_models.get("fallback", DEFAULT_LOCAL_MODEL)
+        fallback_provider = default_models.get(
+            "fallback_provider", LLAMA_SERVER_PROVIDER
+        )
         try:
             return await self.load_model(fallback_model, fallback_provider)
         except (ValueError, OSError):
-            return OllamaModel(model_name=fallback_model)
+            return OpenAICompatibleModel(
+                model_name=fallback_model, base_url=_llama_server_url()
+            )
 
 
 LLAMA_SERVER_PROVIDER = "llama-server"
+DEFAULT_LOCAL_MODEL = "qwen3-8b"
 LLAMA_SERVER_URL_ENV = "LLAMA_SERVER_URL"
 DEFAULT_LLAMA_SERVER_URL = "http://127.0.0.1:8080/v1"
 
@@ -399,15 +404,16 @@ def _handle_no_authentication(
         )
     else:
         logger.info(
-            "No provider specified for '%s', treating as local Ollama model",
+            "No provider specified for '%s', treating as a llama-server model",
             model_name,
         )
-        return OllamaModel(
+        return OpenAICompatibleModel(
             model_name=model_name,
+            base_url=base_url or _llama_server_url(),
             temperature=temperature,
             max_tokens=max_tokens,
             options=options,
-            ollama_format=ollama_format,
+            response_format=ollama_format,
         )
 
 

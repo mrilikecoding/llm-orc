@@ -332,18 +332,21 @@ class TestModelFactory:
         with pytest.raises(ValueError, match=r"No authentication configured"):
             await model_factory.load_model("claude-3-sonnet", "anthropic")
 
-    async def test_load_model_no_auth_no_provider_fallback_ollama(
+    async def test_load_model_no_auth_no_provider_defaults_to_llama_server(
         self,
         model_factory: ModelFactory,
         mock_credential_storage: Mock,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """Test fallback to ollama when no provider and no auth."""
+        """No provider and no auth means the local router (#90)."""
         mock_credential_storage.get_auth_method.return_value = None
+        monkeypatch.delenv("LLAMA_SERVER_URL", raising=False)
 
         model = await model_factory.load_model("some-model")
 
-        assert isinstance(model, OllamaModel)
+        assert isinstance(model, OpenAICompatibleModel)
         assert model.model_name == "some-model"
+        assert model.base_url == "http://127.0.0.1:8080/v1"
 
     async def test_load_model_api_key_auth_claude_cli(
         self,
@@ -467,8 +470,8 @@ class TestModelFactory:
             "project": {"default_models": {"test": "test-local"}}
         }
         mock_config_manager.resolve_model_profile.return_value = (
-            "llama3",
-            "ollama",
+            "qwen3-8b",
+            "llama-server",
         )
 
         with patch.object(
@@ -481,7 +484,7 @@ class TestModelFactory:
             mock_config_manager.resolve_model_profile.assert_called_once_with(
                 "test-local"
             )
-            mock_load.assert_called_once_with("llama3", "ollama")
+            mock_load.assert_called_once_with("qwen3-8b", "llama-server")
 
     async def test_get_fallback_model_with_configured_test_profile_non_ollama(
         self,
@@ -500,11 +503,11 @@ class TestModelFactory:
         with patch.object(
             model_factory,
             "load_model",
-            return_value=OllamaModel("llama3"),
+            return_value=AsyncMock(),
         ) as mock_load:
             await model_factory.get_fallback_model()
 
-            assert mock_load.call_args_list[-1] == (("llama3", "ollama"),)
+            assert mock_load.call_args_list[-1] == (("qwen3-8b", "llama-server"),)
 
     async def test_get_fallback_model_no_configured_profile(
         self,
@@ -517,11 +520,11 @@ class TestModelFactory:
         with patch.object(
             model_factory,
             "load_model",
-            return_value=OllamaModel("llama3"),
+            return_value=AsyncMock(),
         ) as mock_load:
             await model_factory.get_fallback_model()
 
-            mock_load.assert_called_with("llama3", "ollama")
+            mock_load.assert_called_with("qwen3-8b", "llama-server")
 
     async def test_get_fallback_model_hardcoded_fallback_fails(
         self,
@@ -534,12 +537,12 @@ class TestModelFactory:
         with patch.object(
             model_factory,
             "load_model",
-            side_effect=ValueError("Ollama not available"),
+            side_effect=ValueError("router not available"),
         ):
             model = await model_factory.get_fallback_model()
 
-            assert isinstance(model, OllamaModel)
-            assert model.model_name == "llama3"
+            assert isinstance(model, OpenAICompatibleModel)
+            assert model.model_name == "qwen3-8b"
 
     async def test_get_fallback_model_with_configured_fallback_model(
         self,
@@ -550,8 +553,8 @@ class TestModelFactory:
         mock_config_manager.load_project_config.return_value = {
             "project": {
                 "default_models": {
-                    "fallback": "qwen3:0.6b",
-                    "fallback_provider": "ollama",
+                    "fallback": "qwen3-0.6b",
+                    "fallback_provider": "llama-server",
                 }
             }
         }
@@ -559,13 +562,13 @@ class TestModelFactory:
         with patch.object(
             model_factory,
             "load_model",
-            return_value=OllamaModel("qwen3:0.6b"),
+            return_value=OpenAICompatibleModel("qwen3-0.6b"),
         ) as mock_load:
             model = await model_factory.get_fallback_model()
 
-            mock_load.assert_called_with("qwen3:0.6b", "ollama")
-            assert isinstance(model, OllamaModel)
-            assert model.model_name == "qwen3:0.6b"
+            mock_load.assert_called_with("qwen3-0.6b", "llama-server")
+            assert isinstance(model, OpenAICompatibleModel)
+            assert model.model_name == "qwen3-0.6b"
 
     async def test_get_fallback_model_with_configurable_fallback_profile(
         self,
@@ -580,14 +583,14 @@ class TestModelFactory:
         }
 
         mock_config_manager.resolve_model_profile.return_value = (
-            "qwen3:0.6b",
-            "ollama",
+            "qwen3-0.6b",
+            "llama-server",
         )
 
         with patch.object(
             model_factory,
             "load_model",
-            return_value=OllamaModel("qwen3:0.6b"),
+            return_value=OpenAICompatibleModel("qwen3-0.6b"),
         ) as mock_load:
             model = await model_factory.get_fallback_model(
                 context="agent_test",
@@ -596,8 +599,8 @@ class TestModelFactory:
 
             mock_config_manager.get_model_profile.assert_called_with("premium-claude")
             mock_config_manager.resolve_model_profile.assert_called_with("micro-local")
-            mock_load.assert_called_with("qwen3:0.6b", "ollama")
-            assert isinstance(model, OllamaModel)
+            mock_load.assert_called_with("qwen3-0.6b", "llama-server")
+            assert isinstance(model, OpenAICompatibleModel)
 
     async def test_get_fallback_model_with_cascading_fallbacks(
         self,
@@ -612,13 +615,13 @@ class TestModelFactory:
                 "fallback_model_profile": "micro-local",
             },
             "micro-local": {
-                "model": "qwen3:0.6b",
-                "provider": "ollama",
+                "model": "qwen3-0.6b",
+                "provider": "llama-server",
                 "fallback_model_profile": "tiny-local",
             },
             "tiny-local": {
-                "model": "llama3",
-                "provider": "ollama",
+                "model": "qwen3-8b",
+                "provider": "llama-server",
             },
         }
 
@@ -630,11 +633,11 @@ class TestModelFactory:
 
         model_load_calls: list[tuple[str, str]] = []
 
-        def mock_load_side_effect(model: str, provider: str) -> OllamaModel:
+        def mock_load_side_effect(model: str, provider: str) -> OpenAICompatibleModel:
             model_load_calls.append((model, provider))
             if len(model_load_calls) <= 2:
                 raise ValueError("Model failed")
-            return OllamaModel("llama3")
+            return OpenAICompatibleModel("qwen3-8b")
 
         resolve_calls: list[str] = []
 
@@ -643,9 +646,9 @@ class TestModelFactory:
         ) -> tuple[str, str]:
             resolve_calls.append(profile)
             if profile == "micro-local":
-                return ("qwen3:0.6b", "ollama")
+                return ("qwen3-0.6b", "llama-server")
             elif profile == "tiny-local":
-                return ("llama3", "ollama")
+                return ("qwen3-8b", "llama-server")
             else:
                 raise ValueError(f"Unknown profile: {profile}")
 
@@ -663,18 +666,18 @@ class TestModelFactory:
 
             assert len(model_load_calls) == 3
             assert model_load_calls[0] == (
-                "qwen3:0.6b",
-                "ollama",
+                "qwen3-0.6b",
+                "llama-server",
             )
             assert model_load_calls[1] == (
-                "llama3",
-                "ollama",
+                "qwen3-8b",
+                "llama-server",
             )
             assert model_load_calls[2] == (
-                "llama3",
-                "ollama",
+                "qwen3-8b",
+                "llama-server",
             )
-            assert isinstance(model, OllamaModel)
+            assert isinstance(model, OpenAICompatibleModel)
 
     async def test_get_fallback_model_prevents_cycles(
         self,
@@ -732,14 +735,14 @@ class TestModelFactory:
 class TestLoadModelHelperMethods:
     """Test helper methods extracted from load_model."""
 
-    def test_handle_no_authentication_ollama_fallback(
+    def test_handle_no_authentication_no_provider_is_llama_server(
         self,
     ) -> None:
-        """Test no auth handler with no-provider Ollama fallback."""
-        result = _handle_no_authentication("llama3", None)
+        """No provider means the local router (#90)."""
+        result = _handle_no_authentication("qwen3-8b", None)
 
-        assert isinstance(result, OllamaModel)
-        assert result.model_name == "llama3"
+        assert isinstance(result, OpenAICompatibleModel)
+        assert result.model_name == "qwen3-8b"
 
     def test_handle_no_authentication_ollama_provider(
         self,
