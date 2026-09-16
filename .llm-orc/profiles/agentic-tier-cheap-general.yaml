@@ -6,6 +6,7 @@
 # model that holds tool-call structure reliably.
 name: agentic-tier-cheap-general
 model: qwen3-8b
+hf_repo: unsloth/Qwen3-8B-GGUF:Q4_K_M
 provider: llama-server
 cost_per_token: 0.0
 # 300s matches agentic-tier-escalated-general; Cycle 5 PLAY probe 3
