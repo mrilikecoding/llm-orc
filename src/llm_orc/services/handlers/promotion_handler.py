@@ -162,7 +162,7 @@ class PromotionHandler:
         all_profiles = self._profile_handler.get_all_profiles()
         provider_status = await self._provider_handler.get_provider_status({})
         providers = provider_status.get("providers", {})
-        ollama_models = providers.get("ollama", {}).get("models", [])
+        local_models = providers.get("llama-server", {}).get("models", [])
 
         agents: list[dict[str, Any]] = []
         profiles_needed: set[str] = set()
@@ -171,7 +171,7 @@ class PromotionHandler:
 
         for agent in config.agents:
             agent_info = self._build_agent_dep_info(
-                agent, all_profiles, providers, ollama_models
+                agent, all_profiles, providers, local_models
             )
             agents.append(agent_info)
             self._collect_dep_sets(
@@ -217,11 +217,11 @@ class PromotionHandler:
 
         provider_status = await self._provider_handler.get_provider_status({})
         providers = provider_status.get("providers", {})
-        ollama_models = providers.get("ollama", {}).get("models", [])
+        local_models = providers.get("llama-server", {}).get("models", [])
 
         issues, profiles_to_copy, profiles_already_present = (
             self._assess_profiles_readiness(
-                profiles_needed, destination, providers, ollama_models
+                profiles_needed, destination, providers, local_models
             )
         )
 
@@ -433,7 +433,7 @@ class PromotionHandler:
         profiles_needed: set[str],
         destination: str,
         providers: dict[str, Any],
-        ollama_models: list[str],
+        local_models: list[str],
     ) -> tuple[list[dict[str, Any]], list[str], list[str]]:
         """Assess profile dependencies for promotion readiness.
 
@@ -441,7 +441,7 @@ class PromotionHandler:
             profiles_needed: Profile names required by ensemble.
             destination: Target tier.
             providers: Provider status dict.
-            ollama_models: Available Ollama model names.
+            local_models: Model names the llama-server router serves.
 
         Returns:
             Tuple of (issues, profiles_to_copy, already_present).
@@ -496,22 +496,24 @@ class PromotionHandler:
                             "resolution": (f"Ensure {provider} is running"),
                         }
                     )
-                elif provider == "ollama":
+                elif provider == "llama-server":
                     available = self._check_model_available(
                         provider,
                         model,
                         providers,
-                        ollama_models,
+                        local_models,
                     )
                     if not available:
                         issues.append(
                             {
                                 "type": "model_unavailable",
                                 "detail": (
-                                    f"Model '{model}' requires "
-                                    "Ollama but is not installed"
+                                    f"Model '{model}' is not in the llama-server preset"
                                 ),
-                                "resolution": (f"Install with: ollama pull {model}"),
+                                "resolution": (
+                                    f"Give a llama-server profile for '{model}' an "
+                                    "hf_repo, then restart llm-orc serve"
+                                ),
                             }
                         )
 
@@ -572,7 +574,7 @@ class PromotionHandler:
         agent: Any,
         all_profiles: dict[str, dict[str, Any]],
         providers: dict[str, Any],
-        ollama_models: list[str],
+        local_models: list[str],
     ) -> dict[str, Any]:
         """Build dependency info dict for a single agent.
 
@@ -580,7 +582,7 @@ class PromotionHandler:
             agent: Agent configuration object.
             all_profiles: All available profiles by name.
             providers: Provider status dict.
-            ollama_models: List of available Ollama model names.
+            local_models: Model names the llama-server router serves.
 
         Returns:
             Agent dependency info dict.
@@ -606,7 +608,7 @@ class PromotionHandler:
             agent_info["provider"] = provider
             agent_info["model"] = model
             agent_info["model_available"] = self._check_model_available(
-                provider, model, providers, ollama_models
+                provider, model, providers, local_models
             )
         else:
             agent_info["profile_tier"] = None
@@ -648,7 +650,7 @@ class PromotionHandler:
         provider: str,
         model: str,
         providers: dict[str, Any],
-        ollama_models: list[str],
+        local_models: list[str],
     ) -> bool:
         """Check if a model is available from its provider.
 
@@ -656,16 +658,13 @@ class PromotionHandler:
             provider: Provider name.
             model: Model identifier.
             providers: Provider status dict.
-            ollama_models: List of available Ollama models.
+            local_models: Model names the llama-server router serves.
 
         Returns:
             True if model is available.
         """
-        if provider == "ollama":
-            model_base = model.split(":")[0] if ":" in model else model
-            return any(
-                m == model or m.startswith(f"{model_base}:") for m in ollama_models
-            )
+        if provider == "llama-server":
+            return model in local_models
         provider_info = providers.get(provider, {})
         return bool(provider_info.get("available", False))
 

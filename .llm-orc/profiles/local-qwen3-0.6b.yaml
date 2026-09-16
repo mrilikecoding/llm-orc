@@ -1,0 +1,5 @@
+model: qwen3-0.6b
+hf_repo: unsloth/Qwen3-0.6B-GGUF:Q4_K_M
+name: local-qwen3-0.6b
+provider: llama-server
+timeout_seconds: 30

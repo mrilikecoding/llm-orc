@@ -37,8 +37,16 @@ _TOKEN = re.compile(r"\btest_\w+\b")
 
 
 _CODE = ("*.py", "*.yaml", "*.yml")
-_SKIP = {".git", ".venv", "node_modules", "htmlcov", "htmlcov_viz", "dist",
-         "worktrees", "__pycache__"}
+_SKIP = {
+    ".git",
+    ".venv",
+    "node_modules",
+    "htmlcov",
+    "htmlcov_viz",
+    "dist",
+    "worktrees",
+    "__pycache__",
+}
 
 
 def _known_names() -> set[str]:
@@ -94,11 +102,7 @@ def check(docs: list[Path]) -> list[str]:
                     seen.add((number, name))
                     # A doc passed by absolute path from outside the repo
                     # (a test fixture) has no relative form.
-                    rel = (
-                        doc.relative_to(REPO)
-                        if doc.is_relative_to(REPO)
-                        else doc
-                    )
+                    rel = doc.relative_to(REPO) if doc.is_relative_to(REPO) else doc
                     problems.append(f"{rel}:{number}: names nothing: {name}")
     return problems
 

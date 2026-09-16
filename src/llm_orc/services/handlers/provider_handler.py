@@ -6,24 +6,26 @@ from typing import Any
 
 from llm_orc.core.config.ensemble_config import EnsembleConfig
 from llm_orc.mcp.utils import get_agent_attr as _get_agent_attr
+from llm_orc.providers.llama_server import LlamaServerClient
 from llm_orc.providers.status_types import (
     AgentRunnability,
     AgentStatus,
     CloudProviderStatus,
     EndpointStatus,
     EnsembleRunnability,
-    OllamaProviderStatus,
+    LlamaServerProviderStatus,
     OpenAICompatibleStatus,
 )
 from llm_orc.services.handlers.profile_handler import ProfileHandler
 
 _DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1"
+_DEFAULT_LLAMA_SERVER_URL = "http://127.0.0.1:8080/v1"
 
 
 class ProviderHandler:
     """Manages provider status and ensemble runnability checks."""
 
-    _test_ollama_status: dict[str, Any] | None = None
+    _test_llama_server_status: dict[str, Any] | None = None
     _test_openai_compat_status: OpenAICompatibleStatus | None = None
 
     def __init__(
@@ -39,7 +41,7 @@ class ProviderHandler:
         """Get status of all providers and available models."""
         providers: dict[str, Any] = {}
 
-        providers["ollama"] = await self._get_ollama_status()
+        providers["llama-server"] = await self._get_llama_server_status()
 
         providers["anthropic-api"] = self._get_cloud_provider_status("anthropic-api")
         providers["google-gemini"] = self._get_cloud_provider_status("google-gemini")
@@ -49,39 +51,26 @@ class ProviderHandler:
 
         return {"providers": providers}
 
-    async def _get_ollama_status(self) -> dict[str, Any]:
-        """Check Ollama availability and list models."""
-        if self._test_ollama_status is not None:
-            return self._test_ollama_status
+    async def _get_llama_server_status(self) -> dict[str, Any]:
+        """Reachability and model list of the llama-server router (#90)."""
+        if self._test_llama_server_status is not None:
+            return self._test_llama_server_status
 
-        import httpx
-
-        ollama_host = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
-        hosts = [ollama_host]
-        if "localhost" in ollama_host:
-            hosts.append(ollama_host.replace("localhost", "127.0.0.1"))
-
-        last_error = ""
-        for host in hosts:
-            try:
-                async with httpx.AsyncClient(timeout=5.0) as client:
-                    response = await client.get(f"{host}/api/tags")
-                    if response.status_code == 200:
-                        data = response.json()
-                        models = [m.get("name", "") for m in data.get("models", [])]
-                        return OllamaProviderStatus(
-                            available=True,
-                            models=sorted(models),
-                            model_count=len(models),
-                        ).model_dump()
-                    last_error = f"HTTP {response.status_code} from {host}"
-            except Exception as e:
-                last_error = f"{type(e).__name__}: {e} (host: {host})"
-                continue
-
-        return OllamaProviderStatus(
-            available=False,
-            reason=f"Ollama not reachable: {last_error}",
+        base_url = os.environ.get("LLAMA_SERVER_URL", _DEFAULT_LLAMA_SERVER_URL)
+        client = LlamaServerClient.from_base_url(base_url)
+        try:
+            models = sorted(str(m.get("id", "")) for m in client.models())
+        except (OSError, ValueError) as e:
+            return LlamaServerProviderStatus(
+                available=False,
+                reason=f"llama-server not reachable: {type(e).__name__}: {e}",
+                base_url=base_url,
+            ).model_dump()
+        return LlamaServerProviderStatus(
+            available=True,
+            models=models,
+            model_count=len(models),
+            base_url=base_url,
         ).model_dump()
 
     def _get_cloud_provider_status(self, provider: str) -> dict[str, Any]:
@@ -249,27 +238,23 @@ class ProviderHandler:
             result.alternatives = self._suggest_local_alternatives(providers)
             return result
 
-        if provider == "ollama":
-            self._check_ollama_model(result, profile, provider_info)
+        if provider == "llama-server":
+            self._check_llama_server_model(result, profile, provider_info)
         elif _is_openai_compatible(provider):
             self._check_openai_compat_model(result, profile, provider_info)
 
         return result
 
-    def _check_ollama_model(
+    def _check_llama_server_model(
         self,
         result: AgentRunnability,
         profile: dict[str, Any],
         provider_info: dict[str, Any],
     ) -> None:
-        """Check if an Ollama model is available."""
+        """Is the profile's model in the router's preset (exact name)."""
         model = profile.get("model", "")
         available_models = provider_info.get("models", [])
-        model_base = model.split(":")[0] if ":" in model else model
-        model_found = any(
-            m == model or m.startswith(f"{model_base}:") for m in available_models
-        )
-        if not model_found:
+        if model not in available_models:
             result.status = AgentStatus.MODEL_UNAVAILABLE
             result.alternatives = self._suggest_available_models(available_models)
 
@@ -306,12 +291,12 @@ class ProviderHandler:
         all_profiles = self._profile_handler.get_all_profiles()
         local_profiles: list[str] = []
 
-        ollama_available = providers.get("ollama", {}).get("available", False)
+        local_available = providers.get("llama-server", {}).get("available", False)
         oai_available = providers.get("openai-compatible", {}).get("available", False)
 
         for name, profile in all_profiles.items():
             prov = profile.get("provider", "")
-            if prov == "ollama" and ollama_available:
+            if prov == "llama-server" and local_available:
                 local_profiles.append(name)
             elif _is_openai_compatible(prov) and oai_available:
                 local_profiles.append(name)

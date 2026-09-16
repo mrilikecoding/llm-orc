@@ -7,7 +7,6 @@ import pytest
 from llm_orc.models.anthropic import ClaudeCLIModel, ClaudeModel
 from llm_orc.models.base import ModelInterface
 from llm_orc.models.google import GeminiModel
-from llm_orc.models.ollama import OllamaModel
 from llm_orc.models.openai_compat import OpenAICompatibleModel
 
 
@@ -22,22 +21,6 @@ class TestModelInterface:
 
 class TestModelParameterDefaults:
     """Test that model implementations inherit temperature/max_tokens defaults."""
-
-    def test_ollama_model_defaults_to_none(self) -> None:
-        """OllamaModel should have None temperature and max_tokens by default."""
-        model = OllamaModel(model_name="llama2")
-        assert model.temperature is None
-        assert model.max_tokens is None
-
-    def test_ollama_model_accepts_temperature(self) -> None:
-        """OllamaModel should accept temperature kwarg."""
-        model = OllamaModel(model_name="llama2", temperature=0.7)
-        assert model.temperature == 0.7
-
-    def test_ollama_model_accepts_max_tokens(self) -> None:
-        """OllamaModel should accept max_tokens kwarg."""
-        model = OllamaModel(model_name="llama2", max_tokens=500)
-        assert model.max_tokens == 500
 
     def test_claude_model_defaults_to_none(self) -> None:
         """ClaudeModel should have None temperature and max_tokens by default."""
@@ -193,53 +176,6 @@ class TestGeminiModel:
 
         call_kwargs = model.client.models.generate_content.call_args
         assert call_kwargs.kwargs["config"] is None
-
-
-class TestOllamaModel:
-    """Test Ollama model implementation."""
-
-    @pytest.mark.asyncio
-    async def test_ollama_model_generate_response(self) -> None:
-        """Should generate response using Ollama API."""
-        model = OllamaModel(model_name="llama2")
-
-        # Mock the ollama client
-        model.client = AsyncMock()
-        model.client.chat.return_value = {"message": {"content": "Hello from Ollama!"}}
-
-        response = await model.generate_response(
-            "Hello", role_prompt="You are helpful."
-        )
-
-        assert response == "Hello from Ollama!"
-        model.client.chat.assert_called_once()
-
-    @pytest.mark.asyncio
-    async def test_ollama_passes_temperature_and_max_tokens(self) -> None:
-        """Should pass temperature and max_tokens as options to Ollama API."""
-        model = OllamaModel(model_name="llama2", temperature=0.5, max_tokens=200)
-        model.client = AsyncMock()
-        model.client.chat.return_value = {"message": {"content": "response"}}
-
-        await model.generate_response("Hi", role_prompt="Be helpful.")
-
-        call_kwargs = model.client.chat.call_args
-        assert call_kwargs.kwargs["options"] == {
-            "temperature": 0.5,
-            "num_predict": 200,
-        }
-
-    @pytest.mark.asyncio
-    async def test_ollama_no_options_when_params_none(self) -> None:
-        """Should not pass options when temperature and max_tokens are None."""
-        model = OllamaModel(model_name="llama2")
-        model.client = AsyncMock()
-        model.client.chat.return_value = {"message": {"content": "response"}}
-
-        await model.generate_response("Hi", role_prompt="Be helpful.")
-
-        call_kwargs = model.client.chat.call_args
-        assert call_kwargs.kwargs["options"] is None
 
 
 class TestClaudeCLIModel:

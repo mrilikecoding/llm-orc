@@ -66,8 +66,8 @@ def _setup_local_profile(
     tmp_path: Path,
     server: MCPServer,
     name: str = "fast-profile",
-    provider: str = "ollama",
-    model: str = "qwen3:0.6b",
+    provider: str = "llama-server",
+    model: str = "qwen3-0.6b",
 ) -> Path:
     """Create a local profile YAML and configure server dirs."""
     profiles_dir = tmp_path / ".llm-orc" / "profiles"
@@ -203,7 +203,11 @@ class TestPromoteEnsemble:
         # Pre-create profile at global tier
         (global_profiles / "fast-profile.yaml").write_text(
             yaml.safe_dump(
-                {"name": "fast-profile", "provider": "ollama", "model": "qwen3:0.6b"}
+                {
+                    "name": "fast-profile",
+                    "provider": "llama-server",
+                    "model": "qwen3-0.6b",
+                }
             )
         )
 
@@ -393,15 +397,19 @@ class TestListDependencies:
         # Add second profile
         (profiles_dir / "medium-profile.yaml").write_text(
             yaml.safe_dump(
-                {"name": "medium-profile", "provider": "ollama", "model": "gemma3:4b"}
+                {
+                    "name": "medium-profile",
+                    "provider": "llama-server",
+                    "model": "gemma3-4b",
+                }
             )
         )
 
         _mock_config(server).get_ensembles_dirs.return_value = [str(ensembles_dir)]
         _mock_config(server).get_profiles_dirs.return_value = [str(profiles_dir)]
 
-        # Mock ollama as unavailable to simplify
-        server._provider_handler._test_ollama_status = {
+        # Mock the router as unavailable to simplify
+        server._provider_handler._test_llama_server_status = {
             "available": False,
             "models": [],
             "reason": "test",
@@ -418,7 +426,7 @@ class TestListDependencies:
             "fast-profile",
             "medium-profile",
         ]
-        assert "ollama" in result["providers_needed"]
+        assert "llama-server" in result["providers_needed"]
 
     @pytest.mark.asyncio
     async def test_list_deps_handles_script_agents(
@@ -435,7 +443,7 @@ class TestListDependencies:
         _mock_config(server).get_ensembles_dirs.return_value = [str(ensembles_dir)]
         _mock_config(server).get_profiles_dirs.return_value = [str(profiles_dir)]
 
-        server._provider_handler._test_ollama_status = {
+        server._provider_handler._test_llama_server_status = {
             "available": False,
             "models": [],
             "reason": "test",
@@ -460,7 +468,7 @@ class TestListDependencies:
         _mock_config(server).get_ensembles_dirs.return_value = [str(ensembles_dir)]
         _mock_config(server).get_profiles_dirs.return_value = []
 
-        server._provider_handler._test_ollama_status = {
+        server._provider_handler._test_llama_server_status = {
             "available": False,
             "models": [],
             "reason": "test",
@@ -525,9 +533,9 @@ class TestCheckPromotionReadiness:
         _mock_config(server).get_ensembles_dirs.return_value = [str(ensembles_dir)]
         _mock_config(server).get_profiles_dirs.return_value = [str(profiles_dir)]
 
-        server._provider_handler._test_ollama_status = {
+        server._provider_handler._test_llama_server_status = {
             "available": True,
-            "models": ["qwen3:0.6b"],
+            "models": ["qwen3-0.6b"],
             "model_count": 1,
         }
 
@@ -555,7 +563,7 @@ class TestCheckPromotionReadiness:
         _mock_config(server).get_ensembles_dirs.return_value = [str(ensembles_dir)]
         _mock_config(server).get_profiles_dirs.return_value = []
 
-        server._provider_handler._test_ollama_status = {
+        server._provider_handler._test_llama_server_status = {
             "available": False,
             "models": [],
             "reason": "test",
@@ -582,8 +590,8 @@ class TestCheckPromotionReadiness:
         _mock_config(server).get_ensembles_dirs.return_value = [str(ensembles_dir)]
         _mock_config(server).get_profiles_dirs.return_value = [str(profiles_dir)]
 
-        # Ollama not available
-        server._provider_handler._test_ollama_status = {
+        # Router not available
+        server._provider_handler._test_llama_server_status = {
             "available": False,
             "models": [],
             "reason": "not running",
@@ -598,13 +606,13 @@ class TestCheckPromotionReadiness:
         provider_issue = next(
             i for i in result["issues"] if i["type"] == "provider_unavailable"
         )
-        assert "ollama" in provider_issue["detail"]
+        assert "llama-server" in provider_issue["detail"]
 
     @pytest.mark.asyncio
     async def test_readiness_reports_missing_model(
         self, server: MCPServer, tmp_path: Path
     ) -> None:
-        """Reports missing Ollama model as issue."""
+        """Reports a model missing from the router preset as an issue."""
         ensembles_dir = _setup_local_ensemble(tmp_path, server)
         profiles_dir = _setup_local_profile(tmp_path, server)
         _setup_global_dirs(tmp_path, server)
@@ -612,10 +620,10 @@ class TestCheckPromotionReadiness:
         _mock_config(server).get_ensembles_dirs.return_value = [str(ensembles_dir)]
         _mock_config(server).get_profiles_dirs.return_value = [str(profiles_dir)]
 
-        # Ollama available but model not installed
-        server._provider_handler._test_ollama_status = {
+        # Router available but the model is not in its preset
+        server._provider_handler._test_llama_server_status = {
             "available": True,
-            "models": ["llama3:latest"],  # Not qwen3:0.6b
+            "models": ["llama3:latest"],  # Not qwen3-0.6b
             "model_count": 1,
         }
 
@@ -629,7 +637,7 @@ class TestCheckPromotionReadiness:
             None,
         )
         assert model_issue is not None
-        assert "qwen3:0.6b" in model_issue["detail"]
+        assert "qwen3-0.6b" in model_issue["detail"]
 
     @pytest.mark.asyncio
     async def test_readiness_detects_existing_at_destination(
@@ -646,9 +654,9 @@ class TestCheckPromotionReadiness:
         _mock_config(server).get_ensembles_dirs.return_value = [str(ensembles_dir)]
         _mock_config(server).get_profiles_dirs.return_value = [str(profiles_dir)]
 
-        server._provider_handler._test_ollama_status = {
+        server._provider_handler._test_llama_server_status = {
             "available": True,
-            "models": ["qwen3:0.6b"],
+            "models": ["qwen3-0.6b"],
             "model_count": 1,
         }
 
@@ -671,16 +679,20 @@ class TestCheckPromotionReadiness:
         # Profile already at global
         (global_profiles / "fast-profile.yaml").write_text(
             yaml.safe_dump(
-                {"name": "fast-profile", "provider": "ollama", "model": "qwen3:0.6b"}
+                {
+                    "name": "fast-profile",
+                    "provider": "llama-server",
+                    "model": "qwen3-0.6b",
+                }
             )
         )
 
         _mock_config(server).get_ensembles_dirs.return_value = [str(ensembles_dir)]
         _mock_config(server).get_profiles_dirs.return_value = [str(profiles_dir)]
 
-        server._provider_handler._test_ollama_status = {
+        server._provider_handler._test_llama_server_status = {
             "available": True,
-            "models": ["qwen3:0.6b"],
+            "models": ["qwen3-0.6b"],
             "model_count": 1,
         }
 
@@ -817,10 +829,10 @@ class TestDemoteEnsemble:
 
         # Create both profiles
         (global_profiles / "orphan-profile.yaml").write_text(
-            yaml.safe_dump({"name": "orphan-profile", "provider": "ollama"})
+            yaml.safe_dump({"name": "orphan-profile", "provider": "llama-server"})
         )
         (global_profiles / "shared-profile.yaml").write_text(
-            yaml.safe_dump({"name": "shared-profile", "provider": "ollama"})
+            yaml.safe_dump({"name": "shared-profile", "provider": "llama-server"})
         )
 
         _mock_config(server).get_ensembles_dirs.return_value = [str(global_ensembles)]
@@ -858,7 +870,7 @@ class TestDemoteEnsemble:
             yaml.safe_dump(ensemble_data)
         )
         (global_profiles / "lonely-profile.yaml").write_text(
-            yaml.safe_dump({"name": "lonely-profile", "provider": "ollama"})
+            yaml.safe_dump({"name": "lonely-profile", "provider": "llama-server"})
         )
 
         _mock_config(server).get_ensembles_dirs.return_value = [str(global_ensembles)]

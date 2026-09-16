@@ -1,19 +1,19 @@
 agents:
-- model_profile: ollama-qwen-tiny
+- model_profile: local-qwen3-0.6b
   name: extract-endpoints
   system_prompt: 'Extract every REST API endpoint from the document.
 
     Format each as: METHOD /path - brief description
 
     Output ONLY the list, nothing else. If none found, say ''None found''.'
-- model_profile: ollama-qwen-tiny
+- model_profile: local-qwen3-0.6b
   name: extract-technologies
   system_prompt: 'List every technology, framework, library, or tool mentioned.
 
     Format: name - what it''s used for
 
     Output ONLY the list, nothing else. If none found, say ''None found''.'
-- model_profile: ollama-qwen-tiny
+- model_profile: local-qwen3-0.6b
   name: extract-assumptions
   system_prompt: 'List every assumption this document makes.
 
@@ -22,7 +22,7 @@ agents:
     Format: one assumption per line, starting with dash.
 
     Output ONLY the list.'
-- model_profile: ollama-qwen-tiny
+- model_profile: local-qwen3-0.6b
   name: extract-risks
   system_prompt: 'List every risk, concern, negative consequence, or potential problem
     mentioned.
@@ -30,7 +30,7 @@ agents:
     Format: one risk per line, starting with dash.
 
     Output ONLY the list. If none found, say ''None found''.'
-- model_profile: ollama-qwen-tiny
+- model_profile: local-qwen3-0.6b
   name: extract-scope
   system_prompt: 'Identify what is IN scope and OUT of scope for this proposal.
 
@@ -45,21 +45,21 @@ agents:
     - item
 
     Output ONLY the lists.'
-- model_profile: ollama-qwen-tiny
+- model_profile: local-qwen3-0.6b
   name: extract-alternatives
   system_prompt: 'List every alternative approach that was considered and rejected.
 
     Format: Alternative - reason rejected
 
     Output ONLY the list. If none found, say ''None found''.'
-- model_profile: ollama-qwen-tiny
+- model_profile: local-qwen3-0.6b
   name: extract-phases
   system_prompt: 'List the implementation phases or steps mentioned.
 
     Format: Phase N: description
 
     Output ONLY the list. If none found, say ''None found''.'
-- model_profile: ollama-qwen-tiny
+- model_profile: local-qwen3-0.6b
   name: extract-dependencies
   system_prompt: 'List external dependencies, related ADRs, and prerequisites.
 
@@ -81,7 +81,7 @@ agents:
   script: aggregator.py
 - depends_on:
   - aggregate-extractions
-  model_profile: ollama-gemma-small
+  model_profile: local-qwen3-1.7b
   name: analyze-gaps
   system_prompt: 'Given the extracted information from an ADR, identify what''s MISSING.
 
@@ -101,7 +101,7 @@ agents:
     List 3-5 specific gaps. Be concrete, not generic.'
 - depends_on:
   - aggregate-extractions
-  model_profile: ollama-gemma-small
+  model_profile: local-qwen3-1.7b
   name: analyze-risks
   system_prompt: 'Given the extracted information, assess the risks.
 
@@ -113,7 +113,7 @@ agents:
     Focus on the top 3-5 most important risks.'
 - depends_on:
   - aggregate-extractions
-  model_profile: ollama-gemma-small
+  model_profile: local-qwen3-1.7b
   name: analyze-consistency
   system_prompt: 'Check for internal contradictions or inconsistencies.
 
@@ -131,7 +131,7 @@ agents:
     List any contradictions found. If none, say ''No contradictions found''.'
 - depends_on:
   - aggregate-extractions
-  model_profile: ollama-gemma-small
+  model_profile: local-qwen3-1.7b
   name: analyze-feasibility
   system_prompt: 'Assess the feasibility of this proposal.
 
@@ -152,7 +152,7 @@ agents:
   - analyze-risks
   - analyze-consistency
   - analyze-feasibility
-  model_profile: ollama-gemma3-12b
+  model_profile: local-qwen3-14b
   name: synthesize-review
   system_prompt: 'You are synthesizing an ADR review from multiple focused analyses.
 
