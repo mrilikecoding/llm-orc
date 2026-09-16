@@ -279,8 +279,8 @@ class TestCLI:
         assert "anthropic" not in provider_keys
         assert "google" not in provider_keys
 
-    def testget_available_providers_with_auth_and_ollama(self) -> None:
-        """Test get_available_providers function with authentication and ollama."""
+    def testget_available_providers_with_auth_and_router(self) -> None:
+        """get_available_providers with credentials and a reachable router."""
         with tempfile.TemporaryDirectory() as temp_dir:
             global_config_dir = Path(temp_dir)
 
@@ -303,23 +303,23 @@ class TestCLI:
                 ]
                 mock_storage_class.return_value = mock_storage
 
-                # Mock ollama availability
-                with patch("requests.get") as mock_requests_get:
-                    mock_response = Mock()
-                    mock_response.status_code = 200
-                    mock_requests_get.return_value = mock_response
+                # Mock a reachable llama-server router (#90)
+                with patch(
+                    "llm_orc.cli_modules.utils.config_utils.LlamaServerClient"
+                ) as client_cls:
+                    client_cls.from_base_url.return_value.models.return_value = []
 
                     # Test the function
                     providers = get_available_providers(mock_config_manager)
 
-                    # Should include authenticated providers + ollama
+                    # Should include authenticated providers + the router
                     assert "anthropic-api" in providers
                     assert "google-gemini" in providers
-                    assert "ollama" in providers
+                    assert "llama-server" in providers
                     assert len(providers) == 3
 
-    def testget_available_providers_no_auth_no_ollama(self) -> None:
-        """Test get_available_providers with no authentication and no ollama."""
+    def testget_available_providers_no_auth_no_router(self) -> None:
+        """get_available_providers with no credentials and no router."""
         with tempfile.TemporaryDirectory() as temp_dir:
             global_config_dir = Path(temp_dir)
 
@@ -327,9 +327,13 @@ class TestCLI:
             mock_config_manager = Mock()
             mock_config_manager.global_config_dir = global_config_dir
 
-            # Mock ollama not available
-            with patch("requests.get") as mock_requests_get:
-                mock_requests_get.side_effect = Exception("Connection refused")
+            # Mock an unreachable router (#90)
+            with patch(
+                "llm_orc.cli_modules.utils.config_utils.LlamaServerClient"
+            ) as client_cls:
+                client_cls.from_base_url.return_value.models.side_effect = OSError(
+                    "Connection refused"
+                )
 
                 # Test the function
                 providers = get_available_providers(mock_config_manager)
