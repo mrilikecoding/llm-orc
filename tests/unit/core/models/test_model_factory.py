@@ -233,6 +233,74 @@ class TestModelFactory:
         assert model.temperature == 0.5
         assert model.max_tokens == 200
 
+    async def test_load_model_no_auth_llama_server_provider(
+        self,
+        model_factory: ModelFactory,
+        mock_credential_storage: Mock,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """llama-server (#90) is an OpenAI-compatible transport whose base
+        URL comes from LLAMA_SERVER_URL; options and format ride through."""
+        mock_credential_storage.get_auth_method.return_value = None
+        monkeypatch.setenv("LLAMA_SERVER_URL", "http://ng-mini:8080/v1")
+
+        model = await model_factory.load_model(
+            "qwen3-8b",
+            "llama-server",
+            temperature=0.5,
+            max_tokens=200,
+            options={"think": False},
+            ollama_format="json",
+        )
+
+        assert isinstance(model, OpenAICompatibleModel)
+        assert model.model_name == "qwen3-8b"
+        assert model.base_url == "http://ng-mini:8080/v1"
+        assert model.temperature == 0.5
+        assert model.max_tokens == 200
+        assert model._options == {"think": False}
+        assert model._response_format == "json"
+
+    async def test_load_model_llama_server_default_url_and_profile_override(
+        self,
+        model_factory: ModelFactory,
+        mock_credential_storage: Mock,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        mock_credential_storage.get_auth_method.return_value = None
+        monkeypatch.delenv("LLAMA_SERVER_URL", raising=False)
+
+        default = await model_factory.load_model("qwen3-8b", "llama-server")
+        override = await model_factory.load_model(
+            "qwen3-8b", "llama-server", base_url="http://127.0.0.1:9090/v1"
+        )
+
+        assert isinstance(default, OpenAICompatibleModel)
+        assert default.base_url == "http://127.0.0.1:8080/v1"
+        assert isinstance(override, OpenAICompatibleModel)
+        assert override.base_url == "http://127.0.0.1:9090/v1"
+
+    async def test_load_model_openai_compatible_no_auth_carries_options(
+        self,
+        model_factory: ModelFactory,
+        mock_credential_storage: Mock,
+    ) -> None:
+        """A scoped openai-compatible profile (e.g. a llama-server on another
+        box) keeps its options and format instead of dropping them."""
+        mock_credential_storage.get_auth_method.return_value = None
+
+        model = await model_factory.load_model(
+            "qwen3-8b",
+            "openai-compatible/ng-mini",
+            base_url="http://ng-mini:8080/v1",
+            options={"think": False},
+            ollama_format="json",
+        )
+
+        assert isinstance(model, OpenAICompatibleModel)
+        assert model._options == {"think": False}
+        assert model._response_format == "json"
+
     async def test_load_model_api_key_claude_with_params(
         self,
         model_factory: ModelFactory,

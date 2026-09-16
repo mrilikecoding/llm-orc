@@ -147,6 +147,8 @@ class TestProviderRegistry:
         # Should include ollama
         no_auth_keys = [p.key for p in no_auth_providers]
         assert "ollama" in no_auth_keys
+        # llama-server (#90): local router, no auth
+        assert "llama-server" in no_auth_keys
 
         # All returned providers should not require auth
         for provider in no_auth_providers:

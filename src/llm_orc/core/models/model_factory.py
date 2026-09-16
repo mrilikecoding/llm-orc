@@ -1,6 +1,7 @@
 """Model factory for creating model instances based on configuration."""
 
 import logging
+import os
 from typing import Any
 
 from llm_orc.core.auth.authentication import CredentialStorage
@@ -252,6 +253,16 @@ class ModelFactory:
             return OllamaModel(model_name=fallback_model)
 
 
+LLAMA_SERVER_PROVIDER = "llama-server"
+LLAMA_SERVER_URL_ENV = "LLAMA_SERVER_URL"
+DEFAULT_LLAMA_SERVER_URL = "http://127.0.0.1:8080/v1"
+
+
+def _llama_server_url() -> str:
+    """The llama-server router's OpenAI-compatible base URL."""
+    return os.environ.get(LLAMA_SERVER_URL_ENV, DEFAULT_LLAMA_SERVER_URL)
+
+
 def _is_openai_compatible(provider: str | None) -> bool:
     """Check if a provider is openai-compatible (exact or scoped)."""
     if not provider:
@@ -359,12 +370,25 @@ def _handle_no_authentication(
             options=options,
             ollama_format=ollama_format,
         )
+    elif provider == LLAMA_SERVER_PROVIDER:
+        # llama-server (#90): OpenAI-compatible transport, no auth; the
+        # router's URL comes from the profile or the environment.
+        return OpenAICompatibleModel(
+            model_name=model_name,
+            base_url=base_url or _llama_server_url(),
+            temperature=temperature,
+            max_tokens=max_tokens,
+            options=options,
+            response_format=ollama_format,
+        )
     elif _is_openai_compatible(provider):
         return OpenAICompatibleModel(
             model_name=model_name,
             base_url=base_url or "https://api.openai.com/v1",
             temperature=temperature,
             max_tokens=max_tokens,
+            options=options,
+            response_format=ollama_format,
         )
     elif provider:
         raise ValueError(
