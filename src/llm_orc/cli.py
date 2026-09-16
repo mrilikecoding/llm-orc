@@ -412,6 +412,7 @@ def _start_server(
         except RuntimeError as e:
             raise click.ClickException(str(e)) from e
         os.environ.setdefault("LLAMA_SERVER_URL", supervisor.base_url)
+        llama_server.install_signal_stop(supervisor)
         click.echo(f"llama-server router at {supervisor.base_url}", err=True)
 
     app = create_app()

@@ -6,6 +6,7 @@ tailnet needs neither ssh nor a second application to manage models.
 """
 
 import os
+import time
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
@@ -45,11 +46,33 @@ async def list_models() -> dict[str, Any]:
     return {"models": [_entry(m) for m in models]}
 
 
+PULL_TIMEOUT_S = 3600.0
+PULL_POLL_S = 1.0
+
+
+def _status_of(client: LlamaServerClient, name: str) -> str:
+    for model in client.models():
+        if model.get("id") == name:
+            return _entry(model)["status"]
+    return "unknown"
+
+
 @router.post("/{name}/pull")
 async def pull_model(name: str) -> dict[str, str]:
-    """Load one model, downloading its GGUF first if the router has to."""
+    """Load one model, downloading its GGUF first if the router has to.
+
+    The router's load call returns as soon as loading starts, so this
+    waits until the router reports something other than ``loading`` and
+    answers with that real status.
+    """
+    client = router_client()
     try:
-        router_client().load(name)
+        client.load(name)
+        deadline = time.monotonic() + PULL_TIMEOUT_S
+        status = _status_of(client, name)
+        while status == "loading" and time.monotonic() < deadline:
+            time.sleep(PULL_POLL_S)
+            status = _status_of(client, name)
     except (OSError, ValueError) as e:
         raise _unreachable(e) from e
-    return {"name": name, "status": "loaded"}
+    return {"name": name, "status": status}
