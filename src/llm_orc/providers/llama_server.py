@@ -138,6 +138,12 @@ def _is_preset_model(model: Mapping[str, Any]) -> bool:
     return model_id != "default" and "/" not in model_id
 
 
+#: The router is reached directly, never through an HTTP proxy from the
+#: environment: a proxied loopback request fails or times out (CI runners
+#: carry proxy variables; reproduced locally with ``http_proxy`` set).
+_DIRECT = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+
+
 class LlamaServerClient:
     """The router's management surface (``/models``), whether the router
     is one this process owns or one reached by URL."""
@@ -156,7 +162,7 @@ class LlamaServerClient:
 
     def models(self) -> list[dict[str, Any]]:
         """The router's model list with per-model load status."""
-        with urllib.request.urlopen(f"{self.root_url}/models", timeout=5) as resp:
+        with _DIRECT.open(f"{self.root_url}/models", timeout=5) as resp:
             data = json.load(resp)
         models = data.get("data", [])
         # Router mode lists a ``default`` entry for its own command line
@@ -173,7 +179,7 @@ class LlamaServerClient:
             data=body,
             headers={"Content-Type": "application/json"},
         )
-        with urllib.request.urlopen(request, timeout=3600) as resp:
+        with _DIRECT.open(request, timeout=3600) as resp:
             json.load(resp)
 
 
@@ -236,6 +242,7 @@ class LlamaServerSupervisor:
             self.command(), stdout=subprocess.DEVNULL, stderr=self._stderr
         )
         deadline = time.monotonic() + timeout_s
+        last_error = ""
         while time.monotonic() < deadline:
             code = self._process.poll()
             if code is not None:
@@ -248,13 +255,15 @@ class LlamaServerSupervisor:
             try:
                 self.models()
                 return
-            except (OSError, ValueError):
+            except (OSError, ValueError) as e:
+                last_error = f"{type(e).__name__}: {e}"
                 time.sleep(0.1)
         tail = self._stderr_tail()
         self.stop()
         raise RuntimeError(
             f"llama-server not ready after {timeout_s:.0f}s "
-            f"(command: {' '.join(self.command())})\nlast stderr:\n{tail}"
+            f"(command: {' '.join(self.command())}; last probe error: "
+            f"{last_error})\nlast stderr:\n{tail}"
         )
 
     def _stderr_tail(self, lines: int = 8) -> str:
