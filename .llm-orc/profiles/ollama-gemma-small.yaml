@@ -1,4 +1,5 @@
 model: qwen3-1.7b
+hf_repo: unsloth/Qwen3-1.7B-GGUF:Q4_K_M
 name: ollama-gemma-small
 provider: llama-server
 timeout_seconds: 45
