@@ -14,6 +14,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol
 
 from mcp.server.fastmcp import Context, FastMCP
+from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
+from mcp.server.transport_security import TransportSecuritySettings
+from starlette.applications import Starlette
 
 from llm_orc.core.config.config_manager import ConfigurationManager
 from llm_orc.core.config.ensemble_config import EnsembleLoader
@@ -1080,6 +1083,34 @@ class MCPServer:
     def _get_local_ensembles_dir(self) -> Path:
         """Get local ensembles dir (backward-compat wrapper for tests)."""
         return self._service.get_local_ensembles_dir()
+
+    def streamable_http_app(self) -> Starlette:
+        """Return the FastMCP streamable HTTP ASGI app for mounting.
+
+        The app's own route lives at its default path, "/mcp" -- a
+        caller registers it as an exact-path ASGI route (not a path
+        prefix `Mount`) so the app receives the request unmodified.
+        Also turns off FastMCP's DNS-rebinding Host/Origin guard: the
+        serve's tailnet is the actual boundary, and the guard's
+        default localhost-only allowlist would reject a
+        reverse-proxied Host header
+        (docs/plans/2026-09-16-mcp-in-serve.md).
+        """
+        self._mcp.settings.transport_security = TransportSecuritySettings(
+            enable_dns_rebinding_protection=False
+        )
+        return self._mcp.streamable_http_app()
+
+    @property
+    def session_manager(self) -> StreamableHTTPSessionManager:
+        """Get the FastMCP streamable HTTP session manager.
+
+        Only valid after ``streamable_http_app()`` has been called once
+        (FastMCP creates it lazily). The caller must keep it running
+        for the life of the ASGI app, e.g. in a lifespan handler:
+        ``async with mcp_server.session_manager.run(): ...``.
+        """
+        return self._mcp.session_manager
 
     def run(
         self, transport: str = "stdio", host: str = "0.0.0.0", port: int = 8080
