@@ -54,7 +54,9 @@ class ModelFactory:
         temperature: float | None = agent_config.get("temperature")
         max_tokens: int | None = agent_config.get("max_tokens")
         agent_options: dict[str, Any] | None = agent_config.get("options")
-        ollama_format: str | dict[str, Any] | None = agent_config.get("ollama_format")
+        response_format: str | dict[str, Any] | None = agent_config.get(
+            "response_format"
+        )
 
         # Check if model_profile is specified (takes precedence)
         # Use .get() truthy check: model_dump() includes None values as keys
@@ -74,7 +76,7 @@ class ModelFactory:
                 temperature=temperature,
                 max_tokens=max_tokens,
                 options=merged_options,
-                ollama_format=ollama_format,
+                response_format=response_format,
                 base_url=base_url,
             )
 
@@ -93,7 +95,7 @@ class ModelFactory:
             temperature=temperature,
             max_tokens=max_tokens,
             options=agent_options,
-            ollama_format=ollama_format,
+            response_format=response_format,
         )
 
     async def load_model(
@@ -104,7 +106,7 @@ class ModelFactory:
         temperature: float | None = None,
         max_tokens: int | None = None,
         options: dict[str, Any] | None = None,
-        ollama_format: str | dict[str, Any] | None = None,
+        response_format: str | dict[str, Any] | None = None,
         base_url: str | None = None,
     ) -> ModelInterface:
         """Load a model interface based on authentication configuration.
@@ -115,7 +117,7 @@ class ModelFactory:
             temperature: Optional temperature for generation
             max_tokens: Optional max tokens for generation
             options: Optional provider-specific options (e.g. sampling params)
-            ollama_format: Optional Ollama response format
+            response_format: Optional structured-output format (schema dict or 'json')
             base_url: Optional base URL for OpenAI-compatible endpoints
 
         Returns:
@@ -140,7 +142,7 @@ class ModelFactory:
                 temperature=temperature,
                 max_tokens=max_tokens,
                 options=options,
-                ollama_format=ollama_format,
+                response_format=response_format,
                 base_url=base_url,
             )
 
@@ -346,7 +348,7 @@ def _handle_no_authentication(
     temperature: float | None = None,
     max_tokens: int | None = None,
     options: dict[str, Any] | None = None,
-    ollama_format: str | dict[str, Any] | None = None,
+    response_format: str | dict[str, Any] | None = None,
     base_url: str | None = None,
 ) -> ModelInterface:
     """Handle cases when no authentication is configured.
@@ -357,7 +359,7 @@ def _handle_no_authentication(
         temperature: Optional temperature for generation
         max_tokens: Optional max tokens for generation
         options: Optional provider-specific options forwarded to local models
-        ollama_format: Optional Ollama response format
+        response_format: Optional structured-output format (schema dict or 'json')
         base_url: Optional base URL for OpenAI-compatible endpoints
 
     Returns:
@@ -375,7 +377,7 @@ def _handle_no_authentication(
             temperature=temperature,
             max_tokens=max_tokens,
             options=options,
-            response_format=ollama_format,
+            response_format=response_format,
         )
     elif _is_openai_compatible(provider):
         return OpenAICompatibleModel(
@@ -384,7 +386,7 @@ def _handle_no_authentication(
             temperature=temperature,
             max_tokens=max_tokens,
             options=options,
-            response_format=ollama_format,
+            response_format=response_format,
         )
     elif provider:
         raise ValueError(
@@ -404,7 +406,7 @@ def _handle_no_authentication(
             temperature=temperature,
             max_tokens=max_tokens,
             options=options,
-            response_format=ollama_format,
+            response_format=response_format,
         )
 
 
