@@ -21,7 +21,7 @@ agents:
     fan_out: true
 
   - name: synthesizer
-    model_profile: ollama-llama3
+    model_profile: local-qwen3-8b
     depends_on: [topic-analyst, question-answerer]
     system_prompt: >
       You are a synthesizer. You receive analysis of topics and answers to

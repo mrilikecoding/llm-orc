@@ -59,7 +59,8 @@ another round is needed and writes nothing).
   builder.** A build deliverable is accepted only when the deterministic
   executor and the isolated judge both pass. The builder never grades itself.
 - **Interactive latency on the 32GB rig is first-class.** Thinking-mode is a
-  per-seat routing decision (Ollama `think` param): easy turns run
+  per-seat routing decision (`options.think`, sent to llama-server as
+  `chat_template_kwargs.enable_thinking`): easy turns run
   thinking-off (~seconds), hard turns may route thinking-on.
 - **Determinism over carve-outs.** Essential control (termination, routing,
   admission) is deterministic; model judgment is confined to guarded,
@@ -95,9 +96,9 @@ acceptance).
 Seat models resolve through **tier profile names** (`agentic-tier-cheap-general`
 and friends in `.llm-orc/profiles/`) — the tier name is the stable operator
 surface; which model/provider backs it is deployment-specific. The shipped
-defaults are all local (Ollama). To back any tier with your own provider —
-a paid API, a hosted endpoint, a bigger local model — create a gitignored
-override:
+defaults are all local (`provider: llama-server`). To back any tier with your
+own provider — a paid API, a hosted endpoint, a bigger local model — create a
+gitignored override:
 
 ```yaml
 # .llm-orc/profiles/my-paid-seat.local.yaml   (never committed)
@@ -112,6 +113,28 @@ checked-in profile of the same name. Nothing provider-specific belongs in
 tracked config. Empirical note (2026-07-08 A/B): a hosted frontier seat did
 not change the dominant failure class — reach for structure (retry rounds,
 shapes) before bigger models.
+
+## Local inference: the serve owns the router
+
+`llm-orc serve` starts and supervises one `llama-server` process in router
+mode (llama.cpp; the binary is the only external runtime dependency). At
+start the serve renders `.llm-orc/llama-server.ini` from every
+`provider: llama-server` profile: one section per distinct `model:` name,
+its GGUF source from the profile's `hf_repo:` (fetched from Hugging Face on
+first load), a 40960-token context (the window the truncation backstop
+assumes; `options.num_ctx` overrides per model), and one resident model at
+a time (`--models-max`). The router loads a model on the first request that
+names it and evicts least-recently-used. Model names route exactly and must
+not contain a colon (the router rewrites `name:tag`); the renderer refuses
+one.
+
+`LLAMA_SERVER_URL` (default `http://127.0.0.1:8080/v1`) is exported for the
+life of the serve so the model factory reaches the router; `--no-backend`
+skips ownership and uses whatever is already at that URL. `GET /api/models`
+lists what the router serves with load status; `POST /api/models/{name}/pull`
+loads (and downloads) one. Per-request thinking control is
+`chat_template_kwargs.enable_thinking`; llama-server's `timings` land on the
+usage record as `prompt_eval_count` / `eval_count`.
 
 ## Conversation memory
 

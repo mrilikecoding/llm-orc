@@ -83,14 +83,14 @@ class ProviderRegistry:
             )
         )
 
-        # Ollama - no auth needed
+        # llama-server router (#90) - local, no auth needed
         self.register(
             ProviderInfo(
-                key="ollama",
-                display_name="Ollama (Local)",
-                description="Local models, no authentication needed",
+                key="llama-server",
+                display_name="llama-server (Local)",
+                description="llama.cpp router: local GGUF models, no authentication",
                 auth_methods=[AuthMethod.NONE],
-                emoji="🏠",
+                emoji="🦙",
             )
         )
 

@@ -1013,7 +1013,7 @@ class TestFanOutValidation:
             ScriptAgentConfig(name="chunker", script="split.py"),
             LlmAgentConfig(
                 name="extractor",
-                model_profile="ollama-llama3",
+                model_profile="local-qwen3-8b",
                 fan_out=True,
                 # Missing depends_on - should fail
             ),
@@ -1030,13 +1030,13 @@ class TestFanOutValidation:
             ScriptAgentConfig(name="chunker", script="split.py"),
             LlmAgentConfig(
                 name="extractor",
-                model_profile="ollama-llama3",
+                model_profile="local-qwen3-8b",
                 fan_out=True,
                 depends_on=["chunker"],
             ),
             LlmAgentConfig(
                 name="synthesizer",
-                model_profile="ollama-llama3",
+                model_profile="local-qwen3-8b",
                 depends_on=["extractor"],
             ),
         ]
@@ -1063,7 +1063,7 @@ class TestFanOutValidation:
         agents: list[AgentConfig] = [
             LlmAgentConfig(
                 name="extractor",
-                model_profile="ollama-llama3",
+                model_profile="local-qwen3-8b",
                 fan_out=True,
                 depends_on=[],  # Empty - should fail
             ),

@@ -406,7 +406,7 @@ class TestReadProfiles:
         """Each profile entry has name, provider, model."""
         mock_config_manager.get_model_profiles.return_value = {
             "gpt4": {"provider": "openai", "model": "gpt-4"},
-            "llama3": {"provider": "ollama", "model": "llama3"},
+            "llama3": {"provider": "llama-server", "model": "llama3"},
         }
 
         result = await handler.read_profiles()
@@ -434,7 +434,7 @@ class TestReadProfiles:
     ) -> None:
         """A profile dict without 'model' key defaults to 'unknown'."""
         mock_config_manager.get_model_profiles.return_value = {
-            "bare": {"provider": "ollama"},
+            "bare": {"provider": "llama-server"},
         }
 
         result = await handler.read_profiles()

@@ -7,8 +7,9 @@
 # ADR-007). Both system ensembles run on every dispatch path so their
 # cost has to stay bounded — hence a small/fast model.
 name: agentic-summarizer
-model: qwen3:0.6b
-provider: ollama
+model: qwen3-0.6b
+hf_repo: unsloth/Qwen3-0.6B-GGUF:Q4_K_M
+provider: llama-server
 cost_per_token: 0.0
 system_prompt: You are a quick analyst for rapid local analysis.
 timeout_seconds: 60

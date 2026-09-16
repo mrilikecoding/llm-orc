@@ -17,7 +17,7 @@ A decent laptop can run multiple small language models simultaneously. What's mi
 - **Multi-agent ensembles** — DAGs of LLM and script agents with dependencies, fan-out, guards, bounded loops, and dynamic dispatch
 - **Agentic serving** — `llm-orc serve` exposes OpenAI-compatible endpoints so coding tools (OpenCode, Aider, Cline) can use composed ensembles as their model backend, with build deliverables verified by an accept gate before they ship
 - **Model profiles** — named model+provider shortcuts; back any tier with your own provider via untracked local overrides
-- **Hybrid local/cloud** — Ollama, Claude, Gemini, and any OpenAI-compatible server (vLLM, LM Studio, OpenRouter), with cost and usage tracking
+- **Hybrid local/cloud** — local GGUF models through a llama-server router that llm-orc owns, plus Claude, Gemini, and any OpenAI-compatible server (vLLM, LM Studio, OpenRouter), with cost and usage tracking
 - **Scripts and artifacts** — script agents with JSON I/O, timestamped execution artifacts, an ensemble library, and an MCP server
 
 ## Install
@@ -35,7 +35,7 @@ llm-orc --version
 ## Quick start
 
 ```bash
-# Configure providers (keys are encrypted at rest); skip for Ollama-only use
+# Configure providers (keys are encrypted at rest); skip for local-only use
 llm-orc auth setup
 
 # Initialize project config (.llm-orc/ with ensembles/, scripts/, config.yaml)

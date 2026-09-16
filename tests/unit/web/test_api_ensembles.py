@@ -106,7 +106,7 @@ class TestEnsemblesAPI:
                         {
                             "name": "agent1",
                             "profile": "fast",
-                            "provider": "ollama",
+                            "provider": "llama-server",
                             "status": "available",
                             "alternatives": [],
                         }

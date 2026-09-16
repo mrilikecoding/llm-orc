@@ -15,7 +15,7 @@ class TestLoadRoleHandlesAbsentSystemPrompt:
     agent-level system_prompt (relying on ensemble-level default_task)
     previously errored at agent execution time with
     "unsupported operand type(s) for +: 'NoneType' and 'str'" because
-    the None role prompt propagated to `models/ollama.py`'s
+    the None role prompt propagated to the local model class's
     `role_prompt + message` token-estimation call.
     """
 

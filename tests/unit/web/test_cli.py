@@ -74,7 +74,7 @@ class TestServeCLI:
         """Both commands must call the same app factory via uvicorn.run."""
         runner = CliRunner()
         with patch("uvicorn.run") as mock_uvicorn:
-            runner.invoke(cli, ["serve", "--port", "0"])
+            runner.invoke(cli, ["serve", "--port", "0", "--no-backend"])
             serve_app = mock_uvicorn.call_args.args[0]
 
             mock_uvicorn.reset_mock()
@@ -96,7 +96,7 @@ class TestServeCLI:
     def test_serve_command_labels_output_as_agentic_serving(self) -> None:
         runner = CliRunner()
         with patch("uvicorn.run"):
-            result = runner.invoke(cli, ["serve", "--port", "0"])
+            result = runner.invoke(cli, ["serve", "--port", "0", "--no-backend"])
 
         assert result.exit_code == 0
         assert "agentic serving layer" in result.stderr

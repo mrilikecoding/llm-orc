@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Any, cast
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -498,7 +498,7 @@ class TestMCPServerProfileTools:
         profiles_dir = tmp_path / "profiles"
         profiles_dir.mkdir()
         (profiles_dir / "test-profile.yaml").write_text(
-            "name: test-profile\nprovider: ollama\nmodel: llama2"
+            "name: test-profile\nprovider: llama-server\nmodel: llama2"
         )
         _mock_config(server).get_profiles_dirs.return_value = [str(profiles_dir)]
 
@@ -506,7 +506,7 @@ class TestMCPServerProfileTools:
 
         assert len(result["profiles"]) == 1
         assert result["profiles"][0]["name"] == "test-profile"
-        assert result["profiles"][0]["provider"] == "ollama"
+        assert result["profiles"][0]["provider"] == "llama-server"
 
     @pytest.mark.asyncio
     async def test_list_profiles_filters_by_provider(
@@ -516,24 +516,24 @@ class TestMCPServerProfileTools:
         profiles_dir = tmp_path / "profiles"
         profiles_dir.mkdir()
         (profiles_dir / "ollama-profile.yaml").write_text(
-            "name: ollama-profile\nprovider: ollama\nmodel: llama2"
+            "name: ollama-profile\nprovider: llama-server\nmodel: llama2"
         )
         (profiles_dir / "anthropic-profile.yaml").write_text(
             "name: anthropic-profile\nprovider: anthropic\nmodel: claude-3"
         )
         _mock_config(server).get_profiles_dirs.return_value = [str(profiles_dir)]
 
-        result = await server.call_tool("list_profiles", {"provider": "ollama"})
+        result = await server.call_tool("list_profiles", {"provider": "llama-server"})
 
         assert len(result["profiles"]) == 1
-        assert result["profiles"][0]["provider"] == "ollama"
+        assert result["profiles"][0]["provider"] == "llama-server"
 
     @pytest.mark.asyncio
     async def test_create_profile_requires_name(self, server: MCPServer) -> None:
         """Create profile requires name."""
         with pytest.raises(ValueError, match="name is required"):
             await server.call_tool(
-                "create_profile", {"provider": "ollama", "model": "llama2"}
+                "create_profile", {"provider": "llama-server", "model": "llama2"}
             )
 
     @pytest.mark.asyncio
@@ -549,7 +549,7 @@ class TestMCPServerProfileTools:
         """Create profile requires model."""
         with pytest.raises(ValueError, match="model is required"):
             await server.call_tool(
-                "create_profile", {"name": "test", "provider": "ollama"}
+                "create_profile", {"name": "test", "provider": "llama-server"}
             )
 
     @pytest.mark.asyncio
@@ -563,7 +563,7 @@ class TestMCPServerProfileTools:
 
         result = await server.call_tool(
             "create_profile",
-            {"name": "new-profile", "provider": "ollama", "model": "llama2"},
+            {"name": "new-profile", "provider": "llama-server", "model": "llama2"},
         )
 
         assert result["created"] is True
@@ -582,7 +582,7 @@ class TestMCPServerProfileTools:
         with pytest.raises(ValueError, match="already exists"):
             await server.call_tool(
                 "create_profile",
-                {"name": "existing", "provider": "ollama", "model": "llama2"},
+                {"name": "existing", "provider": "llama-server", "model": "llama2"},
             )
 
     @pytest.mark.asyncio
@@ -611,7 +611,7 @@ class TestMCPServerProfileTools:
         profiles_dir = tmp_path / "profiles"
         profiles_dir.mkdir()
         (profiles_dir / "test.yaml").write_text(
-            "name: test\nprovider: ollama\nmodel: old"
+            "name: test\nprovider: llama-server\nmodel: old"
         )
         _mock_config(server).get_profiles_dirs.return_value = [str(profiles_dir)]
 
@@ -1411,7 +1411,7 @@ class TestGetProviderStatusTool:
         """Get provider status returns providers dictionary."""
         result = await server._get_provider_status_tool({})
         assert "providers" in result
-        assert "ollama" in result["providers"]
+        assert "llama-server" in result["providers"]
         assert "anthropic-api" in result["providers"]
 
     @pytest.mark.asyncio
@@ -1425,23 +1425,49 @@ class TestGetProviderStatusTool:
             assert "available" in provider_status
 
 
-class TestGetOllamaStatus:
-    """Tests for _get_ollama_status helper."""
+class TestGetLlamaServerStatus:
+    """The llama-server router's status (#90): its model list and URL."""
 
     @pytest.mark.asyncio
-    async def test_get_ollama_status_returns_dict(self, server: MCPServer) -> None:
-        """Get ollama status returns a dict."""
-        result = await server._provider_handler._get_ollama_status()
-        assert isinstance(result, dict)
-        assert "available" in result
+    async def test_status_lists_router_models(self, server: MCPServer) -> None:
+        client = MagicMock()
+        client.models.return_value = [
+            {"id": "qwen3-8b", "status": {"value": "loaded"}},
+            {"id": "qwen3-14b", "status": {"value": "unloaded"}},
+        ]
+        with (
+            patch.dict("os.environ", {"LLAMA_SERVER_URL": "http://ng-mini:8080/v1"}),
+            patch(
+                "llm_orc.services.handlers.provider_handler.LlamaServerClient"
+            ) as cls,
+        ):
+            cls.from_base_url.return_value = client
+            result = await server._provider_handler._get_llama_server_status()
+
+        cls.from_base_url.assert_called_once_with("http://ng-mini:8080/v1")
+        assert result == {
+            "available": True,
+            "models": ["qwen3-14b", "qwen3-8b"],
+            "model_count": 2,
+            "reason": "",
+            "base_url": "http://ng-mini:8080/v1",
+        }
 
     @pytest.mark.asyncio
-    async def test_get_ollama_status_has_models_when_available(
+    async def test_unreachable_router_is_unavailable_with_reason(
         self, server: MCPServer
     ) -> None:
-        """Ollama status has models field when available."""
-        result = await server._provider_handler._get_ollama_status()
-        assert "models" in result
+        client = MagicMock()
+        client.models.side_effect = OSError("connection refused")
+        with patch(
+            "llm_orc.services.handlers.provider_handler.LlamaServerClient"
+        ) as cls:
+            cls.from_base_url.return_value = client
+            result = await server._provider_handler._get_llama_server_status()
+
+        assert result["available"] is False
+        assert result["models"] == []
+        assert "connection refused" in result["reason"]
 
 
 class TestGetCloudProviderStatus:
@@ -1556,14 +1582,14 @@ class TestCheckAgentRunnable:
 
     def test_check_agent_runnable_available_profile(self, server: MCPServer) -> None:
         """Agent with available profile has available status."""
-        profiles = {"ollama-profile": {"provider": "ollama", "model": "llama3"}}
-        providers = {"ollama": {"available": True, "models": ["llama3"]}}
+        profiles = {"ollama-profile": {"provider": "llama-server", "model": "llama3"}}
+        providers = {"llama-server": {"available": True, "models": ["llama3"]}}
 
         result = server._provider_handler._check_agent_runnable(
             "agent1", "ollama-profile", profiles, providers
         )
         assert result.status == "available"
-        assert result.provider == "ollama"
+        assert result.provider == "llama-server"
 
     def test_check_agent_runnable_unavailable_provider(self, server: MCPServer) -> None:
         """Agent with unavailable provider has provider_unavailable status."""
@@ -1583,7 +1609,7 @@ class TestSuggestLocalAlternatives:
         self, server: MCPServer
     ) -> None:
         """Returns empty list when Ollama is unavailable."""
-        providers = {"ollama": {"available": False}}
+        providers = {"llama-server": {"available": False}}
         result = server._provider_handler._suggest_local_alternatives(providers)
         assert result == []
 
@@ -1921,16 +1947,16 @@ class TestSuggestLocalAlternativesOpenAICompat:
         """openai-compatible profiles included when endpoint available."""
         handler = server._provider_handler
         handler._profile_handler.get_all_profiles = lambda: {
-            "ollama-prof": {"provider": "ollama"},
+            "local-prof": {"provider": "llama-server"},
             "oai-prof": {"provider": "openai-compatible"},
         }
         providers = {
-            "ollama": {"available": True},
+            "llama-server": {"available": True},
             "openai-compatible": {"available": True},
         }
         result = handler._suggest_local_alternatives(providers)
         assert "oai-prof" in result
-        assert "ollama-prof" in result
+        assert "local-prof" in result
 
     def test_openai_compat_profiles_excluded_when_unavailable(
         self, server: MCPServer
@@ -1938,15 +1964,15 @@ class TestSuggestLocalAlternativesOpenAICompat:
         """openai-compatible profiles excluded when not available."""
         handler = server._provider_handler
         handler._profile_handler.get_all_profiles = lambda: {
-            "ollama-prof": {"provider": "ollama"},
+            "local-prof": {"provider": "llama-server"},
             "oai-prof": {"provider": "openai-compatible"},
         }
         providers = {
-            "ollama": {"available": True},
+            "llama-server": {"available": True},
             "openai-compatible": {"available": False},
         }
         result = handler._suggest_local_alternatives(providers)
-        assert "ollama-prof" in result
+        assert "local-prof" in result
         assert "oai-prof" not in result
 
 
@@ -2150,7 +2176,7 @@ class TestValidateEnsembleProfileResolution:
         profiles_dir = tmp_path / "profiles"
         profiles_dir.mkdir()
         (profiles_dir / "my-profile.yaml").write_text(
-            "name: my-profile\nprovider: ollama\nmodel: llama3\n"
+            "name: my-profile\nprovider: llama-server\nmodel: llama3\n"
         )
 
         ensembles_dir = tmp_path / "ensembles"

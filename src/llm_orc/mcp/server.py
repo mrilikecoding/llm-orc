@@ -432,7 +432,7 @@ class MCPServer:
 
             Args:
                 name: Profile name
-                provider: Provider name (ollama, anthropic, etc.)
+                provider: Provider name (llama-server, anthropic-api, etc.)
                 model: Model identifier
                 system_prompt: Optional system prompt
                 timeout_seconds: Optional timeout
@@ -614,7 +614,7 @@ class MCPServer:
             """Show which providers are configured and available models.
 
             Returns status of all providers including:
-            - Ollama: Available models from local instance
+            - llama-server: models the local router serves
             - Cloud providers: Whether authentication is configured
             """
             result = await self._service.get_provider_status({})

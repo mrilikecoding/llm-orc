@@ -127,3 +127,27 @@ def mock_ensemble_executor() -> Generator[EnsembleExecutor, None, None]:
                 # Replace only the artifact manager, keep the rest functional
                 with patch.object(executor, "_artifact_manager", mock_artifact_manager):
                     yield executor
+
+
+@pytest.fixture(autouse=True)
+def _no_real_llama_server(monkeypatch: pytest.MonkeyPatch) -> None:
+    """No test may launch the operator's real llama-server (#90).
+
+    A supervisor built on the default binary name is one that reached
+    production wiring unpatched; tests that want a process use a stub
+    binary path. Found the hard way: two serve tests rendered the real
+    preset and started a real router from the suite.
+    """
+    from llm_orc.providers import llama_server
+
+    original = llama_server.LlamaServerSupervisor.start
+
+    def guarded(self: llama_server.LlamaServerSupervisor, **kwargs: float) -> None:
+        if self.binary == "llama-server":
+            raise AssertionError(
+                "test reached the real llama-server binary; patch "
+                "start_router_from_config or pass --no-backend"
+            )
+        original(self, **kwargs)
+
+    monkeypatch.setattr(llama_server.LlamaServerSupervisor, "start", guarded)

@@ -12,7 +12,7 @@ class LLMResponseGenerator:
 
     def __init__(
         self,
-        model: str = "qwen3:0.6b",
+        model: str = "qwen3-0.6b",
         persona: str = "helpful_user",
         system_prompt: str | None = None,
         response_cache: dict[str, str] | None = None,
@@ -21,11 +21,12 @@ class LLMResponseGenerator:
         """Initialize the LLM response generator.
 
         Args:
-            model: Model name to use (default: qwen3:0.6b)
+            model: Model name to use (default: qwen3-0.6b)
             persona: Persona type for system prompt
             system_prompt: Optional custom system prompt
             response_cache: Optional cache for deterministic responses
-            client: Optional model client; if not provided, OllamaModel is used
+            client: Optional model client; if not provided, the llama-server
+                router at LLAMA_SERVER_URL is used (#90)
         """
         self.model = model
         self.persona = persona
@@ -35,9 +36,14 @@ class LLMResponseGenerator:
         if client is not None:
             self.llm_client: ModelInterface = client
         else:
-            from llm_orc.models.ollama import OllamaModel
+            import os
 
-            self.llm_client = OllamaModel(model_name=model)
+            from llm_orc.models.openai_compat import OpenAICompatibleModel
+
+            self.llm_client = OpenAICompatibleModel(
+                model_name=model,
+                base_url=os.environ.get("LLAMA_SERVER_URL", "http://127.0.0.1:8080/v1"),
+            )
 
     async def generate_response(self, prompt: str, context: dict[str, Any]) -> str:
         """Generate contextual response using LLM.
@@ -133,7 +139,7 @@ class LLMResponseGenerator:
         return f"Context:\n{context_str}\n\nPrompt: {prompt}"
 
     async def _call_llm(self, prompt: str) -> str:
-        """Call local LLM (Ollama) for response generation.
+        """Call the local LLM for response generation.
 
         Args:
             prompt: Formatted prompt for LLM
