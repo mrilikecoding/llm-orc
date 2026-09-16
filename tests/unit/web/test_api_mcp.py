@@ -27,16 +27,15 @@ _ACCEPT_HEADERS = {"Accept": "application/json, text/event-stream"}
 
 
 @pytest.fixture(autouse=True)
-def _reset_shared_singletons(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Give each test a fresh OrchestraService/MCPServer.
+def _reset_shared_singleton(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Give each test a fresh OrchestraService.
 
-    Both are process-wide singletons (web/api/__init__.py), and
-    FastMCP's streamable HTTP session manager can only run() once per
-    instance -- reusing one across tests that each enter the app's
-    lifespan would raise on the second test. Reset before every test
-    so create_app() builds fresh ones.
+    It's a process-wide singleton (web/api/__init__.py); reset before
+    every test so create_app() builds a fresh one instead of picking
+    up project state left behind by an earlier test. create_app()
+    builds its own MCPServer per call, so there's no session-manager
+    reuse concern here.
     """
-    monkeypatch.setattr(web_api, "_mcp_server", None)
     monkeypatch.setattr(web_api, "_orchestra_service", None)
 
 
@@ -234,3 +233,21 @@ class TestMcpHostHeaderGuard:
 
         assert response.status_code not in (400, 421)
         assert response.status_code == 200
+
+
+class TestCreateAppSessionManagerLifecycle:
+    """Each create_app() owns its own FastMCP session manager.
+
+    FastMCP's streamable HTTP session manager can only run() once per
+    instance; a shared MCPServer singleton across create_app() calls
+    would raise on the second app's lifespan startup. create_app()
+    builds a fresh MCPServer per call, so two apps in the same process
+    must both enter and exit their lifespans without error.
+    """
+
+    def test_two_create_app_instances_in_sequence(self) -> None:
+        with TestClient(create_app()) as client:
+            assert client.get("/health").status_code == 200
+
+        with TestClient(create_app()) as client:
+            assert client.get("/health").status_code == 200
