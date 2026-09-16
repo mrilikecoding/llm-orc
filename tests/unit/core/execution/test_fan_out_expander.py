@@ -94,7 +94,7 @@ class TestFanOutExpander:
         """expand_fan_out_agent creates N indexed copies of agent config."""
         agent_config = LlmAgentConfig(
             name="extractor",
-            model_profile="ollama-llama3",
+            model_profile="local-qwen3-8b",
             fan_out=True,
             depends_on=["chunker"],
             system_prompt="Extract concepts",
@@ -109,7 +109,7 @@ class TestFanOutExpander:
         assert result[2].name == "extractor[2]"
         # Original config preserved
         assert isinstance(result[0], LlmAgentConfig)
-        assert result[0].model_profile == "ollama-llama3"
+        assert result[0].model_profile == "local-qwen3-8b"
         assert result[0].system_prompt == "Extract concepts"
         # fan_out cleared on instances
         assert result[0].fan_out is False
