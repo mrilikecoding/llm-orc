@@ -133,12 +133,22 @@ the llama-server backend yet — that is the regression gate below.
    OpenCode against `https://llm-orc.homelab.nate.green/v1`.
 3. **#123, #122, verified acceptance in the workspace** — unchanged from
    2026-09-12; the T1 instrument still precedes touching the build round.
-4. Follow-ups filed by this arc: `llm-orc web` does not own the router
+4. **Filed 2026-09-16, sequenced after the ng-mini bring-up and the
+   backend gate:** #189 code-footprint epic (#190 wire-or-delete six
+   unwired modules, P1 because AS-2 names a validator nothing runs;
+   #191 one service with generated MCP/REST adapters and a thin CLI;
+   #192 CLI/display re-approach on one event stream; #193 spike:
+   meta-simulation as a client-side ensemble, retire the interactive
+   input mode if it covers the cases). Then #187 strangler-kernel epic
+   with #188 as its spike (port the router supervisor and the
+   OpenAI-compatible client to a Rust crate in the plexus workspace;
+   exit criterion on the issue). Auth and promotion stay as they are.
+5. Follow-ups filed by this arc: `llm-orc web` does not own the router
    (opt-in later); MCP over the tailnet (the SSE transport is the older
    protocol, a second launchd unit + proxy path); deepseek-r1's template
    ignores `enable_thinking` (fine for the reasoning tier); the library
    submodule's templates still say `provider: ollama`.
-5. Gated on the practitioner: the push; #167/#141 (Anthropic arms).
+6. Gated on the practitioner: further pushes; #167/#141 (Anthropic arms).
 
 ### Owed live rows
 
