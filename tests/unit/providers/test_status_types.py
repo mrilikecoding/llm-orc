@@ -6,7 +6,7 @@ from llm_orc.providers.status_types import (
     CloudProviderStatus,
     EndpointStatus,
     EnsembleRunnability,
-    OllamaProviderStatus,
+    LlamaServerProviderStatus,
     OpenAICompatibleStatus,
 )
 
@@ -31,20 +31,21 @@ class TestAgentStatus:
         assert AgentStatus.MODEL_UNAVAILABLE.value == "model_unavailable"
 
 
-class TestOllamaProviderStatus:
-    """Tests for OllamaProviderStatus model."""
+class TestLlamaServerProviderStatus:
+    """Tests for LlamaServerProviderStatus model (#90)."""
 
     def test_default_construction(self) -> None:
         """Default construction has empty models and zero count."""
-        status = OllamaProviderStatus(available=False)
+        status = LlamaServerProviderStatus(available=False)
         assert status.available is False
         assert status.models == []
         assert status.model_count == 0
         assert status.reason == ""
+        assert status.base_url == ""
 
     def test_available_with_models(self) -> None:
         """Available status with models populates correctly."""
-        status = OllamaProviderStatus(
+        status = LlamaServerProviderStatus(
             available=True,
             models=["llama3:latest", "mistral:latest"],
             model_count=2,
@@ -55,7 +56,7 @@ class TestOllamaProviderStatus:
 
     def test_model_dump_roundtrip(self) -> None:
         """Serialization produces expected dict shape."""
-        status = OllamaProviderStatus(
+        status = LlamaServerProviderStatus(
             available=True,
             models=["llama3:latest"],
             model_count=1,
@@ -63,6 +64,7 @@ class TestOllamaProviderStatus:
         dumped = status.model_dump()
         assert dumped == {
             "available": True,
+            "base_url": "",
             "models": ["llama3:latest"],
             "model_count": 1,
             "reason": "",
@@ -70,7 +72,7 @@ class TestOllamaProviderStatus:
 
     def test_unavailable_dump_matches_existing_shape(self) -> None:
         """Unavailable dump matches the existing dict shape."""
-        status = OllamaProviderStatus(
+        status = LlamaServerProviderStatus(
             available=False,
             reason="Ollama not reachable: ConnectError",
         )
