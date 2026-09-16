@@ -53,3 +53,37 @@ From this laptop, with the entry in `.mcp.json`: `list_ensembles`
 returns ng-mini's 120; `create_ensemble` writes a file under ng-mini's
 `.llm-orc/ensembles/`; `GET /api/ensembles/<new>` then lists it; `invoke`
 runs it there.
+
+## Result (2026-09-16, evening)
+
+Merged on local main (#194, merge 4d33ca4d; suite 4328, coverage 92.55%,
+lint clean). Deployed to ng-mini from the checkout on the practitioner's
+go (one-time exception: the mini runs releases from now on, see below).
+
+Acceptance over `https://llm-orc.homelab.nate.green/mcp` from the laptop:
+`initialize` 200 with a session id; `tools/list` 30 tools;
+`create_ensemble` wrote `.llm-orc/ensembles/remote-smoke.yaml` on the
+mini; `GET /api/ensembles` listed it; `invoke` over MCP ran it there
+(`deliverable: "pong"`, 6 s on the 1.7b seat, three progress
+notifications streamed before the result); `DELETE /mcp` 200.
+
+What the design got wrong, caught in build and review: a Starlette
+`Mount` at `/mcp` doubles FastMCP's own `/mcp` path and the SPA
+catch-all shadows the retry, so it is an exact-path `Route`; FastMCP
+auto-enables DNS-rebinding protection for `host=127.0.0.1`, so the
+guard is disabled explicitly for the `/mcp` app (the proxied Host got
+421 otherwise); `MCPServer.list_tools()` is a stale 4-item list (#195);
+the first shared-service test passed against two separate services and
+was replaced by a `set_project`-over-MCP-then-REST assertion pinned
+red/green. `create_app()` now builds its own `MCPServer` so it stays
+idempotent per process.
+
+Client: `.mcp.json` entry `llm-orc-ng-mini` (`type: http`). A tool call
+that streams notifications returns them as SSE `data:` lines before the
+result; clients must match on the request id.
+
+Deployment policy from here: the mini runs the Homebrew release
+(`brew tap mrilikecoding/llm-orchestra && brew install llm-orchestra`,
+formula depends on `python@3.12`, builds from PyPI source on Intel), so
+`/mcp` reaches the mini "for real" with the next release. The `ng-mini`
+git remote stays for emergencies only.

@@ -34,7 +34,20 @@ of time from any machine on the tailnet:
       curl -X POST https://llm-orc.homelab.nate.green/api/models/$m/pull
     done
 
-## Update
+## Releases are the unit of change
+
+The checkout above is the bring-up path. Once a release carries what the
+mini needs, install it from Homebrew instead and point the plist's
+`ProgramArguments` at the brew binary:
+
+    brew tap mrilikecoding/llm-orchestra && brew install llm-orchestra
+    which llm-orc                                     # /usr/local/bin/llm-orc
+
+`git push ng-mini main` into the checkout (remote set up 2026-09-16,
+`receive.denyCurrentBranch=updateInstead`) is for emergencies the
+practitioner okays, not the normal path.
+
+## Update (checkout path)
 
     cd ~/Development/llm-orc && git pull && uv sync
     launchctl kickstart -k gui/$(id -u)/com.llm-orc.serve
