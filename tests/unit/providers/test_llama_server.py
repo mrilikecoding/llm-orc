@@ -296,8 +296,8 @@ class TestClientModelList:
                 {"id": "qwen3-8b", "status": {"value": "loaded"}},
             ]
         }
-        with patch("llm_orc.providers.llama_server.urllib.request.urlopen") as urlopen:
-            urlopen.return_value.__enter__.return_value.read.return_value = json.dumps(
+        with patch("llm_orc.providers.llama_server._DIRECT.open") as opener:
+            opener.return_value.__enter__.return_value.read.return_value = json.dumps(
                 payload
             ).encode()
             models = client.models()
