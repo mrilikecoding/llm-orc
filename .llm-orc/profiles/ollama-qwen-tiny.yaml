@@ -1,4 +1,4 @@
-model: qwen3:0.6b
+model: qwen3-0.6b
 name: ollama-qwen-tiny
-provider: ollama
+provider: llama-server
 timeout_seconds: 30

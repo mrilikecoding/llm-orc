@@ -1,4 +1,4 @@
-model: gemma3:12b
+model: qwen3-14b
 name: ollama-gemma3-12b
-provider: ollama
+provider: llama-server
 timeout_seconds: 120
