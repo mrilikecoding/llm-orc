@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.20.2] - 2026-09-16
+
+### Fixed
+- `mcp` is pinned below 2 (#197). A clean install of 0.20.1 resolved
+  mcp 2.x, which renamed FastMCP, so `llm-orc serve` and `llm-orc mcp
+  serve` failed at import. Checkouts were unaffected because the lock
+  held 1.28.1.
+
 ## [0.20.1] - 2026-09-16
 
 ### Added
