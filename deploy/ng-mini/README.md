@@ -43,6 +43,16 @@ mini needs, install it from Homebrew instead and point the plist's
     brew tap mrilikecoding/llm-orchestra && brew install llm-orchestra
     which llm-orc                                     # /usr/local/bin/llm-orc
 
+Until #197 is decided the formula does not build on this Intel box
+(cryptography>=49 has no x86_64 wheel; the build needs Rust). Interim,
+what runs there since 2026-09-16, still the PyPI release:
+
+    uv tool install "llm-orchestra==0.20.1" --with "cryptography<49" --with "mcp<2"
+    ln -sf ~/.local/bin/llm-orc /usr/local/bin/llm-orc    # the plist's path
+
+`mcp<2` is required for 0.20.1 (fixed in 0.20.2); `cryptography<49`
+runs the pre-advisory version knowingly.
+
 The plist already names `/usr/local/bin/llm-orc` (the Intel brew prefix).
 `WorkingDirectory` stays the checkout: the serve's project (`.llm-orc/`,
 the serving ensembles and profiles) is tracked in the repo and not in

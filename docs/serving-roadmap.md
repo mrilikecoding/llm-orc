@@ -139,9 +139,18 @@ the llama-server backend yet — that is the regression gate below.
    host; design `docs/plans/2026-09-16-mcp-in-serve.md`). Suite 4328,
    lint clean, independent review found one wrong-accept (fixed, pinned
    red/green). `.mcp.json` carries `llm-orc-ng-mini` pointing at it.
-   Deploy to ng-mini (`git push ng-mini main` + kickstart) is the
-   practitioner's go; acceptance on the rig is in the design doc.
-   Follow-up #195 (stale `MCPServer.list_tools()`).
+   Deployed and accepted on the rig (design doc, Result). **Released
+   as v0.20.1** on the practitioner's go (push, PyPI, GitHub release,
+   formula bump). Policy from the practitioner: the mini runs releases,
+   not checkouts. Doing that surfaced #197 (P0): a clean install of
+   0.20.1 resolves `mcp` 2.x and dies at import (lock hid it; pinned
+   `<2` on local main, 0.20.2 bump staged, push gated), and the brew
+   formula cannot build on the Intel mini (no `cryptography>=49`
+   x86_64 wheel vs the PYSEC constraint; needs Rust or a decision).
+   The mini currently runs the 0.20.1 release via `uv tool install` with
+   `mcp<2` and `cryptography<49` (pre-advisory, knowingly). #196: the
+   serving project (`.llm-orc/`) is not in the wheel, so the plist's
+   WorkingDirectory stays the checkout. Follow-up #195.
 2. **Regression gate on the new backend** (laptop or ng-mini): the ladder
    (T1 alone at r≥5 first, then the full run) and the 7-turn probe.
    Chat templating and tool-call parsing moved from Ollama's Go templates

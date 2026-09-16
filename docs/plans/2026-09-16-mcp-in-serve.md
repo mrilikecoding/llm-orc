@@ -87,3 +87,9 @@ Deployment policy from here: the mini runs the Homebrew release
 formula depends on `python@3.12`, builds from PyPI source on Intel), so
 `/mcp` reaches the mini "for real" with the next release. The `ng-mini`
 git remote stays for emergencies only.
+
+Released as v0.20.1 the same evening. Installing that release on the mini
+found #197 (clean install resolves mcp 2.x; Intel has no cryptography>=49
+wheel) and #196 (the serving project is not in the wheel). The mini runs
+the 0.20.1 release under `uv tool` with both pins; 0.20.2 carries the
+`mcp<2` pin.
