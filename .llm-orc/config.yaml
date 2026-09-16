@@ -27,15 +27,15 @@ model_profiles:
   # Test profile with non-existent model to test fallbacks
   test-fallback:
     model: nonexistent-model:999b
-    provider: ollama
+    provider: llama-server
     cost_per_token: 0.0
     system_prompt: This model doesn't exist - should fallback!
     timeout_seconds: 30
     
   # Ultra-fast micro model for fallback reliability
   micro-local:
-    model: qwen3:0.6b
-    provider: ollama
+    model: qwen3-0.6b
+    provider: llama-server
     cost_per_token: 0.0
     system_prompt: You are a quick analyst for rapid local analysis.
     timeout_seconds: 60
@@ -45,8 +45,8 @@ model_profiles:
   # cost stays low; operators can swap this profile via config.yaml for
   # higher-quality summarization at higher cost.
   summarizer:
-    model: qwen3:0.6b
-    provider: ollama
+    model: qwen3-0.6b
+    provider: llama-server
     cost_per_token: 0.0
     system_prompt: |
       You are a result summarizer for an orchestration system. Your input is
@@ -64,8 +64,8 @@ model_profiles:
 
   # Research & Network Science Profiles
   network-analyst:
-    model: llama3:latest
-    provider: ollama
+    model: qwen3-8b
+    provider: llama-server
     cost_per_token: 0.0
     system_prompt: |
       You are a network science researcher specializing in analyzing graph structures, 
@@ -74,8 +74,8 @@ model_profiles:
     timeout_seconds: 180
     
   research-analyst:
-    model: llama3:latest
-    provider: ollama
+    model: qwen3-8b
+    provider: llama-server
     cost_per_token: 0.0
     system_prompt: |
       You are a research analyst skilled in interpreting experimental data, 
@@ -85,8 +85,8 @@ model_profiles:
     
   # Swarm Intelligence Profiles  
   swarm-coordinator:
-    model: qwen3:0.6b
-    provider: ollama
+    model: qwen3-0.6b
+    provider: llama-server
     cost_per_token: 0.0
     system_prompt: |
       You are part of a swarm intelligence experiment. Collaborate with other 
@@ -95,8 +95,8 @@ model_profiles:
     timeout_seconds: 60
     
   consensus-validator:
-    model: llama3:latest
-    provider: ollama
+    model: qwen3-8b
+    provider: llama-server
     cost_per_token: 0.0
     system_prompt: |
       You evaluate and synthesize responses from multiple agents to reach 
@@ -106,8 +106,8 @@ model_profiles:
     
   # Creative & Interactive Profiles
   story-narrator:
-    model: llama3:latest
-    provider: ollama
+    model: qwen3-8b
+    provider: llama-server
     cost_per_token: 0.0
     system_prompt: |
       You are a creative storyteller specializing in interactive narratives. 
@@ -116,8 +116,8 @@ model_profiles:
     timeout_seconds: 120
     
   game-master:
-    model: llama3:latest
-    provider: ollama
+    model: qwen3-8b
+    provider: llama-server
     cost_per_token: 0.0
     system_prompt: |
       You are a game master running an interactive experience. Manage game 
@@ -127,8 +127,8 @@ model_profiles:
     
   # Human-in-the-Loop Profiles
   expert-reviewer:
-    model: llama3:latest
-    provider: ollama
+    model: qwen3-8b
+    provider: llama-server
     cost_per_token: 0.0
     system_prompt: |
       You are an expert reviewer providing critical analysis and validation. 
@@ -137,8 +137,8 @@ model_profiles:
     timeout_seconds: 180
     
   synthesis-agent:
-    model: llama3:latest
-    provider: ollama
+    model: qwen3-8b
+    provider: llama-server
     cost_per_token: 0.0
     system_prompt: |
       You synthesize input from human experts and AI agents to create 
@@ -148,14 +148,14 @@ model_profiles:
   
   # Standard local model
   local-free:
-    model: llama3
-    provider: ollama
+    model: qwen3-8b
+    provider: llama-server
     cost_per_token: 0.0
     
   # Reliable default local model  
   default-local:
-    model: llama3:latest
-    provider: ollama
+    model: qwen3-8b
+    provider: llama-server
     cost_per_token: 0.0
     system_prompt: You are a capable analyst for thorough local analysis.
     timeout_seconds: 60
@@ -167,15 +167,15 @@ model_profiles:
   
   # Specialized profiles for code review
   security-auditor:
-    model: llama3
-    provider: ollama
+    model: qwen3-8b
+    provider: llama-server
     cost_per_token: 0.0
     system_prompt: "You are a cybersecurity expert specializing in code security audits. You identify vulnerabilities, insecure patterns, authentication issues, data exposure risks, and injection attacks. You're thorough about security best practices and provide specific remediation steps."
     timeout_seconds: 90
     
   performance-engineer:
-    model: llama3
-    provider: ollama
+    model: qwen3-8b
+    provider: llama-server
     cost_per_token: 0.0
     system_prompt: "You are a performance engineering specialist who analyzes code for efficiency bottlenecks, memory usage, algorithmic complexity, and scalability issues. You understand profiling, optimization techniques, and how code changes impact production performance."
     timeout_seconds: 90
@@ -331,16 +331,16 @@ model_profiles:
     
   # Efficient profile for resource-conscious agents
   efficient:
-    model: qwen3:0.6b
-    provider: ollama
+    model: qwen3-0.6b
+    provider: llama-server
     cost_per_token: 0.0
     system_prompt: "You are an efficient AI analyst providing focused, high-quality analysis with optimized resource usage."
     timeout_seconds: 30
     
   # Fast local model for architecture work
   fast-architect:
-    model: llama3:latest
-    provider: ollama
+    model: qwen3-8b
+    provider: llama-server
     cost_per_token: 0.0
     system_prompt: "You are a systems architect specializing in high-performance async Python systems and integration patterns."
     timeout_seconds: 45
@@ -373,8 +373,8 @@ model_profiles:
     fallback_model_profile: "local-llama"  # Falls back to local model if this fails
     
   local-llama:
-    model: llama3:latest
-    provider: ollama
+    model: qwen3-8b
+    provider: llama-server
     cost_per_token: 0.0
     system_prompt: "You are a capable local AI analyst running on local hardware."
     timeout_seconds: 60

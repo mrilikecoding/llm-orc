@@ -6,7 +6,7 @@
 # arrives on a reasoning-heavy dispatch, the router escalates to a
 # model that paid for reasoning capability specifically.
 name: agentic-tier-escalated-reasoning
-model: deepseek-r1:8b
-provider: ollama
+model: deepseek-r1-8b
+provider: llama-server
 cost_per_token: 0.0
 timeout_seconds: 240
