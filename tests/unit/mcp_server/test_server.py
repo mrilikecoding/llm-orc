@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Any, cast
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -1411,7 +1411,7 @@ class TestGetProviderStatusTool:
         """Get provider status returns providers dictionary."""
         result = await server._get_provider_status_tool({})
         assert "providers" in result
-        assert "ollama" in result["providers"]
+        assert "llama-server" in result["providers"]
         assert "anthropic-api" in result["providers"]
 
     @pytest.mark.asyncio
@@ -1425,23 +1425,49 @@ class TestGetProviderStatusTool:
             assert "available" in provider_status
 
 
-class TestGetOllamaStatus:
-    """Tests for _get_ollama_status helper."""
+class TestGetLlamaServerStatus:
+    """The llama-server router's status (#90): its model list and URL."""
 
     @pytest.mark.asyncio
-    async def test_get_ollama_status_returns_dict(self, server: MCPServer) -> None:
-        """Get ollama status returns a dict."""
-        result = await server._provider_handler._get_ollama_status()
-        assert isinstance(result, dict)
-        assert "available" in result
+    async def test_status_lists_router_models(self, server: MCPServer) -> None:
+        client = MagicMock()
+        client.models.return_value = [
+            {"id": "qwen3-8b", "status": {"value": "loaded"}},
+            {"id": "qwen3-14b", "status": {"value": "unloaded"}},
+        ]
+        with (
+            patch.dict("os.environ", {"LLAMA_SERVER_URL": "http://ng-mini:8080/v1"}),
+            patch(
+                "llm_orc.services.handlers.provider_handler.LlamaServerClient"
+            ) as cls,
+        ):
+            cls.from_base_url.return_value = client
+            result = await server._provider_handler._get_llama_server_status()
+
+        cls.from_base_url.assert_called_once_with("http://ng-mini:8080/v1")
+        assert result == {
+            "available": True,
+            "models": ["qwen3-14b", "qwen3-8b"],
+            "model_count": 2,
+            "reason": "",
+            "base_url": "http://ng-mini:8080/v1",
+        }
 
     @pytest.mark.asyncio
-    async def test_get_ollama_status_has_models_when_available(
+    async def test_unreachable_router_is_unavailable_with_reason(
         self, server: MCPServer
     ) -> None:
-        """Ollama status has models field when available."""
-        result = await server._provider_handler._get_ollama_status()
-        assert "models" in result
+        client = MagicMock()
+        client.models.side_effect = OSError("connection refused")
+        with patch(
+            "llm_orc.services.handlers.provider_handler.LlamaServerClient"
+        ) as cls:
+            cls.from_base_url.return_value = client
+            result = await server._provider_handler._get_llama_server_status()
+
+        assert result["available"] is False
+        assert result["models"] == []
+        assert "connection refused" in result["reason"]
 
 
 class TestGetCloudProviderStatus:
@@ -1921,16 +1947,16 @@ class TestSuggestLocalAlternativesOpenAICompat:
         """openai-compatible profiles included when endpoint available."""
         handler = server._provider_handler
         handler._profile_handler.get_all_profiles = lambda: {
-            "ollama-prof": {"provider": "ollama"},
+            "local-prof": {"provider": "llama-server"},
             "oai-prof": {"provider": "openai-compatible"},
         }
         providers = {
-            "ollama": {"available": True},
+            "llama-server": {"available": True},
             "openai-compatible": {"available": True},
         }
         result = handler._suggest_local_alternatives(providers)
         assert "oai-prof" in result
-        assert "ollama-prof" in result
+        assert "local-prof" in result
 
     def test_openai_compat_profiles_excluded_when_unavailable(
         self, server: MCPServer
@@ -1938,15 +1964,15 @@ class TestSuggestLocalAlternativesOpenAICompat:
         """openai-compatible profiles excluded when not available."""
         handler = server._provider_handler
         handler._profile_handler.get_all_profiles = lambda: {
-            "ollama-prof": {"provider": "ollama"},
+            "local-prof": {"provider": "llama-server"},
             "oai-prof": {"provider": "openai-compatible"},
         }
         providers = {
-            "ollama": {"available": True},
+            "llama-server": {"available": True},
             "openai-compatible": {"available": False},
         }
         result = handler._suggest_local_alternatives(providers)
-        assert "ollama-prof" in result
+        assert "local-prof" in result
         assert "oai-prof" not in result
 
 

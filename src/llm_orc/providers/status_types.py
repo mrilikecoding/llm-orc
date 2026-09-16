@@ -14,13 +14,14 @@ class AgentStatus(StrEnum):
     MODEL_UNAVAILABLE = "model_unavailable"
 
 
-class OllamaProviderStatus(BaseModel):
-    """Status of the Ollama provider."""
+class LlamaServerProviderStatus(BaseModel):
+    """Status of the llama-server router (#90): reachable, and what it serves."""
 
     available: bool
     models: list[str] = Field(default_factory=list)
     model_count: int = 0
     reason: str = ""
+    base_url: str = ""
 
 
 class CloudProviderStatus(BaseModel):
