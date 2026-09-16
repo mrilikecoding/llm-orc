@@ -96,7 +96,7 @@ class TestServeCLI:
     def test_serve_command_labels_output_as_agentic_serving(self) -> None:
         runner = CliRunner()
         with patch("uvicorn.run"):
-            result = runner.invoke(cli, ["serve", "--port", "0"])
+            result = runner.invoke(cli, ["serve", "--port", "0", "--no-backend"])
 
         assert result.exit_code == 0
         assert "agentic serving layer" in result.stderr
