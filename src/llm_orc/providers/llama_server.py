@@ -125,6 +125,41 @@ def render_preset(
     return RenderedPreset("\n".join(lines) + "\n", models, missing)
 
 
+class LlamaServerClient:
+    """The router's management surface (``/models``), whether the router
+    is one this process owns or one reached by URL."""
+
+    def __init__(self, root_url: str) -> None:
+        self.root_url = root_url.rstrip("/")
+
+    @classmethod
+    def from_base_url(cls, base_url: str) -> "LlamaServerClient":
+        """From the OpenAI-compatible base URL the factory uses
+        (``.../v1``) to the router root it hangs off."""
+        root = base_url.rstrip("/")
+        if root.endswith("/v1"):
+            root = root[: -len("/v1")]
+        return cls(root)
+
+    def models(self) -> list[dict[str, Any]]:
+        """The router's model list with per-model load status."""
+        with urllib.request.urlopen(f"{self.root_url}/models", timeout=5) as resp:
+            data = json.load(resp)
+        models = data.get("data", [])
+        return [m for m in models if isinstance(m, dict)]
+
+    def load(self, model: str) -> None:
+        """Ask the router to load (downloading if needed) one model."""
+        body = json.dumps({"model": model}).encode()
+        request = urllib.request.Request(
+            f"{self.root_url}/models/load",
+            data=body,
+            headers={"Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(request, timeout=3600) as resp:
+            json.load(resp)
+
+
 class LlamaServerSupervisor:
     """One router process, owned for the life of the serve.
 
@@ -155,8 +190,8 @@ class LlamaServerSupervisor:
         return f"http://{self.host}:{self.port}/v1"
 
     @property
-    def _root(self) -> str:
-        return f"http://{self.host}:{self.port}"
+    def client(self) -> "LlamaServerClient":
+        return LlamaServerClient(f"http://{self.host}:{self.port}")
 
     @property
     def running(self) -> bool:
@@ -212,21 +247,11 @@ class LlamaServerSupervisor:
 
     def models(self) -> list[dict[str, Any]]:
         """The router's model list with per-model load status."""
-        with urllib.request.urlopen(f"{self._root}/models", timeout=5) as resp:
-            data = json.load(resp)
-        models = data.get("data", [])
-        return [m for m in models if isinstance(m, dict)]
+        return self.client.models()
 
     def load(self, model: str) -> None:
         """Ask the router to load (downloading if needed) one model."""
-        body = json.dumps({"model": model}).encode()
-        request = urllib.request.Request(
-            f"{self._root}/models/load",
-            data=body,
-            headers={"Content-Type": "application/json"},
-        )
-        with urllib.request.urlopen(request, timeout=3600) as resp:
-            json.load(resp)
+        self.client.load(model)
 
 
 PRESET_FILENAME = "llama-server.ini"
