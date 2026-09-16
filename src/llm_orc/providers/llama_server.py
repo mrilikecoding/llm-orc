@@ -345,7 +345,7 @@ def install_signal_stop(
     signal take its default course so the exit status stays honest.
     """
 
-    def _stop_then_die(signum: int, frame: FrameType | None) -> None:
+    def _stop_then_die(signum: int, _frame: FrameType | None) -> None:
         supervisor.stop()
         signal.signal(signum, signal.SIG_DFL)
         signal.raise_signal(signum)
