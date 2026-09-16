@@ -1,4 +1,4 @@
-model: llama3:latest
+model: qwen3-8b
 name: ollama-llama3
-provider: ollama
+provider: llama-server
 timeout_seconds: 90
