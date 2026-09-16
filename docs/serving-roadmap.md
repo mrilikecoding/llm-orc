@@ -63,9 +63,11 @@ buy-back ledger tracks hosted seats.
 
 **Ranked index:** the GitHub project "llm-orc kanban"
 (https://github.com/users/mrilikecoding/projects/2). THIS DOCUMENT
-GOVERNS; the board is its index. Board "Done" = merged on LOCAL main;
-nothing is pushed (the push and the issue-closing that rides on it await
-the practitioner's explicit go).
+GOVERNS; the board is its index. Board "Done" = merged on main. Pushed
+2026-09-16 on the practitioner's go: the 166-commit backlog, then PR
+#186 (#90) merged and released as v0.20.0; CI is green on main again
+(two pre-existing test failures and a whole-tree format check fixed on
+the way). Pushing remains gated per push.
 
 **Practitioner directives (2026-09-16):** drop Ollama (decided, not
 debated further); the deployment target is a serve running natively on
@@ -78,8 +80,7 @@ and paid comparison runs within reason; cheaper subagents; meter usage).
 ### Merged on local main this session
 
 - **#90 — Ollama dropped; llama-server router owned by the serve**
-  (branch `feat/llama-server-backend`, 16 commits, suite 4322 passed,
-  lint 0). Evidence on the issue (spike table 2026-09-16). Shape:
+  (PR #186, released v0.20.0; suite 4322 passed, lint 0, CI green). Evidence on the issue (spike table 2026-09-16). Shape:
   `OpenAICompatibleModel` carries `options` (`think` lifted into
   `chat_template_kwargs.enable_thinking`, 60x on qwen3), sampling
   passthrough, `response_format`, and llama-server `timings` under the
