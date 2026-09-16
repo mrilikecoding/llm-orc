@@ -7,6 +7,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.20.0] - 2026-09-16
+
+Minor rather than patch because a provider is removed and an agent
+config key is renamed.
+
+### Changed
+- Local inference is a llama-server router that `llm-orc serve` owns
+  (#90). The serve renders `.llm-orc/llama-server.ini` from every
+  `provider: llama-server` profile (one section per model, the GGUF
+  source from the profile's `hf_repo`, a 40960-token context, one
+  resident model), starts the router, exports `LLAMA_SERVER_URL` to the
+  model factory, and stops it on exit. `--no-backend` uses a router
+  already at that URL. The `llama-server` binary (llama.cpp) is the
+  only local inference dependency.
+- `provider: llama-server` is the default when a model names no
+  provider, and the legacy fallback target.
+- The OpenAI-compatible model carries `options` (`think` is sent as
+  `chat_template_kwargs.enable_thinking`), `response_format` (a JSON
+  schema dict or `json`), and llama-server `timings` under
+  `prompt_eval_count` / `eval_count` on the usage record.
+- Provider status, ensemble runnability, promotion readiness, the CLI
+  provider probe, and the test-mode simulator read the router.
+- Shipped local profiles are `local-qwen3-0.6b`, `local-qwen3-1.7b`,
+  `local-qwen3-8b`, `local-qwen3-14b`; the agentic tiers name
+  `qwen3-*` and `deepseek-r1-8b` with Hugging Face sources.
+
+### Added
+- `GET /api/models` lists what the router serves with load status;
+  `POST /api/models/{name}/pull` loads (downloading first) and returns
+  once the router reports the real status.
+- `deploy/ng-mini/`: launchd unit and setup notes for a native serve
+  behind a reverse proxy.
+
+### Removed
+- The Ollama provider, model class, and `ollama` dependency. Model names
+  for local models must not contain a colon (`qwen3:8b` becomes
+  `qwen3-8b`) or a slash.
+
+### Renamed
+- Agent config `ollama_format` is now `response_format` (same values).
+
 ## [0.19.0] - 2026-08-17
 
 Minor rather than patch because a shipped default changes: the script
