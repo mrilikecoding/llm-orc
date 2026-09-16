@@ -6,7 +6,7 @@
   <string>com.llm-orc.serve</string>
   <key>ProgramArguments</key>
   <array>
-    <string>/Users/nathanielgreen/Development/llm-orc/.venv/bin/llm-orc</string>
+    <string>/usr/local/bin/llm-orc</string>
     <string>serve</string>
     <string>--host</string>
     <string>127.0.0.1</string>

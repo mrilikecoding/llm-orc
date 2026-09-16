@@ -43,6 +43,11 @@ mini needs, install it from Homebrew instead and point the plist's
     brew tap mrilikecoding/llm-orchestra && brew install llm-orchestra
     which llm-orc                                     # /usr/local/bin/llm-orc
 
+The plist already names `/usr/local/bin/llm-orc` (the Intel brew prefix).
+`WorkingDirectory` stays the checkout: the serve's project (`.llm-orc/`,
+the serving ensembles and profiles) is tracked in the repo and not in
+the wheel (#196), so ensemble changes still arrive by `git pull` there.
+
 `git push ng-mini main` into the checkout (remote set up 2026-09-16,
 `receive.denyCurrentBranch=updateInstead`) is for emergencies the
 practitioner okays, not the normal path.
