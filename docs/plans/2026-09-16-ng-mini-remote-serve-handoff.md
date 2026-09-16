@@ -146,7 +146,7 @@ Tuning `num_ctx`/`--models-max` for throughput; measure first.
 
 ## Result (2026-09-16, afternoon)
 
-Steps 0-4 and 6 done; step 5 (HTTPS) open; acceptance 1-2 pass, 3-4 not run.
+Steps 0-6 done; acceptance 1-2 pass, 3-4 not run.
 
 Unknowns resolved:
 
@@ -163,8 +163,18 @@ Unknowns resolved:
 5. `https:enable` is `dokku certs:add` with `~/homelab/dokku/certs/`.
    That cert (and every other app's) expired 2026-08-23. `homelab
    https:renew` runs certbot with the dns-cloudflare plugin; a dry run
-   succeeded. Renewal re-certs all ten apps, so it waits for the
-   practitioner's go.
+   succeeded. Renewal re-certs all ten apps; run on the practitioner's
+   go (`echo y | homelab https:renew`, since `~/homelab/.homelab-server`
+   is absent and the script prompts). Cert now valid to 2026-12-15;
+   `https:enable llm-orc` applied; the rebuilt edge nginx kept the
+   3600 s timeouts, buffering off and 50 m body; http now 301s to https.
+   Why it lapsed: `/Library/LaunchDaemons/com.homelab.certrenew.plist`
+   runs `renew-certs.sh` as root every Sunday 03:00 with launchd's bare
+   PATH, and logs `certbot: command not found` to
+   `/tmp/homelab-certrenew.log` (last 2026-09-13). As root the script's
+   `$HOME/.homelab/certs` would also resolve to `/var/root`. Fix lives in
+   the homelab repo (PATH or absolute `/usr/local/bin/certbot`, and
+   `UserName`), needs sudo; owed before December.
 
 Measured on ng-mini, CPU-only, direct to the router:
 

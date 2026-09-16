@@ -127,11 +127,12 @@ the llama-server backend yet — that is the regression gate below.
    tok/s; the trivial write_file turn took 560 s end to end because the
    serving ensemble ran classify + build-gated round + tests at that
    speed, and classified "create a text file" as a python_module build.
-   Both numbers feed the gate below. **Still owed:** HTTPS. The homelab
-   wildcard cert expired 2026-08-23 (every app is on it); `certbot renew
-   --dry-run` succeeds, so `homelab https:renew` then `https:enable
-   llm-orc` is the fix, gated on the practitioner (re-certs all ten apps).
-   Full record: `docs/plans/2026-09-16-ng-mini-remote-serve-handoff.md`.
+   Both numbers feed the gate below. HTTPS is on (practitioner's go):
+   the homelab wildcard cert had expired 2026-08-23; renewed, valid to
+   2026-12-15, `https://llm-orc.homelab.nate.green` answers 200 and http
+   redirects. The weekly renewal daemon has been failing (root PATH lacks
+   `certbot`), a homelab-repo fix owed to the practitioner before
+   December. Full record: `docs/plans/2026-09-16-ng-mini-remote-serve-handoff.md`.
 2. **Regression gate on the new backend** (laptop or ng-mini): the ladder
    (T1 alone at r≥5 first, then the full run) and the 7-turn probe.
    Chat templating and tool-call parsing moved from Ollama's Go templates
