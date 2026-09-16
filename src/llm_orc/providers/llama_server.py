@@ -250,8 +250,12 @@ class LlamaServerSupervisor:
                 return
             except (OSError, ValueError):
                 time.sleep(0.1)
+        tail = self._stderr_tail()
         self.stop()
-        raise RuntimeError(f"llama-server not ready after {timeout_s:.0f}s")
+        raise RuntimeError(
+            f"llama-server not ready after {timeout_s:.0f}s "
+            f"(command: {' '.join(self.command())})\nlast stderr:\n{tail}"
+        )
 
     def _stderr_tail(self, lines: int = 8) -> str:
         if self._stderr is None:
