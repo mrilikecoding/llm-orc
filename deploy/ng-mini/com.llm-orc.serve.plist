@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.llm-orc.serve</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/nathanielgreen/Development/llm-orc/.venv/bin/llm-orc</string>
+    <string>serve</string>
+    <string>--host</string>
+    <string>127.0.0.1</string>
+    <string>--port</string>
+    <string>8765</string>
+    <string>--backend-port</string>
+    <string>8080</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>/Users/nathanielgreen/Development/llm-orc</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    <key>LLAMA_CACHE</key>
+    <string>/Users/nathanielgreen/Library/Caches/llama.cpp</string>
+  </dict>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>/Users/nathanielgreen/Library/Logs/llm-orc-serve.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/nathanielgreen/Library/Logs/llm-orc-serve.log</string>
+</dict>
+</plist>
