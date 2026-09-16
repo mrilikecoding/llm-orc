@@ -225,7 +225,7 @@ class TestModelFactory:
         model_factory: ModelFactory,
         mock_credential_storage: Mock,
     ) -> None:
-        """Test exception when no auth for non-ollama provider."""
+        """Test exception when no auth for cloud provider."""
         mock_credential_storage.get_auth_method.return_value = None
 
         with pytest.raises(ValueError, match=r"No authentication configured"):
@@ -359,12 +359,12 @@ class TestModelFactory:
         with pytest.raises(Exception, match=r"Auth error"):
             await model_factory.load_model("unknown-model")
 
-    async def test_get_fallback_model_with_configured_test_profile_ollama(
+    async def test_get_fallback_model_with_configured_test_profile_local(
         self,
         model_factory: ModelFactory,
         mock_config_manager: Mock,
     ) -> None:
-        """Test fallback with configured test profile (ollama)."""
+        """Test fallback with a configured local test profile."""
         mock_config_manager.load_project_config.return_value = {
             "project": {"default_models": {"test": "test-local"}}
         }
@@ -385,12 +385,12 @@ class TestModelFactory:
             )
             mock_load.assert_called_once_with("qwen3-8b", "llama-server")
 
-    async def test_get_fallback_model_with_configured_test_profile_non_ollama(
+    async def test_get_fallback_model_with_configured_test_profile_cloud(
         self,
         model_factory: ModelFactory,
         mock_config_manager: Mock,
     ) -> None:
-        """Test fallback with non-ollama configured profile."""
+        """Test fallback with a cloud configured profile."""
         mock_config_manager.load_project_config.return_value = {
             "project": {"default_models": {"test": "expensive-model"}}
         }
@@ -646,7 +646,7 @@ class TestLoadModelHelperMethods:
     def test_handle_no_authentication_other_provider_raises(
         self,
     ) -> None:
-        """Test no auth handler raises for non-ollama providers."""
+        """Test no auth handler raises for cloud providers."""
         with pytest.raises(ValueError, match="No authentication configured"):
             _handle_no_authentication("claude-3-sonnet", "anthropic")
 
@@ -871,7 +871,7 @@ class TestOptionsPassThrough:
         assert isinstance(model, OpenAICompatibleModel)
         assert model._options == {"num_ctx": 8192}
 
-    async def test_load_model_non_ollama_ignores_options(
+    async def test_load_model_cloud_provider_ignores_options(
         self, factory: ModelFactory
     ) -> None:
         """Cloud providers don't break when options is passed."""

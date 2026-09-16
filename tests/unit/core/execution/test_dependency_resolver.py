@@ -535,7 +535,7 @@ class TestDependencyResolver:
             ),
             LlmAgentConfig(
                 name="llm_agent",
-                model_profile="ollama-llama3",
+                model_profile="local-qwen3-8b",
                 depends_on=["source"],
             ),
         ]
@@ -685,7 +685,7 @@ class TestFanOutInputPreparation:
 
         instance_config = LlmAgentConfig(
             name="extractor[1]",
-            model_profile="ollama-llama3",
+            model_profile="local-qwen3-8b",
             fan_out_chunk="Scene 2 dialogue",
             fan_out_index=1,
             fan_out_total=3,
