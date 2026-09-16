@@ -437,6 +437,10 @@ def test_a_healthy_seat_contract_is_not_a_failure() -> None:
 
 _HOME = str(Path.home())
 _USER = _HOME.rsplit("/", 1)[-1]
+# Words the report's own fixed vocabulary uses. A machine whose user is
+# named one of them (GitHub Actions runs as ``runner``, and the report says
+# "runner crashed") is not a leak of the username.
+_REPORT_VOCABULARY = {"runner"}
 _ARGV = f"'['{sys.executable}', '{REPO}/.llm-orc/scripts/agentic_serving/classify.py']'"
 
 
@@ -745,7 +749,8 @@ def test_the_executor_report_names_no_path_or_user(label: str, code: str) -> Non
     report = _executor_report(code)
 
     assert _HOME not in report, f"{label}: {report!r}"
-    assert _USER not in report, f"{label}: {report!r}"
+    if _USER not in _REPORT_VOCABULARY:
+        assert _USER not in report, f"{label}: {report!r}"
 
 
 def test_a_failing_test_names_no_path_or_user() -> None:
