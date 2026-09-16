@@ -273,7 +273,7 @@ class TestCLI:
         # Should include the specific provider keys
         assert "anthropic-api" in provider_keys
         assert "google-gemini" in provider_keys
-        assert "ollama" in provider_keys
+        assert "llama-server" in provider_keys
 
         # Should not include generic "anthropic" or "google"
         assert "anthropic" not in provider_keys
@@ -370,7 +370,7 @@ class TestCLI:
 
                     # Should only include authenticated provider
                     assert "anthropic-api" in providers
-                    assert "ollama" not in providers
+                    assert "llama-server" not in providers
                     assert len(providers) == 1
 
     def test_config_check_global_command_exists(self) -> None:

@@ -14,7 +14,7 @@ class TestProfilesAPI:
             mock_service = MagicMock()
             mock_service.read_profiles = AsyncMock(
                 return_value=[
-                    {"name": "default", "provider": "ollama", "model": "llama3"}
+                    {"name": "default", "provider": "llama-server", "model": "llama3"}
                 ]
             )
             mock_get_svc.return_value = mock_service
@@ -38,7 +38,11 @@ class TestProfilesAPI:
 
             response = client.post(
                 "/api/profiles",
-                json={"name": "new-profile", "provider": "ollama", "model": "gemma2"},
+                json={
+                    "name": "new-profile",
+                    "provider": "llama-server",
+                    "model": "gemma2",
+                },
             )
 
             assert response.status_code == 200

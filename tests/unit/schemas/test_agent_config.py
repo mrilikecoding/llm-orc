@@ -30,12 +30,12 @@ class TestLlmAgentConfigParsing:
         data: dict[str, Any] = {
             "name": "quick-test",
             "model": "llama3",
-            "provider": "ollama",
+            "provider": "llama-server",
         }
         config = parse_agent_config(data)
         assert isinstance(config, LlmAgentConfig)
         assert config.model == "llama3"
-        assert config.provider == "ollama"
+        assert config.provider == "llama-server"
 
     def test_llm_agent_with_all_optional_fields(self) -> None:
         data: dict[str, Any] = {
@@ -93,7 +93,7 @@ class TestProfileXorInlineModel:
             "name": "test",
             "model_profile": "gpt4",
             "model": "llama3",
-            "provider": "ollama",
+            "provider": "llama-server",
         }
         with pytest.raises(ValidationError):
             parse_agent_config(data)
@@ -557,23 +557,23 @@ class TestEnsembleAgentInDependencyChain:
 
 
 class TestOptionsFlowFromProfileToModel:
-    """Scenario: options from profile YAML reach OllamaModel."""
+    """Scenario: options from profile YAML reach the router-backed model."""
 
     @pytest.mark.asyncio
-    async def test_profile_options_reach_ollama_model(self) -> None:
-        """End-to-end: profile with options -> factory -> OllamaModel."""
+    async def test_profile_options_reach_local_model(self) -> None:
+        """End-to-end: profile with options -> factory -> local model."""
         from unittest.mock import Mock
 
         from llm_orc.core.models.model_factory import ModelFactory
 
         config_manager = Mock()
         config_manager.resolve_model_profile.return_value = (
-            "qwen3:8b",
-            "ollama",
+            "qwen3-8b",
+            "llama-server",
         )
         config_manager.get_model_profile.return_value = {
-            "model": "qwen3:8b",
-            "provider": "ollama",
+            "model": "qwen3-8b",
+            "provider": "llama-server",
             "options": {"num_ctx": 8192, "top_k": 40},
         }
 
@@ -591,7 +591,7 @@ class TestOptionsFlowFromProfileToModel:
 
         model = await factory.load_model_from_agent_config(config_dict)
 
-        from llm_orc.models.ollama import OllamaModel
+        from llm_orc.models.openai_compat import OpenAICompatibleModel
 
-        assert isinstance(model, OllamaModel)
+        assert isinstance(model, OpenAICompatibleModel)
         assert model._options == {"num_ctx": 8192, "top_k": 20, "top_p": 0.8}

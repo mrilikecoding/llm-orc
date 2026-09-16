@@ -166,7 +166,7 @@ class TestConfigurationManager:
     provider: anthropic
   micro-local:
     model: llama3.2
-    provider: ollama
+    provider: llama-server
   validate-anthropic-api:
     model: claude-3-haiku-20240307
     provider: anthropic
@@ -494,7 +494,7 @@ agents:
             profile_data = {
                 "name": "analyst-qwen",
                 "model": "qwen3:0.6b",
-                "provider": "ollama",
+                "provider": "llama-server",
             }
             profile_file = profiles_dir / "analyst-qwen.yaml"
             with open(profile_file, "w") as f:
@@ -510,7 +510,7 @@ agents:
 
                 assert "analyst-qwen" in profiles
                 assert profiles["analyst-qwen"]["model"] == "qwen3:0.6b"
-                assert profiles["analyst-qwen"]["provider"] == "ollama"
+                assert profiles["analyst-qwen"]["provider"] == "llama-server"
 
     def test_local_override_profile_wins_over_the_base_file(self) -> None:
         """A ``*.local.yaml`` profile (operator-private, gitignored) wins over
@@ -524,7 +524,11 @@ agents:
             profiles_dir.mkdir()
             with open(profiles_dir / "tier-general.yaml", "w") as f:
                 yaml.dump(
-                    {"name": "tier-general", "model": "qwen3:8b", "provider": "ollama"},
+                    {
+                        "name": "tier-general",
+                        "model": "qwen3:8b",
+                        "provider": "llama-server",
+                    },
                     f,
                 )
             # sorts BEFORE the base file — precedence must not be glob-order
@@ -558,7 +562,7 @@ agents:
             profile_data = {
                 "name": "analyst-qwen",
                 "model": "qwen3:0.6b",
-                "provider": "ollama",
+                "provider": "llama-server",
             }
             with open(profiles_dir / "analyst-qwen.yaml", "w") as f:
                 yaml.dump(profile_data, f)
@@ -572,7 +576,7 @@ agents:
                 model, provider = config_manager.resolve_model_profile("analyst-qwen")
 
                 assert model == "qwen3:0.6b"
-                assert provider == "ollama"
+                assert provider == "llama-server"
 
     def test_agentic_serving_section_tolerates_a_bare_yaml_key(self) -> None:
         """A bare `agentic_serving:` header (YAML null) or scalar value must
