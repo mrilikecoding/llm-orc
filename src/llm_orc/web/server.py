@@ -18,10 +18,11 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.routing import Route
 
+from llm_orc.mcp.server import MCPServer
 from llm_orc.web.api import (
     artifacts,
     ensembles,
-    get_mcp_server,
+    get_orchestra_service,
     models,
     profiles,
     scripts,
@@ -49,9 +50,11 @@ def create_app() -> FastAPI:
     Returns:
         Configured FastAPI application instance.
     """
-    # Built once here so REST, /v1, and the /mcp mount below all share
-    # the same OrchestraService (docs/plans/2026-09-16-mcp-in-serve.md).
-    mcp_server = get_mcp_server()
+    # A fresh MCPServer per app (each owns its own FastMCP session
+    # manager, which can only run() once), but built on the shared
+    # OrchestraService so REST, /v1, and the /mcp mount below all see
+    # the same project state (docs/plans/2026-09-16-mcp-in-serve.md).
+    mcp_server = MCPServer(service=get_orchestra_service())
     mcp_app = mcp_server.streamable_http_app()
 
     @asynccontextmanager
