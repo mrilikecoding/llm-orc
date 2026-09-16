@@ -582,7 +582,7 @@ class PromotionHandler:
             agent: Agent configuration object.
             all_profiles: All available profiles by name.
             providers: Provider status dict.
-            local_models: List of available Ollama model names.
+            local_models: Model names the llama-server router serves.
 
         Returns:
             Agent dependency info dict.

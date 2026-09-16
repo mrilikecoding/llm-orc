@@ -21,7 +21,6 @@ from llm_orc.models.anthropic import (
     ClaudeModel,
 )
 from llm_orc.models.mock import MockModel
-from llm_orc.models.ollama import OllamaModel
 from llm_orc.models.openai_compat import OpenAICompatibleModel
 
 
@@ -159,7 +158,7 @@ class TestModelFactory:
         """Test that temperature and max_tokens are forwarded."""
         agent_config = {
             "model": "llama2",
-            "provider": "ollama",
+            "provider": "llama-server",
             "temperature": 0.7,
             "max_tokens": 500,
         }
@@ -173,7 +172,7 @@ class TestModelFactory:
 
             mock_load.assert_called_once_with(
                 "llama2",
-                "ollama",
+                "llama-server",
                 temperature=0.7,
                 max_tokens=500,
                 options=None,
@@ -200,106 +199,6 @@ class TestModelFactory:
         assert hasattr(model, "generate_response")
         response = await model.generate_response("test", "system prompt")
         assert "test" in response.lower()
-
-    async def test_load_model_no_auth_ollama_provider(
-        self,
-        model_factory: ModelFactory,
-        mock_credential_storage: Mock,
-    ) -> None:
-        """Test loading model with ollama provider and no auth."""
-        mock_credential_storage.get_auth_method.return_value = None
-
-        model = await model_factory.load_model("llama3", "ollama")
-
-        assert isinstance(model, OllamaModel)
-        assert model.model_name == "llama3"
-
-    async def test_load_model_ollama_with_params(
-        self,
-        model_factory: ModelFactory,
-        mock_credential_storage: Mock,
-    ) -> None:
-        """Test temperature/max_tokens forwarded to OllamaModel."""
-        mock_credential_storage.get_auth_method.return_value = None
-
-        model = await model_factory.load_model(
-            "llama3",
-            "ollama",
-            temperature=0.5,
-            max_tokens=200,
-        )
-
-        assert isinstance(model, OllamaModel)
-        assert model.temperature == 0.5
-        assert model.max_tokens == 200
-
-    async def test_load_model_no_auth_llama_server_provider(
-        self,
-        model_factory: ModelFactory,
-        mock_credential_storage: Mock,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        """llama-server (#90) is an OpenAI-compatible transport whose base
-        URL comes from LLAMA_SERVER_URL; options and format ride through."""
-        mock_credential_storage.get_auth_method.return_value = None
-        monkeypatch.setenv("LLAMA_SERVER_URL", "http://ng-mini:8080/v1")
-
-        model = await model_factory.load_model(
-            "qwen3-8b",
-            "llama-server",
-            temperature=0.5,
-            max_tokens=200,
-            options={"think": False},
-            ollama_format="json",
-        )
-
-        assert isinstance(model, OpenAICompatibleModel)
-        assert model.model_name == "qwen3-8b"
-        assert model.base_url == "http://ng-mini:8080/v1"
-        assert model.temperature == 0.5
-        assert model.max_tokens == 200
-        assert model._options == {"think": False}
-        assert model._response_format == "json"
-
-    async def test_load_model_llama_server_default_url_and_profile_override(
-        self,
-        model_factory: ModelFactory,
-        mock_credential_storage: Mock,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        mock_credential_storage.get_auth_method.return_value = None
-        monkeypatch.delenv("LLAMA_SERVER_URL", raising=False)
-
-        default = await model_factory.load_model("qwen3-8b", "llama-server")
-        override = await model_factory.load_model(
-            "qwen3-8b", "llama-server", base_url="http://127.0.0.1:9090/v1"
-        )
-
-        assert isinstance(default, OpenAICompatibleModel)
-        assert default.base_url == "http://127.0.0.1:8080/v1"
-        assert isinstance(override, OpenAICompatibleModel)
-        assert override.base_url == "http://127.0.0.1:9090/v1"
-
-    async def test_load_model_openai_compatible_no_auth_carries_options(
-        self,
-        model_factory: ModelFactory,
-        mock_credential_storage: Mock,
-    ) -> None:
-        """A scoped openai-compatible profile (e.g. a llama-server on another
-        box) keeps its options and format instead of dropping them."""
-        mock_credential_storage.get_auth_method.return_value = None
-
-        model = await model_factory.load_model(
-            "qwen3-8b",
-            "openai-compatible/ng-mini",
-            base_url="http://ng-mini:8080/v1",
-            options={"think": False},
-            ollama_format="json",
-        )
-
-        assert isinstance(model, OpenAICompatibleModel)
-        assert model._options == {"think": False}
-        assert model._response_format == "json"
 
     async def test_load_model_api_key_claude_with_params(
         self,
@@ -744,22 +643,6 @@ class TestLoadModelHelperMethods:
         assert isinstance(result, OpenAICompatibleModel)
         assert result.model_name == "qwen3-8b"
 
-    def test_handle_no_authentication_ollama_provider(
-        self,
-    ) -> None:
-        """Test no auth handler with explicit Ollama provider."""
-        result = _handle_no_authentication(
-            "llama3",
-            "ollama",
-            temperature=0.5,
-            max_tokens=200,
-        )
-
-        assert isinstance(result, OllamaModel)
-        assert result.model_name == "llama3"
-        assert result.temperature == 0.5
-        assert result.max_tokens == 200
-
     def test_handle_no_authentication_other_provider_raises(
         self,
     ) -> None:
@@ -896,7 +779,7 @@ class TestMergeOptions:
 
 
 class TestOptionsPassThrough:
-    """Scenario: options threaded from config to OllamaModel."""
+    """Scenario: options threaded from config to the router-backed model."""
 
     @pytest.fixture
     def factory(self) -> ModelFactory:
@@ -911,7 +794,7 @@ class TestOptionsPassThrough:
         """Options from agent config dict reach load_model."""
         agent_config = {
             "model": "qwen3:8b",
-            "provider": "ollama",
+            "provider": "llama-server",
             "options": {"num_ctx": 8192, "top_k": 20},
         }
 
@@ -919,7 +802,7 @@ class TestOptionsPassThrough:
             await factory.load_model_from_agent_config(agent_config)
             mock_load.assert_called_once_with(
                 "qwen3:8b",
-                "ollama",
+                "llama-server",
                 temperature=None,
                 max_tokens=None,
                 options={"num_ctx": 8192, "top_k": 20},
@@ -930,13 +813,13 @@ class TestOptionsPassThrough:
         self, factory: ModelFactory
     ) -> None:
         """No options field passes None (backward compat)."""
-        agent_config = {"model": "llama3", "provider": "ollama"}
+        agent_config = {"model": "llama3", "provider": "llama-server"}
 
         with patch.object(factory, "load_model", return_value=AsyncMock()) as mock_load:
             await factory.load_model_from_agent_config(agent_config)
             mock_load.assert_called_once_with(
                 "llama3",
-                "ollama",
+                "llama-server",
                 temperature=None,
                 max_tokens=None,
                 options=None,
@@ -950,11 +833,11 @@ class TestOptionsPassThrough:
         config_mock = cast(Mock, factory._config_manager)
         config_mock.resolve_model_profile.return_value = (
             "qwen3:8b",
-            "ollama",
+            "llama-server",
         )
         config_mock.get_model_profile.return_value = {
             "model": "qwen3:8b",
-            "provider": "ollama",
+            "provider": "llama-server",
             "options": {"num_ctx": 8192, "top_k": 40},
         }
 
@@ -967,7 +850,7 @@ class TestOptionsPassThrough:
             await factory.load_model_from_agent_config(agent_config)
             mock_load.assert_called_once_with(
                 "qwen3:8b",
-                "ollama",
+                "llama-server",
                 temperature=None,
                 max_tokens=None,
                 options={"num_ctx": 8192, "top_k": 20, "top_p": 0.8},
@@ -975,23 +858,23 @@ class TestOptionsPassThrough:
                 base_url=None,
             )
 
-    async def test_load_model_forwards_options_to_ollama(
+    async def test_load_model_forwards_options_to_llama_server(
         self, factory: ModelFactory
     ) -> None:
-        """load_model passes options to OllamaModel constructor."""
+        """load_model passes options to the router-backed model."""
         model = await factory.load_model(
-            "qwen3:8b",
-            "ollama",
+            "qwen3-8b",
+            "llama-server",
             options={"num_ctx": 8192},
         )
 
-        assert isinstance(model, OllamaModel)
+        assert isinstance(model, OpenAICompatibleModel)
         assert model._options == {"num_ctx": 8192}
 
     async def test_load_model_non_ollama_ignores_options(
         self, factory: ModelFactory
     ) -> None:
-        """Non-Ollama providers don't break when options is passed."""
+        """Cloud providers don't break when options is passed."""
         storage_mock = cast(Mock, factory._credential_storage)
         storage_mock.get_auth_method.return_value = "api_key"
         storage_mock.get_api_key.return_value = "test-key"
@@ -1006,7 +889,7 @@ class TestOptionsPassThrough:
 
 
 class TestOllamaFormatPassThrough:
-    """Scenario: ollama_format threaded from agent config to OllamaModel."""
+    """Scenario: ollama_format threaded from agent config to the router-backed model."""
 
     @pytest.fixture
     def factory(self) -> ModelFactory:
@@ -1022,7 +905,7 @@ class TestOllamaFormatPassThrough:
         schema = {"type": "object", "properties": {"name": {"type": "string"}}}
         agent_config = {
             "model": "qwen3:14b",
-            "provider": "ollama",
+            "provider": "llama-server",
             "ollama_format": schema,
         }
 
@@ -1030,7 +913,7 @@ class TestOllamaFormatPassThrough:
             await factory.load_model_from_agent_config(agent_config)
             mock_load.assert_called_once_with(
                 "qwen3:14b",
-                "ollama",
+                "llama-server",
                 temperature=None,
                 max_tokens=None,
                 options=None,
@@ -1039,45 +922,45 @@ class TestOllamaFormatPassThrough:
 
     async def test_ollama_format_none_when_absent(self, factory: ModelFactory) -> None:
         """No ollama_format passes None (backward compat)."""
-        agent_config = {"model": "llama3", "provider": "ollama"}
+        agent_config = {"model": "llama3", "provider": "llama-server"}
 
         with patch.object(factory, "load_model", return_value=AsyncMock()) as mock_load:
             await factory.load_model_from_agent_config(agent_config)
             mock_load.assert_called_once_with(
                 "llama3",
-                "ollama",
+                "llama-server",
                 temperature=None,
                 max_tokens=None,
                 options=None,
                 ollama_format=None,
             )
 
-    async def test_load_model_forwards_format_to_ollama(
+    async def test_load_model_forwards_format_to_llama_server(
         self, factory: ModelFactory
     ) -> None:
-        """load_model passes ollama_format to OllamaModel constructor."""
+        """load_model passes the format to the router-backed model."""
         schema = {"type": "object"}
         model = await factory.load_model(
-            "qwen3:14b",
-            "ollama",
+            "qwen3-14b",
+            "llama-server",
             ollama_format=schema,
         )
 
-        assert isinstance(model, OllamaModel)
-        assert model._format == schema
+        assert isinstance(model, OpenAICompatibleModel)
+        assert model._response_format == schema
 
-    async def test_load_model_string_format_to_ollama(
+    async def test_load_model_string_format_to_llama_server(
         self, factory: ModelFactory
     ) -> None:
-        """load_model passes string 'json' format to OllamaModel."""
+        """load_model passes string 'json' format to the router-backed model."""
         model = await factory.load_model(
-            "qwen3:14b",
-            "ollama",
+            "qwen3-14b",
+            "llama-server",
             ollama_format="json",
         )
 
-        assert isinstance(model, OllamaModel)
-        assert model._format == "json"
+        assert isinstance(model, OpenAICompatibleModel)
+        assert model._response_format == "json"
 
 
 class TestIsOpenAICompatible:

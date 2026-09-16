@@ -85,7 +85,6 @@ class TestProviderRegistry:
         provider_keys = [p.key for p in providers]
         assert "anthropic-api" in provider_keys
         assert "google-gemini" in provider_keys
-        assert "ollama" in provider_keys
 
     def test_register_custom_provider(self) -> None:
         """Test registering a custom provider."""
@@ -144,9 +143,7 @@ class TestProviderRegistry:
         registry = ProviderRegistry()
         no_auth_providers = registry.get_no_auth_providers()
 
-        # Should include ollama
         no_auth_keys = [p.key for p in no_auth_providers]
-        assert "ollama" in no_auth_keys
         # llama-server (#90): local router, no auth
         assert "llama-server" in no_auth_keys
 

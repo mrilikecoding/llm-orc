@@ -56,12 +56,12 @@ class HelpHandler:
                     "agents": [
                         {
                             "name": "security-reviewer",
-                            "model_profile": "ollama-llama3",
+                            "model_profile": "local-qwen3-8b",
                             "system_prompt": ("Focus on security issues..."),
                         },
                         {
                             "name": "synthesizer",
-                            "model_profile": "ollama-llama3",
+                            "model_profile": "local-qwen3-8b",
                             "depends_on": ["security-reviewer"],
                             "system_prompt": ("Synthesize the analysis..."),
                         },
@@ -72,14 +72,15 @@ class HelpHandler:
                 "description": "Model configuration shortcut",
                 "required_fields": ["provider", "model"],
                 "example": {
-                    "name": "ollama-llama3",
-                    "provider": "ollama",
-                    "model": "llama3:latest",
+                    "name": "local-qwen3-8b",
+                    "provider": "llama-server",
+                    "model": "qwen3-8b",
+                    "hf_repo": "unsloth/Qwen3-8B-GGUF:Q4_K_M",
                     "system_prompt": ("You are a helpful assistant."),
                     "timeout_seconds": 60,
                 },
                 "providers": [
-                    "ollama",
+                    "llama-server",
                     "anthropic-api",
                     "google-gemini",
                     "openai-compatible",
@@ -92,6 +93,7 @@ class HelpHandler:
                     "cost_per_token",
                     "options",
                     "base_url",
+                    "hf_repo",
                 ],
             },
             "agent": {

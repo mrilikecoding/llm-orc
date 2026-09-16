@@ -28,7 +28,6 @@ dependencies = [
     "pydantic>=2.12",
     "anthropic",
     "google-genai",
-    "ollama",
     "click>=8.3.3",
     "pyyaml",
     "cryptography",

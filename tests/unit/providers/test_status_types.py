@@ -179,7 +179,7 @@ class TestAgentRunnability:
         agent = AgentRunnability(
             name="agent1",
             profile="fast",
-            provider="ollama",
+            provider="llama-server",
             status=AgentStatus.AVAILABLE,
             alternatives=[],
         )
@@ -187,7 +187,7 @@ class TestAgentRunnability:
         assert dumped == {
             "name": "agent1",
             "profile": "fast",
-            "provider": "ollama",
+            "provider": "llama-server",
             "status": "available",
             "alternatives": [],
         }
@@ -201,7 +201,7 @@ class TestEnsembleRunnability:
         agent = AgentRunnability(
             name="agent1",
             profile="fast",
-            provider="ollama",
+            provider="llama-server",
         )
         ensemble = EnsembleRunnability(
             ensemble="test-ensemble",

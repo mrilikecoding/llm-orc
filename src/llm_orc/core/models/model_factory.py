@@ -12,7 +12,6 @@ from llm_orc.models.anthropic import (
 )
 from llm_orc.models.base import ModelInterface
 from llm_orc.models.mock import MockModel
-from llm_orc.models.ollama import OllamaModel
 from llm_orc.models.openai_compat import OpenAICompatibleModel
 
 logger = logging.getLogger(__name__)
@@ -115,7 +114,7 @@ class ModelFactory:
             provider: Optional provider name
             temperature: Optional temperature for generation
             max_tokens: Optional max tokens for generation
-            options: Optional provider-specific options (e.g. Ollama options)
+            options: Optional provider-specific options (e.g. sampling params)
             ollama_format: Optional Ollama response format
             base_url: Optional base URL for OpenAI-compatible endpoints
 
@@ -357,7 +356,7 @@ def _handle_no_authentication(
         provider: Optional provider name
         temperature: Optional temperature for generation
         max_tokens: Optional max tokens for generation
-        options: Optional provider-specific options forwarded to OllamaModel
+        options: Optional provider-specific options forwarded to local models
         ollama_format: Optional Ollama response format
         base_url: Optional base URL for OpenAI-compatible endpoints
 
@@ -367,15 +366,7 @@ def _handle_no_authentication(
     Raises:
         ValueError: If the provider requires authentication
     """
-    if provider == "ollama":
-        return OllamaModel(
-            model_name=model_name,
-            temperature=temperature,
-            max_tokens=max_tokens,
-            options=options,
-            ollama_format=ollama_format,
-        )
-    elif provider == LLAMA_SERVER_PROVIDER:
+    if provider == LLAMA_SERVER_PROVIDER:
         # llama-server (#90): OpenAI-compatible transport, no auth; the
         # router's URL comes from the profile or the environment.
         return OpenAICompatibleModel(
