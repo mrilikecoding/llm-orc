@@ -74,7 +74,7 @@ class TestServeCLI:
         """Both commands must call the same app factory via uvicorn.run."""
         runner = CliRunner()
         with patch("uvicorn.run") as mock_uvicorn:
-            runner.invoke(cli, ["serve", "--port", "0"])
+            runner.invoke(cli, ["serve", "--port", "0", "--no-backend"])
             serve_app = mock_uvicorn.call_args.args[0]
 
             mock_uvicorn.reset_mock()
