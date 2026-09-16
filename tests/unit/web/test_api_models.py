@@ -26,15 +26,29 @@ class TestModelsApi:
             ]
         }
 
-    def test_pull_loads_the_named_model(self, client: TestClient) -> None:
+    def test_pull_waits_for_the_load_and_reports_the_real_status(
+        self, client: TestClient
+    ) -> None:
+        """The router's load call returns as soon as loading starts (e2e
+        2026-09-16: 'loaded' reported while the status was 'loading'); pull
+        answers only once the router says otherwise."""
         router = MagicMock()
+        router.models.side_effect = [
+            [{"id": "qwen3-14b", "status": {"value": "loading"}}],
+            [{"id": "qwen3-14b", "status": {"value": "loading"}}],
+            [{"id": "qwen3-14b", "status": {"value": "loaded"}}],
+        ]
 
-        with patch("llm_orc.web.api.models.router_client", return_value=router):
+        with (
+            patch("llm_orc.web.api.models.router_client", return_value=router),
+            patch("llm_orc.web.api.models.time.sleep"),
+        ):
             response = client.post("/api/models/qwen3-14b/pull")
 
         assert response.status_code == 200
         assert response.json() == {"name": "qwen3-14b", "status": "loaded"}
         router.load.assert_called_once_with("qwen3-14b")
+        assert router.models.call_count == 3
 
     def test_unreachable_router_is_a_503_not_a_500(self, client: TestClient) -> None:
         router = MagicMock()

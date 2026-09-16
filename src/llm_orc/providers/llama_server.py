@@ -9,13 +9,16 @@ project knows how a model gets onto the box.
 """
 
 import json
+import signal
 import subprocess
+import tempfile
 import time
 import urllib.request
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from types import FrameType
+from typing import IO, Any
 
 LLAMA_SERVER_PROVIDER = "llama-server"
 
@@ -61,6 +64,11 @@ def _served_model(profile: Mapping[str, Any]) -> str | None:
         raise ValueError(
             f"llama-server model name {model!r} contains a colon; the router "
             "rewrites 'name:tag' as a Hugging Face tag (use 'name-tag')"
+        )
+    if "/" in model:
+        raise ValueError(
+            f"llama-server model name {model!r} contains a slash; the router "
+            "lists raw cache entries as 'user/repo:tag' and the client hides them"
         )
     return model
 
@@ -125,6 +133,11 @@ def render_preset(
     return RenderedPreset("\n".join(lines) + "\n", models, missing)
 
 
+def _is_preset_model(model: Mapping[str, Any]) -> bool:
+    model_id = str(model.get("id", ""))
+    return model_id != "default" and "/" not in model_id
+
+
 class LlamaServerClient:
     """The router's management surface (``/models``), whether the router
     is one this process owns or one reached by URL."""
@@ -146,7 +159,11 @@ class LlamaServerClient:
         with urllib.request.urlopen(f"{self.root_url}/models", timeout=5) as resp:
             data = json.load(resp)
         models = data.get("data", [])
-        return [m for m in models if isinstance(m, dict)]
+        # Router mode lists a ``default`` entry for its own command line
+        # and one raw ``user/repo:tag`` entry per cached Hugging Face file
+        # (e2e 2026-09-16); neither is a preset model, and this build
+        # rejects ``dedup-cache-models``, so they are hidden here.
+        return [m for m in models if isinstance(m, dict) and _is_preset_model(m)]
 
     def load(self, model: str) -> None:
         """Ask the router to load (downloading if needed) one model."""
@@ -184,6 +201,7 @@ class LlamaServerSupervisor:
         self.port = port
         self.models_max = models_max
         self._process: subprocess.Popen[bytes] | None = None
+        self._stderr: IO[bytes] | None = None
 
     @property
     def base_url(self) -> str:
@@ -213,8 +231,9 @@ class LlamaServerSupervisor:
 
     def start(self, *, timeout_s: float = 60.0) -> None:
         """Spawn the router and block until it answers ``/models``."""
+        self._stderr = tempfile.TemporaryFile()
         self._process = subprocess.Popen(  # noqa: S603 - argv built here
-            self.command(), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+            self.command(), stdout=subprocess.DEVNULL, stderr=self._stderr
         )
         deadline = time.monotonic() + timeout_s
         while time.monotonic() < deadline:
@@ -223,7 +242,8 @@ class LlamaServerSupervisor:
                 self._process = None
                 raise RuntimeError(
                     f"llama-server exited with code {code} before listening "
-                    f"(command: {' '.join(self.command())})"
+                    f"(command: {' '.join(self.command())})\n"
+                    f"last stderr:\n{self._stderr_tail()}"
                 )
             try:
                 self.models()
@@ -232,6 +252,13 @@ class LlamaServerSupervisor:
                 time.sleep(0.1)
         self.stop()
         raise RuntimeError(f"llama-server not ready after {timeout_s:.0f}s")
+
+    def _stderr_tail(self, lines: int = 8) -> str:
+        if self._stderr is None:
+            return ""
+        self._stderr.seek(0)
+        text = self._stderr.read().decode(errors="replace")
+        return "\n".join(text.strip().splitlines()[-lines:])
 
     def stop(self) -> None:
         if self._process is None:
@@ -290,3 +317,26 @@ def start_router_from_config(
     )
     supervisor.start(timeout_s=timeout_s)
     return supervisor
+
+
+def install_signal_stop(
+    supervisor: LlamaServerSupervisor,
+) -> Callable[[int, FrameType | None], None]:
+    """Stop the router when the serve is signalled to exit.
+
+    uvicorn captures SIGTERM/SIGINT while it runs and, on exit, restores
+    the handlers it found and re-raises the signal, so the process dies
+    before any ``finally`` around ``uvicorn.run`` (e2e 2026-09-16: router
+    alive after SIGTERM to the serve). Installing this handler first makes
+    it the one the re-raise reaches; it stops the router, then lets the
+    signal take its default course so the exit status stays honest.
+    """
+
+    def _stop_then_die(signum: int, frame: FrameType | None) -> None:
+        supervisor.stop()
+        signal.signal(signum, signal.SIG_DFL)
+        signal.raise_signal(signum)
+
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        signal.signal(sig, _stop_then_die)
+    return _stop_then_die

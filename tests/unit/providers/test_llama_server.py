@@ -1,15 +1,19 @@
 """llama-server router ownership (#90): the preset llm-orc renders from its
 profiles is the contract between the profile set and the inference process."""
 
+import json
+import signal
 import socket
 from pathlib import Path
 from typing import Any
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from llm_orc.providers.llama_server import (
+    LlamaServerClient,
     LlamaServerSupervisor,
+    install_signal_stop,
     render_preset,
     start_router_from_config,
 )
@@ -86,6 +90,20 @@ class TestRenderPreset:
         with pytest.raises(ValueError, match="qwen3-8b"):
             render_preset(profiles)
 
+    def test_slash_in_a_model_name_refuses(self) -> None:
+        """A ``/`` marks a raw cache entry in the router's list, which the
+        client hides; a preset named with one would vanish from it."""
+        profiles: dict[str, dict[str, Any]] = {
+            "a": {
+                "model": "unsloth/qwen3-8b",
+                "provider": "llama-server",
+                "hf_repo": "unsloth/Qwen3-8B-GGUF:Q4_K_M",
+            },
+        }
+
+        with pytest.raises(ValueError, match="slash"):
+            render_preset(profiles)
+
     def test_colon_in_a_model_name_refuses(self) -> None:
         """The router rewrites ``name:tag`` (spike 2026-09-16: ``qwen3:1.7b``
         listed as ``qwen3:7B``), so a colon would silently break routing."""
@@ -109,6 +127,7 @@ args = sys.argv[1:]
 port = int(args[args.index("--port") + 1])
 preset = open(args[args.index("--models-preset") + 1]).read()
 if "CRASH" in preset:
+    print("E srv  llama_server: option 'bogus' not recognized", file=sys.stderr)
     sys.exit(3)
 time.sleep(0.3)  # the real router takes a moment before it listens
 loaded = []
@@ -205,17 +224,20 @@ class TestLlamaServerSupervisor:
 
         assert not sup.running
 
-    def test_start_raises_when_the_router_exits_before_listening(
+    def test_start_raises_with_the_routers_last_stderr_when_it_exits_early(
         self, stub_binary: Path, preset_path: Path
     ) -> None:
+        """The reason lives in the router's stderr (e2e 2026-09-16: an
+        unrecognized preset option), so the error carries its tail."""
         preset_path.write_text("CRASH\n")
         sup = LlamaServerSupervisor(
             preset_path=preset_path, binary=stub_binary, port=_free_port()
         )
 
-        with pytest.raises(RuntimeError, match="exited"):
+        with pytest.raises(RuntimeError, match="exited with code 3") as excinfo:
             sup.start(timeout_s=10.0)
 
+        assert "option 'bogus' not recognized" in str(excinfo.value)
         assert not sup.running
 
 
@@ -258,3 +280,46 @@ class TestStartRouterFromConfig:
             assert sup.preset_path == tmp_path / "global" / "llama-server.ini"
         finally:
             sup.stop()
+
+
+class TestClientModelList:
+    def test_router_placeholder_and_cache_entries_are_hidden(self) -> None:
+        """Router mode lists a ``default`` entry for its own command line and
+        one raw entry per cached Hugging Face file (e2e 2026-09-16); neither
+        is a preset model. This build rejects ``dedup-cache-models``, so the
+        client hides them: cache entries are the ids with a ``/``."""
+        client = LlamaServerClient("http://127.0.0.1:8089")
+        payload = {
+            "data": [
+                {"id": "default", "status": {"value": "unloaded"}},
+                {"id": "unsloth/Qwen3-8B-GGUF:Q4_K_M", "status": {"value": "unloaded"}},
+                {"id": "qwen3-8b", "status": {"value": "loaded"}},
+            ]
+        }
+        with patch("llm_orc.providers.llama_server.urllib.request.urlopen") as urlopen:
+            urlopen.return_value.__enter__.return_value.read.return_value = json.dumps(
+                payload
+            ).encode()
+            models = client.models()
+
+        assert [m["id"] for m in models] == ["qwen3-8b"]
+
+
+class TestInstallSignalStop:
+    def test_sigterm_stops_the_router_then_re_raises_the_signal(self) -> None:
+        """uvicorn re-raises the signal it captured after restoring default
+        handlers, so the process dies before any ``finally`` (e2e
+        2026-09-16: router alive after SIGTERM to the serve). The handler
+        installed before uvicorn runs is what gets the re-raise."""
+        supervisor = MagicMock()
+        handler = install_signal_stop(supervisor)
+
+        with (
+            patch("llm_orc.providers.llama_server.signal.signal") as set_handler,
+            patch("llm_orc.providers.llama_server.signal.raise_signal") as reraise,
+        ):
+            handler(signal.SIGTERM, None)
+
+        supervisor.stop.assert_called_once()
+        set_handler.assert_called_with(signal.SIGTERM, signal.SIG_DFL)
+        reraise.assert_called_once_with(signal.SIGTERM)
