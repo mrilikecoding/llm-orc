@@ -24,7 +24,7 @@ class TestGetAllProfiles:
     def test_includes_profiles_from_config_yaml(self, mock_config_manager: Any) -> None:
         """Profiles defined in config.yaml model_profiles are visible."""
         mock_config_manager.get_model_profiles.return_value = {
-            "validate-ollama": {"model": "llama3", "provider": "ollama"},
+            "validate-ollama": {"model": "llama3", "provider": "llama-server"},
         }
         handler = ProfileHandler(mock_config_manager)
 
@@ -38,13 +38,13 @@ class TestGetAllProfiles:
     ) -> None:
         """Profiles in profiles/ directories take precedence over config.yaml."""
         mock_config_manager.get_model_profiles.return_value = {
-            "my-profile": {"model": "old-model", "provider": "ollama"},
+            "my-profile": {"model": "old-model", "provider": "llama-server"},
         }
         profiles_dir = tmp_path / "profiles"
         profiles_dir.mkdir()
         (profiles_dir / "my-profile.yaml").write_text(
             yaml.safe_dump(
-                {"name": "my-profile", "model": "new-model", "provider": "ollama"}
+                {"name": "my-profile", "model": "new-model", "provider": "llama-server"}
             )
         )
         mock_config_manager.get_profiles_dirs.return_value = [str(profiles_dir)]
@@ -59,13 +59,17 @@ class TestGetAllProfiles:
     ) -> None:
         """Both config.yaml and directory profiles appear in the result."""
         mock_config_manager.get_model_profiles.return_value = {
-            "config-profile": {"model": "llama3", "provider": "ollama"},
+            "config-profile": {"model": "llama3", "provider": "llama-server"},
         }
         profiles_dir = tmp_path / "profiles"
         profiles_dir.mkdir()
         (profiles_dir / "dir-profile.yaml").write_text(
             yaml.safe_dump(
-                {"name": "dir-profile", "model": "qwen3:0.6b", "provider": "ollama"}
+                {
+                    "name": "dir-profile",
+                    "model": "qwen3:0.6b",
+                    "provider": "llama-server",
+                }
             )
         )
         mock_config_manager.get_profiles_dirs.return_value = [str(profiles_dir)]

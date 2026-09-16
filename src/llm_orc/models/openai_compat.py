@@ -17,10 +17,9 @@ class OpenAICompatibleModel(ModelInterface):
     """Model for any OpenAI-compatible API (vLLM, LM Studio, OpenRouter, etc.)."""
 
     supports_tool_calling: bool = True
-    """Supports OpenAI's tool-calling format natively. Covers Ollama
-    (``/v1/chat/completions`` endpoint with tool-calling models like
-    ``llama3.1``, ``qwen2.5``), OpenAI proper, OpenRouter, LM Studio,
-    vLLM, and any compatible provider."""
+    """Supports OpenAI's tool-calling format natively. Covers llama-server
+    (``/v1/chat/completions`` with ``--jinja`` tool parsing), OpenAI
+    proper, OpenRouter, LM Studio, vLLM, and any compatible provider."""
 
     def __init__(
         self,
@@ -30,11 +29,62 @@ class OpenAICompatibleModel(ModelInterface):
         *,
         temperature: float | None = None,
         max_tokens: int | None = None,
+        options: dict[str, Any] | None = None,
+        response_format: str | dict[str, Any] | None = None,
     ) -> None:
         super().__init__(temperature=temperature, max_tokens=max_tokens)
         self.model_name = model_name
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
+        self._options = options
+        self._response_format = response_format
+
+    def _apply_options(self, body: dict[str, Any]) -> None:
+        """Fold provider options into the request body.
+
+        ``think`` is a chat-template switch, not a sampling option:
+        llama-server reads it as ``chat_template_kwargs.enable_thinking``
+        (#90 spike 2026-09-16: 1.2 s / 28 tokens off vs 76 s / 1500 on).
+        """
+        options = dict(self._options) if self._options else {}
+        think = options.pop("think", None)
+        if think is not None:
+            body["chat_template_kwargs"] = {"enable_thinking": think}
+        # Remaining keys are sampling params; explicit fields already in
+        # the body (temperature, max_tokens) keep precedence.
+        for key, value in options.items():
+            body.setdefault(key, value)
+        if isinstance(self._response_format, dict):
+            body["response_format"] = {
+                "type": "json_schema",
+                "json_schema": {"name": "response", "schema": self._response_format},
+            }
+        elif self._response_format == "json":
+            body["response_format"] = {"type": "json_object"}
+
+    def _attach_timings(self, data: dict[str, Any]) -> None:
+        """Surface llama-server's ``timings`` on the usage record under the
+        raw-count keys the serve's truncation backstop reads (turn_trace,
+        C2 #145 / #151): ``prompt_n + cache_n`` is the full prompt as
+        processed, ``predicted_n`` the generation. Present only when the
+        server returned them, never synthesized."""
+        timings = data.get("timings")
+        if not isinstance(timings, dict) or self._last_usage is None:
+            return
+        prompt_n = timings.get("prompt_n")
+        cache_n = timings.get("cache_n", 0)
+        if isinstance(prompt_n, int):
+            self._last_usage["prompt_eval_count"] = prompt_n + int(cache_n or 0)
+        predicted_n = timings.get("predicted_n")
+        if isinstance(predicted_n, int):
+            self._last_usage["eval_count"] = predicted_n
+        for src, dst in (
+            ("prompt_ms", "prompt_eval_duration_ns"),
+            ("predicted_ms", "eval_duration_ns"),
+        ):
+            value = timings.get(src)
+            if isinstance(value, int | float):
+                self._last_usage[dst] = int(value * 1_000_000)
 
     @property
     def name(self) -> str:
@@ -59,6 +109,7 @@ class OpenAICompatibleModel(ModelInterface):
             body["temperature"] = self.temperature
         if self.max_tokens is not None:
             body["max_tokens"] = self.max_tokens
+        self._apply_options(body)
 
         client = HTTPConnectionPool.get_httpx_client()
         response = await client.post(
@@ -88,6 +139,7 @@ class OpenAICompatibleModel(ModelInterface):
             cost_usd=0.0,
             model_name=self.model_name,
         )
+        self._attach_timings(data)
 
         return str(content)
 
@@ -120,6 +172,7 @@ class OpenAICompatibleModel(ModelInterface):
             body["temperature"] = self.temperature
         if self.max_tokens is not None:
             body["max_tokens"] = self.max_tokens
+        self._apply_options(body)
 
         client = HTTPConnectionPool.get_httpx_client()
         response = await client.post(
@@ -185,6 +238,7 @@ class OpenAICompatibleModel(ModelInterface):
             cost_usd=0.0,
             model_name=self.model_name,
         )
+        self._attach_timings(data)
 
         return ToolCallingResponse(
             content=content,

@@ -1,6 +1,7 @@
 """Model factory for creating model instances based on configuration."""
 
 import logging
+import os
 from typing import Any
 
 from llm_orc.core.auth.authentication import CredentialStorage
@@ -11,7 +12,6 @@ from llm_orc.models.anthropic import (
 )
 from llm_orc.models.base import ModelInterface
 from llm_orc.models.mock import MockModel
-from llm_orc.models.ollama import OllamaModel
 from llm_orc.models.openai_compat import OpenAICompatibleModel
 
 logger = logging.getLogger(__name__)
@@ -54,7 +54,9 @@ class ModelFactory:
         temperature: float | None = agent_config.get("temperature")
         max_tokens: int | None = agent_config.get("max_tokens")
         agent_options: dict[str, Any] | None = agent_config.get("options")
-        ollama_format: str | dict[str, Any] | None = agent_config.get("ollama_format")
+        response_format: str | dict[str, Any] | None = agent_config.get(
+            "response_format"
+        )
 
         # Check if model_profile is specified (takes precedence)
         # Use .get() truthy check: model_dump() includes None values as keys
@@ -74,7 +76,7 @@ class ModelFactory:
                 temperature=temperature,
                 max_tokens=max_tokens,
                 options=merged_options,
-                ollama_format=ollama_format,
+                response_format=response_format,
                 base_url=base_url,
             )
 
@@ -93,7 +95,7 @@ class ModelFactory:
             temperature=temperature,
             max_tokens=max_tokens,
             options=agent_options,
-            ollama_format=ollama_format,
+            response_format=response_format,
         )
 
     async def load_model(
@@ -104,7 +106,7 @@ class ModelFactory:
         temperature: float | None = None,
         max_tokens: int | None = None,
         options: dict[str, Any] | None = None,
-        ollama_format: str | dict[str, Any] | None = None,
+        response_format: str | dict[str, Any] | None = None,
         base_url: str | None = None,
     ) -> ModelInterface:
         """Load a model interface based on authentication configuration.
@@ -114,8 +116,8 @@ class ModelFactory:
             provider: Optional provider name
             temperature: Optional temperature for generation
             max_tokens: Optional max tokens for generation
-            options: Optional provider-specific options (e.g. Ollama options)
-            ollama_format: Optional Ollama response format
+            options: Optional provider-specific options (e.g. sampling params)
+            response_format: Optional structured-output format (schema dict or 'json')
             base_url: Optional base URL for OpenAI-compatible endpoints
 
         Returns:
@@ -140,7 +142,7 @@ class ModelFactory:
                 temperature=temperature,
                 max_tokens=max_tokens,
                 options=options,
-                ollama_format=ollama_format,
+                response_format=response_format,
                 base_url=base_url,
             )
 
@@ -232,7 +234,7 @@ class ModelFactory:
                 resolved_model, resolved_provider = (
                     self._config_manager.resolve_model_profile(fallback_profile)
                 )
-                if resolved_provider == "ollama":
+                if resolved_provider == LLAMA_SERVER_PROVIDER:
                     try:
                         return await self.load_model(resolved_model, resolved_provider)
                     except (ValueError, OSError):
@@ -244,12 +246,27 @@ class ModelFactory:
             except (ValueError, KeyError):
                 pass
 
-        fallback_model = default_models.get("fallback", "llama3")
-        fallback_provider = default_models.get("fallback_provider", "ollama")
+        fallback_model = default_models.get("fallback", DEFAULT_LOCAL_MODEL)
+        fallback_provider = default_models.get(
+            "fallback_provider", LLAMA_SERVER_PROVIDER
+        )
         try:
             return await self.load_model(fallback_model, fallback_provider)
         except (ValueError, OSError):
-            return OllamaModel(model_name=fallback_model)
+            return OpenAICompatibleModel(
+                model_name=fallback_model, base_url=_llama_server_url()
+            )
+
+
+LLAMA_SERVER_PROVIDER = "llama-server"
+DEFAULT_LOCAL_MODEL = "qwen3-8b"
+LLAMA_SERVER_URL_ENV = "LLAMA_SERVER_URL"
+DEFAULT_LLAMA_SERVER_URL = "http://127.0.0.1:8080/v1"
+
+
+def _llama_server_url() -> str:
+    """The llama-server router's OpenAI-compatible base URL."""
+    return os.environ.get(LLAMA_SERVER_URL_ENV, DEFAULT_LLAMA_SERVER_URL)
 
 
 def _is_openai_compatible(provider: str | None) -> bool:
@@ -331,7 +348,7 @@ def _handle_no_authentication(
     temperature: float | None = None,
     max_tokens: int | None = None,
     options: dict[str, Any] | None = None,
-    ollama_format: str | dict[str, Any] | None = None,
+    response_format: str | dict[str, Any] | None = None,
     base_url: str | None = None,
 ) -> ModelInterface:
     """Handle cases when no authentication is configured.
@@ -341,8 +358,8 @@ def _handle_no_authentication(
         provider: Optional provider name
         temperature: Optional temperature for generation
         max_tokens: Optional max tokens for generation
-        options: Optional provider-specific options forwarded to OllamaModel
-        ollama_format: Optional Ollama response format
+        options: Optional provider-specific options forwarded to local models
+        response_format: Optional structured-output format (schema dict or 'json')
         base_url: Optional base URL for OpenAI-compatible endpoints
 
     Returns:
@@ -351,13 +368,16 @@ def _handle_no_authentication(
     Raises:
         ValueError: If the provider requires authentication
     """
-    if provider == "ollama":
-        return OllamaModel(
+    if provider == LLAMA_SERVER_PROVIDER:
+        # llama-server (#90): OpenAI-compatible transport, no auth; the
+        # router's URL comes from the profile or the environment.
+        return OpenAICompatibleModel(
             model_name=model_name,
+            base_url=base_url or _llama_server_url(),
             temperature=temperature,
             max_tokens=max_tokens,
             options=options,
-            ollama_format=ollama_format,
+            response_format=response_format,
         )
     elif _is_openai_compatible(provider):
         return OpenAICompatibleModel(
@@ -365,6 +385,8 @@ def _handle_no_authentication(
             base_url=base_url or "https://api.openai.com/v1",
             temperature=temperature,
             max_tokens=max_tokens,
+            options=options,
+            response_format=response_format,
         )
     elif provider:
         raise ValueError(
@@ -375,15 +397,16 @@ def _handle_no_authentication(
         )
     else:
         logger.info(
-            "No provider specified for '%s', treating as local Ollama model",
+            "No provider specified for '%s', treating as a llama-server model",
             model_name,
         )
-        return OllamaModel(
+        return OpenAICompatibleModel(
             model_name=model_name,
+            base_url=base_url or _llama_server_url(),
             temperature=temperature,
             max_tokens=max_tokens,
             options=options,
-            ollama_format=ollama_format,
+            response_format=response_format,
         )
 
 

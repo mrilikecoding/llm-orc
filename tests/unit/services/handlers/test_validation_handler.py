@@ -78,7 +78,7 @@ class TestCollectValidationErrorsCycles:
         handler = _make_handler(
             find_ensemble_result=config,
             available_profiles={
-                "some-profile": {"provider": "ollama", "model": "llama3"}
+                "some-profile": {"provider": "llama-server", "model": "llama3"}
             },
         )
 
@@ -108,7 +108,7 @@ class TestValidateAgentReferences:
         handler = _make_handler(
             find_ensemble_result=config,
             available_profiles={
-                "some-profile": {"provider": "ollama", "model": "llama3"}
+                "some-profile": {"provider": "llama-server", "model": "llama3"}
             },
         )
 
@@ -131,7 +131,7 @@ class TestValidateAgentReferences:
         handler = _make_handler(
             find_ensemble_result=config,
             available_profiles={
-                "some-profile": {"provider": "ollama", "model": "llama3"}
+                "some-profile": {"provider": "llama-server", "model": "llama3"}
             },
         )
 
@@ -266,7 +266,7 @@ class TestValidateModelProfiles:
             find_ensemble_result=config,
             available_profiles={
                 "no-model-profile": {
-                    "provider": "ollama",
+                    "provider": "llama-server",
                 },
             },
         )
@@ -288,7 +288,7 @@ class TestValidateModelProfiles:
         handler = _make_handler(
             find_ensemble_result=config,
             available_profiles={
-                "good-profile": {"provider": "ollama", "model": "llama3"},
+                "good-profile": {"provider": "llama-server", "model": "llama3"},
             },
         )
 

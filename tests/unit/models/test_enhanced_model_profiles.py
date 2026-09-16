@@ -27,7 +27,7 @@ class TestEnhancedModelProfiles:
                 "model_profiles": {
                     "worker_bee": {
                         "model": "llama3",
-                        "provider": "ollama",
+                        "provider": "llama-server",
                         "cost_per_token": 0.0,
                         "system_prompt": (
                             "You are a diligent worker agent that processes tasks."
@@ -52,7 +52,7 @@ class TestEnhancedModelProfiles:
             assert "worker_bee" in profiles
             profile = profiles["worker_bee"]
             assert profile["model"] == "llama3"
-            assert profile["provider"] == "ollama"
+            assert profile["provider"] == "llama-server"
             assert profile["cost_per_token"] == 0.0  # type: ignore[comparison-overlap]
             assert (
                 profile["system_prompt"]
@@ -75,7 +75,7 @@ class TestEnhancedModelProfiles:
         # Mock the configuration manager to return our enhanced profile
         enhanced_profile = {
             "model": "llama3",
-            "provider": "ollama",
+            "provider": "llama-server",
             "cost_per_token": 0.0,
             "system_prompt": "You are a diligent worker agent that processes tasks.",
             "timeout_seconds": 30,
@@ -146,7 +146,7 @@ class TestEnhancedModelProfiles:
         # Mock the configuration manager to return our enhanced profile
         enhanced_profile = {
             "model": "llama3",
-            "provider": "ollama",
+            "provider": "llama-server",
             "cost_per_token": 0.0,
             "system_prompt": "You are a diligent worker agent that processes tasks.",
             "timeout_seconds": 30,
@@ -210,7 +210,7 @@ class TestEnhancedModelProfiles:
                 "model_profiles": {
                     "worker_bee": {
                         "model": "llama3",
-                        "provider": "ollama",
+                        "provider": "llama-server",
                         "cost_per_token": 0.0,
                         "system_prompt": "Default worker prompt",
                         "timeout_seconds": 30,
