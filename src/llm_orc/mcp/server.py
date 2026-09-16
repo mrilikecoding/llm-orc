@@ -1087,15 +1087,15 @@ class MCPServer:
     def streamable_http_app(self) -> Starlette:
         """Return the FastMCP streamable HTTP ASGI app for mounting.
 
-        Configures the app's own route at "/" (so mounting it under a
-        URL prefix like ``/mcp`` in a parent ASGI app puts the working
-        endpoint exactly at that prefix) and turns off FastMCP's
-        DNS-rebinding Host/Origin guard: the serve's tailnet is the
-        actual boundary, and the guard's default localhost-only
-        allowlist would reject a reverse-proxied Host header
+        The app's own route lives at its default path, "/mcp" -- a
+        caller registers it as an exact-path ASGI route (not a path
+        prefix `Mount`) so the app receives the request unmodified.
+        Also turns off FastMCP's DNS-rebinding Host/Origin guard: the
+        serve's tailnet is the actual boundary, and the guard's
+        default localhost-only allowlist would reject a
+        reverse-proxied Host header
         (docs/plans/2026-09-16-mcp-in-serve.md).
         """
-        self._mcp.settings.streamable_http_path = "/"
         self._mcp.settings.transport_security = TransportSecuritySettings(
             enable_dns_rebinding_protection=False
         )
