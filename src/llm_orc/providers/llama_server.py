@@ -1,0 +1,267 @@
+"""llama-server router ownership (#90).
+
+llm-orc owns the local inference process: it renders a llama-server
+*preset* from its own model profiles (one section per distinct model,
+each naming its GGUF source on Hugging Face) and supervises one router
+process that lazy-loads models by name. The preset is the contract
+between the profile set and the inference process; nothing else in the
+project knows how a model gets onto the box.
+"""
+
+import json
+import subprocess
+import time
+import urllib.request
+from collections.abc import Mapping
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+
+LLAMA_SERVER_PROVIDER = "llama-server"
+
+#: Global section every model instance inherits. Metal takes every layer
+#: on Apple unified memory; jinja is what parses tool calls; flash-attn
+#: buys KV headroom (research scoping doc, llama-server backend). The
+#: context size is the window the serve's truncation backstop assumes
+#: (turn_trace.WINDOW); a profile's ``options.num_ctx`` overrides it per
+#: model. Context size is now project-controlled, not inherited from a
+#: desktop app's environment (#90 eval, risk 7).
+PRESET_DEFAULTS: dict[str, str] = {
+    "c": "40960",
+    "flash-attn": "on",
+    "jinja": "true",
+    "n-gpu-layers": "999",
+}
+
+#: Resident models at once. One is memory-safe on the 32 GB target rig
+#: at the default window (an 8b at 40960 is ~11 GB resident); the ladder
+#: never swapped models (#90 eval, 1e), so the escalation stall is rare.
+DEFAULT_MODELS_MAX = 1
+
+
+@dataclass(frozen=True)
+class RenderedPreset:
+    """The preset text plus what it covers and what it had to leave out."""
+
+    text: str
+    models: list[str] = field(default_factory=list)
+    missing_source: list[str] = field(default_factory=list)
+
+
+def _served_model(profile: Mapping[str, Any]) -> str | None:
+    """The model name a llama-server profile routes to, or None when the
+    profile is for another provider. A colon is refused: the router
+    rewrites ``name:tag`` as a Hugging Face tag (spike 2026-09-16)."""
+    if profile.get("provider") != LLAMA_SERVER_PROVIDER:
+        return None
+    model = str(profile.get("model") or "")
+    if not model:
+        return None
+    if ":" in model:
+        raise ValueError(
+            f"llama-server model name {model!r} contains a colon; the router "
+            "rewrites 'name:tag' as a Hugging Face tag (use 'name-tag')"
+        )
+    return model
+
+
+def _record_source(sources: dict[str, str], model: str, repo: Any) -> None:
+    """One source per model name; two different ones is a config error."""
+    if not repo:
+        return
+    if model in sources and sources[model] != repo:
+        raise ValueError(
+            f"model {model!r} has conflicting hf_repo sources: "
+            f"{sources[model]!r} and {repo!r}"
+        )
+    sources[model] = str(repo)
+
+
+def _collect(
+    profiles: Mapping[str, Mapping[str, Any]],
+) -> tuple[dict[str, str], dict[str, int], set[str]]:
+    """Sources and context sizes per llama-server model name, plus every
+    model name seen (so the sourceless ones can be reported)."""
+    sources: dict[str, str] = {}
+    contexts: dict[str, int] = {}
+    seen: set[str] = set()
+    for profile in profiles.values():
+        model = _served_model(profile)
+        if model is None:
+            continue
+        seen.add(model)
+        _record_source(sources, model, profile.get("hf_repo"))
+        num_ctx = (profile.get("options") or {}).get("num_ctx")
+        if isinstance(num_ctx, int):
+            contexts[model] = max(num_ctx, contexts.get(model, 0))
+    return sources, contexts, seen
+
+
+def render_preset(
+    profiles: Mapping[str, Mapping[str, Any]],
+    *,
+    defaults: Mapping[str, str] | None = None,
+) -> RenderedPreset:
+    """Render the router preset for every llama-server profile.
+
+    Sections are keyed by model name (the router routes on the request's
+    ``model`` field). A model needs a source (``hf_repo``) to be loadable;
+    one without is reported in ``missing_source`` rather than emitted as
+    an invalid section. Two profiles naming one model with different
+    sources is a configuration error, not something to pick between.
+    """
+    sources, contexts, seen = _collect(profiles)
+    models = sorted(sources)
+    missing = sorted(seen - set(sources))
+
+    lines = ["version = 1", "", "[*]"]
+    for key, value in sorted((defaults or PRESET_DEFAULTS).items()):
+        lines.append(f"{key} = {value}")
+    for model in models:
+        lines += ["", f"[{model}]"]
+        if model in contexts:
+            lines.append(f"c = {contexts[model]}")
+        lines.append(f"hf-repo = {sources[model]}")
+    return RenderedPreset("\n".join(lines) + "\n", models, missing)
+
+
+class LlamaServerSupervisor:
+    """One router process, owned for the life of the serve.
+
+    ``start`` spawns the router and waits until ``GET /models`` answers,
+    so callers never race a half-started backend; a router that exits
+    before listening (bad preset, missing binary) surfaces as an error
+    with its exit code rather than as a later connection refusal.
+    """
+
+    def __init__(
+        self,
+        *,
+        preset_path: Path,
+        binary: str | Path = "llama-server",
+        host: str = "127.0.0.1",
+        port: int = 8080,
+        models_max: int = DEFAULT_MODELS_MAX,
+    ) -> None:
+        self.preset_path = Path(preset_path)
+        self.binary = str(binary)
+        self.host = host
+        self.port = port
+        self.models_max = models_max
+        self._process: subprocess.Popen[bytes] | None = None
+
+    @property
+    def base_url(self) -> str:
+        return f"http://{self.host}:{self.port}/v1"
+
+    @property
+    def _root(self) -> str:
+        return f"http://{self.host}:{self.port}"
+
+    @property
+    def running(self) -> bool:
+        return self._process is not None and self._process.poll() is None
+
+    def command(self) -> list[str]:
+        return [
+            self.binary,
+            "--models-preset",
+            str(self.preset_path),
+            "--host",
+            self.host,
+            "--port",
+            str(self.port),
+            "--models-max",
+            str(self.models_max),
+            "--no-webui",
+        ]
+
+    def start(self, *, timeout_s: float = 60.0) -> None:
+        """Spawn the router and block until it answers ``/models``."""
+        self._process = subprocess.Popen(  # noqa: S603 - argv built here
+            self.command(), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        )
+        deadline = time.monotonic() + timeout_s
+        while time.monotonic() < deadline:
+            code = self._process.poll()
+            if code is not None:
+                self._process = None
+                raise RuntimeError(
+                    f"llama-server exited with code {code} before listening "
+                    f"(command: {' '.join(self.command())})"
+                )
+            try:
+                self.models()
+                return
+            except (OSError, ValueError):
+                time.sleep(0.1)
+        self.stop()
+        raise RuntimeError(f"llama-server not ready after {timeout_s:.0f}s")
+
+    def stop(self) -> None:
+        if self._process is None:
+            return
+        if self._process.poll() is None:
+            self._process.terminate()
+            try:
+                self._process.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                self._process.kill()
+                self._process.wait()
+        self._process = None
+
+    def models(self) -> list[dict[str, Any]]:
+        """The router's model list with per-model load status."""
+        with urllib.request.urlopen(f"{self._root}/models", timeout=5) as resp:
+            data = json.load(resp)
+        models = data.get("data", [])
+        return [m for m in models if isinstance(m, dict)]
+
+    def load(self, model: str) -> None:
+        """Ask the router to load (downloading if needed) one model."""
+        body = json.dumps({"model": model}).encode()
+        request = urllib.request.Request(
+            f"{self._root}/models/load",
+            data=body,
+            headers={"Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(request, timeout=3600) as resp:
+            json.load(resp)
+
+
+PRESET_FILENAME = "llama-server.ini"
+
+
+def start_router_from_config(
+    config_manager: Any,
+    *,
+    binary: str | Path = "llama-server",
+    host: str = "127.0.0.1",
+    port: int = 8080,
+    models_max: int = DEFAULT_MODELS_MAX,
+    timeout_s: float = 60.0,
+) -> LlamaServerSupervisor:
+    """Render the preset from the project's profiles and start the router.
+
+    The preset lands next to the profiles it was rendered from (the
+    local ``.llm-orc`` when there is one, else the global config dir) so
+    an operator can read exactly what the router was given.
+    """
+    profiles = config_manager.get_model_profiles()
+    rendered = render_preset(profiles)
+    config_dir = Path(
+        config_manager.local_config_dir or config_manager.global_config_dir
+    )
+    config_dir.mkdir(parents=True, exist_ok=True)
+    preset_path = config_dir / PRESET_FILENAME
+    preset_path.write_text(rendered.text)
+
+    supervisor = LlamaServerSupervisor(
+        preset_path=preset_path,
+        binary=binary,
+        host=host,
+        port=port,
+        models_max=models_max,
+    )
+    supervisor.start(timeout_s=timeout_s)
+    return supervisor

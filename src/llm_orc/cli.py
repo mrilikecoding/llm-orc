@@ -327,7 +327,14 @@ def mcp() -> None:
 
 
 def _start_server(
-    *, host: str, port: int, label: str, open_browser: bool = False
+    *,
+    host: str,
+    port: int,
+    label: str,
+    open_browser: bool = False,
+    backend: bool = False,
+    backend_port: int = 8080,
+    models_max: int | None = None,
 ) -> None:
     """Start the llm-orc HTTP server on ``host:port``.
 
@@ -382,8 +389,37 @@ def _start_server(
 
         threading.Thread(target=open_browser_delayed, daemon=True).start()
 
+    supervisor = None
+    if backend:
+        # llm-orc owns the local inference process (#90): render the
+        # router preset from the profiles, start it, and point the model
+        # factory at it for the life of this serve.
+        import os
+
+        from llm_orc.core.config.config_manager import ConfigurationManager
+        from llm_orc.providers import llama_server
+
+        try:
+            supervisor = llama_server.start_router_from_config(
+                ConfigurationManager(),
+                port=backend_port,
+                models_max=(
+                    models_max
+                    if models_max is not None
+                    else llama_server.DEFAULT_MODELS_MAX
+                ),
+            )
+        except RuntimeError as e:
+            raise click.ClickException(str(e)) from e
+        os.environ.setdefault("LLAMA_SERVER_URL", supervisor.base_url)
+        click.echo(f"llama-server router at {supervisor.base_url}", err=True)
+
     app = create_app()
-    uvicorn.run(app, host=host, port=port, log_level="info")
+    try:
+        uvicorn.run(app, host=host, port=port, log_level="info")
+    finally:
+        if supervisor is not None:
+            supervisor.stop()
 
 
 @cli.command()
@@ -419,7 +455,21 @@ def web(port: int, host: str, open_browser: bool) -> None:
     default="127.0.0.1",
     help="Host to bind to (use 0.0.0.0 for network access)",
 )
-def serve(port: int, host: str) -> None:
+@click.option(
+    "--backend/--no-backend",
+    default=True,
+    help="Own a llama-server router for the local model tiers (default: on)",
+)
+@click.option("--backend-port", default=8080, help="Port for the llama-server router")
+@click.option(
+    "--models-max",
+    default=None,
+    type=int,
+    help="Models resident at once in the router (default: 1)",
+)
+def serve(
+    port: int, host: str, backend: bool, backend_port: int, models_max: int | None
+) -> None:
     """Start the agentic serving layer for LLM-client consumption.
 
     Exposes the OpenAI-compatible ``/v1/models`` and
@@ -432,7 +482,14 @@ def serve(port: int, host: str) -> None:
     ``web`` when you also want the browser UI; use ``serve`` when you
     are deploying behind an HTTP LLM client.
     """
-    _start_server(host=host, port=port, label="agentic serving layer")
+    _start_server(
+        host=host,
+        port=port,
+        label="agentic serving layer",
+        backend=backend,
+        backend_port=backend_port,
+        models_max=models_max,
+    )
 
 
 @mcp.command("serve")
