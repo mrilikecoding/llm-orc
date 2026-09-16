@@ -59,113 +59,108 @@ layer is the insulation that keeps an eventual hardening cheap, and
 "frozen component" status is the trigger, tracked informally the way the
 buy-back ledger tracks hosted seats.
 
-## State (2026-09-12 early-morning handoff)
+## State (2026-09-16 handoff)
 
 **Ranked index:** the GitHub project "llm-orc kanban"
 (https://github.com/users/mrilikecoding/projects/2). THIS DOCUMENT
 GOVERNS; the board is its index. Board "Done" = merged on LOCAL main;
-nothing is pushed (~135 unpushed commits; the push and the issue-closing
-that rides on it await the practitioner's explicit go).
+nothing is pushed (the push and the issue-closing that rides on it await
+the practitioner's explicit go).
 
-**Practitioner directives (2026-09-11):** the target is an effective daily
-driver for long-running tasks on EXISTING repos; drive real OpenCode
-sessions; OpenCode Go spend and paid comparison runs are authorized
-within reason; delegate to cheaper subagents; meter usage (the account
-session limit bit once at 19:20 PT after ~4.5M subagent tokens; it
-resets nightly). Agreed process (see §Process): close structures, not
-instances; self-tests in the implementer brief, ONE independent review
-round; measure by probe rows converted; parallelize on disjoint seams.
+**Practitioner directives (2026-09-16):** drop Ollama (decided, not
+debated further); the deployment target is a serve running natively on
+ng-mini, proxied through a Dokku app, reachable on the tailnet from any
+client; llm-orc must be deployable without coupling to additional
+applications (#90's packaging goal). Standing directives from 2026-09-11
+hold (daily driver on existing repos; real OpenCode sessions; Go spend
+and paid comparison runs within reason; cheaper subagents; meter usage).
 
-### Merged on local main this session (each with an author-independent review)
+### Merged on local main this session
 
-- **#171** — the deliverable must participate (ablation control; re-fix
-  surface = every public top-level binding; fail-closed on an
-  unparseable/absent prior). Four rounds. Filed #181.
-- **#182 slice D** — discovery before an unnamed-file build (exact match
-  only after a BLOCKED review; tests dirs excluded). Live: the probe's
-  turn-6 harm converted.
-- **#182 slice B-1** — an edit never drops the prior module's public
-  surface (deliverable-side liberal, prior-side strict; the real suite
-  always runs — a fake `tests_pass` was caught leaking into the ledger).
-- **Arc 1, workspace-aware routing** (#185 closed; D's residual; the
-  routing half of #123): existence comes from the listing, never the
-  verb; a named `.py` destination with no listing costs one glob round;
-  present → read before build; absent → greenfield; shallower listing →
-  read anyway (never "absent"); a same-session write/read establishes
-  existence. Review BLOCKED once (depth mismatch), then APPROVE. Live
-  (`docs/plans/2026-09-11-arc1-live-rows/`): the blind-overwrite ask now
-  globs, reads, and writes the whole module with every prior method kept
-  and `remove` added, seed tests green (dogfood entry 12).
-- **Arc 2, the gate sandbox mirrors the workspace** (#184 closed; #182
-  slice A): workspace files and the deliverable materialize at real
-  relative paths on all gated routes; root resolution is a named ladder
-  (glob listing → suffix match → common prefix → basename, trace-visible);
-  an unplaceable entry REFUSES path-free; re-fix gets the workspace; the
-  import injector derives dotted names. Review APPROVE-with-rework (A1-A8),
-  then APPROVE; C1 fixed by the lead; C2 recorded (a write-time collision
-  is swallowed by `_write_at`, not counted in `workspace_unplaced`).
-  Merged tree 4322 passed, lint 0.
-- **#183 slice B measured**: think-off on the coder halves wall clock but
-  refused ladder turn 6 in 3/3 runs; coder thinking restored, critic and
-  synthesizer think-off (no measurable gain or loss). #90: no (Ollama
-  already runs llama-server; the time is qwen3:8b generation).
+- **#90 — Ollama dropped; llama-server router owned by the serve**
+  (branch `feat/llama-server-backend`, 16 commits, suite 4322 passed,
+  lint 0). Evidence on the issue (spike table 2026-09-16). Shape:
+  `OpenAICompatibleModel` carries `options` (`think` lifted into
+  `chat_template_kwargs.enable_thinking`, 60x on qwen3), sampling
+  passthrough, `response_format`, and llama-server `timings` under the
+  `prompt_eval_count`/`eval_count` keys the truncation backstop reads;
+  provider `llama-server` (local default, legacy fallback target;
+  `LLAMA_SERVER_URL`); the serve renders `.llm-orc/llama-server.ini`
+  from every llama-server profile (one section per model, `hf_repo:`
+  source, `c = 40960` = `turn_trace.WINDOW`, one resident model) and
+  supervises one router (`--no-backend` opts out; a router that exits
+  before listening surfaces its stderr tail; SIGTERM to the serve stops
+  the router — uvicorn re-raises captured signals after restoring
+  handlers, so a `finally` never runs); `GET /api/models`,
+  `POST /api/models/{name}/pull` (blocks until the router's real status);
+  provider status / runnability / promotion read the router; the agent
+  config field is `response_format` (was `ollama_format`); profiles are
+  `local-qwen3-*`; model names carry no colon (the router rewrites
+  `name:tag`) and no slash (raw cache entries). Verified live on the
+  laptop: serve owning a real router, five preset models listed, pull
+  blocked ~4 s to `loaded`, factory completion with timings, router gone
+  on SIGTERM. Tests may not launch the real binary (autouse guard, shown
+  red on two leaking serve tests before the fix).
+- **Deploy scaffolding:** Dokku app `llm-orc` deployed
+  (`~/Development/llm-orc-proxy`, nginx → `host.lima.internal:8765`;
+  edge nginx set to 3600 s / buffering off / 50 m body);
+  http://llm-orc.homelab.nate.green answers 502 until the serve exists on
+  ng-mini. `deploy/ng-mini/` carries the launchd unit and setup notes.
 
-### Evidence
+### Evidence carried forward (2026-09-12)
 
-- **Comparator row on the existing-repo probe (paid, authorized):** Go
-  `qwen3.8-max` 7/7 ($0.27), Sonnet 5 7/7 ($0.38) vs the serve 1/7 at
-  17:00. Their invariant trace: discover → read → surgical edit → run the
-  project's own suite → honest summary. Not a model-size gap.
-- **Serve on the probe now:** turns 2 and 7 correct (rows 12-13); 6 and
-  9-shape honest asks; 1 and 3 still refuse (tests-primary route writes
-  tests for a method that does not exist yet — #123); 4 honest; 5 prose
-  (#124).
-- **Ladder** (`docs/plans/2026-09-11-ladder-runs-171-thinkoff/`): runs 5-6
-  (pre-arcs, coder on) 13/13 deliverables; run 7 (arcs merged) 10/13 —
-  T1/T6 the recurring variance shapes, T13 an honest refusal of a wrong
-  fix (`"empty input"` vs the seeded `"no values"`), no sandbox-, surface-
-  or ablation-specific reason fired; run 8 (second sample): 8/13, T13
-  FIXED (run 7's miss was variance), T1 refused again and cascaded. T1 is
-  the rung that decides the ladder now: 3 correct / 2 broken / 3 refused
-  over eight runs, refusals pre-date the arcs (run 3); greenfield
-  first-turn shape, honest refusals; instrument T1 alone at r≥5 before
-  touching the build round.
+Comparator row on the existing-repo probe: Go `qwen3.8-max` 7/7 ($0.27),
+Sonnet 5 7/7 ($0.38) vs the serve 1/7. Ladder runs 7-8 on the merged
+arcs: 10/13, 8/13; T1 decides the ladder (3 correct / 2 broken / 3 refused
+over eight runs; refusals pre-date the arcs). Neither has been re-run on
+the llama-server backend yet — that is the regression gate below.
 
 ### Next up (in order)
 
-1. **T1 instrument** (free, ~10 min): drive the ladder's turn-1 ask alone
-   r≥5 through the serve (curl with tools is enough) and record the
-   correct/broken/refused split; only then decide whether the greenfield
-   first-round build shape needs work. Do not fold this into #123.
-2. **#123 code + tests per turn** (the routing half rides arc 1; the
-   destination rule `tests/test_<stem>.py` + dotted import is arc 2's
-   deferred mechanism 5, classify-owned): converts probe turns 1 and 3.
-   Brief to write; one Sonnet implementer; one review.
-3. **#122 edit delegation** (surgical `edit` tool_calls with post-edit
-   gate parity) and **verified acceptance in the workspace** (run the
-   workspace's own suite after a build, not only the sandbox's) — the two
-   comparator behaviours still missing. Brief both; disjoint seams
-   (emit/caller vs gate).
-4. #183 A (per-node elapsed in the trace) and C (`num_ctx`); #181; C2.
+1. **Bring the serve up on ng-mini** (needs the practitioner: my ssh key
+   is refused for `nathanielgreen@ng-mini`; `ssh-copy-id ng-mini` once,
+   or run `deploy/ng-mini/README.md` by hand). The checkout there must be
+   local main (origin is ~150 commits behind; a git remote from the
+   laptop to the ng-mini checkout moves it without touching origin).
+   Then `homelab https:enable llm-orc` on the server. Then pull the four
+   tiers through `/api/models/{name}/pull` over the tailnet.
+2. **Regression gate on the new backend** (laptop or ng-mini): the ladder
+   (T1 alone at r≥5 first, then the full run) and the 7-turn probe.
+   Chat templating and tool-call parsing moved from Ollama's Go templates
+   to llama.cpp's jinja; the spike showed tool calls parse and thinking
+   is controllable, the ladder decides whether the seats hold. Then
+   OpenCode against `https://llm-orc.homelab.nate.green/v1`.
+3. **#123, #122, verified acceptance in the workspace** — unchanged from
+   2026-09-12; the T1 instrument still precedes touching the build round.
+4. Follow-ups filed by this arc: `llm-orc web` does not own the router
+   (opt-in later); MCP over the tailnet (the SSE transport is the older
+   protocol, a second launchd unit + proxy path); deepseek-r1's template
+   ignores `enable_thinking` (fine for the reasoning tier); the library
+   submodule's templates still say `provider: ollama`.
 5. Gated on the practitioner: the push; #167/#141 (Anthropic arms).
 
 ### Owed live rows
 
 #166 #169 #173 #171 (constructed non-participating shape via fault
-injection), #172 #176, #175. Arcs 1-2, D, B-1 have theirs.
+injection), #172 #176, #175. Arcs 1-2, D, B-1 have theirs. #90's live
+row is the regression gate in Next up 2.
 
 ### Process (agreed 2026-09-11, holding)
 
-Reviews found real blockers 12 of 12 first rounds this session; with the
-three self-tests required in the implementer brief, arcs 1 and 2 each
-closed in ONE rework round. Lessons paid for: a moving git ref in a pin
-makes it vacuous after merge (pin to a hash — acfaf427); a "harmless
-internal convention" in a gate field is never internal; a fuzzy match
-that reads then overwrites the wrong file is worse than an honest ask;
-existence is a workspace fact, never a verb. Ops: subagent budget ~4-5M
-tokens/day before the limit; Sonnet implementers, Opus reviews; ladder
-~17 min at coder-on, probe ~10 min; one serve per tree, restart before
-every gate.
+Reviews found real blockers 12 of 12 first rounds through 2026-09-12;
+with the three self-tests required in the implementer brief, arcs 1 and
+2 each closed in ONE rework round. Lessons paid for: a moving git ref in
+a pin makes it vacuous after merge (pin to a hash — acfaf427); a
+"harmless internal convention" in a gate field is never internal; a
+fuzzy match that reads then overwrites the wrong file is worse than an
+honest ask; existence is a workspace fact, never a verb. 2026-09-16: the
+first real run of a new process-owning feature found four defects unit
+tests could not (signal re-raise, list hygiene, async load, swallowed
+stderr) — run the real thing before calling a lifecycle feature done.
+Ops: subagent budget ~4-5M tokens/day before the limit; Sonnet
+implementers, Opus reviews; ladder ~17 min at coder-on, probe ~10 min;
+one serve per tree, restart before every gate; the 8b GGUF is a 5 GB
+first download per box.
 
 ## Timeline
 
@@ -185,6 +180,7 @@ Done:
 
 Remaining, in order:
 
+- [x] #90 — Ollama dropped; the serve owns a llama-server router (2026-09-16)
 - [x] #131 — Arm-2 runs at n=3 per model, all independently J-scored (Haiku 35/39, 4 dishonest; Sonnet 39/39, 0)
 - [x] #131 — Arm-1 GO'd + n=3 per model, independently J-scored (Haiku 38/39, 0 dishonest; Sonnet 39/39, 0); #147 filed
 - [x] #146 — v0.18.15 RELEASED 2026-08-13 (PyPI + Homebrew green)
