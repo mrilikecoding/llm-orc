@@ -93,3 +93,6 @@ found #197 (clean install resolves mcp 2.x; Intel has no cryptography>=49
 wheel) and #196 (the serving project is not in the wheel). The mini runs
 the 0.20.1 release under `uv tool` with both pins; 0.20.2 carries the
 `mcp<2` pin.
+Closed out the same evening: v0.20.2 released with the pin, the tap
+formula fixed for Intel, and the mini running the Homebrew 0.20.2 with
+`/mcp` verified over https.
