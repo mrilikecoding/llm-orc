@@ -131,6 +131,22 @@ if "CRASH" in preset:
     sys.exit(3)
 time.sleep(0.3)  # the real router takes a moment before it listens
 loaded = []
+T0 = time.monotonic()
+
+def stage(msg):
+    print(f"stub {time.monotonic() - T0:6.2f}s {msg}", file=sys.stderr, flush=True)
+
+class Server(HTTPServer):
+    allow_reuse_address = True
+
+    def server_bind(self):
+        # HTTPServer.server_bind does a reverse lookup of the bound host
+        # (socket.getfqdn), which can hang on a CI runner's resolver.
+        import socketserver
+        socketserver.TCPServer.server_bind(self)
+        self.server_name = "127.0.0.1"
+        self.server_port = self.server_address[1]
+        stage("bound")
 
 class H(BaseHTTPRequestHandler):
     def log_message(self, *a): pass
@@ -142,6 +158,7 @@ class H(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
     def do_GET(self):
+        stage(f"GET {self.path}")
         if self.path == "/models":
             state = "loaded" if "qwen3-8b" in loaded else "unloaded"
             self._json(200, {"data": [{"id": "qwen3-8b", "status": {"value": state}}]})
@@ -156,7 +173,9 @@ class H(BaseHTTPRequestHandler):
         else:
             self._json(404, {})
 
-HTTPServer(("127.0.0.1", port), H).serve_forever()
+server = Server(("127.0.0.1", port), H)
+stage("listening")
+server.serve_forever()
 """
 
 
