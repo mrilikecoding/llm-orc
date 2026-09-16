@@ -498,7 +498,7 @@ class TestMCPServerProfileTools:
         profiles_dir = tmp_path / "profiles"
         profiles_dir.mkdir()
         (profiles_dir / "test-profile.yaml").write_text(
-            "name: test-profile\nprovider: ollama\nmodel: llama2"
+            "name: test-profile\nprovider: llama-server\nmodel: llama2"
         )
         _mock_config(server).get_profiles_dirs.return_value = [str(profiles_dir)]
 
@@ -506,7 +506,7 @@ class TestMCPServerProfileTools:
 
         assert len(result["profiles"]) == 1
         assert result["profiles"][0]["name"] == "test-profile"
-        assert result["profiles"][0]["provider"] == "ollama"
+        assert result["profiles"][0]["provider"] == "llama-server"
 
     @pytest.mark.asyncio
     async def test_list_profiles_filters_by_provider(
@@ -516,24 +516,24 @@ class TestMCPServerProfileTools:
         profiles_dir = tmp_path / "profiles"
         profiles_dir.mkdir()
         (profiles_dir / "ollama-profile.yaml").write_text(
-            "name: ollama-profile\nprovider: ollama\nmodel: llama2"
+            "name: ollama-profile\nprovider: llama-server\nmodel: llama2"
         )
         (profiles_dir / "anthropic-profile.yaml").write_text(
             "name: anthropic-profile\nprovider: anthropic\nmodel: claude-3"
         )
         _mock_config(server).get_profiles_dirs.return_value = [str(profiles_dir)]
 
-        result = await server.call_tool("list_profiles", {"provider": "ollama"})
+        result = await server.call_tool("list_profiles", {"provider": "llama-server"})
 
         assert len(result["profiles"]) == 1
-        assert result["profiles"][0]["provider"] == "ollama"
+        assert result["profiles"][0]["provider"] == "llama-server"
 
     @pytest.mark.asyncio
     async def test_create_profile_requires_name(self, server: MCPServer) -> None:
         """Create profile requires name."""
         with pytest.raises(ValueError, match="name is required"):
             await server.call_tool(
-                "create_profile", {"provider": "ollama", "model": "llama2"}
+                "create_profile", {"provider": "llama-server", "model": "llama2"}
             )
 
     @pytest.mark.asyncio
@@ -549,7 +549,7 @@ class TestMCPServerProfileTools:
         """Create profile requires model."""
         with pytest.raises(ValueError, match="model is required"):
             await server.call_tool(
-                "create_profile", {"name": "test", "provider": "ollama"}
+                "create_profile", {"name": "test", "provider": "llama-server"}
             )
 
     @pytest.mark.asyncio
@@ -563,7 +563,7 @@ class TestMCPServerProfileTools:
 
         result = await server.call_tool(
             "create_profile",
-            {"name": "new-profile", "provider": "ollama", "model": "llama2"},
+            {"name": "new-profile", "provider": "llama-server", "model": "llama2"},
         )
 
         assert result["created"] is True
@@ -582,7 +582,7 @@ class TestMCPServerProfileTools:
         with pytest.raises(ValueError, match="already exists"):
             await server.call_tool(
                 "create_profile",
-                {"name": "existing", "provider": "ollama", "model": "llama2"},
+                {"name": "existing", "provider": "llama-server", "model": "llama2"},
             )
 
     @pytest.mark.asyncio
@@ -611,7 +611,7 @@ class TestMCPServerProfileTools:
         profiles_dir = tmp_path / "profiles"
         profiles_dir.mkdir()
         (profiles_dir / "test.yaml").write_text(
-            "name: test\nprovider: ollama\nmodel: old"
+            "name: test\nprovider: llama-server\nmodel: old"
         )
         _mock_config(server).get_profiles_dirs.return_value = [str(profiles_dir)]
 
@@ -1582,14 +1582,14 @@ class TestCheckAgentRunnable:
 
     def test_check_agent_runnable_available_profile(self, server: MCPServer) -> None:
         """Agent with available profile has available status."""
-        profiles = {"ollama-profile": {"provider": "ollama", "model": "llama3"}}
-        providers = {"ollama": {"available": True, "models": ["llama3"]}}
+        profiles = {"ollama-profile": {"provider": "llama-server", "model": "llama3"}}
+        providers = {"llama-server": {"available": True, "models": ["llama3"]}}
 
         result = server._provider_handler._check_agent_runnable(
             "agent1", "ollama-profile", profiles, providers
         )
         assert result.status == "available"
-        assert result.provider == "ollama"
+        assert result.provider == "llama-server"
 
     def test_check_agent_runnable_unavailable_provider(self, server: MCPServer) -> None:
         """Agent with unavailable provider has provider_unavailable status."""
@@ -1609,7 +1609,7 @@ class TestSuggestLocalAlternatives:
         self, server: MCPServer
     ) -> None:
         """Returns empty list when Ollama is unavailable."""
-        providers = {"ollama": {"available": False}}
+        providers = {"llama-server": {"available": False}}
         result = server._provider_handler._suggest_local_alternatives(providers)
         assert result == []
 
@@ -2176,7 +2176,7 @@ class TestValidateEnsembleProfileResolution:
         profiles_dir = tmp_path / "profiles"
         profiles_dir.mkdir()
         (profiles_dir / "my-profile.yaml").write_text(
-            "name: my-profile\nprovider: ollama\nmodel: llama3\n"
+            "name: my-profile\nprovider: llama-server\nmodel: llama3\n"
         )
 
         ensembles_dir = tmp_path / "ensembles"

@@ -146,7 +146,7 @@ class TestProviderCompletion:
         mock_get_providers.return_value = [
             "anthropic-api",
             "google-gemini",
-            "ollama",
+            "llama-server",
         ]
 
         ctx = Mock(spec=click.Context)
@@ -158,7 +158,7 @@ class TestProviderCompletion:
         # Should return only anthropic-api
         assert "anthropic-api" in result
         assert "google-gemini" not in result
-        assert "ollama" not in result
+        assert "llama-server" not in result
         assert len(result) == 1
 
     @patch("llm_orc.cli_completion.get_available_providers")

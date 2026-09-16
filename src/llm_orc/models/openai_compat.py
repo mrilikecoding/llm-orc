@@ -17,10 +17,9 @@ class OpenAICompatibleModel(ModelInterface):
     """Model for any OpenAI-compatible API (vLLM, LM Studio, OpenRouter, etc.)."""
 
     supports_tool_calling: bool = True
-    """Supports OpenAI's tool-calling format natively. Covers Ollama
-    (``/v1/chat/completions`` endpoint with tool-calling models like
-    ``llama3.1``, ``qwen2.5``), OpenAI proper, OpenRouter, LM Studio,
-    vLLM, and any compatible provider."""
+    """Supports OpenAI's tool-calling format natively. Covers llama-server
+    (``/v1/chat/completions`` with ``--jinja`` tool parsing), OpenAI
+    proper, OpenRouter, LM Studio, vLLM, and any compatible provider."""
 
     def __init__(
         self,

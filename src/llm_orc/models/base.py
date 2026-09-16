@@ -68,7 +68,7 @@ class HTTPConnectionPool:
             )
 
             # Default read is sized for local tool-calling models
-            # (Ollama with mistral-nemo / qwen2.5 / llama3.1-tools)
+            # (llama-server with qwen3 / llama3.1-tools style models)
             # where a single orchestrator iteration routinely takes
             # 30-80s. Operators deploying against faster remote
             # providers can tune down via

@@ -94,17 +94,6 @@ class ProviderRegistry:
             )
         )
 
-        # Ollama - no auth needed
-        self.register(
-            ProviderInfo(
-                key="ollama",
-                display_name="Ollama (Local)",
-                description="Local models, no authentication needed",
-                auth_methods=[AuthMethod.NONE],
-                emoji="🏠",
-            )
-        )
-
     def register(self, provider_info: ProviderInfo) -> None:
         """Register a new provider."""
         self._providers[provider_info.key] = provider_info

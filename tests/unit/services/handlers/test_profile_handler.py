@@ -63,7 +63,7 @@ class TestListProfiles:
         profiles_dir = tmp_path / "profiles"
         profiles_dir.mkdir()
         (profiles_dir / "a.yaml").write_text(
-            yaml.safe_dump({"name": "a", "provider": "ollama", "model": "llama3"})
+            yaml.safe_dump({"name": "a", "provider": "llama-server", "model": "llama3"})
         )
         (profiles_dir / "b.yaml").write_text(
             yaml.safe_dump({"name": "b", "provider": "anthropic", "model": "claude"})
@@ -71,7 +71,7 @@ class TestListProfiles:
         mock_config.get_profiles_dirs.return_value = [str(profiles_dir)]
         handler = _handler(mock_config)
 
-        result = await handler.list_profiles({"provider": "ollama"})
+        result = await handler.list_profiles({"provider": "llama-server"})
 
         names = [p["name"] for p in result["profiles"]]
         assert "a" in names
@@ -138,7 +138,7 @@ class TestCreateProfile:
         result = await handler.create_profile(
             {
                 "name": "full-profile",
-                "provider": "ollama",
+                "provider": "llama-server",
                 "model": "llama3",
                 "system_prompt": "You are helpful.",
                 "timeout_seconds": 30,
@@ -165,7 +165,7 @@ class TestCreateProfile:
         result = await handler.create_profile(
             {
                 "name": "zero-temp",
-                "provider": "ollama",
+                "provider": "llama-server",
                 "model": "llama3",
                 "temperature": 0.0,
             }
@@ -185,7 +185,7 @@ class TestCreateProfile:
         result = await handler.create_profile(
             {
                 "name": "zero-tokens",
-                "provider": "ollama",
+                "provider": "llama-server",
                 "model": "llama3",
                 "max_tokens": 0,
             }
@@ -247,7 +247,7 @@ class TestParseProfileData:
         """model_profiles key triggers dict-format parsing (line 220)."""
         data: dict[str, Any] = {
             "model_profiles": {
-                "p1": {"provider": "ollama", "model": "llama3"},
+                "p1": {"provider": "llama-server", "model": "llama3"},
             }
         }
         handler = _handler(mock_config)
@@ -257,7 +257,7 @@ class TestParseProfileData:
 
         assert "p1" in profiles
         assert profiles["p1"]["name"] == "p1"
-        assert profiles["p1"]["provider"] == "ollama"
+        assert profiles["p1"]["provider"] == "llama-server"
 
     def test_profiles_list_format(self, mock_config: Any) -> None:
         """profiles key triggers list-format parsing (line 222)."""
@@ -278,7 +278,7 @@ class TestParseProfileData:
         """Flat YAML with 'name' key is stored directly."""
         data: dict[str, Any] = {
             "name": "p3",
-            "provider": "ollama",
+            "provider": "llama-server",
             "model": "mistral",
         }
         handler = _handler(mock_config)
@@ -292,7 +292,7 @@ class TestParseProfileData:
         """Non-dict values inside model_profiles are skipped (line 233 branch)."""
         data: dict[str, Any] = {
             "model_profiles": {
-                "ok": {"provider": "ollama", "model": "llama3"},
+                "ok": {"provider": "llama-server", "model": "llama3"},
                 "bad": "just-a-string",
             }
         }
@@ -310,8 +310,8 @@ class TestParseProfileData:
         """List entries missing 'name' field are silently skipped (line 244 branch)."""
         data: dict[str, Any] = {
             "profiles": [
-                {"provider": "ollama", "model": "llama3"},
-                {"name": "named", "provider": "ollama", "model": "llama3"},
+                {"provider": "llama-server", "model": "llama3"},
+                {"name": "named", "provider": "llama-server", "model": "llama3"},
             ]
         }
         handler = _handler(mock_config)
