@@ -133,6 +133,15 @@ the llama-server backend yet — that is the regression gate below.
    redirects. The weekly renewal daemon has been failing (root PATH lacks
    `certbot`), a homelab-repo fix owed to the practitioner before
    December. Full record: `docs/plans/2026-09-16-remote-serve-handoff.md`.
+   **#194 merged on local main (2026-09-16 evening):** the serve exposes
+   the full MCP tool set at `/mcp` (streamable HTTP, one `OrchestraService`
+   behind REST, `/v1` and MCP; DNS-rebinding guard off for the proxied
+   host; design `docs/plans/2026-09-16-mcp-in-serve.md`). Suite 4328,
+   lint clean, independent review found one wrong-accept (fixed, pinned
+   red/green). `.mcp.json` carries `llm-orc-remote` pointing at it.
+   Deploy to remote-host (`git push remote-host main` + kickstart) is the
+   practitioner's go; acceptance on the rig is in the design doc.
+   Follow-up #195 (stale `MCPServer.list_tools()`).
 2. **Regression gate on the new backend** (laptop or remote-host): the ladder
    (T1 alone at r≥5 first, then the full run) and the 7-turn probe.
    Chat templating and tool-call parsing moved from Ollama's Go templates
