@@ -24,7 +24,7 @@ A decent laptop can run multiple small language models simultaneously. What's mi
 
 ```bash
 # Homebrew (macOS)
-brew tap mrilikecoding/tap && brew install llm-orchestra
+brew tap mrilikecoding/llm-orchestra && brew install llm-orchestra
 
 # pip (all platforms)
 pip install llm-orchestra
