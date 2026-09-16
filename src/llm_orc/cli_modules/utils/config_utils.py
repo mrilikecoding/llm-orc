@@ -1,5 +1,6 @@
 """Configuration utility functions for CLI operations."""
 
+import os
 from pathlib import Path
 from typing import Any
 
@@ -8,6 +9,16 @@ import yaml
 
 from llm_orc.core.auth.authentication import CredentialStorage
 from llm_orc.core.config.config_manager import ConfigurationManager
+from llm_orc.providers.llama_server import LlamaServerClient
+
+_DEFAULT_LLAMA_SERVER_URL = "http://127.0.0.1:8080/v1"
+
+
+def _router_client() -> LlamaServerClient:
+    """The llama-server router this checkout is configured to use."""
+    return LlamaServerClient.from_base_url(
+        os.environ.get("LLAMA_SERVER_URL", _DEFAULT_LLAMA_SERVER_URL)
+    )
 
 
 def safe_load_yaml(file_path: Path) -> dict[str, Any]:
@@ -146,14 +157,11 @@ def get_available_providers(config_manager: ConfigurationManager) -> set[str]:
         except Exception:
             pass  # Ignore errors for availability check
 
-    # Check ollama availability
+    # The llama-server router (#90) counts as available when it answers
     try:
-        import requests
-
-        response = requests.get("http://localhost:11434/api/tags", timeout=2)
-        if response.status_code == 200:
-            available_providers.add("ollama")
-    except Exception:
+        _router_client().models()
+        available_providers.add("llama-server")
+    except (OSError, ValueError):
         pass  # Ignore errors for availability check
 
     return available_providers
@@ -494,21 +502,12 @@ def display_providers_status(
         except Exception as e:
             provider_display.append(f"Error reading auth providers: {e}")
 
-    # Check ollama availability with detailed status
+    # The llama-server router (#90) with what it serves
     try:
-        import requests
-
-        response = requests.get("http://localhost:11434/api/tags", timeout=2)
-        if response.status_code == 200:
-            provider_display.append("ollama (available)")
-        else:
-            provider_display.append("ollama (service running but API error)")
-    except requests.exceptions.ConnectionError:
-        provider_display.append("ollama (not running)")
-    except requests.exceptions.Timeout:
-        provider_display.append("ollama (timeout - may be starting)")
-    except Exception as e:
-        provider_display.append(f"ollama (error: {e})")
+        models = _router_client().models()
+        provider_display.append(f"llama-server ({len(models)} models)")
+    except (OSError, ValueError) as e:
+        provider_display.append(f"llama-server (not reachable: {e})")
 
     # Display all providers
     if provider_display:

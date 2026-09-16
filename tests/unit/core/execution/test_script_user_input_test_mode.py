@@ -29,14 +29,14 @@ class TestScriptUserInputHandlerTestMode:
 
         llm_config = {
             "agent1": {
-                "model": "qwen3:0.6b",
+                "model": "qwen3-0.6b",
                 "persona": "helpful_user",
             }
         }
 
-        # Mock OllamaModel to avoid requiring Ollama in tests
-        with patch("llm_orc.models.ollama.OllamaModel") as mock_ollama:
-            mock_ollama.return_value = MagicMock()
+        # Mock the model client to avoid requiring a router in tests
+        with patch("llm_orc.models.openai_compat.OpenAICompatibleModel") as mock_model:
+            mock_model.return_value = MagicMock()
             handler = ScriptUserInputHandler(test_mode=True, llm_config=llm_config)
             assert handler.test_mode is True
             assert "agent1" in handler.llm_simulators
@@ -68,7 +68,7 @@ class TestScriptUserInputHandlerTestMode:
         # Create simulator with cached response for deterministic testing
         llm_config = {
             "test_agent": {
-                "model": "qwen3:0.6b",
+                "model": "qwen3-0.6b",
                 "persona": "helpful_user",
                 "cached_responses": {
                     # Cache key will be generated from prompt and context
@@ -76,11 +76,11 @@ class TestScriptUserInputHandlerTestMode:
             }
         }
 
-        # Mock OllamaModel to avoid requiring Ollama in tests
-        with patch("llm_orc.models.ollama.OllamaModel") as mock_ollama:
+        # Mock the model client to avoid requiring a router in tests
+        with patch("llm_orc.models.openai_compat.OpenAICompatibleModel") as mock_model:
             mock_client = MagicMock()
             mock_client.generate_response = AsyncMock(return_value="simulated response")
-            mock_ollama.return_value = mock_client
+            mock_model.return_value = mock_client
             handler = ScriptUserInputHandler(test_mode=True, llm_config=llm_config)
 
             # Should use LLM simulation
@@ -117,18 +117,18 @@ class TestScriptUserInputHandlerTestMode:
         # Configure two agents with different personas
         llm_config = {
             "helpful_agent": {
-                "model": "qwen3:0.6b",
+                "model": "qwen3-0.6b",
                 "persona": "helpful_user",
             },
             "critical_agent": {
-                "model": "qwen3:0.6b",
+                "model": "qwen3-0.6b",
                 "persona": "critical_reviewer",
             },
         }
 
-        # Mock OllamaModel to avoid requiring Ollama in tests
-        with patch("llm_orc.models.ollama.OllamaModel") as mock_ollama:
-            mock_ollama.return_value = MagicMock()
+        # Mock the model client to avoid requiring a router in tests
+        with patch("llm_orc.models.openai_compat.OpenAICompatibleModel") as mock_model:
+            mock_model.return_value = MagicMock()
             handler = ScriptUserInputHandler(test_mode=True, llm_config=llm_config)
 
             # Both should return responses, but styles will differ
@@ -155,15 +155,15 @@ class TestScriptUserInputHandlerTestMode:
         cached_responses = {"prompt1": "response1"}
         llm_config = {
             "agent1": {
-                "model": "qwen3:0.6b",
+                "model": "qwen3-0.6b",
                 "persona": "helpful_user",
                 "cached_responses": cached_responses,
             }
         }
 
-        # Mock OllamaModel to avoid requiring Ollama in tests
-        with patch("llm_orc.models.ollama.OllamaModel") as mock_ollama:
-            mock_ollama.return_value = MagicMock()
+        # Mock the model client to avoid requiring a router in tests
+        with patch("llm_orc.models.openai_compat.OpenAICompatibleModel") as mock_model:
+            mock_model.return_value = MagicMock()
             handler = ScriptUserInputHandler(test_mode=True, llm_config=llm_config)
 
             # Verify cached responses are passed to generator
