@@ -304,65 +304,43 @@ class TestRemoveConfigFile:
 class TestGetAvailableProviders:
     """Test get_available_providers function."""
 
-    def test_get_providers_with_auth_and_ollama(self) -> None:
-        """Test getting providers with both auth and ollama available."""
-        # Create a test that covers both auth and ollama detection
+    def test_get_providers_reports_a_reachable_router(self) -> None:
+        """llama-server (#90) counts as available when its /models answers."""
         mock_config = Mock(spec=ConfigurationManager)
         mock_config.global_config_dir = "/tmp/config"
 
-        # Mock a successful scenario - we don't need to test the complex mocking
-        # as the basic functionality is already tested in other test methods
         with (
-            patch("requests.get") as mock_requests,
+            patch(
+                "llm_orc.cli_modules.utils.config_utils.LlamaServerClient"
+            ) as client_cls,
             patch("pathlib.Path.exists", return_value=False),  # No auth files
         ):
-            # Mock ollama available
-            mock_response = Mock()
-            mock_response.status_code = 200
-            mock_requests.return_value = mock_response
+            client_cls.from_base_url.return_value.models.return_value = []
 
             result = get_available_providers(mock_config)
 
-            # Should at least get ollama
-            assert "ollama" in result
+        assert result == {"llama-server"}
 
-    @patch("requests.get")
-    def test_get_providers_no_auth_no_ollama(self, mock_requests_get: Mock) -> None:
-        """Test getting providers with no auth and no ollama."""
+    def test_get_providers_no_auth_no_router(self) -> None:
         mock_config = Mock(spec=ConfigurationManager)
         mock_config.global_config_dir = "/tmp/config"
 
-        # Mock no auth files exist
-        with patch("pathlib.Path.exists", return_value=False):
-            # Mock ollama not available
-            mock_requests_get.side_effect = Exception("Connection refused")
+        with (
+            patch(
+                "llm_orc.cli_modules.utils.config_utils.LlamaServerClient"
+            ) as client_cls,
+            patch("pathlib.Path.exists", return_value=False),
+        ):
+            client_cls.from_base_url.return_value.models.side_effect = OSError(
+                "Connection refused"
+            )
 
             result = get_available_providers(mock_config)
 
-            assert len(result) == 0
+        assert len(result) == 0
 
-    @patch("requests.get")
-    def test_get_providers_ollama_only(self, mock_requests_get: Mock) -> None:
-        """Test getting providers with only ollama available."""
-        mock_config = Mock(spec=ConfigurationManager)
-        mock_config.global_config_dir = "/tmp/config"
-
-        # Mock ollama available
-        mock_response = Mock()
-        mock_response.status_code = 200
-        mock_requests_get.return_value = mock_response
-
-        # Mock no auth files
-        with patch("pathlib.Path.exists", return_value=False):
-            result = get_available_providers(mock_config)
-
-            assert result == {"ollama"}
-
-    @patch("requests.get")
     @patch("llm_orc.core.auth.authentication.CredentialStorage")
-    def test_get_providers_auth_error_ignored(
-        self, mock_storage_class: Mock, mock_requests_get: Mock
-    ) -> None:
+    def test_get_providers_auth_error_ignored(self, mock_storage_class: Mock) -> None:
         """Test that auth errors are ignored gracefully."""
         mock_config = Mock(spec=ConfigurationManager)
         mock_config.global_config_dir = "/tmp/config"
@@ -370,16 +348,18 @@ class TestGetAvailableProviders:
         # Mock auth file exists but storage fails
         mock_storage_class.side_effect = Exception("Auth error")
 
-        # Mock ollama available
-        mock_response = Mock()
-        mock_response.status_code = 200
-        mock_requests_get.return_value = mock_response
+        with (
+            patch(
+                "llm_orc.cli_modules.utils.config_utils.LlamaServerClient"
+            ) as client_cls,
+            patch("pathlib.Path.exists", return_value=True),
+        ):
+            client_cls.from_base_url.return_value.models.return_value = []
 
-        with patch("pathlib.Path.exists", return_value=True):
             result = get_available_providers(mock_config)
 
-            # Should still get ollama despite auth error
-            assert result == {"ollama"}
+        # Should still get the router despite the auth error
+        assert result == {"llama-server"}
 
 
 class TestCheckEnsembleAvailability:
@@ -420,18 +400,18 @@ class TestCheckEnsembleAvailability:
             ensemble_data = {
                 "name": "Test Ensemble",
                 "agents": [
-                    {"name": "agent1", "provider": "ollama"},
+                    {"name": "agent1", "provider": "llama-server"},
                     {"name": "agent2", "model_profile": "test-profile"},
                 ],
-                "coordinator": {"provider": "ollama"},
+                "coordinator": {"provider": "llama-server"},
             }
 
             with open(ensemble_file, "w") as f:
                 yaml.safe_dump(ensemble_data, f)
 
             mock_config = Mock(spec=ConfigurationManager)
-            mock_config.resolve_model_profile.return_value = ("model", "ollama")
-            available_providers = {"ollama"}
+            mock_config.resolve_model_profile.return_value = ("model", "llama-server")
+            available_providers = {"llama-server"}
 
             with patch("click.echo") as mock_echo:
                 check_ensemble_availability(
@@ -458,7 +438,7 @@ class TestCheckEnsembleAvailability:
                 yaml.safe_dump(ensemble_data, f)
 
             mock_config = Mock(spec=ConfigurationManager)
-            available_providers = {"ollama"}  # anthropic not available
+            available_providers = {"llama-server"}  # anthropic not available
 
             with patch("click.echo") as mock_echo:
                 check_ensemble_availability(
@@ -591,9 +571,9 @@ class TestDisplayFunctions:
     def test_display_local_profiles(self) -> None:
         """Test displaying local profiles."""
         local_profiles = {
-            "local": {"model": "llama3", "provider": "ollama"},
+            "local": {"model": "llama3", "provider": "llama-server"},
         }
-        available_providers = {"ollama"}
+        available_providers = {"llama-server"}
 
         with patch("click.echo") as mock_echo:
             display_local_profiles(local_profiles, available_providers)
@@ -602,19 +582,16 @@ class TestDisplayFunctions:
             assert any("Local Repo" in call for call in calls)
             assert any("local" in call for call in calls)
 
-    @patch("requests.get")
-    def test_display_providers_status(self, mock_requests_get: Mock) -> None:
+    def test_display_providers_status(self) -> None:
         """Test displaying providers status."""
         mock_config = Mock(spec=ConfigurationManager)
         mock_config.global_config_dir = "/tmp/config"
-        available_providers = {"anthropic", "ollama"}
-
-        # Mock ollama response
-        mock_response = Mock()
-        mock_response.status_code = 200
-        mock_requests_get.return_value = mock_response
+        available_providers = {"anthropic", "llama-server"}
 
         with (
+            patch(
+                "llm_orc.cli_modules.utils.config_utils.LlamaServerClient"
+            ) as client_cls,
             patch("click.echo") as mock_echo,
             patch("pathlib.Path.exists", return_value=True),
             patch(
@@ -624,10 +601,15 @@ class TestDisplayFunctions:
             mock_storage = Mock()
             mock_storage.list_providers.return_value = ["anthropic"]
             mock_storage_class.return_value = mock_storage
+            client_cls.from_base_url.return_value.models.return_value = [
+                {"id": "qwen3-8b"},
+                {"id": "qwen3-14b"},
+            ]
 
             display_providers_status(available_providers, mock_config)
 
             calls = [str(call) for call in mock_echo.call_args_list]
+            assert any("llama-server (2 models)" in call for call in calls)
             assert any("Providers" in call for call in calls)
 
 
@@ -909,7 +891,7 @@ class TestCheckEnsembleAvailabilityHelperMethods:
 
         agents = [
             {"name": "agent1", "model_profile": "test-profile"},
-            {"name": "agent2", "provider": "ollama"},
+            {"name": "agent2", "provider": "llama-server"},
         ]
 
         required_providers, missing_profiles = _check_agent_requirements(
@@ -917,7 +899,7 @@ class TestCheckEnsembleAvailabilityHelperMethods:
         )
 
         assert "anthropic" in required_providers
-        assert "ollama" in required_providers
+        assert "llama-server" in required_providers
         assert len(missing_profiles) == 0
 
     def test_check_agent_requirements_empty_agents(self) -> None:
@@ -959,13 +941,13 @@ class TestCheckEnsembleAvailabilityHelperMethods:
 
         mock_config = Mock()
 
-        coordinator = {"provider": "ollama"}
+        coordinator = {"provider": "llama-server"}
 
         required_providers, missing_profiles = _check_coordinator_requirements(
             coordinator, mock_config
         )
 
-        assert "ollama" in required_providers
+        assert "llama-server" in required_providers
         assert len(missing_profiles) == 0
 
     def test_check_coordinator_requirements_empty_coordinator(self) -> None:
