@@ -118,6 +118,158 @@ class TestRenderPreset:
         with pytest.raises(ValueError, match="colon"):
             render_preset(profiles)
 
+    def test_embeddings_and_pooling_options_are_allowlisted_through(self) -> None:
+        """#198: an embedding seat's ``options.embeddings``/``options.pooling``
+        pass through as preset lines; ``num_ctx`` -> ``c`` is unaffected."""
+        profiles: dict[str, dict[str, Any]] = {
+            "local-nomic-embed-text": {
+                "model": "nomic-embed-text",
+                "provider": "llama-server",
+                "hf_repo": "nomic-ai/nomic-embed-text-v1.5-GGUF:Q8_0",
+                "options": {"embeddings": True, "pooling": "mean", "num_ctx": 8192},
+            },
+        }
+
+        preset = render_preset(profiles)
+
+        assert preset.text == (
+            "version = 1\n"
+            "\n"
+            "[*]\n"
+            "c = 40960\n"
+            "flash-attn = on\n"
+            "jinja = true\n"
+            "n-gpu-layers = 999\n"
+            "\n"
+            "[nomic-embed-text]\n"
+            "c = 8192\n"
+            "embeddings = true\n"
+            "batch-size = 8192\n"
+            "ubatch-size = 8192\n"
+            "pooling = mean\n"
+            "hf-repo = nomic-ai/nomic-embed-text-v1.5-GGUF:Q8_0\n"
+        )
+
+    def test_a_profile_without_the_options_emits_neither_line(self) -> None:
+        profiles: dict[str, dict[str, Any]] = {
+            "a": {
+                "model": "qwen3-8b",
+                "provider": "llama-server",
+                "hf_repo": "unsloth/Qwen3-8B-GGUF:Q4_K_M",
+            },
+        }
+
+        preset = render_preset(profiles)
+
+        assert "embeddings" not in preset.text
+        assert "pooling" not in preset.text
+
+    def test_batch_and_ubatch_size_match_context_for_an_embedding_model(
+        self,
+    ) -> None:
+        """Neither is a profile key -- llama-server's physical batch stays
+        at its default (512) regardless of ``c``, and a pooled embedding
+        model needs its whole input inside one ubatch (#198 review: a
+        726-token input 500'd against ``c = 8192`` alone with 'increase
+        the physical batch size'; ``batch-size``/``ubatch-size`` set to
+        the model's context fixed it). Derived automatically from
+        ``embeddings: true``'s own context, not a separate setting."""
+        profiles: dict[str, dict[str, Any]] = {
+            "a": {
+                "model": "nomic-embed-text",
+                "provider": "llama-server",
+                "hf_repo": "nomic-ai/nomic-embed-text-v1.5-GGUF:Q8_0",
+                "options": {"embeddings": True, "pooling": "mean", "num_ctx": 8192},
+            },
+        }
+
+        preset = render_preset(profiles)
+
+        assert "batch-size = 8192" in preset.text
+        assert "ubatch-size = 8192" in preset.text
+
+    def test_a_chat_profile_renders_neither_batch_nor_ubatch_size(self) -> None:
+        profiles: dict[str, dict[str, Any]] = {
+            "a": {
+                "model": "qwen3-8b",
+                "provider": "llama-server",
+                "hf_repo": "unsloth/Qwen3-8B-GGUF:Q4_K_M",
+                "options": {"num_ctx": 16384},
+            },
+        }
+
+        preset = render_preset(profiles)
+
+        assert "batch-size" not in preset.text
+        assert "ubatch-size" not in preset.text
+
+    def test_batch_and_ubatch_size_use_the_default_context_without_num_ctx(
+        self,
+    ) -> None:
+        profiles: dict[str, dict[str, Any]] = {
+            "a": {
+                "model": "nomic-embed-text",
+                "provider": "llama-server",
+                "hf_repo": "nomic-ai/nomic-embed-text-v1.5-GGUF:Q8_0",
+                "options": {"embeddings": True, "pooling": "mean"},
+            },
+        }
+
+        preset = render_preset(profiles)
+
+        assert "batch-size = 40960" in preset.text
+        assert "ubatch-size = 40960" in preset.text
+
+    def test_an_unrecognized_pooling_value_is_dropped(self) -> None:
+        """The router exits at startup on an unrecognized preset value, so
+        an out-of-set ``pooling`` is dropped rather than forwarded."""
+        profiles: dict[str, dict[str, Any]] = {
+            "a": {
+                "model": "qwen3-8b",
+                "provider": "llama-server",
+                "hf_repo": "unsloth/Qwen3-8B-GGUF:Q4_K_M",
+                "options": {"pooling": "bogus"},
+            },
+        }
+
+        preset = render_preset(profiles)
+
+        assert "pooling" not in preset.text
+
+    def test_an_unknown_option_key_is_ignored(self) -> None:
+        profiles: dict[str, dict[str, Any]] = {
+            "a": {
+                "model": "qwen3-8b",
+                "provider": "llama-server",
+                "hf_repo": "unsloth/Qwen3-8B-GGUF:Q4_K_M",
+                "options": {"top_p": 0.9},
+            },
+        }
+
+        preset = render_preset(profiles)
+
+        assert "top_p" not in preset.text
+        assert "[qwen3-8b]" in preset.text
+
+    def test_conflicting_embeddings_values_for_one_model_refuse(self) -> None:
+        profiles: dict[str, dict[str, Any]] = {
+            "a": {
+                "model": "qwen3-8b",
+                "provider": "llama-server",
+                "hf_repo": "unsloth/Qwen3-8B-GGUF:Q4_K_M",
+                "options": {"embeddings": True},
+            },
+            "b": {
+                "model": "qwen3-8b",
+                "provider": "llama-server",
+                "hf_repo": "unsloth/Qwen3-8B-GGUF:Q4_K_M",
+                "options": {"embeddings": False},
+            },
+        }
+
+        with pytest.raises(ValueError, match="qwen3-8b"):
+            render_preset(profiles)
+
 
 STUB_ROUTER = """\
 import json, sys, time

@@ -27,6 +27,7 @@ from llm_orc.web.api import (
     profiles,
     scripts,
     v1_chat_completions,
+    v1_embeddings,
     v1_models,
 )
 
@@ -108,6 +109,7 @@ def create_app() -> FastAPI:
     app.include_router(models.router)
     app.include_router(v1_models.router)
     app.include_router(v1_chat_completions.router)
+    app.include_router(v1_embeddings.router)
 
     # MCP tool set (invoke, create/update/delete ensembles, profiles,
     # scripts, library, promotion) over the streamable HTTP transport.
