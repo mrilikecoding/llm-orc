@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.20.3] - 2026-09-16
+
+### Added
+- `POST /v1/embeddings` on the serve (#198), OpenAI-shaped, forwarded to
+  the llama-server router. `model` is a llama-server profile id or a
+  router model name; unknown models are a 404 without touching the
+  router; a router that is down is a 503. The handler runs off the
+  event loop, so a long embedding batch does not stall the serve.
+- A profile's `options.embeddings` and `options.pooling` render into the
+  router preset; an embedding model also gets `batch-size` and
+  `ubatch-size` equal to its context, since a pooled embedding must fit
+  in one physical batch (llama-server's default of 512 tokens refused
+  inputs longer than that). Ships with a `local-nomic-embed-text`
+  profile (nomic-embed-text-v1.5, 768 dims).
+
 ## [0.20.2] - 2026-09-16
 
 ### Fixed
