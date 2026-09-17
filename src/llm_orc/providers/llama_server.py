@@ -73,25 +73,45 @@ def _served_model(profile: Mapping[str, Any]) -> str | None:
     return model
 
 
+def _record_scalar(
+    store: dict[str, Any], model: str, value: Any, *, label: str
+) -> None:
+    """One value per model name for a given option; two different ones
+    for the same model is a configuration error."""
+    if model in store and store[model] != value:
+        raise ValueError(
+            f"model {model!r} has conflicting {label}: {store[model]!r} and {value!r}"
+        )
+    store[model] = value
+
+
 def _record_source(sources: dict[str, str], model: str, repo: Any) -> None:
     """One source per model name; two different ones is a config error."""
     if not repo:
         return
-    if model in sources and sources[model] != repo:
-        raise ValueError(
-            f"model {model!r} has conflicting hf_repo sources: "
-            f"{sources[model]!r} and {repo!r}"
-        )
-    sources[model] = str(repo)
+    _record_scalar(sources, model, str(repo), label="hf_repo sources")
+
+
+#: Allowlisted per-model ``options`` passed through to the preset besides
+#: ``num_ctx``. Allowlist, not passthrough: an unknown key must never reach
+#: the router, which exits at startup on an unrecognized preset option and
+#: takes every seat down with it (docs/plans/2026-09-16-embeddings-on-the-
+#: serve.md). ``pooling`` is further restricted to the router's own value
+#: set; anything else is dropped rather than rejected, the same treatment
+#: an unlisted option key gets.
+_POOLING_VALUES = {"none", "mean", "cls", "last", "rank"}
 
 
 def _collect(
     profiles: Mapping[str, Mapping[str, Any]],
-) -> tuple[dict[str, str], dict[str, int], set[str]]:
-    """Sources and context sizes per llama-server model name, plus every
-    model name seen (so the sourceless ones can be reported)."""
+) -> tuple[dict[str, str], dict[str, int], dict[str, bool], dict[str, str], set[str]]:
+    """Sources, context sizes, and embedding options per llama-server model
+    name, plus every model name seen (so the sourceless ones can be
+    reported)."""
     sources: dict[str, str] = {}
     contexts: dict[str, int] = {}
+    embeddings: dict[str, bool] = {}
+    pooling: dict[str, str] = {}
     seen: set[str] = set()
     for profile in profiles.values():
         model = _served_model(profile)
@@ -99,10 +119,19 @@ def _collect(
             continue
         seen.add(model)
         _record_source(sources, model, profile.get("hf_repo"))
-        num_ctx = (profile.get("options") or {}).get("num_ctx")
+        options = profile.get("options") or {}
+        num_ctx = options.get("num_ctx")
         if isinstance(num_ctx, int):
             contexts[model] = max(num_ctx, contexts.get(model, 0))
-    return sources, contexts, seen
+        embeddings_flag = options.get("embeddings")
+        if isinstance(embeddings_flag, bool):
+            _record_scalar(
+                embeddings, model, embeddings_flag, label="embeddings option"
+            )
+        pooling_value = options.get("pooling")
+        if pooling_value in _POOLING_VALUES:
+            _record_scalar(pooling, model, pooling_value, label="pooling option")
+    return sources, contexts, embeddings, pooling, seen
 
 
 def render_preset(
@@ -116,19 +145,37 @@ def render_preset(
     ``model`` field). A model needs a source (``hf_repo``) to be loadable;
     one without is reported in ``missing_source`` rather than emitted as
     an invalid section. Two profiles naming one model with different
-    sources is a configuration error, not something to pick between.
+    sources -- or different ``embeddings``/``pooling`` options -- is a
+    configuration error, not something to pick between.
+
+    An ``embeddings: true`` model also gets ``batch-size``/``ubatch-size``
+    set to its own context (``c``, or the global default without one):
+    llama-server's physical batch stays at its 512 default regardless of
+    ``c``, and a pooled embedding model needs its whole input inside one
+    ubatch -- without this an input past ~512 tokens 500s (#198 review).
+    Not a profile key; derived so there is nothing new to configure.
     """
-    sources, contexts, seen = _collect(profiles)
+    sources, contexts, embeddings, pooling, seen = _collect(profiles)
     models = sorted(sources)
     missing = sorted(seen - set(sources))
+    effective_defaults = defaults or PRESET_DEFAULTS
+    default_context = int(effective_defaults.get("c", PRESET_DEFAULTS["c"]))
 
     lines = ["version = 1", "", "[*]"]
-    for key, value in sorted((defaults or PRESET_DEFAULTS).items()):
+    for key, value in sorted(effective_defaults.items()):
         lines.append(f"{key} = {value}")
     for model in models:
         lines += ["", f"[{model}]"]
         if model in contexts:
             lines.append(f"c = {contexts[model]}")
+        if model in embeddings:
+            lines.append(f"embeddings = {'true' if embeddings[model] else 'false'}")
+            if embeddings[model]:
+                batch = contexts.get(model, default_context)
+                lines.append(f"batch-size = {batch}")
+                lines.append(f"ubatch-size = {batch}")
+        if model in pooling:
+            lines.append(f"pooling = {pooling[model]}")
         lines.append(f"hf-repo = {sources[model]}")
     return RenderedPreset("\n".join(lines) + "\n", models, missing)
 
@@ -145,8 +192,9 @@ _DIRECT = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
 
 class LlamaServerClient:
-    """The router's management surface (``/models``), whether the router
-    is one this process owns or one reached by URL."""
+    """The router's management (``/models``) and OpenAI-compatible
+    (``/v1/...``) surface, whether the router is one this process owns
+    or one reached by URL."""
 
     def __init__(self, root_url: str) -> None:
         self.root_url = root_url.rstrip("/")
@@ -181,6 +229,26 @@ class LlamaServerClient:
         )
         with _DIRECT.open(request, timeout=3600) as resp:
             json.load(resp)
+
+    def embeddings(self, body: Mapping[str, Any], *, timeout: float) -> tuple[int, Any]:
+        """Forward an OpenAI-compatible embeddings request to the router,
+        returning its status code and JSON body as-is.
+
+        The router's own error responses (a 4xx/5xx with a JSON body) are
+        returned rather than raised; only a connection failure (the router
+        unreachable) propagates as ``OSError``, matching ``models``/``load``.
+        """
+        data = json.dumps(dict(body)).encode()
+        request = urllib.request.Request(
+            f"{self.root_url}/v1/embeddings",
+            data=data,
+            headers={"Content-Type": "application/json"},
+        )
+        try:
+            with _DIRECT.open(request, timeout=timeout) as resp:
+                return resp.status, json.load(resp)
+        except urllib.request.HTTPError as e:
+            return e.code, json.load(e)
 
 
 class LlamaServerSupervisor:
