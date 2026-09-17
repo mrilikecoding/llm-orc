@@ -1,0 +1,8 @@
+name: local-nomic-embed-text
+provider: llama-server
+model: nomic-embed-text
+hf_repo: nomic-ai/nomic-embed-text-v1.5-GGUF:Q8_0
+options:
+  embeddings: true
+  pooling: mean
+  num_ctx: 8192
