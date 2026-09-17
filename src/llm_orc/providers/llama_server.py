@@ -73,16 +73,23 @@ def _served_model(profile: Mapping[str, Any]) -> str | None:
     return model
 
 
+def _record_scalar(
+    store: dict[str, Any], model: str, value: Any, *, label: str
+) -> None:
+    """One value per model name for a given option; two different ones
+    for the same model is a configuration error."""
+    if model in store and store[model] != value:
+        raise ValueError(
+            f"model {model!r} has conflicting {label}: {store[model]!r} and {value!r}"
+        )
+    store[model] = value
+
+
 def _record_source(sources: dict[str, str], model: str, repo: Any) -> None:
     """One source per model name; two different ones is a config error."""
     if not repo:
         return
-    if model in sources and sources[model] != repo:
-        raise ValueError(
-            f"model {model!r} has conflicting hf_repo sources: "
-            f"{sources[model]!r} and {repo!r}"
-        )
-    sources[model] = str(repo)
+    _record_scalar(sources, model, str(repo), label="hf_repo sources")
 
 
 def _collect(
