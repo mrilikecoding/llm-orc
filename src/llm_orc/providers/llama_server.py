@@ -147,13 +147,22 @@ def render_preset(
     an invalid section. Two profiles naming one model with different
     sources -- or different ``embeddings``/``pooling`` options -- is a
     configuration error, not something to pick between.
+
+    An ``embeddings: true`` model also gets ``batch-size``/``ubatch-size``
+    set to its own context (``c``, or the global default without one):
+    llama-server's physical batch stays at its 512 default regardless of
+    ``c``, and a pooled embedding model needs its whole input inside one
+    ubatch -- without this an input past ~512 tokens 500s (#198 review).
+    Not a profile key; derived so there is nothing new to configure.
     """
     sources, contexts, embeddings, pooling, seen = _collect(profiles)
     models = sorted(sources)
     missing = sorted(seen - set(sources))
+    effective_defaults = defaults or PRESET_DEFAULTS
+    default_context = int(effective_defaults.get("c", PRESET_DEFAULTS["c"]))
 
     lines = ["version = 1", "", "[*]"]
-    for key, value in sorted((defaults or PRESET_DEFAULTS).items()):
+    for key, value in sorted(effective_defaults.items()):
         lines.append(f"{key} = {value}")
     for model in models:
         lines += ["", f"[{model}]"]
@@ -161,6 +170,10 @@ def render_preset(
             lines.append(f"c = {contexts[model]}")
         if model in embeddings:
             lines.append(f"embeddings = {'true' if embeddings[model] else 'false'}")
+            if embeddings[model]:
+                batch = contexts.get(model, default_context)
+                lines.append(f"batch-size = {batch}")
+                lines.append(f"ubatch-size = {batch}")
         if model in pooling:
             lines.append(f"pooling = {pooling[model]}")
         lines.append(f"hf-repo = {sources[model]}")
