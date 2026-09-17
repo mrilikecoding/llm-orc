@@ -6,7 +6,7 @@ Provides REST API for ensemble management, delegating to OrchestraService.
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from llm_orc.web.api import get_orchestra_service
 
@@ -17,6 +17,23 @@ class ExecuteRequest(BaseModel):
     """Request body for ensemble execution."""
 
     input: str
+
+
+class CreateEnsembleRequest(BaseModel):
+    """Request body for ensemble creation."""
+
+    name: str
+    description: str = ""
+    agents: list[dict[str, Any]] = Field(default_factory=list)
+    from_template: str | None = None
+
+
+class UpdateEnsembleRequest(BaseModel):
+    """Request body for ensemble update."""
+
+    changes: dict[str, Any] = Field(default_factory=dict)
+    dry_run: bool = True
+    backup: bool = True
 
 
 @router.get("")
@@ -72,4 +89,64 @@ async def check_ensemble_runnable(name: str) -> dict[str, Any]:
     """
     service = get_orchestra_service()
     result = await service.check_ensemble_runnable({"ensemble_name": name})
+    return result
+
+
+@router.post("")
+async def create_ensemble(request: CreateEnsembleRequest) -> dict[str, Any]:
+    """Create a new ensemble in the local project.
+
+    Args:
+        request: Ensemble definition including name, description, agents.
+
+    Returns:
+        Creation result with path and agents copied.
+    """
+    service = get_orchestra_service()
+    result = await service.create_ensemble(
+        {
+            "name": request.name,
+            "description": request.description,
+            "agents": request.agents,
+            "from_template": request.from_template,
+        }
+    )
+    return result
+
+
+@router.put("/{name}")
+async def update_ensemble(name: str, request: UpdateEnsembleRequest) -> dict[str, Any]:
+    """Update an existing ensemble.
+
+    Args:
+        name: Name of the ensemble to update.
+        request: Update parameters including changes, dry_run, backup.
+
+    Returns:
+        Update result with preview or applied changes.
+    """
+    service = get_orchestra_service()
+    result = await service.update_ensemble(
+        {
+            "ensemble_name": name,
+            "changes": request.changes,
+            "dry_run": request.dry_run,
+            "backup": request.backup,
+        }
+    )
+    return result
+
+
+@router.delete("/{name}")
+async def delete_ensemble(name: str) -> dict[str, Any]:
+    """Delete an ensemble.
+
+    Args:
+        name: Name of the ensemble to delete.
+
+    Returns:
+        Deletion result.
+    """
+    service = get_orchestra_service()
+    result = await service.delete_ensemble({"ensemble_name": name, "confirm": True})
     return result
