@@ -73,13 +73,22 @@ def _resolve_router_model(config: ConfigurationManager, requested: str) -> str:
 
 
 @router.post("/embeddings")
-async def create_embeddings(payload: _EmbeddingsRequest) -> JSONResponse:
+def create_embeddings(payload: _EmbeddingsRequest) -> JSONResponse:
     """Forward to the router's ``/v1/embeddings``, rewriting ``model``.
 
     404s before contacting the router when the resolved name is not in
     the rendered preset's model list; a router connection failure is a
     503, matching ``/api/models/{name}/pull``. Otherwise the router's
     status and JSON body are returned as-is (no streaming).
+
+    Plain ``def``, not ``async def``: every line here is synchronous
+    (config load, preset render, the urllib router call up to
+    ``EMBEDDINGS_TIMEOUT_S``), so an ``async def`` bought nothing while
+    blocking the event loop -- and with it every other request the serve
+    handles (health, /mcp, REST execute, chat) -- for the life of the
+    router call. FastAPI runs a ``def`` path operation in its shared
+    threadpool automatically, which is the standard fix for a
+    sync-only handler.
     """
     config = get_config_manager()
     resolved = _resolve_router_model(config, payload.model)
