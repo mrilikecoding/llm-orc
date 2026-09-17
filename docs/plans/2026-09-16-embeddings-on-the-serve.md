@@ -87,3 +87,26 @@ Plexus is the record. nomic-embed-text-v1.5 at 768 dims is accepted.
 A vector store. Batching or chunking policy (caller's). Listing
 embedding models under `/v1/models`. Reranking (`pooling: rank`)
 beyond letting the option through.
+
+## Result (2026-09-16, evening)
+
+Merged (#198), released v0.20.3, installed on the mini from Homebrew,
+router reloaded with `--models-max 2` (a plist argv change needs
+`launchctl bootout` + `bootstrap`; `kickstart -k` restarts the old argv).
+
+Review blockers, both measured and both fixed with pins: the handler was
+`async def` around synchronous urllib and stalled the whole serve for
+the length of a batch (7.0 s `/health` behind an 8 s stub; 0.005 s
+after); llama-server's default 512-token physical batch refused a
+726-token input, so the renderer now emits `batch-size` and
+`ubatch-size` equal to the model's context for embedding sections.
+
+Acceptance over `https://llm-orc.homelab.nate.green/v1/embeddings`:
+short prefixed pair 2 x 768 in 0.16 s; a 3,257-char (678-token) input
+in 0.84 s; profile id `local-nomic-embed-text` accepted and echoed as
+the router name; unknown model 404 with the OpenAI error body; 32 texts
+(9,504 tokens) in 10.4 s with `/health` at 30-110 ms during the batch;
+`nomic-embed-text` and `qwen3-1.7b` both `loaded` before and after.
+
+The svalbard session confirmed the contract (callers are script agents
+on the mini over loopback, batches of 32-64, Plexus keeps the vectors).

@@ -157,6 +157,20 @@ the llama-server backend yet — that is the regression gate below.
    not in the wheel, so the plist's WorkingDirectory stays the checkout.
    Follow-up #195. The practitioner may move the mini to Linux; Intel
    macOS support is dwindling upstream.
+   **#198 embeddings on the serve, released v0.20.3 and deployed the
+   same evening** (driver: the svalbard vault skills; aligned with that
+   session over messages). `POST /v1/embeddings` forwards to the router;
+   `options.embeddings`/`pooling` render into the preset, and an
+   embedding model gets `batch-size`/`ubatch-size` = its context. Review
+   found two blockers the design's acceptance would have missed: the
+   handler blocked the event loop (7 s `/health` behind an 8 s stub;
+   fixed, now a threadpool handler, pinned) and llama-server's 512-token
+   physical batch refused any real note (fixed, pinned). Measured on the
+   mini over https: 32 x ~1.2k-char texts (9,504 tokens) in 10.4 s with
+   `/health` under 110 ms throughout; two seats resident
+   (`--models-max 2`, needs bootout+bootstrap, a kickstart keeps the old
+   argv). Follow-ups #199 (pull blocks the loop; route should ask the
+   router for its model list).
 2. **Regression gate on the new backend** (laptop or ng-mini): the ladder
    (T1 alone at r≥5 first, then the full run) and the 7-turn probe.
    Chat templating and tool-call parsing moved from Ollama's Go templates
