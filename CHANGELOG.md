@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.20.4] - 2026-09-17
+
+### Added
+- REST CRUD endpoints for ensembles: `POST /api/ensembles`,
+  `PUT /api/ensembles/{name}`, `DELETE /api/ensembles/{name}`. These
+  delegate to the existing `OrchestraService` methods (previously only
+  reachable via MCP), so a remote client can create, update, and delete
+  ensembles on the serve without speaking MCP.
+
 ## [0.20.3] - 2026-09-16
 
 ### Added
