@@ -136,6 +136,16 @@ loads (and downloads) one. Per-request thinking control is
 `chat_template_kwargs.enable_thinking`; llama-server's `timings` land on the
 usage record as `prompt_eval_count` / `eval_count`.
 
+An embedding seat is a `provider: llama-server` profile whose `options` set
+`embeddings: true` and a `pooling` mode (`local-nomic-embed-text.yaml` backs
+`nomic-embed-text-v1.5`); the renderer passes both through to the model's
+preset section, allowlisted the same way `num_ctx` is. `POST /v1/embeddings`
+forwards an OpenAI-shaped request to the router's own `/v1/embeddings`:
+`model` may be a llama-server profile id (resolved to its served model name)
+or the router model name directly, and everything else in the body is
+forwarded unchanged. A model that isn't in the rendered preset 404s without
+reaching the router; a router that's down 503s.
+
 ## Conversation memory
 
 The serve threads conversation context from the client-sent history into

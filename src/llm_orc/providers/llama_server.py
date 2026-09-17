@@ -179,8 +179,9 @@ _DIRECT = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
 
 class LlamaServerClient:
-    """The router's management surface (``/models``), whether the router
-    is one this process owns or one reached by URL."""
+    """The router's management (``/models``) and OpenAI-compatible
+    (``/v1/...``) surface, whether the router is one this process owns
+    or one reached by URL."""
 
     def __init__(self, root_url: str) -> None:
         self.root_url = root_url.rstrip("/")
@@ -215,6 +216,26 @@ class LlamaServerClient:
         )
         with _DIRECT.open(request, timeout=3600) as resp:
             json.load(resp)
+
+    def embeddings(self, body: Mapping[str, Any], *, timeout: float) -> tuple[int, Any]:
+        """Forward an OpenAI-compatible embeddings request to the router,
+        returning its status code and JSON body as-is.
+
+        The router's own error responses (a 4xx/5xx with a JSON body) are
+        returned rather than raised; only a connection failure (the router
+        unreachable) propagates as ``OSError``, matching ``models``/``load``.
+        """
+        data = json.dumps(dict(body)).encode()
+        request = urllib.request.Request(
+            f"{self.root_url}/v1/embeddings",
+            data=data,
+            headers={"Content-Type": "application/json"},
+        )
+        try:
+            with _DIRECT.open(request, timeout=timeout) as resp:
+                return resp.status, json.load(resp)
+        except urllib.request.HTTPError as e:
+            return e.code, json.load(e)
 
 
 class LlamaServerSupervisor:
