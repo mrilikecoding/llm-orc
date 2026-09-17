@@ -9,10 +9,13 @@ router model name directly. Stubs the router the same way
 ``LlamaServerClient``, never the real binary.
 """
 
+import inspect
 from typing import Any
 from unittest.mock import MagicMock, patch
 
 from fastapi.testclient import TestClient
+
+from llm_orc.web.api.v1_embeddings import create_embeddings
 
 _PROFILES: dict[str, dict[str, Any]] = {
     "local-nomic-embed-text": {
@@ -148,7 +151,9 @@ class TestEmbeddingsApi:
                 "llm_orc.web.api.v1_embeddings.get_config_manager",
                 return_value=_config(),
             ),
-            patch("llm_orc.web.api.v1_embeddings.router_client", return_value=router),
+            patch(
+                "llm_orc.web.api.v1_embeddings.router_client", return_value=router
+            ) as get_router,
         ):
             response = client.post(
                 "/v1/embeddings",
@@ -163,6 +168,9 @@ class TestEmbeddingsApi:
                 "code": "model_not_found",
             }
         }
+        # Not just "embeddings() wasn't called" -- the route must not even
+        # build a client, so this can't pass via some other method call.
+        get_router.assert_not_called()
         router.embeddings.assert_not_called()
 
     def test_a_profile_id_for_a_non_llama_server_provider_is_a_404(
@@ -234,3 +242,15 @@ class TestEmbeddingsApi:
 
         assert response.status_code == 400
         assert response.json() == {"error": "bad batch"}
+
+    def test_handler_is_a_plain_function_so_fastapi_threadpools_it(self) -> None:
+        """The handler's own body is entirely synchronous (config load,
+        preset render, the urllib router call), so it must be a plain
+        ``def`` -- FastAPI runs a ``def`` path operation in its shared
+        threadpool, which is what keeps a slow (up to 600s) router call
+        from blocking the event loop the rest of the serve depends on
+        (health, /mcp, REST execute, chat all share it). An ``async def``
+        here would buy nothing while blocking everything (reviewer
+        measurement: /health took 6.96s issued 1s into an embeddings call
+        against a router that sleeps 8s, vs. a 1.3ms baseline)."""
+        assert not inspect.iscoroutinefunction(create_embeddings)
