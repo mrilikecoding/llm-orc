@@ -38,11 +38,17 @@ b10964, router mode, `--models-max 2`).
    `dimensions` passed through if present), forward it unchanged to
    `<router>/v1/embeddings` (router URL from the same `LLAMA_SERVER_URL`
    resolution the factory uses), return the router's JSON and status.
-   Before forwarding, 404 with an OpenAI-style error body when `model`
-   is not a rendered preset model (read the rendered preset's model list
-   the same way `/api/models` does). Router unreachable -> 503, same
+   `model` may be a llama-server profile id (`local-nomic-embed-text`,
+   resolved through the profile to its `model`) or a router model name
+   (`nomic-embed-text`); the forwarded body carries the router name.
+   404 with an OpenAI-style error body when it resolves to nothing that
+   is a rendered preset model (read the rendered preset's model list the
+   same way `/api/models` does). Router unreachable -> 503, same
    wording as `/api/models/{name}/pull`. No streaming.
-4. **`/v1/models`** unchanged (operator allowlist of chat profiles).
+4. **`/v1/models`** unchanged in code: it lists the operator allowlist
+   from `.llm-orc/config.yaml`; adding `local-nomic-embed-text` there on
+   the mini makes the embedding model appear for the vault skills'
+   pre-run check. `GET /api/models` already reports its load state.
 5. **Deploy**: the mini's plist gains `--models-max 2` so the embedding
    seat stays resident beside the chat seat (about 150 MB). The profile
    reaches the mini by `git pull` in the checkout (#196).
@@ -54,6 +60,7 @@ b10964, router mode, `--models-max 2`).
   option key is ignored; `pooling: bogus` is dropped (or rejected,
   pick one and pin it).
 - `/v1/embeddings`: forwards body and returns the stub router's JSON;
+  a profile id resolves to the router model name in the forwarded body;
   unknown model -> 404 without touching the router (assert the stub
   saw no request); router down -> 503; string `input` and list `input`
   both forwarded verbatim. Use the existing stub-router pattern from
@@ -66,6 +73,14 @@ Through `https://llm-orc.homelab.nate.green/v1/embeddings`: two inputs
 with nomic prefixes return two 768-dim vectors; `/api/models` shows
 `nomic-embed-text` `loaded` while the chat seat stays `loaded`
 (models-max 2); a chat call afterwards does not reload the chat seat.
+
+## Alignment with the vault skills (svalbard session, 2026-09-16)
+
+Callers are script agents inside `vault-` ensembles on the mini, hitting
+the serve on loopback, batches of 32 to 64, whole-note chunks, batch and
+overnight only; Plexus invokes those ensembles over REST execute; the
+Claude skills only manage ensembles over MCP. No vector store here:
+Plexus is the record. nomic-embed-text-v1.5 at 768 dims is accepted.
 
 ## Out of scope
 
