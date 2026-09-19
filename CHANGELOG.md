@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.20.5] - 2026-09-19
+
+### Fixed
+- REST API JSON CRUD no longer silently strips `ensemble:`, `script:`,
+  `input_key:`, `fan_out:`, `when:`, `parameters:`, and other non-LLM
+  agent properties (#200). `GET /api/ensembles/{name}` now returns the
+  full agent definition. `POST /api/ensembles` validates and normalizes
+  each agent dict through the Pydantic schema before writing, so a
+  payload with `"model_profile": null` alongside `"ensemble": "..."`
+  creates a loadable ensemble instead of a broken file. Loop agents
+  serialize correctly through the MCP JSON path and `from_template`
+  copy.
+
 ## [0.20.4] - 2026-09-17
 
 ### Added
