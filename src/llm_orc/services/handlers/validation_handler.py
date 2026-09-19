@@ -14,11 +14,18 @@ from llm_orc.mcp.project_context import ProjectContext
 from llm_orc.mcp.utils import get_agent_attr as _get_agent_attr
 
 
-def _is_script_agent(agent: Any) -> bool:
-    """Check if agent is a script-based agent."""
+def _is_non_llm_agent(agent: Any) -> bool:
+    """Check if agent does not require a model profile.
+
+    Script, ensemble-reference, loop, and dynamic-dispatch agents
+    do not use LLM inference and therefore do not need model_profile.
+    """
     return (
         _get_agent_attr(agent, "type") == "script"
         or _get_agent_attr(agent, "script") is not None
+        or _get_agent_attr(agent, "ensemble") is not None
+        or _get_agent_attr(agent, "loop") is not None
+        or _get_agent_attr(agent, "dispatch") is not None
     )
 
 
@@ -104,7 +111,7 @@ class ValidationHandler:
         for agent in config.agents:
             agent_name = _get_agent_attr(agent, "name")
 
-            if _is_script_agent(agent):
+            if _is_non_llm_agent(agent):
                 continue
 
             model_profile = _get_agent_attr(agent, "model_profile")
