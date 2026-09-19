@@ -12,6 +12,47 @@ from llm_orc.core.config.config_manager import ConfigurationManager
 from llm_orc.core.config.ensemble_config import EnsembleLoader
 from llm_orc.mcp.project_context import ProjectContext
 from llm_orc.mcp.utils import get_agent_attr as _get_agent_attr
+from llm_orc.schemas.agent_config import parse_agent_config
+
+_PRESERVED_FIELDS = (
+    "name",
+    "type",
+    "model_profile",
+    "ensemble",
+    "script",
+    "parameters",
+    "depends_on",
+    "system_prompt",
+    "cache",
+    "fan_out",
+    "input_key",
+    "when",
+    "output_format",
+    "timeout_seconds",
+    "input_scope",
+    "temperature",
+    "max_tokens",
+    "options",
+    "response_format",
+    "fallback_model_profile",
+    "model",
+    "provider",
+    "loop",
+    "dispatch",
+)
+
+
+def _agent_to_dict(agent: Any) -> dict[str, Any]:
+    """Convert an AgentConfig object to a plain dict for YAML serialization."""
+    agent_dict: dict[str, Any] = {}
+    for attr in _PRESERVED_FIELDS:
+        val = _get_agent_attr(agent, attr)
+        if val is not None:
+            if attr == "loop" and hasattr(val, "model_dump"):
+                agent_dict[attr] = val.model_dump()
+            else:
+                agent_dict[attr] = val
+    return agent_dict
 
 
 class EnsembleCrudHandler:
@@ -69,10 +110,21 @@ class EnsembleCrudHandler:
                 from_template, description
             )
 
+        normalized_agents: list[dict[str, Any]] = []
+        for agent in agents:
+            if isinstance(agent, dict):
+                # Strip None values so extra="forbid" schemas don't reject
+                # keys like model_profile=null on non-LLM agents.
+                cleaned = {k: v for k, v in agent.items() if v is not None}
+                cfg = parse_agent_config(cleaned)
+                normalized_agents.append(cfg.model_dump(exclude_none=True))
+            else:
+                normalized_agents.append(agent)
+
         ensemble_data = {
             "name": name,
             "description": description,
-            "agents": agents,
+            "agents": normalized_agents,
         }
         yaml_content = yaml.dump(ensemble_data, default_flow_style=False)
 
@@ -249,43 +301,10 @@ class EnsembleCrudHandler:
         if not template_config:
             raise ValueError(f"Template ensemble not found: {template_name}")
 
-        agents: list[dict[str, Any]] = []
-        preserved_fields = (
-            "name",
-            "type",
-            "model_profile",
-            "ensemble",
-            "script",
-            "parameters",
-            "depends_on",
-            "system_prompt",
-            "cache",
-            "fan_out",
-            "input_key",
-            "when",
-            "output_format",
-            "timeout_seconds",
-            "input_scope",
-            "temperature",
-            "max_tokens",
-            "options",
-            "response_format",
-            "fallback_model_profile",
-            "model",
-            "provider",
-            "loop",
-            "dispatch",
-        )
-        for agent in template_config.agents:
-            if isinstance(agent, dict):
-                agents.append(dict(agent))
-            else:
-                agent_dict: dict[str, Any] = {}
-                for attr in preserved_fields:
-                    val = _get_agent_attr(agent, attr)
-                    if val is not None:
-                        agent_dict[attr] = val
-                agents.append(agent_dict)
+        agents = [
+            dict(agent) if isinstance(agent, dict) else _agent_to_dict(agent)
+            for agent in template_config.agents
+        ]
 
         final_description = description or template_config.description
         return agents, final_description, len(agents)

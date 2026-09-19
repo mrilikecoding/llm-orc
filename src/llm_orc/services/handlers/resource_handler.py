@@ -49,7 +49,10 @@ def _serialize_agent(agent: Any) -> dict[str, Any]:
     for attr in fields:
         val = getattr(agent, attr, None)
         if val is not None:
-            result[attr] = val
+            if attr == "loop" and hasattr(val, "model_dump"):
+                result[attr] = val.model_dump()
+            else:
+                result[attr] = val
     # Always include name, model_profile, and depends_on for backward
     # compatibility with the JSON API contract.
     if "name" not in result and hasattr(agent, "name"):

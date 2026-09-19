@@ -33,6 +33,110 @@ def _make_handler(
     )
 
 
+class TestCreateEnsemble:
+    """Tests for create_ensemble."""
+
+    async def test_creates_ensemble_with_valid_agents(self, tmp_path: Path) -> None:
+        """create_ensemble writes a loadable YAML file."""
+        ensembles_dir = tmp_path / "ensembles"
+        handler = _make_handler(ensemble_dirs=[str(ensembles_dir)])
+
+        result = await handler.create_ensemble(
+            {
+                "name": "my-ensemble",
+                "description": "A test ensemble",
+                "agents": [
+                    {"name": "writer", "model_profile": "gpt-4"},
+                    {"name": "ref", "ensemble": "other-ens"},
+                ],
+            }
+        )
+
+        assert result["created"] is True
+        written_file = Path(result["path"])
+        assert written_file.exists()
+        loaded = yaml.safe_load(written_file.read_text())
+        assert loaded["name"] == "my-ensemble"
+        assert len(loaded["agents"]) == 2
+        assert loaded["agents"][0]["model_profile"] == "gpt-4"
+        assert loaded["agents"][1]["ensemble"] == "other-ens"
+        # model_profile should not leak into ensemble agent
+        assert "model_profile" not in loaded["agents"][1]
+
+    async def test_normalizes_model_profile_null(self, tmp_path: Path) -> None:
+        """Payload with model_profile: null alongside ensemble is normalized."""
+        ensembles_dir = tmp_path / "ensembles"
+        handler = _make_handler(ensemble_dirs=[str(ensembles_dir)])
+
+        result = await handler.create_ensemble(
+            {
+                "name": "composed",
+                "description": "Test",
+                "agents": [
+                    {
+                        "name": "searcher",
+                        "model_profile": None,
+                        "ensemble": "web-searcher",
+                        "input_key": "queries",
+                        "fan_out": True,
+                    }
+                ],
+            }
+        )
+
+        assert result["created"] is True
+        loaded = yaml.safe_load(Path(result["path"]).read_text())
+        assert loaded["agents"][0]["ensemble"] == "web-searcher"
+        assert "model_profile" not in loaded["agents"][0]
+
+    async def test_creates_loop_ensemble(self, tmp_path: Path) -> None:
+        """Loop agents are dumped as plain dicts, not Python objects."""
+        ensembles_dir = tmp_path / "ensembles"
+        handler = _make_handler(ensemble_dirs=[str(ensembles_dir)])
+
+        result = await handler.create_ensemble(
+            {
+                "name": "loop-ens",
+                "description": "Test",
+                "agents": [
+                    {
+                        "name": "looper",
+                        "loop": {
+                            "body": "body-ens",
+                            "until": "${done}",
+                            "max_iterations": 5,
+                        },
+                    }
+                ],
+            }
+        )
+
+        assert result["created"] is True
+        loaded = yaml.safe_load(Path(result["path"]).read_text())
+        assert loaded["agents"][0]["loop"]["body"] == "body-ens"
+        assert loaded["agents"][0]["loop"]["max_iterations"] == 5
+        # Must NOT contain a Python object tag
+        raw = Path(result["path"]).read_text()
+        assert "!!python/object" not in raw
+
+    async def test_raises_when_name_missing(self) -> None:
+        """create_ensemble raises ValueError when name is absent."""
+        handler = _make_handler()
+
+        with pytest.raises(ValueError, match="name is required"):
+            await handler.create_ensemble({})
+
+    async def test_raises_when_ensemble_exists(self, tmp_path: Path) -> None:
+        """create_ensemble raises ValueError when ensemble already exists."""
+        ensembles_dir = tmp_path / "ensembles"
+        ensembles_dir.mkdir()
+        (ensembles_dir / "existing.yaml").write_text("name: existing\n")
+        handler = _make_handler(ensemble_dirs=[str(ensembles_dir)])
+
+        with pytest.raises(ValueError, match="Ensemble already exists: existing"):
+            await handler.create_ensemble({"name": "existing"})
+
+
 class TestUpdateEnsemble:
     """Tests for update_ensemble (lines 134-167)."""
 
@@ -326,6 +430,28 @@ class TestCopyFromTemplate:
         assert agents[0]["input_key"] == "queries"
         assert agents[0]["fan_out"] is True
         assert agents[0]["depends_on"] == ["classifier"]
+
+    def test_copies_loop_agent_as_plain_dict(self) -> None:
+        """Loop agents are dumped as plain dicts, not Python objects."""
+        from llm_orc.schemas.agent_config import LoopAgentConfig, LoopSpec
+
+        agent = LoopAgentConfig(
+            name="looper",
+            loop=LoopSpec(body="body-ens", until="${done}", max_iterations=5),
+        )
+        template = MagicMock()
+        template.description = "loop template"
+        template.agents = [agent]
+
+        handler = _make_handler(find_ensemble_return=template)
+
+        agents, _description, _count = handler._copy_from_template("tmpl", "")
+
+        assert agents[0]["loop"]["body"] == "body-ens"
+        assert agents[0]["loop"]["max_iterations"] == 5
+        # Must be YAML-safe
+        yaml_text = yaml.dump({"agents": agents})
+        assert "!!python/object" not in yaml_text
 
     def test_description_falls_back_to_template_when_empty(self) -> None:
         """Uses template description when caller passes empty."""

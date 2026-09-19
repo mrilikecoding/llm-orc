@@ -337,6 +337,61 @@ class TestReadEnsemble:
         assert serialized["input_key"] == "query"
         assert serialized["parameters"] == {"limit": 10}
 
+    async def test_loop_agent_is_json_serializable(
+        self,
+        handler: ResourceHandler,
+        mock_config_manager: Any,
+        mock_ensemble_loader: Any,
+    ) -> None:
+        """Loop agents serialize to JSON-safe dicts (not raw LoopSpec)."""
+        from llm_orc.schemas.agent_config import LoopAgentConfig, LoopSpec
+
+        agent = LoopAgentConfig(
+            name="looper",
+            loop=LoopSpec(body="body-ens", until="${done}", max_iterations=5),
+        )
+        config = _fake_ensemble_config("loop-ens", agents=[agent])
+        mock_config_manager.get_ensembles_dirs.return_value = ["/fake"]
+        mock_ensemble_loader.find_ensemble.return_value = config
+
+        result = await handler.read_ensemble("loop-ens")
+
+        # Must be JSON serializable — this is the MCP path
+        json.dumps(result)
+        serialized = result["agents"][0]
+        assert serialized["loop"]["body"] == "body-ens"
+        assert serialized["loop"]["until"] == "${done}"
+        assert serialized["loop"]["max_iterations"] == 5
+
+    async def test_real_config_objects_round_trip(
+        self,
+        handler: ResourceHandler,
+        mock_config_manager: Any,
+        mock_ensemble_loader: Any,
+    ) -> None:
+        """Real AgentConfig objects produce JSON-safe output."""
+        from llm_orc.schemas.agent_config import (
+            EnsembleAgentConfig,
+            LlmAgentConfig,
+            ScriptAgentConfig,
+        )
+
+        agents = [
+            LlmAgentConfig(name="writer", model_profile="gpt-4"),
+            EnsembleAgentConfig(name="ref", ensemble="other"),
+            ScriptAgentConfig(name="sc", script="echo hi"),
+        ]
+        config = _fake_ensemble_config("mixed-ens", agents=agents)
+        mock_config_manager.get_ensembles_dirs.return_value = ["/fake"]
+        mock_ensemble_loader.find_ensemble.return_value = config
+
+        result = await handler.read_ensemble("mixed-ens")
+
+        json.dumps(result)
+        assert result["agents"][0]["model_profile"] == "gpt-4"
+        assert result["agents"][1]["ensemble"] == "other"
+        assert result["agents"][2]["script"] == "echo hi"
+
 
 # ---------------------------------------------------------------------------
 # read_artifact (lines 204-211)
