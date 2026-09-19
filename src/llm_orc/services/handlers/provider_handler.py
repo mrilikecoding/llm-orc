@@ -182,11 +182,33 @@ class ProviderHandler:
             agent_name = _get_agent_attr(agent, "name", "unknown")
 
             script_path = _get_agent_attr(agent, "script", "")
+            ensemble_ref = _get_agent_attr(agent, "ensemble")
+            loop_spec = _get_agent_attr(agent, "loop")
+            dispatch_tpl = _get_agent_attr(agent, "dispatch")
+
             if script_path:
                 agent_result = AgentRunnability(
                     name=agent_name,
                     profile="",
                     provider="script",
+                )
+            elif ensemble_ref is not None:
+                agent_result = AgentRunnability(
+                    name=agent_name,
+                    profile="",
+                    provider="ensemble",
+                )
+            elif loop_spec is not None:
+                agent_result = AgentRunnability(
+                    name=agent_name,
+                    profile="",
+                    provider="loop",
+                )
+            elif dispatch_tpl is not None:
+                agent_result = AgentRunnability(
+                    name=agent_name,
+                    profile="",
+                    provider="dispatch",
                 )
             else:
                 profile_name = _get_agent_attr(agent, "model_profile", "")

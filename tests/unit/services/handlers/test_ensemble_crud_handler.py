@@ -297,6 +297,36 @@ class TestCopyFromTemplate:
         assert agents[0]["system_prompt"] == "be helpful"
         assert description == "override"
 
+    def test_copies_ensemble_agent_properties(self) -> None:
+        """Object agents with ensemble, input_key, fan_out are preserved."""
+        agent_obj = MagicMock()
+        agent_obj.name = "searcher"
+        agent_obj.model_profile = None
+        agent_obj.ensemble = "web-searcher"
+        agent_obj.script = None
+        agent_obj.parameters = None
+        agent_obj.depends_on = ["classifier"]
+        agent_obj.system_prompt = None
+        agent_obj.cache = None
+        agent_obj.fan_out = True
+        agent_obj.input_key = "queries"
+        agent_obj.when = None
+        agent_obj.timeout_seconds = None
+        agent_obj.input_scope = None
+
+        template = MagicMock()
+        template.description = "composed"
+        template.agents = [agent_obj]
+
+        handler = _make_handler(find_ensemble_return=template)
+
+        agents, _description, _count = handler._copy_from_template("tmpl", "")
+
+        assert agents[0]["ensemble"] == "web-searcher"
+        assert agents[0]["input_key"] == "queries"
+        assert agents[0]["fan_out"] is True
+        assert agents[0]["depends_on"] == ["classifier"]
+
     def test_description_falls_back_to_template_when_empty(self) -> None:
         """Uses template description when caller passes empty."""
         template = MagicMock()

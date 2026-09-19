@@ -38,11 +38,23 @@ def _fake_agent(
     name: str = "agent-1",
     model_profile: str | None = "some-profile",
     depends_on: list[str] | None = None,
+    ensemble: str | None = None,
+    script: str | None = None,
+    parameters: dict[str, Any] | None = None,
+    input_key: str | None = None,
+    fan_out: bool = False,
+    when: str | None = None,
 ) -> Any:
     agent = MagicMock()
     agent.name = name
     agent.model_profile = model_profile
     agent.depends_on = depends_on or []
+    agent.ensemble = ensemble
+    agent.script = script
+    agent.parameters = parameters
+    agent.input_key = input_key
+    agent.fan_out = fan_out
+    agent.when = when
     return agent
 
 
@@ -272,6 +284,58 @@ class TestReadEnsemble:
             await handler.read_ensemble("x")
 
         assert mock_ensemble_loader.find_ensemble.call_count == 3
+
+    async def test_preserves_ensemble_agent_properties(
+        self,
+        handler: ResourceHandler,
+        mock_config_manager: Any,
+        mock_ensemble_loader: Any,
+    ) -> None:
+        """Ensemble-reference agents retain ensemble, input_key, fan_out."""
+        agent = _fake_agent(
+            name="searcher",
+            model_profile=None,
+            ensemble="web-searcher",
+            input_key="queries",
+            fan_out=True,
+            when="${classifier.topic} == 'search'",
+        )
+        config = _fake_ensemble_config("composed", agents=[agent])
+        mock_config_manager.get_ensembles_dirs.return_value = ["/fake"]
+        mock_ensemble_loader.find_ensemble.return_value = config
+
+        result = await handler.read_ensemble("composed")
+
+        serialized = result["agents"][0]
+        assert serialized["ensemble"] == "web-searcher"
+        assert serialized["input_key"] == "queries"
+        assert serialized["fan_out"] is True
+        assert serialized["when"] == "${classifier.topic} == 'search'"
+
+    async def test_preserves_script_agent_properties(
+        self,
+        handler: ResourceHandler,
+        mock_config_manager: Any,
+        mock_ensemble_loader: Any,
+    ) -> None:
+        """Script agents retain script, parameters, input_key."""
+        agent = _fake_agent(
+            name="searcher",
+            model_profile=None,
+            script="scripts/search.py",
+            input_key="query",
+            parameters={"limit": 10},
+        )
+        config = _fake_ensemble_config("script-ens", agents=[agent])
+        mock_config_manager.get_ensembles_dirs.return_value = ["/fake"]
+        mock_ensemble_loader.find_ensemble.return_value = config
+
+        result = await handler.read_ensemble("script-ens")
+
+        serialized = result["agents"][0]
+        assert serialized["script"] == "scripts/search.py"
+        assert serialized["input_key"] == "query"
+        assert serialized["parameters"] == {"limit": 10}
 
 
 # ---------------------------------------------------------------------------

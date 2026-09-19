@@ -164,6 +164,48 @@ class TestValidateModelProfiles:
 
         assert result["valid"] is True
 
+    async def test_ensemble_agent_is_skipped(self) -> None:
+        """Ensemble-reference agents bypass profile validation."""
+        from llm_orc.schemas.agent_config import EnsembleAgentConfig
+
+        agent = EnsembleAgentConfig(name="ref", ensemble="other-ens")
+        config = _make_config([agent])
+
+        handler = _make_handler(find_ensemble_result=config, available_profiles={})
+
+        result = await handler.validate_ensemble({"ensemble_name": "x"})
+
+        assert result["valid"] is True
+
+    async def test_loop_agent_is_skipped(self) -> None:
+        """Loop agents bypass profile validation."""
+        from llm_orc.schemas.agent_config import LoopAgentConfig, LoopSpec
+
+        agent = LoopAgentConfig(
+            name="looper",
+            loop=LoopSpec(body="body-ens", until="${done}", max_iterations=5),
+        )
+        config = _make_config([agent])
+
+        handler = _make_handler(find_ensemble_result=config, available_profiles={})
+
+        result = await handler.validate_ensemble({"ensemble_name": "x"})
+
+        assert result["valid"] is True
+
+    async def test_dynamic_dispatch_agent_is_skipped(self) -> None:
+        """Dynamic-dispatch agents bypass profile validation."""
+        from llm_orc.schemas.agent_config import DynamicDispatchAgentConfig
+
+        agent = DynamicDispatchAgentConfig(name="dispatcher", dispatch="${target}")
+        config = _make_config([agent])
+
+        handler = _make_handler(find_ensemble_result=config, available_profiles={})
+
+        result = await handler.validate_ensemble({"ensemble_name": "x"})
+
+        assert result["valid"] is True
+
     async def test_missing_model_profile_is_reported(self) -> None:
         """Non-script agent without model_profile gets an error (lines 105-106).
 
