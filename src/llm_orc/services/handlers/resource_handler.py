@@ -11,6 +11,59 @@ from llm_orc.core.config.ensemble_config import EnsembleLoader
 from llm_orc.mcp.project_context import ProjectContext
 
 
+def _serialize_agent(agent: Any) -> dict[str, Any]:
+    """Serialize an AgentConfig (or dict) to a JSON-safe dict.
+
+    Preserves all agent type properties: model_profile, ensemble, script,
+    parameters, depends_on, input_key, fan_out, when, system_prompt,
+    output_format, timeout_seconds, input_scope, and others.
+    """
+    if isinstance(agent, dict):
+        return dict(agent)
+
+    result: dict[str, Any] = {}
+    fields = (
+        "name",
+        "model_profile",
+        "ensemble",
+        "script",
+        "parameters",
+        "depends_on",
+        "input_key",
+        "fan_out",
+        "when",
+        "system_prompt",
+        "output_format",
+        "timeout_seconds",
+        "input_scope",
+        "temperature",
+        "max_tokens",
+        "options",
+        "response_format",
+        "fallback_model_profile",
+        "model",
+        "provider",
+        "loop",
+        "dispatch",
+    )
+    for attr in fields:
+        val = getattr(agent, attr, None)
+        if val is not None:
+            if attr == "loop" and hasattr(val, "model_dump"):
+                result[attr] = val.model_dump()
+            else:
+                result[attr] = val
+    # Always include name, model_profile, and depends_on for backward
+    # compatibility with the JSON API contract.
+    if "name" not in result and hasattr(agent, "name"):
+        result["name"] = agent.name
+    if "model_profile" not in result:
+        result["model_profile"] = getattr(agent, "model_profile", None)
+    if "depends_on" not in result:
+        result["depends_on"] = getattr(agent, "depends_on", None) or []
+    return result
+
+
 class ResourceHandler:
     """Handles resource reading operations for ensembles, profiles, artifacts."""
 
@@ -129,15 +182,7 @@ class ResourceHandler:
         for ensemble_dir in ensemble_dirs:
             config = self._ensemble_loader.find_ensemble(str(ensemble_dir), name)
             if config:
-                agents_list = []
-                for agent in config.agents:
-                    agents_list.append(
-                        {
-                            "name": agent.name,
-                            "model_profile": getattr(agent, "model_profile", None),
-                            "depends_on": agent.depends_on or [],
-                        }
-                    )
+                agents_list = [_serialize_agent(agent) for agent in config.agents]
                 return {
                     "name": config.name,
                     "description": config.description,
