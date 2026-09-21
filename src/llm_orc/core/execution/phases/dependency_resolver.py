@@ -8,7 +8,16 @@ from llm_orc.core.execution.utils import dep_name
 from llm_orc.schemas.agent_config import (
     AgentConfig,
     DynamicDispatchAgentConfig,
+    EnsembleAgentConfig,
+    LlmAgentConfig,
+    LoopAgentConfig,
     ScriptAgentConfig,
+)
+
+# Node types whose runner hands input_data verbatim to a fresh child
+# executor (ensemble_execution); they share one input contract.
+ChildExecutionConfig = (
+    EnsembleAgentConfig | LoopAgentConfig | DynamicDispatchAgentConfig
 )
 
 
@@ -85,40 +94,60 @@ class DependencyResolver:
         if is_script_agent:
             return self._build_script_input(agent_name, base_input, dep_results_dict)
 
-        if isinstance(agent_config, DynamicDispatchAgentConfig):
-            return self._dispatch_child_input(
+        if isinstance(agent_config, ChildExecutionConfig):
+            return self._child_contract_input(
                 agent_config, base_input, effective_results
             )
 
-        dependency_results = self._extract_successful_dependency_results(
-            dependencies, effective_results
-        )
-        if agent_config.input_scope == "dependencies":
-            return "\n\n".join(dependency_results)
-        if dependency_results:
-            return self._build_enhanced_input_with_dependencies(
-                agent_name, base_input, dependency_results
+        if isinstance(agent_config, LlmAgentConfig):
+            dependency_results = self._extract_successful_dependency_results(
+                dependencies, effective_results
             )
-        return self._build_enhanced_input_no_dependencies(agent_name, base_input)
+            if agent_config.input_scope == "dependencies":
+                return "\n\n".join(dependency_results)
+            if dependency_results:
+                return self._build_enhanced_input_with_dependencies(
+                    agent_name, base_input, dependency_results
+                )
+            return self._build_enhanced_input_no_dependencies(agent_name, base_input)
 
-    def _dispatch_child_input(
+        raise ValueError(
+            f"Unsupported consumer type for agent '{agent_name}': "
+            f"{type(agent_config).__name__}. The dependency input contract "
+            f"covers LLM, script, ensemble, loop, and dispatch agents."
+        )
+
+    def _child_contract_input(
         self,
-        agent_config: DynamicDispatchAgentConfig,
+        agent_config: ChildExecutionConfig,
         base_input: str,
         effective_results: dict[str, Any],
     ) -> str:
-        """Input for a dynamic-dispatch node's child ensemble.
+        """One input contract for child-execution nodes (issue #202).
 
-        The child is a fresh execution, not an agent in the dependency chain:
-        it receives the input_key-selected value verbatim (already applied to
-        the first dependency's response), or the original ensemble input —
-        never the LLM dependency prose wrapper.
+        The ``ensemble:``, ``loop:``, and ``dispatch:`` runners hand
+        ``input_data`` verbatim to a fresh child executor, so the child is
+        a new execution, not an agent in the dependency chain. With
+        ``input_key`` it receives the selected value verbatim (already
+        applied to the first dependency's response, ADR-014); without, the
+        base input followed by dependency data blocks (honoring
+        ``input_scope``). LLM instruction sentences are never part of this
+        contract — they exist only for LLM consumers.
         """
         if agent_config.input_key and agent_config.depends_on:
             first_dep = dep_name(agent_config.depends_on[0])
             dep_result = effective_results.get(first_dep, {})
             if dep_result.get("status") == "success":
                 return str(dep_result.get("response", ""))
+
+        dependency_results = self._extract_successful_dependency_results(
+            agent_config.depends_on, effective_results
+        )
+        if agent_config.input_scope == "dependencies":
+            return "\n\n".join(dependency_results)
+        if dependency_results:
+            deps_text = "\n\n".join(dependency_results)
+            return f"{base_input}\n\n{deps_text}"
         return base_input
 
     def _apply_input_key_selection(
@@ -303,6 +332,21 @@ class DependencyResolver:
         return all(dep_name(dep) in completed_agents for dep in dependencies)
 
     @staticmethod
+    def _fan_out_child_input(chunk: Any) -> str:
+        """Fan-out instance input for a child-execution node (issue #202).
+
+        The fan-out coordinator already applied input_key selection; each
+        instance is a fresh child execution, so it receives its chunk
+        verbatim — no "Processing chunk N of M" wrapper, which is an LLM
+        framing.
+        """
+        if isinstance(chunk, str):
+            return chunk
+        if isinstance(chunk, (dict, list)):
+            return json.dumps(chunk)
+        return str(chunk)
+
+    @staticmethod
     def is_fan_out_instance_config(agent_config: AgentConfig) -> bool:
         """Check if an agent config is a fan-out instance.
 
@@ -326,20 +370,21 @@ class DependencyResolver:
             base_input: Original ensemble input
 
         Returns:
-            Prepared input string (JSON for scripts, text for LLMs)
+            Prepared input string (JSON for scripts, the chunk verbatim for
+            child-execution nodes, text for LLMs)
         """
         chunk = instance_config.fan_out_chunk
         index = instance_config.fan_out_index or 0
         total = instance_config.fan_out_total or 1
         name = instance_config.name
-        is_script = isinstance(instance_config, ScriptAgentConfig)
 
-        if is_script:
+        if isinstance(instance_config, ScriptAgentConfig):
             return self._build_fan_out_script_input(
                 name, chunk, index, total, base_input
             )
-        else:
-            return self._build_fan_out_llm_input(chunk, index, total, base_input)
+        if isinstance(instance_config, ChildExecutionConfig):
+            return self._fan_out_child_input(chunk)
+        return self._build_fan_out_llm_input(chunk, index, total, base_input)
 
     def _build_fan_out_script_input(
         self,
