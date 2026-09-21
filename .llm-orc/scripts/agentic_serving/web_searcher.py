@@ -82,6 +82,32 @@ def _extract_query(payload: dict[str, Any]) -> str:
         return payload["input"]
     if isinstance(payload.get("data"), str):
         return payload["data"]
+    # ScriptAgentInput envelope — a root script agent inside a child
+    # ensemble receives the child input under `input_data` (issue #202).
+    # The child input may be the query itself, a JSON-encoded list (the
+    # input_key-selected array, first item wins), or a JSON-encoded dict
+    # with its own query key.
+    input_data = payload.get("input_data")
+    if isinstance(input_data, str):
+        stripped = input_data.strip()
+        if stripped.startswith(("[", "{")):
+            try:
+                parsed: Any = json.loads(stripped)
+            except json.JSONDecodeError:
+                return stripped
+            if isinstance(parsed, list):
+                if not parsed:
+                    return ""
+                first = parsed[0]
+                return first if isinstance(first, str) else json.dumps(first)
+            if isinstance(parsed, dict):
+                return _extract_query(parsed)
+        return stripped
+    if isinstance(input_data, list) and input_data:
+        first = input_data[0]
+        return first if isinstance(first, str) else json.dumps(first)
+    if isinstance(input_data, dict):
+        return _extract_query(input_data)
     return ""
 
 
