@@ -48,9 +48,13 @@ information and fixes the reviewer seat as a side effect.
 - Pin move: the dispatch no-input_key pin is now
   `test_dispatch_agent_without_input_key_gets_composed_data` (doctrine #11:
   pins assert the outcome, go red under a fall-through mutant).
-- Separate commit, same PR: `web_searcher.py._extract_query` reads the
-  ScriptAgentInput envelope (`input_data`) a root script agent receives inside a
-  child ensemble. Different cause, same acceptance path.
+- Separate commit, same PR: `web_searcher.py._extract_query` unwraps the child
+  input from the shapes a root script agent actually receives — the engine's
+  dispatch payload `{"input", "parameters"}` (agent_runner.py, verified by the
+  demo) and the sibling ScriptAgentInput convention (`input_data`). A
+  JSON-encoded list (the input_key-selected array) or dict with a query key
+  is unwrapped; a plain string passes through. Different cause, same
+  acceptance path.
 
 ## Gates
 

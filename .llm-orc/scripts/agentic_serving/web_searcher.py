@@ -79,36 +79,48 @@ def _extract_query(payload: dict[str, Any]) -> str:
         return parameters["query"]
     # Fallback — some dispatch shapes pass the prompt as `input` or `data`.
     if isinstance(payload.get("input"), str):
-        return payload["input"]
+        return _query_from_text(payload["input"])
     if isinstance(payload.get("data"), str):
-        return payload["data"]
-    # ScriptAgentInput envelope — a root script agent inside a child
-    # ensemble receives the child input under `input_data` (issue #202).
-    # The child input may be the query itself, a JSON-encoded list (the
-    # input_key-selected array, first item wins), or a JSON-encoded dict
-    # with its own query key.
+        return _query_from_text(payload["data"])
+    # ScriptAgentInput envelope — sibling convention ({"agent_name",
+    # "input_data", "dependencies", ...}); the engine's dispatch payload for
+    # a root script agent is {"input", "parameters"} (agent_runner.py),
+    # handled above. Either way the child input may be the query itself, a
+    # JSON-encoded list (the input_key-selected array, first item wins), or
+    # a JSON-encoded dict with its own query key (issue #202).
     input_data = payload.get("input_data")
     if isinstance(input_data, str):
-        stripped = input_data.strip()
-        if stripped.startswith(("[", "{")):
-            try:
-                parsed: Any = json.loads(stripped)
-            except json.JSONDecodeError:
-                return stripped
-            if isinstance(parsed, list):
-                if not parsed:
-                    return ""
-                first = parsed[0]
-                return first if isinstance(first, str) else json.dumps(first)
-            if isinstance(parsed, dict):
-                return _extract_query(parsed)
-        return stripped
+        return _query_from_text(input_data)
     if isinstance(input_data, list) and input_data:
         first = input_data[0]
         return first if isinstance(first, str) else json.dumps(first)
     if isinstance(input_data, dict):
         return _extract_query(input_data)
     return ""
+
+
+def _query_from_text(text: str) -> str:
+    """Extract the query from a child-input string (issue #202).
+
+    The text may be the query itself, a JSON-encoded list (the
+    input_key-selected array; empty means no query), or a JSON-encoded
+    dict with its own query key. Anything else is used verbatim.
+    """
+    stripped = text.strip()
+    if not stripped.startswith(("[", "{")):
+        return stripped
+    try:
+        parsed: Any = json.loads(stripped)
+    except json.JSONDecodeError:
+        return stripped
+    if isinstance(parsed, list):
+        if not parsed:
+            return ""
+        first = parsed[0]
+        return first if isinstance(first, str) else json.dumps(first)
+    if isinstance(parsed, dict):
+        return _extract_query(parsed)
+    return stripped
 
 
 def _emit_error(error: str, backend: str, detail: str = "") -> None:
@@ -134,9 +146,7 @@ def _search_kagi(query: str, api_key: str) -> dict[str, Any]:
         method="GET",
     )
 
-    with urllib.request.urlopen(
-        request, timeout=DEFAULT_TIMEOUT_SECONDS
-    ) as response:
+    with urllib.request.urlopen(request, timeout=DEFAULT_TIMEOUT_SECONDS) as response:
         response_data: dict[str, Any] = json.loads(response.read())
 
     raw_results = response_data.get("data") or []
@@ -187,9 +197,7 @@ def _search_tavily(query: str, api_key: str) -> dict[str, Any]:
         method="POST",
     )
 
-    with urllib.request.urlopen(
-        request, timeout=DEFAULT_TIMEOUT_SECONDS
-    ) as response:
+    with urllib.request.urlopen(request, timeout=DEFAULT_TIMEOUT_SECONDS) as response:
         response_data: dict[str, Any] = json.loads(response.read())
 
     raw_results = response_data.get("results") or []
@@ -280,9 +288,7 @@ def _resolve_api_key(spec: dict[str, Any], backend: str) -> str | None:
     if not spec["requires_key"]:
         return ""
     key_env = spec["key_env"]
-    api_key = (
-        os.environ.get(key_env, "").strip() if isinstance(key_env, str) else ""
-    )
+    api_key = os.environ.get(key_env, "").strip() if isinstance(key_env, str) else ""
     if not api_key:
         _emit_error(
             error="authentication_failed",
