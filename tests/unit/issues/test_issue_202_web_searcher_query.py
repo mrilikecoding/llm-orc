@@ -1,0 +1,67 @@
+"""Issue #202, second cause: web_searcher cannot read the envelope.
+
+A root script agent inside a child ensemble receives the ScriptAgentInput
+envelope (``{"agent_name", "input_data", "context", "dependencies"}``),
+not the flat dispatch payload ``{"query": ...}``. _extract_query read only
+query/parameters/input/data and returned '' for every envelope shape, so
+the web-searcher ensemble searched for nothing when composed through
+``ensemble:`` + ``input_key:``.
+"""
+
+from __future__ import annotations
+
+import importlib.util
+import json
+from pathlib import Path
+from typing import Any
+
+import pytest
+
+REPO = Path(__file__).resolve().parents[3]
+WEB_SEARCHER = REPO / ".llm-orc" / "scripts" / "agentic_serving" / "web_searcher.py"
+
+_spec = importlib.util.spec_from_file_location("web_searcher", WEB_SEARCHER)
+assert _spec is not None
+assert _spec.loader is not None
+web_searcher = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(web_searcher)
+
+extract_query = web_searcher._extract_query
+
+
+def _envelope(input_data: Any) -> dict[str, Any]:
+    """ScriptAgentInput envelope as the root script agent receives it."""
+    raw = input_data if isinstance(input_data, str) else json.dumps(input_data)
+    return {
+        "agent_name": "web_search",
+        "input_data": raw,
+        "context": {},
+        "dependencies": {},
+    }
+
+
+@pytest.mark.parametrize(
+    ("child_input", "expected"),
+    [
+        pytest.param(["hello world"], "hello world", id="single-item-list"),
+        pytest.param("hello world", "hello world", id="plain-string"),
+        pytest.param({"query": "hello world"}, "hello world", id="query-dict"),
+    ],
+)
+def test_extract_query_from_child_envelope(child_input: Any, expected: str) -> None:
+    """The issue's three child-input shapes all yield the query."""
+    assert extract_query(_envelope(child_input)) == expected
+
+
+def test_extract_query_direct_dispatch_shapes_unchanged() -> None:
+    """Existing dispatch conventions keep their precedence."""
+    assert extract_query({"query": "flat"}) == "flat"
+    assert extract_query({"parameters": {"query": "nested"}}) == "nested"
+    assert extract_query({"input": "prompt"}) == "prompt"
+    assert extract_query({"data": "payload"}) == "payload"
+
+
+def test_extract_query_empty_for_nothing_usable() -> None:
+    """Nothing usable stays '' — main() emits missing_query."""
+    assert extract_query({}) == ""
+    assert extract_query(_envelope([])) == ""
