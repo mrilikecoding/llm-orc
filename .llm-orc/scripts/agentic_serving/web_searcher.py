@@ -120,6 +120,7 @@ def _query_from_text(text: str) -> str:
         return _extract_query(parsed)
     return stripped
 
+
 def _query_from_item(first: Any) -> str:
     """Query from the first item of a selected array (issue #202).
 
