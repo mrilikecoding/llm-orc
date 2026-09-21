@@ -147,7 +147,13 @@ def _search_kagi(query: str, api_key: str) -> dict[str, Any]:
     )
 
     with urllib.request.urlopen(request, timeout=DEFAULT_TIMEOUT_SECONDS) as response:
-        response_data: dict[str, Any] = json.loads(response.read())
+        try:
+            response_data: dict[str, Any] = json.loads(response.read())
+        except json.JSONDecodeError:
+            # Propagates to _dispatch_adapter, which maps it to
+            # backend_invalid_response. Propagate unchanged — the caller
+            # owns the error mapping.
+            raise
 
     raw_results = response_data.get("data") or []
     results: list[dict[str, str]] = []
@@ -198,7 +204,13 @@ def _search_tavily(query: str, api_key: str) -> dict[str, Any]:
     )
 
     with urllib.request.urlopen(request, timeout=DEFAULT_TIMEOUT_SECONDS) as response:
-        response_data: dict[str, Any] = json.loads(response.read())
+        try:
+            response_data: dict[str, Any] = json.loads(response.read())
+        except json.JSONDecodeError:
+            # Propagates to _dispatch_adapter, which maps it to
+            # backend_invalid_response. Propagate unchanged — the caller
+            # owns the error mapping.
+            raise
 
     raw_results = response_data.get("results") or []
     results: list[dict[str, str]] = []
