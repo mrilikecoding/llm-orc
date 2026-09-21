@@ -53,6 +53,25 @@ def test_extract_query_from_child_envelope(child_input: Any, expected: str) -> N
     assert extract_query(_envelope(child_input)) == expected
 
 
+class TestEngineDispatchPayloadUnwrapsJson:
+    """The engine pipes a root script agent {"input": <child input>,
+    "parameters": ...} (agent_runner.py). When the child input is an
+    input_key-selected array (issue #202's web-searcher shape), `input`
+    arrives JSON-encoded — the query is the item, not the JSON text."""
+
+    def test_input_json_encoded_list_unwraps_first_item(self) -> None:
+        assert extract_query({"input": '["hello world"]'}) == "hello world"
+
+    def test_input_json_encoded_dict_unwraps_query(self) -> None:
+        assert extract_query({"input": '{"query": "hello world"}'}) == "hello world"
+
+    def test_input_json_encoded_empty_list_is_empty_query(self) -> None:
+        assert extract_query({"input": "[]"}) == ""
+
+    def test_input_plain_prose_is_unchanged(self) -> None:
+        assert extract_query({"input": "just the prompt"}) == "just the prompt"
+
+
 def test_extract_query_direct_dispatch_shapes_unchanged() -> None:
     """Existing dispatch conventions keep their precedence."""
     assert extract_query({"query": "flat"}) == "flat"
