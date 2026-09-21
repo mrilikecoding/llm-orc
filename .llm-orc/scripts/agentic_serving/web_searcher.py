@@ -92,8 +92,7 @@ def _extract_query(payload: dict[str, Any]) -> str:
     if isinstance(input_data, str):
         return _query_from_text(input_data)
     if isinstance(input_data, list) and input_data:
-        first = input_data[0]
-        return first if isinstance(first, str) else json.dumps(first)
+        return _query_from_item(input_data[0])
     if isinstance(input_data, dict):
         return _extract_query(input_data)
     return ""
@@ -116,11 +115,22 @@ def _query_from_text(text: str) -> str:
     if isinstance(parsed, list):
         if not parsed:
             return ""
-        first = parsed[0]
-        return first if isinstance(first, str) else json.dumps(first)
+        return _query_from_item(parsed[0])
     if isinstance(parsed, dict):
         return _extract_query(parsed)
     return stripped
+
+def _query_from_item(first: Any) -> str:
+    """Query from the first item of a selected array (issue #202).
+
+    A str item is the query; a dict item unwraps its query key (consistent
+    with the dict path); anything else serializes.
+    """
+    if isinstance(first, str):
+        return first
+    if isinstance(first, dict):
+        return _extract_query(first)
+    return json.dumps(first)
 
 
 def _emit_error(error: str, backend: str, detail: str = "") -> None:

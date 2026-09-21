@@ -72,6 +72,23 @@ class TestEngineDispatchPayloadUnwrapsJson:
         assert extract_query({"input": "just the prompt"}) == "just the prompt"
 
 
+class TestListOfDictItems:
+    """input_key-selected arrays whose items are dicts (e.g. structured
+    results) unwrap their query key, consistent with the dict path
+    (review finding F2)."""
+
+    def test_list_of_dict_first_item_unwraps_query_key(self) -> None:
+        assert extract_query(_envelope([{"query": "hello world"}])) == "hello world"
+
+    def test_input_json_encoded_list_of_dict_unwraps(self) -> None:
+        assert extract_query({"input": '[{"query": "hello world"}]'}) == "hello world"
+
+    def test_list_of_dict_without_query_key_yields_empty(self) -> None:
+        """A dict item with no query key unwraps to '' — main() emits
+        missing_query rather than searching JSON text."""
+        assert extract_query(_envelope([{"other": "x"}])) == ""
+
+
 def test_extract_query_direct_dispatch_shapes_unchanged() -> None:
     """Existing dispatch conventions keep their precedence."""
     assert extract_query({"query": "flat"}) == "flat"
