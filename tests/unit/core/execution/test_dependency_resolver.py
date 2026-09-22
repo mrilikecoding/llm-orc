@@ -84,7 +84,10 @@ class TestDependencyResolver:
         assert "Second result" in enhanced["agent3"]
 
     def test_enhance_input_with_dependencies_with_failed_deps(self) -> None:
-        """Test enhancement when some dependencies failed."""
+        """A failed dependency alongside a successful one is named in the
+        envelope, not silently dropped (fail-closed-composition rule 2 —
+        a failed step never reaches a downstream consumer as if it
+        vanished)."""
         resolver, mock_role_resolver = self.setup_resolver()
         mock_role_resolver.return_value = "Test Role"
 
@@ -104,14 +107,21 @@ class TestDependencyResolver:
             "base input", agents, results_dict
         )
 
-        # Should only include successful dependency
         assert "Agent agent1 (Test Role):" in enhanced["agent2"]
         assert "Success result" in enhanced["agent2"]
-        assert "failed_agent" not in enhanced["agent2"]
+        assert (
+            "Agent failed_agent (Test Role) (failed): Agent failed"
+            in (enhanced["agent2"])
+        )
 
     def test_enhance_input_with_dependencies_no_successful_deps(self) -> None:
-        """Test enhancement when no dependencies are successful."""
-        resolver, _ = self.setup_resolver()
+        """When the sole dependency failed, the envelope names the
+        failure instead of silently falling back to bare base input — in
+        the full executor this agent is skipped before this input is
+        ever used (GuardEvaluator, rule 1); this pins what the resolver
+        alone produces."""
+        resolver, mock_role_resolver = self.setup_resolver()
+        mock_role_resolver.return_value = "Test Role"
 
         agents: list[AgentConfig] = [
             LlmAgentConfig(
@@ -128,8 +138,11 @@ class TestDependencyResolver:
             "base input", agents, results_dict
         )
 
-        # Should fall back to base input
-        assert enhanced["agent2"] == "base input"
+        assert "base input" in enhanced["agent2"]
+        assert (
+            "Agent failed_agent (Test Role) (failed): Agent failed"
+            in (enhanced["agent2"])
+        )
 
     def test_enhance_input_with_dependencies_missing_deps(self) -> None:
         """Test enhancement when dependencies are missing from results."""
@@ -325,7 +338,11 @@ class TestDependencyResolver:
         assert result == []
 
     def test_enhance_input_with_mixed_dependency_statuses(self) -> None:
-        """Test enhancement with mix of successful, failed, and missing deps."""
+        """A failed dependency present in results_dict is named; one
+        entirely absent from results_dict (never should happen given
+        topological ordering, but defensive) stays omitted — there is
+        nothing honest to say about a dependency the engine never
+        recorded at all."""
         resolver, mock_role_resolver = self.setup_resolver()
         mock_role_resolver.side_effect = lambda name: f"{name.title()} Role"
 
@@ -346,10 +363,9 @@ class TestDependencyResolver:
             "base input", agents, results_dict
         )
 
-        # Should only include successful dependency
         assert "Agent success (Success Role):" in enhanced["agent4"]
         assert "Good result" in enhanced["agent4"]
-        assert "failed" not in enhanced["agent4"]
+        assert "Agent failed (Failed Role) (failed): Failed" in enhanced["agent4"]
         assert "missing" not in enhanced["agent4"]
 
     def test_enhance_input_empty_dependencies_list(self) -> None:
@@ -413,13 +429,17 @@ class TestDependencyResolver:
         assert "First success" in enhanced["multi_deps"]
         assert "Second success" in enhanced["multi_deps"]
 
-        # Partial successful dependencies agent
+        # Partial successful dependencies agent: the failed one is named,
+        # not dropped (fail-closed-composition rule 2)
         assert "Agent success1 (Success1 Role):" in enhanced["partial_deps"]
         assert "First success" in enhanced["partial_deps"]
-        assert "failed1" not in enhanced["partial_deps"]
+        assert (
+            "Agent failed1 (Failed1 Role) (failed): Failed"
+            in (enhanced["partial_deps"])
+        )
 
     def test_extract_successful_dependency_results_helper(self) -> None:
-        """Test the extracted helper method for getting successful results."""
+        """Test the extracted helper method for getting dependency results."""
         resolver, mock_role_resolver = self.setup_resolver()
         mock_role_resolver.side_effect = lambda name: f"{name.title()} Role"
 
@@ -439,8 +459,9 @@ class TestDependencyResolver:
             dependencies, results_dict
         )
 
-        assert len(dependency_results) == 1
+        assert len(dependency_results) == 2
         assert "Agent success (Success Role):\nGood result" in dependency_results
+        assert "Agent failed (Failed Role) (failed): Failed" in dependency_results
 
     def test_build_enhanced_input_with_dependencies_helper(self) -> None:
         """Test the extracted helper method for building enhanced input."""
@@ -506,6 +527,47 @@ class TestDependencyResolver:
         assert "dependencies" in parsed
         assert "extractor" in parsed["dependencies"]
         assert parsed["dependencies"]["extractor"]["response"] == "Extracted data here"
+
+    def test_enhance_input_script_agent_dependencies_dict_names_failures(self) -> None:
+        """A script consumer sees every present dependency, including a
+        failed or skipped one, with its own status/error intact — the
+        ScriptAgentInput shape (``dependencies: dict[str, Any]``) already
+        carries this honestly (fail-closed-composition rule 2); it is no
+        longer filtered down to successes only."""
+        import json
+
+        resolver, _ = self.setup_resolver()
+
+        agents: list[AgentConfig] = [
+            ScriptAgentConfig(
+                name="aggregator",
+                script="aggregator.py",
+                depends_on=["extractor", "skipped_step"],
+            ),
+        ]
+        results_dict = {
+            "extractor": {
+                "status": "failed",
+                "response": None,
+                "error": "timeout",
+            },
+            "skipped_step": {
+                "status": "skipped",
+                "response": None,
+                "reason": "no dependency succeeded: upstream (failed: x)",
+            },
+        }
+
+        enhanced = resolver.enhance_input_with_dependencies(
+            "Process this data", agents, results_dict
+        )
+
+        parsed = json.loads(enhanced["aggregator"])
+        deps = parsed["dependencies"]
+        assert deps["extractor"]["status"] == "failed"
+        assert deps["extractor"]["error"] == "timeout"
+        assert deps["skipped_step"]["status"] == "skipped"
+        assert "reason" in deps["skipped_step"]
 
     def test_enhance_input_script_agent_without_dependencies(self) -> None:
         """Test script agent without dependencies still gets JSON format."""
@@ -792,10 +854,20 @@ class TestChildExecutionInputContract:
             resolver.enhance_input_with_dependencies("base", agents, {})
 
     def test_child_input_key_with_failed_upstream_gets_composed(self) -> None:
-        """input_key set but the first dependency failed: the child gets
-        base input plus the other successful deps' data (failed-dep-omitted
-        semantics, matching the LLM path), never the selection error text
-        (PR 203 review note)."""
+        """input_key set but the first dependency failed: in ISOLATION,
+        the resolver composes base input plus every present dependency's
+        data, now including the failed one's status and detail — never
+        the input_key selection error text (PR 203 review note), and
+        never silently dropping the failure either (fail-closed-
+        composition rule 2).
+
+        This composed input is a fallback the resolver can always
+        produce, but it is not what actually runs: in the full executor,
+        ``DependencyResolver.child_input_key_contract_error`` fails this
+        agent before dispatch, exactly because ``depends_on[0]`` (the
+        input_key source) did not succeed — see
+        ``TestChildInputKeyContractError`` below for that decision.
+        """
         resolver = self.setup_resolver()
 
         agents: list[AgentConfig] = [
@@ -819,7 +891,7 @@ class TestChildExecutionInputContract:
         assert child_input.startswith("the original turn")
         assert "Agent other (Test Role):" in child_input
         assert "other data" in child_input
-        assert "boom" not in child_input
+        assert "Agent failed (Test Role) (error): boom" in child_input
 
     def test_unknown_consumer_type_raises(self) -> None:
         """No fall-through default: an unrecognized consumer type raises
@@ -835,6 +907,128 @@ class TestChildExecutionInputContract:
 
         with pytest.raises(ValueError, match="consumer type"):
             resolver.enhance_input_with_dependencies("base", agents, results_dict)
+
+
+class TestChildInputKeyContractError:
+    """A non-fan-out child-execution node's input_key selects
+    depends_on[0] verbatim (ADR-014) — its ENTIRE input. If depends_on[0]
+    did not succeed, that promise can't be honored even when another
+    dependency did (fail-closed-composition, the input_key/depends_on[0]
+    decision): ``child_input_key_contract_error`` names that as an error
+    so the executor can fail the agent closed instead of composing a
+    different, unrequested input shape.
+    """
+
+    def setup_resolver(self) -> DependencyResolver:
+        return DependencyResolver(role_resolver=Mock(return_value="Role"))
+
+    def test_none_when_input_key_source_succeeded(self) -> None:
+        resolver = self.setup_resolver()
+        agent = EnsembleAgentConfig(
+            name="consumer",
+            ensemble="worker",
+            depends_on=["producer"],
+            input_key="queries",
+        )
+        results_dict = {"producer": {"status": "success", "response": "[]"}}
+
+        assert resolver.child_input_key_contract_error(agent, results_dict) is None
+
+    def test_none_when_no_input_key(self) -> None:
+        resolver = self.setup_resolver()
+        agent = EnsembleAgentConfig(
+            name="consumer", ensemble="worker", depends_on=["producer"]
+        )
+        results_dict = {"producer": {"status": "failed", "error": "boom"}}
+
+        assert resolver.child_input_key_contract_error(agent, results_dict) is None
+
+    def test_none_for_fan_out_agent(self) -> None:
+        """Fan-out's own input_key contract check (FanOutCoordinator)
+        owns this case; this method stays out of its way."""
+        resolver = self.setup_resolver()
+        agent = EnsembleAgentConfig(
+            name="consumer",
+            ensemble="worker",
+            depends_on=["producer"],
+            input_key="queries",
+            fan_out=True,
+        )
+        results_dict = {"producer": {"status": "failed", "error": "boom"}}
+
+        assert resolver.child_input_key_contract_error(agent, results_dict) is None
+
+    def test_none_for_llm_consumer(self) -> None:
+        """Only child-execution nodes (ensemble:/loop:/dispatch:) are in
+        scope — an LLM consumer's partial-failure envelope already names
+        the failure (rule 2)."""
+        resolver = self.setup_resolver()
+        agent = LlmAgentConfig(
+            name="consumer",
+            model_profile="test-profile",
+            depends_on=["producer"],
+            input_key="queries",
+        )
+        results_dict = {"producer": {"status": "failed", "error": "boom"}}
+
+        assert resolver.child_input_key_contract_error(agent, results_dict) is None
+
+    def test_error_when_sole_input_key_source_failed(self) -> None:
+        resolver = self.setup_resolver()
+        agent = EnsembleAgentConfig(
+            name="consumer",
+            ensemble="worker",
+            depends_on=["producer"],
+            input_key="queries",
+        )
+        results_dict = {"producer": {"status": "failed", "error": "boom"}}
+
+        error = resolver.child_input_key_contract_error(agent, results_dict)
+
+        assert error is not None
+        assert "consumer" in error
+        assert "queries" in error
+        assert "producer" in error
+
+    def test_error_when_input_key_source_failed_but_another_dep_succeeded(
+        self,
+    ) -> None:
+        """The multi-dependency case the decided contract calls out:
+        depends_on[0] (the input_key source) failed even though another
+        dependency succeeded — still a contract failure, not a partial
+        success (rule 1's 'at least one succeeded' threshold does not
+        apply to input_key's verbatim promise)."""
+        resolver = self.setup_resolver()
+        agent = EnsembleAgentConfig(
+            name="consumer",
+            ensemble="worker",
+            depends_on=["producer", "other"],
+            input_key="queries",
+        )
+        results_dict = {
+            "producer": {"status": "failed", "error": "boom"},
+            "other": {"status": "success", "response": "fine"},
+        }
+
+        error = resolver.child_input_key_contract_error(agent, results_dict)
+
+        assert error is not None
+        assert "producer" in error
+
+    def test_error_when_input_key_source_skipped(self) -> None:
+        resolver = self.setup_resolver()
+        agent = DynamicDispatchAgentConfig(
+            name="seat",
+            dispatch="${route.target}",
+            depends_on=["route"],
+            input_key="dispatch_input",
+        )
+        results_dict = {"route": {"status": "skipped", "response": None}}
+
+        error = resolver.child_input_key_contract_error(agent, results_dict)
+
+        assert error is not None
+        assert "skipped" in error
 
 
 class TestLlmConsumerOfEnsembleDependency:

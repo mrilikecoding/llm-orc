@@ -174,6 +174,45 @@ class DependencyResolver:
             return str(dep_result.get("response", ""))
         return None
 
+    def child_input_key_contract_error(
+        self, agent_config: AgentConfig, results_dict: dict[str, Any]
+    ) -> str | None:
+        """None when a child-execution node's ``input_key`` contract is
+        satisfiable; otherwise an error naming the upstream agent and
+        the key (fail-closed-composition, the input_key/depends_on[0]
+        decision).
+
+        ``input_key`` on an ``ensemble:``/``loop:``/``dispatch:`` node
+        selects ``depends_on[0]``'s response verbatim (ADR-014) — the
+        node's ENTIRE input, not one dependency among several. If
+        ``depends_on[0]`` did not succeed, there is no honest verbatim
+        value to hand the child, even when some OTHER dependency did
+        succeed: silently composing a different, unrequested input shape
+        (base input plus the other deps' data) would let a failed step
+        reach the child as a success by another route. This is checked
+        and the agent failed before it ever runs, the same way a fan-out
+        agent's own ``input_key`` contract failure already works. A
+        fan-out original (``fan_out: true``) is excluded — FanOutCoordinator
+        already applies this exact check ahead of expansion, with its
+        own error text; this method only covers the non-fan-out case.
+        """
+        if not isinstance(agent_config, ChildExecutionConfig):
+            return None
+        if agent_config.fan_out or not agent_config.input_key:
+            return None
+        if not agent_config.depends_on:
+            return None
+        first_dep = dep_name(agent_config.depends_on[0])
+        dep_result = results_dict.get(first_dep, {})
+        status = dep_result.get("status") if isinstance(dep_result, dict) else None
+        if status == "success":
+            return None
+        return (
+            f"Agent '{agent_config.name}' cannot run: input_key "
+            f"'{agent_config.input_key}' selects from upstream agent "
+            f"'{first_dep}', which did not succeed (status: {status!r})"
+        )
+
     def _child_contract_input(
         self,
         agent_config: ChildExecutionConfig,
@@ -263,18 +302,26 @@ class DependencyResolver:
         results_dict: dict[str, Any],
         consumer_config: AgentConfig | None = None,
     ) -> list[str]:
-        """Extract successful dependency results with role attribution.
+        """Extract dependency results with role attribution.
+
+        Despite the name (kept for the extracted-helper test), this
+        covers every dependency PRESENT in ``results_dict``, not only
+        successful ones: a failed or skipped dependency renders as a
+        named ``(status): detail`` block instead of silently vanishing
+        (fail-closed-composition rule 2 — a failed step never reaches a
+        downstream consumer as an unqualified success). A dependency
+        entirely absent from ``results_dict`` is still omitted.
 
         Args:
             dependencies: List of dependency names (str or dict form)
             results_dict: Dictionary of previous agent results
             consumer_config: The dependent agent's own config. When it is
-                an LLM agent, an ``ensemble:`` dependency's response
-                renders as its child's terminal agent responses instead
-                of the raw execution record (fail-closed-composition D).
-                The dependency selected by the consumer's own
-                ``input_key`` is left verbatim — that selection already
-                happened in ``_apply_input_key_selection``.
+                an LLM agent, a successful ``ensemble:`` dependency's
+                response renders as its child's terminal agent responses
+                instead of the raw execution record (fail-closed-
+                composition D). The dependency selected by the consumer's
+                own ``input_key`` is left verbatim — that selection
+                already happened in ``_apply_input_key_selection``.
 
         Returns:
             List of formatted dependency result strings
@@ -283,11 +330,14 @@ class DependencyResolver:
         dependency_results = []
         for dep in dependencies:
             agent_dep_name = dep_name(dep)
-            if (
-                agent_dep_name in results_dict
-                and results_dict[agent_dep_name].get("status") == "success"
-            ):
-                response = results_dict[agent_dep_name]["response"]
+            if agent_dep_name not in results_dict:
+                continue
+            result = results_dict[agent_dep_name]
+            dep_role = self._get_agent_role_description(agent_dep_name)
+            role_text = f" ({dep_role})" if dep_role else ""
+
+            if result.get("status") == "success":
+                response = result["response"]
                 if (
                     isinstance(consumer_config, LlmAgentConfig)
                     and agent_dep_name != input_key_dep
@@ -295,14 +345,31 @@ class DependencyResolver:
                     response = self._render_ensemble_dependency(
                         agent_dep_name, response
                     )
-                dep_role = self._get_agent_role_description(agent_dep_name)
-                role_text = f" ({dep_role})" if dep_role else ""
-
                 dependency_results.append(
                     f"Agent {agent_dep_name}{role_text}:\n{response}"
                 )
+            else:
+                dependency_results.append(
+                    self._render_non_success_dependency_block(
+                        agent_dep_name, role_text, result
+                    )
+                )
 
         return dependency_results
+
+    @staticmethod
+    def _render_non_success_dependency_block(
+        agent_dep_name: str, role_text: str, result: dict[str, Any]
+    ) -> str:
+        """A named block for a dependency that did not succeed (failed or
+        skipped) — fail-closed-composition rule 2: the consumer sees
+        which upstream agent failed and why, in the same shape the
+        engine already uses for a failed ensemble terminal
+        (``_render_terminal_block``)."""
+        status = result.get("status", "failed")
+        detail = result.get("error") or result.get("reason") or result.get("response")
+        detail_text = detail or "no response"
+        return f"Agent {agent_dep_name}{role_text} ({status}): {detail_text}"
 
     @staticmethod
     def _input_key_selected_dep_name(
@@ -403,7 +470,16 @@ class DependencyResolver:
     def _extract_dependency_results_as_dict(
         self, dependencies: list[str | dict[str, Any]], results_dict: dict[str, Any]
     ) -> dict[str, Any]:
-        """Extract successful dependency results as a dict.
+        """Extract dependency results as a dict, keyed by agent name.
+
+        Every dependency PRESENT in ``results_dict`` is included
+        regardless of status (fail-closed-composition rule 2): the
+        ``ScriptAgentInput`` shape (``dependencies: dict[str, Any]``)
+        already carries a raw result's ``status``/``error`` honestly, so
+        a script consumer can read ``dependencies[name]["status"]``
+        directly instead of a failed or skipped dependency silently
+        vanishing from the dict. A dependency entirely absent from
+        ``results_dict`` is still omitted.
 
         Args:
             dependencies: List of dependency agent names (str or dict form)
@@ -412,15 +488,11 @@ class DependencyResolver:
         Returns:
             Dictionary mapping dependency names to their results
         """
-        dep_results = {}
-        for dep in dependencies:
-            agent_dep_name = dep_name(dep)
-            if (
-                agent_dep_name in results_dict
-                and results_dict[agent_dep_name].get("status") == "success"
-            ):
-                dep_results[agent_dep_name] = results_dict[agent_dep_name]
-        return dep_results
+        return {
+            agent_dep_name: results_dict[agent_dep_name]
+            for agent_dep_name in (dep_name(dep) for dep in dependencies)
+            if agent_dep_name in results_dict
+        }
 
     def _build_script_input(
         self, agent_name: str, base_input: str, dependencies: dict[str, Any]
