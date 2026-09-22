@@ -225,3 +225,65 @@ class TestEnsembleAgentExecutesChildEnsemble:
             assert "worker" in child_result["results"]
         finally:
             Path(child_path).unlink()
+
+
+class TestEnsembleExecutorTerminalAgentLookups:
+    """fail-closed-composition D: EnsembleExecutor exposes the lookups
+    DependencyResolver needs to render an LLM consumer's ensemble
+    dependency as terminal responses, instead of the raw execution
+    record.
+    """
+
+    def test_get_agent_config_finds_dependency_by_name(self) -> None:
+        """Looks up a sibling agent's own config by name."""
+        executor = ExecutorFactory.create_root_executor()
+        config = EnsembleConfig(
+            name="parent",
+            description="Test parent",
+            agents=[
+                EnsembleAgentConfig(name="searcher", ensemble="web-searcher"),
+            ],
+        )
+        executor._agent_configs = config.agents
+
+        found = executor._get_agent_config("searcher")
+
+        assert found is config.agents[0]
+        assert executor._get_agent_config("missing") is None
+
+    def test_terminal_agents_for_ensemble_resolves_child_graph(self) -> None:
+        """Terminal names come from the same reference EnsembleAgentRunner
+        resolves to run the child — the agents no other agent in the
+        child depends on."""
+        executor = ExecutorFactory.create_root_executor()
+        child_config = EnsembleConfig(
+            name="web-searcher",
+            description="Test child",
+            agents=[
+                ScriptAgentConfig(name="fetch", script="echo ok"),
+                ScriptAgentConfig(
+                    name="format", script="echo ok", depends_on=["fetch"]
+                ),
+            ],
+        )
+
+        def _resolve(_ref: str) -> EnsembleConfig:
+            return child_config
+
+        executor._resolve_ensemble_reference = _resolve  # type: ignore[assignment]
+
+        terminals = executor._terminal_agents_for_ensemble("web-searcher")
+
+        assert terminals == ["format"]
+
+    def test_terminal_agents_for_ensemble_missing_ensemble_yields_empty(self) -> None:
+        """A resolution failure yields an empty list, not a crash — the
+        resolver falls back to the child's own results dict."""
+        executor = ExecutorFactory.create_root_executor()
+
+        def _raise(_ref: str) -> EnsembleConfig:
+            raise FileNotFoundError("nope")
+
+        executor._resolve_ensemble_reference = _raise  # type: ignore[assignment]
+
+        assert executor._terminal_agents_for_ensemble("missing") == []
