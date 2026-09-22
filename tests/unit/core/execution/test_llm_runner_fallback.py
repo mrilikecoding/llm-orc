@@ -63,6 +63,10 @@ class TestModelLoadingFallbackWiring:
             context="agent_worker",
             original_profile="primary",
             agent_fallback_profile="agent-fallback",
+            temperature=None,
+            max_tokens=None,
+            agent_options=None,
+            response_format=None,
         )
 
     @pytest.mark.asyncio

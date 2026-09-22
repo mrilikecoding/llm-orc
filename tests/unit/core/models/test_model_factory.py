@@ -1,6 +1,6 @@
 """Tests for ModelFactory."""
 
-from typing import cast
+from typing import Any, cast
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
@@ -428,9 +428,17 @@ class TestModelFactory:
                 original_profile="premium-claude",
             )
 
-            mock_config_manager.get_model_profile.assert_called_with("premium-claude")
+            mock_config_manager.get_model_profile.assert_any_call("premium-claude")
             mock_config_manager.resolve_model_profile.assert_called_with("micro-local")
-            mock_load.assert_called_with("qwen3-0.6b", "llama-server")
+            mock_load.assert_called_with(
+                "qwen3-0.6b",
+                "llama-server",
+                temperature=None,
+                max_tokens=None,
+                options=None,
+                response_format=None,
+                base_url=None,
+            )
             assert isinstance(model, OpenAICompatibleModel)
             assert fallback_profile == "micro-local"
 
@@ -445,6 +453,7 @@ class TestModelFactory:
             "qwen3-0.6b",
             "llama-server",
         )
+        mock_config_manager.get_model_profile.return_value = None
 
         with patch.object(
             model_factory,
@@ -460,11 +469,22 @@ class TestModelFactory:
             mock_config_manager.resolve_model_profile.assert_called_once_with(
                 "my-explicit-fallback"
             )
-            mock_load.assert_called_once_with("qwen3-0.6b", "llama-server")
+            mock_load.assert_called_once_with(
+                "qwen3-0.6b",
+                "llama-server",
+                temperature=None,
+                max_tokens=None,
+                options=None,
+                response_format=None,
+                base_url=None,
+            )
             assert fallback_profile == "my-explicit-fallback"
             assert isinstance(model, OpenAICompatibleModel)
-            # The original profile's own chain is never consulted.
-            mock_config_manager.get_model_profile.assert_not_called()
+            # The original profile's own chain is never consulted - only
+            # the agent-level fallback profile's own config is read.
+            mock_config_manager.get_model_profile.assert_called_once_with(
+                "my-explicit-fallback"
+            )
 
     async def test_get_fallback_model_agent_level_failure_falls_through(
         self,
@@ -497,7 +517,15 @@ class TestModelFactory:
                 agent_fallback_profile="my-explicit-fallback",
             )
 
-            mock_load.assert_called_once_with("qwen3-0.6b", "llama-server")
+            mock_load.assert_called_once_with(
+                "qwen3-0.6b",
+                "llama-server",
+                temperature=None,
+                max_tokens=None,
+                options=None,
+                response_format=None,
+                base_url=None,
+            )
             assert fallback_profile == "micro-local"
             assert isinstance(model, OpenAICompatibleModel)
 
@@ -532,7 +560,9 @@ class TestModelFactory:
 
         model_load_calls: list[tuple[str, str]] = []
 
-        def mock_load_side_effect(model: str, provider: str) -> OpenAICompatibleModel:
+        def mock_load_side_effect(
+            model: str, provider: str, **_kwargs: Any
+        ) -> OpenAICompatibleModel:
             model_load_calls.append((model, provider))
             if len(model_load_calls) == 1:
                 raise ValueError("Model failed")
@@ -1320,3 +1350,102 @@ class TestOpenAICompatibleRouting:
 
         assert isinstance(result, OpenAICompatibleModel)
         assert result.api_key == "sk-test-key"
+
+
+class TestFallbackHopLoadsProfileConfig:
+    """Scenario (SF2): a fallback-chain hop loads the fallback profile
+    exactly as a primary profile would be loaded — same base_url, same
+    options, same agent-level generation params. Reviewer probe: a
+    fallback profile with base_url http://10.9.9.9:8080/v1 produced a
+    model with base_url http://127.0.0.1:8080/v1 (the router default)
+    and options None — the hop was calling load_model(model, provider)
+    bare, dropping everything the profile and the agent configured.
+    """
+
+    @pytest.fixture
+    def factory(self) -> ModelFactory:
+        config_manager = Mock(spec=ConfigurationManager)
+        credential_storage = Mock(spec=CredentialStorage)
+        credential_storage.get_auth_method.return_value = None
+        return ModelFactory(config_manager, credential_storage)
+
+    async def test_configurable_chain_hop_carries_base_url_and_options(
+        self, factory: ModelFactory
+    ) -> None:
+        config_mock = cast(Mock, factory._config_manager)
+        profile_configs: dict[str, dict[str, Any]] = {
+            "premium-claude": {
+                "model": "claude-sonnet-4",
+                "provider": "anthropic-api",
+                "fallback_model_profile": "remote-llama",
+            },
+            "remote-llama": {
+                "model": "qwen3-8b",
+                "provider": "llama-server",
+                "base_url": "http://10.9.9.9:8080/v1",
+                "options": {"num_ctx": 4096},
+            },
+        }
+        config_mock.get_model_profile.side_effect = lambda name: profile_configs.get(
+            name
+        )
+        config_mock.resolve_model_profile.side_effect = lambda name: (
+            "qwen3-8b",
+            "llama-server",
+        )
+
+        model, fallback_profile = await factory.get_fallback_model(
+            context="agent_test", original_profile="premium-claude"
+        )
+
+        assert fallback_profile == "remote-llama"
+        assert isinstance(model, OpenAICompatibleModel)
+        assert model.base_url == "http://10.9.9.9:8080/v1"
+        assert model._options == {"num_ctx": 4096}
+
+    async def test_agent_level_fallback_hop_carries_base_url_and_options(
+        self, factory: ModelFactory
+    ) -> None:
+        config_mock = cast(Mock, factory._config_manager)
+        config_mock.get_model_profile.return_value = {
+            "model": "qwen3-8b",
+            "provider": "llama-server",
+            "base_url": "http://10.9.9.9:8080/v1",
+            "options": {"num_ctx": 4096},
+        }
+        config_mock.resolve_model_profile.return_value = ("qwen3-8b", "llama-server")
+
+        model, fallback_profile = await factory.get_fallback_model(
+            context="agent_test",
+            agent_fallback_profile="local-fallback",
+        )
+
+        assert fallback_profile == "local-fallback"
+        assert isinstance(model, OpenAICompatibleModel)
+        assert model.base_url == "http://10.9.9.9:8080/v1"
+        assert model._options == {"num_ctx": 4096}
+
+    async def test_fallback_hop_carries_agent_generation_params(
+        self, factory: ModelFactory
+    ) -> None:
+        config_mock = cast(Mock, factory._config_manager)
+        config_mock.get_model_profile.return_value = {
+            "model": "qwen3-8b",
+            "provider": "llama-server",
+        }
+        config_mock.resolve_model_profile.return_value = ("qwen3-8b", "llama-server")
+
+        model, _ = await factory.get_fallback_model(
+            context="agent_test",
+            agent_fallback_profile="local-fallback",
+            temperature=0.3,
+            max_tokens=222,
+            agent_options={"top_k": 5},
+            response_format="json",
+        )
+
+        assert isinstance(model, OpenAICompatibleModel)
+        assert model.temperature == 0.3
+        assert model.max_tokens == 222
+        assert model._options == {"top_k": 5}
+        assert model._response_format == "json"

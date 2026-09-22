@@ -215,6 +215,11 @@ class ModelFactory:
         context: str = "general",
         original_profile: str | None = None,
         agent_fallback_profile: str | None = None,
+        *,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+        agent_options: dict[str, Any] | None = None,
+        response_format: str | dict[str, Any] | None = None,
     ) -> tuple[ModelInterface, str]:
         """Get a fallback model from the explicit fallback_model_profile chain.
 
@@ -229,6 +234,14 @@ class ModelFactory:
             original_profile: Original model profile that failed
             agent_fallback_profile: Agent-level fallback_model_profile
                 override, tried before the profile's own chain
+            temperature: The failed agent's temperature, carried into
+                whichever fallback profile loads (SF2: a hop loads
+                exactly as a primary profile would).
+            max_tokens: The failed agent's max_tokens, carried likewise.
+            agent_options: The failed agent's options, merged with the
+                fallback profile's own options (agent wins).
+            response_format: The failed agent's response_format,
+                carried likewise.
 
         Returns:
             Tuple of (model, fallback_model_profile) naming the profile
@@ -238,12 +251,24 @@ class ModelFactory:
             ValueError: If the fallback chain is empty or exhausted.
         """
         if agent_fallback_profile:
-            agent_result = await self._try_single_fallback(agent_fallback_profile)
+            agent_result = await self._try_single_fallback(
+                agent_fallback_profile,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                agent_options=agent_options,
+                response_format=response_format,
+            )
             if agent_result:
                 return agent_result
 
         if original_profile:
-            chain_result = await self._try_configurable_fallback(original_profile)
+            chain_result = await self._try_configurable_fallback(
+                original_profile,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                agent_options=agent_options,
+                response_format=response_format,
+            )
             if chain_result:
                 return chain_result
 
@@ -253,30 +278,52 @@ class ModelFactory:
         )
 
     async def _try_single_fallback(
-        self, profile_name: str
+        self,
+        profile_name: str,
+        *,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+        agent_options: dict[str, Any] | None = None,
+        response_format: str | dict[str, Any] | None = None,
     ) -> tuple[ModelInterface, str] | None:
-        """Try loading one named fallback profile.
+        """Try loading one named fallback profile — the same code path
+        (``_load_profile``) a primary profile load uses, so this hop
+        carries the profile's base_url/options and the agent's
+        generation params instead of dropping them.
 
         Returns:
             (model, profile_name) if successful, None if the profile
             doesn't resolve or load — callers continue down the chain.
         """
         try:
-            resolved_model, resolved_provider = (
-                self._config_manager.resolve_model_profile(profile_name)
+            model = await self._load_profile(
+                profile_name,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                agent_options=agent_options,
+                response_format=response_format,
             )
-            model = await self.load_model(resolved_model, resolved_provider)
             return model, profile_name
         except (ValueError, KeyError):
             return None
 
     async def _try_configurable_fallback(
-        self, original_profile: str
+        self,
+        original_profile: str,
+        *,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+        agent_options: dict[str, Any] | None = None,
+        response_format: str | dict[str, Any] | None = None,
     ) -> tuple[ModelInterface, str] | None:
         """Try configurable fallback chain for a given profile.
 
         Args:
             original_profile: The original profile that failed
+            temperature: Carried into whichever hop loads.
+            max_tokens: Carried into whichever hop loads.
+            agent_options: Merged with each hop's own options (agent wins).
+            response_format: Carried into whichever hop loads.
 
         Returns:
             (model, fallback_model_profile) if successful, None if
@@ -301,10 +348,13 @@ class ModelFactory:
                 break
 
             try:
-                resolved_model, resolved_provider = (
-                    self._config_manager.resolve_model_profile(fallback_profile_name)
+                model = await self._load_profile(
+                    fallback_profile_name,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    agent_options=agent_options,
+                    response_format=response_format,
                 )
-                model = await self.load_model(resolved_model, resolved_provider)
                 return model, fallback_profile_name
             except (ValueError, KeyError):
                 current_profile = fallback_profile_name
