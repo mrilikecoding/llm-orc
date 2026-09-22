@@ -612,8 +612,19 @@ class EnsembleExecutor:
         input_data: str | dict[str, str],
         results_dict: dict[str, Any],
         total_phases: int = 1,
+        base_input: str | None = None,
     ) -> tuple[bool, int]:
         """Execute a phase with full monitoring, fan-out, and user input counting.
+
+        ``base_input`` is the raw ensemble input. Past phase 0, ``input_data``
+        is the per-agent dict from ``enhance_input_with_dependencies``, keyed
+        by pre-expansion names, so a fan-out original's entry is the ENHANCED
+        input (the LLM dependency envelope). The original never executes once
+        it fans out; its instances read that entry as their base input, and
+        the fan-out frame promises the original ensemble input (#202). So the
+        entry is replaced with ``base_input`` for every original that fans
+        out, and left alone for one that does not (zero instances: the
+        original runs as a single agent with its enhanced input).
 
         Returns:
             Tuple of (has_errors, user_inputs_collected)
@@ -638,6 +649,13 @@ class EnsembleExecutor:
             )
             expanded_agents.extend(instances)
             fan_out_original_names.append(agent_config.name)
+
+        if fan_out_original_names and base_input is not None:
+            if isinstance(input_data, dict):
+                input_data = {
+                    **input_data,
+                    **dict.fromkeys(fan_out_original_names, base_input),
+                }
 
         self._emit_performance_event(
             "phase_started",
@@ -748,6 +766,7 @@ class EnsembleExecutor:
                 phase_input,
                 results_dict,
                 len(phases),
+                base_input=input_data,
             )
             has_errors = has_errors or phase_has_errors
             if track_user_inputs:

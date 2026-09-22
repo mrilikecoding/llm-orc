@@ -2568,3 +2568,129 @@ class TestFanOutExecution:
         assert gathered["status"] == "partial"
         assert len(gathered["instances"]) == 3
         assert gathered["instances"][1]["status"] == "failed"
+
+    @pytest.mark.asyncio
+    async def test_fan_out_instance_frame_carries_raw_ensemble_input(
+        self, mock_ensemble_executor: Any
+    ) -> None:
+        """A fan-out instance's "Original task:" is the raw ensemble input.
+
+        Fan-out needs depends_on, so instances always run past phase 0, where
+        the per-agent input dict holds the ENHANCED input computed for the
+        original (the LLM dependency envelope, instructions and the whole
+        fanned-out array included). PR 203 round 2 fixed the lookup key but
+        served that envelope as the instance base input; the instance frame
+        must carry the original ensemble input alone (#202 round 3).
+        """
+        config = EnsembleConfig(
+            name="fan_out_frame",
+            description="classifier -> per-item processor",
+            agents=[
+                LlmAgentConfig(name="classifier", model_profile="test-tester"),
+                LlmAgentConfig(
+                    name="processor",
+                    model_profile="test-tester",
+                    depends_on=["classifier"],
+                    input_key="items",
+                    fan_out=True,
+                ),
+            ],
+        )
+
+        model = AsyncMock(spec=ModelInterface)
+        model.generate_response.return_value = '{"items": ["a", "b"]}'
+        model.get_last_usage.return_value = {
+            "total_tokens": 1,
+            "input_tokens": 1,
+            "output_tokens": 0,
+            "cost_usd": 0.0,
+            "duration_ms": 1,
+        }
+        role = RoleDefinition(name="tester", prompt="You are a tester")
+        executor = mock_ensemble_executor
+
+        with (
+            patch.object(
+                executor._llm_agent_runner,
+                "_load_role_from_config",
+                new_callable=AsyncMock,
+                return_value=role,
+            ),
+            patch.object(
+                executor._model_factory,
+                "load_model_from_agent_config",
+                new_callable=AsyncMock,
+                return_value=model,
+            ),
+        ):
+            result = await executor.execute(config, input_data="summarize each item")
+
+        assert result["status"] == "completed"
+        frames = [
+            call.kwargs["message"]
+            for call in model.generate_response.call_args_list
+            if call.kwargs["message"].startswith("Processing chunk")
+        ]
+        assert len(frames) == 2
+        for frame in frames:
+            assert "Original task: summarize each item\n" in frame
+            assert "Please respond to the following input" not in frame
+            assert '["a", "b"]' not in frame
+
+    @pytest.mark.asyncio
+    async def test_fan_out_original_that_does_not_expand_keeps_enhanced_input(
+        self, mock_ensemble_executor: Any
+    ) -> None:
+        """Zero instances (upstream key is not an array): the original runs
+        as a single agent and still sees its dependency envelope. The raw
+        base input replaces the dict entry only for originals that fan out.
+        """
+        config = EnsembleConfig(
+            name="fan_out_fallback",
+            description="classifier -> processor that cannot expand",
+            agents=[
+                LlmAgentConfig(name="classifier", model_profile="test-tester"),
+                LlmAgentConfig(
+                    name="processor",
+                    model_profile="test-tester",
+                    depends_on=["classifier"],
+                    input_key="items",
+                    fan_out=True,
+                ),
+            ],
+        )
+
+        model = AsyncMock(spec=ModelInterface)
+        model.generate_response.return_value = '{"items": "not an array"}'
+        model.get_last_usage.return_value = {
+            "total_tokens": 1,
+            "input_tokens": 1,
+            "output_tokens": 0,
+            "cost_usd": 0.0,
+            "duration_ms": 1,
+        }
+        role = RoleDefinition(name="tester", prompt="You are a tester")
+        executor = mock_ensemble_executor
+
+        with (
+            patch.object(
+                executor._llm_agent_runner,
+                "_load_role_from_config",
+                new_callable=AsyncMock,
+                return_value=role,
+            ),
+            patch.object(
+                executor._model_factory,
+                "load_model_from_agent_config",
+                new_callable=AsyncMock,
+                return_value=model,
+            ),
+        ):
+            await executor.execute(config, input_data="summarize each item")
+
+        messages = [c.kwargs["message"] for c in model.generate_response.call_args_list]
+        assert len(messages) == 2
+        assert not messages[1].startswith("Processing chunk")
+        assert "Original Input:\nsummarize each item" in messages[1]
+        assert "Agent classifier" in messages[1]
+        assert "not an array" in messages[1]
