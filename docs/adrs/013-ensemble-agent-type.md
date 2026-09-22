@@ -71,6 +71,8 @@ A child ensemble failure is an agent failure, not an orchestration failure, per 
 
 **Negative:**
 - Full result dict as response may be verbose for downstream LLM agents. Mitigated by `input_key` (ADR-014) for consumer-side selection. If that proves insufficient, an `output_mode` field can be added later.
+
+  *Amendment, 2026-09-22 (fail-closed-composition D):* resolved by a consumer contract instead. An LLM agent's `DependencyResolver` input now renders an `ensemble:` dependency (plain or fan-out gathered) as its child's terminal agent responses, not the raw result dict — no `output_mode` field, no producer-side change. Script and child-execution (`ensemble:`/`loop:`/`dispatch:`) consumers still get the full record.
 - Depth limiting is a system-level constraint, not per-ensemble. All ensembles share the same limit.
 
 **Neutral:**
