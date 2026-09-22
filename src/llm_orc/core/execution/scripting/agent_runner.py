@@ -32,7 +32,7 @@ from llm_orc.schemas.agent_config import AgentConfig, ScriptAgentConfig
 logger = logging.getLogger(__name__)
 
 
-def _reports_failure(response: Any) -> bool:
+def reports_failure(response: Any) -> bool:
     """Whether a script's own response says it did not succeed (#159).
 
     Two clauses, because one does not cover the corpus:
@@ -196,7 +196,7 @@ class ScriptAgentRunner:
         if (
             cache_identity is not None
             and not edited_mid_run
-            and not _reports_failure(response)
+            and not reports_failure(response)
         ):
             cache_result = {
                 "output": response,
