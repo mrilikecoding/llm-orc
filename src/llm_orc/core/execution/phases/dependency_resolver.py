@@ -4,7 +4,7 @@ import json
 from collections.abc import Callable
 from typing import Any
 
-from llm_orc.core.execution.utils import dep_name
+from llm_orc.core.execution.utils import SUCCEEDED_STATUSES, dep_name
 from llm_orc.schemas.agent_config import (
     AgentConfig,
     DynamicDispatchAgentConfig,
@@ -336,14 +336,14 @@ class DependencyResolver:
             dep_role = self._get_agent_role_description(agent_dep_name)
             role_text = f" ({dep_role})" if dep_role else ""
 
-            if result.get("status") == "success":
+            if result.get("status") in SUCCEEDED_STATUSES:
                 response = result["response"]
                 if (
                     isinstance(consumer_config, LlmAgentConfig)
                     and agent_dep_name != input_key_dep
                 ):
-                    response = self._render_ensemble_dependency(
-                        agent_dep_name, response
+                    response = self._render_fan_out_or_ensemble_dependency(
+                        agent_dep_name, result
                     )
                 dependency_results.append(
                     f"Agent {agent_dep_name}{role_text}:\n{response}"
@@ -385,12 +385,36 @@ class DependencyResolver:
             return None
         return dep_name(consumer_config.depends_on[0])
 
-    def _render_ensemble_dependency(self, dep_agent_name: str, response: Any) -> Any:
+    def _render_fan_out_or_ensemble_dependency(
+        self, dep_agent_name: str, result: dict[str, Any]
+    ) -> Any:
+        """A ``success``/``partial`` dependency's response for an LLM
+        consumer, ahead of the generic ``Agent X:`` wrap.
+
+        A genuinely empty gathered fan-out (the upstream array was
+        ``[]``) renders as an explicit statement rather than an empty
+        block (SF4) — checked before the ensemble-specific render, since
+        it applies to any fan-out dependency, not only an ``ensemble:``
+        one. Otherwise falls through to
+        ``_render_ensemble_dependency``.
+        """
+        response = result.get("response")
+        if result.get("fan_out") and isinstance(response, list) and not response:
+            return (
+                f"Agent {dep_agent_name}: produced zero instances "
+                "(upstream list was empty)"
+            )
+        return self._render_ensemble_dependency(dep_agent_name, result)
+
+    def _render_ensemble_dependency(
+        self, dep_agent_name: str, result: dict[str, Any]
+    ) -> Any:
         """An ``ensemble:`` dependency's response for an LLM consumer
-        (fail-closed-composition D). Falls through to ``response``
+        (fail-closed-composition D). Falls through to the raw response
         unchanged when the lookups aren't wired, or the dependency isn't
         an ensemble agent.
         """
+        response = result.get("response")
         lookup = self._get_dependency_config
         terminal_agents = self._ensemble_terminal_agents
         if lookup is None or terminal_agents is None:
@@ -399,32 +423,67 @@ class DependencyResolver:
         if not isinstance(dep_config, EnsembleAgentConfig):
             return response
         terminals = terminal_agents(dep_config.ensemble)
-        return self._render_ensemble_response(response, terminals)
+        instance_errors = self._fan_out_instance_errors(result)
+        return self._render_ensemble_response(response, terminals, instance_errors)
 
-    def _render_ensemble_response(self, response: Any, terminals: list[str]) -> str:
+    @staticmethod
+    def _fan_out_instance_errors(result: dict[str, Any]) -> dict[int, str]:
+        """``index -> error`` for each failed instance of a gathered
+        fan-out dependency (a ``partial`` status), so a failed instance's
+        block can name why it has nothing to show instead of rendering
+        a bare "(no result)" (fail-closed-composition, partial fan-out
+        decision)."""
+        instances = result.get("instances")
+        if not isinstance(instances, list):
+            return {}
+        errors: dict[int, str] = {}
+        for item in instances:
+            if not isinstance(item, dict) or item.get("status") != "failed":
+                continue
+            index = item.get("index")
+            error = item.get("error")
+            if isinstance(index, int) and error:
+                errors[index] = str(error)
+        return errors
+
+    def _render_ensemble_response(
+        self,
+        response: Any,
+        terminals: list[str],
+        instance_errors: dict[int, str] | None = None,
+    ) -> str:
         """One labeled block per terminal agent. A plain (non-fan-out)
         ensemble dependency is a single child result; a gathered fan-out
         dependency is a list of them, one per instance."""
         if isinstance(response, list):
+            errors = instance_errors or {}
             blocks = [
-                self._render_child_result(item, terminals, index=idx)
+                self._render_child_result(
+                    item, terminals, index=idx, error=errors.get(idx)
+                )
                 for idx, item in enumerate(response)
             ]
             return "\n\n".join(blocks)
         return self._render_child_result(response, terminals, index=None)
 
     def _render_child_result(
-        self, raw: Any, terminals: list[str], index: int | None
+        self,
+        raw: Any,
+        terminals: list[str],
+        index: int | None,
+        error: str | None = None,
     ) -> str:
         """Terminal blocks for a single child result. A child result that
         doesn't parse into the expected shape — the child failed, or the
         ensemble reference didn't resolve so ``terminals`` is empty —
         renders what's there honestly instead of going silently empty.
+        ``error`` is the failed fan-out instance's own error text
+        (``None`` for a non-fan-out or successful item).
         """
         parsed = self._parse_child_result(raw)
         results = parsed.get("results") if parsed is not None else None
         if not isinstance(results, dict):
-            return self._render_raw_fallback(raw, index)
+            return self._render_raw_fallback(raw, index, error)
         names = terminals or list(results.keys())
         blocks = [
             self._render_terminal_block(name, results.get(name), index)
@@ -446,12 +505,16 @@ class DependencyResolver:
         return parsed if isinstance(parsed, dict) else None
 
     @staticmethod
-    def _render_raw_fallback(raw: Any, index: int | None) -> str:
+    def _render_raw_fallback(
+        raw: Any, index: int | None, error: str | None = None
+    ) -> str:
         """Honest fallback for a child result that isn't a parseable
-        child-result dict — never silently empty."""
+        child-result dict — never silently empty, and never a bare
+        "None" for a failed fan-out instance that has an error to name.
+        """
         label = f"[{index}]" if index is not None else "result"
         if raw is None:
-            return f"{label}: (no result)"
+            return f"{label} (failed): {error}" if error else f"{label}: (no result)"
         text = raw if isinstance(raw, str) else json.dumps(raw)
         return f"{label}:\n{text}"
 

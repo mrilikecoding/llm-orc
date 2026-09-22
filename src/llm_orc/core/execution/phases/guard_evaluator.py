@@ -11,10 +11,8 @@ from typing import Any
 
 from llm_orc.core.execution.phases import predicate
 from llm_orc.core.execution.phases.reference import resolve_reference
-from llm_orc.core.execution.utils import dep_name
+from llm_orc.core.execution.utils import SUCCEEDED_STATUSES, dep_name
 from llm_orc.schemas.agent_config import AgentConfig
-
-SUCCESS = "success"
 
 
 class GuardEvaluator:
@@ -56,7 +54,7 @@ class GuardEvaluator:
     ) -> bool:
         deps = [dep_name(d) for d in agent_config.depends_on]
         return bool(deps) and not any(
-            self._status_of(results_dict.get(d)) == SUCCESS for d in deps
+            self._status_of(results_dict.get(d)) in SUCCEEDED_STATUSES for d in deps
         )
 
     @staticmethod

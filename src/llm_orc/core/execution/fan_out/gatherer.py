@@ -119,12 +119,26 @@ class FanOutGatherer:
         else:
             status = "partial"
 
-        return {
+        gathered: dict[str, Any] = {
             "response": response,
             "status": status,
             "fan_out": True,
             "instances": instances,
         }
+        if status == "failed":
+            # Every instance failed and there is nothing else to read a
+            # reason from: GuardEvaluator's skip-cascade record reads
+            # this "error" key the same way it reads any other failed
+            # dependency's (today it read nothing, and the skip reason
+            # printed "s (failed)" with no detail). A "partial" result's
+            # failures are already named per-instance in "instances", so
+            # this key is "failed"-only.
+            gathered["error"] = "; ".join(
+                f"[{item['index']}] {item['error']}"
+                for item in instances
+                if item["status"] == "failed"
+            )
+        return gathered
 
     def get_error_summary(self, original_agent_name: str) -> dict[str, Any]:
         """Get error details for failed instances.
