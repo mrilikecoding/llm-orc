@@ -280,6 +280,113 @@ def payload(raw: str) -> dict[str, Any]:
     return data if isinstance(data, dict) else {}
 
 
+class MultipleQueriesError(ValueError):
+    """A selected child input carries more than one query (issue #202).
+
+    One search runs per invocation; N queries compose via ``fan_out: true``
+    (ADR-014), one child execution per query. Silent truncation would run
+    one search and discard the rest with no signal.
+    """
+
+    def __init__(self, count: int) -> None:
+        self.count = count
+        super().__init__(f"child input carries {count} queries")
+
+
+def child_input_value(data: dict[str, Any]) -> Any:
+    """The child input under the script-node payload contract (issue #202).
+
+    A root (no-dependency) script receives ``{"input": <value>, ...}``;
+    both payload builders emit that shape (``agents/script_agent.py`` and
+    ``core/execution/scripting/agent_runner.py``). A dependent script
+    receives ScriptAgentInput (``{"input_data": "<value>",
+    "dependencies": {...}}``, ADR-001), with input_data typed str. Returns
+    the value under either key (input_data wins when both are present;
+    the engine never ships both), or None when neither is present.
+    """
+    value = data.get("input_data")
+    if value is None:
+        value = data.get("input")
+    return value
+
+
+def query_from_value(value: Any) -> str:
+    """The search query from a child-input value (issue #202).
+
+    A str unwraps via _query_from_text (a JSON-encoded list is the
+    input_key-selected array; empty means no query); a list applies the
+    one-query-per-invocation rule (more than one item raises
+    MultipleQueriesError); a dict recurses for its query key; anything
+    else (None, bool, number) has no usable query.
+    """
+    if isinstance(value, str):
+        return _query_from_text(value)
+    if isinstance(value, list):
+        return _query_from_list(value)
+    if isinstance(value, dict):
+        return extract_query(value)
+    return ""
+
+
+def _query_from_list(items: list[Any]) -> str:
+    """The query from an input_key-selected array (issue #202)."""
+    if not items:
+        return ""
+    if len(items) > 1:
+        raise MultipleQueriesError(len(items))
+    return _query_from_item(items[0])
+
+
+def _query_from_item(value: Any) -> str:
+    """The query from one array item or a direct query key."""
+    if isinstance(value, str):
+        return _query_from_text(value)
+    if isinstance(value, dict):
+        return extract_query(value)
+    if isinstance(value, list):
+        return _query_from_list(value)
+    return ""
+
+
+def _query_from_text(text: str) -> str:
+    """The query from a child-input string (issue #202).
+
+    The text may be the query itself, a JSON-encoded array (the
+    input_key-selected array; empty means no query), or a JSON-encoded
+    dict with its own query key. Anything else is used verbatim.
+    """
+    stripped = text.strip()
+    if not stripped.startswith(("[", "{")):
+        return stripped
+    try:
+        parsed: Any = json.loads(stripped)
+    except json.JSONDecodeError:
+        return stripped
+    if isinstance(parsed, list):
+        return _query_from_list(parsed)
+    if isinstance(parsed, dict):
+        return extract_query(parsed)
+    return stripped
+
+
+def extract_query(payload: dict[str, Any]) -> str:
+    """The search query from a script-node payload (issue #202).
+
+    Precedence: a direct ``query`` key (flat or nested under
+    ``parameters``, the orchestrator's dispatch convention), then a
+    ``data`` prompt, then the child input under the payload contract
+    (child_input_value).
+    """
+    if "query" in payload:
+        return _query_from_item(payload["query"])
+    parameters = payload.get("parameters") or {}
+    if isinstance(parameters, dict) and "query" in parameters:
+        return _query_from_item(parameters["query"])
+    if isinstance(payload.get("data"), str):
+        return _query_from_text(payload["data"])
+    return query_from_value(child_input_value(payload))
+
+
 def deps(payload_dict: dict[str, Any]) -> dict[str, Any]:
     """The ``dependencies`` mapping from a script-node payload."""
     value = payload_dict.get("dependencies", {})

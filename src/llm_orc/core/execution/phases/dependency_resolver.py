@@ -8,8 +8,33 @@ from llm_orc.core.execution.utils import dep_name
 from llm_orc.schemas.agent_config import (
     AgentConfig,
     DynamicDispatchAgentConfig,
+    EnsembleAgentConfig,
+    LlmAgentConfig,
+    LoopAgentConfig,
     ScriptAgentConfig,
 )
+
+# Node types whose runner hands input_data verbatim to a fresh child
+# executor (ensemble_execution); they share one input contract.
+ChildExecutionConfig = (
+    EnsembleAgentConfig | LoopAgentConfig | DynamicDispatchAgentConfig
+)
+
+
+def _unsupported_consumer_type(
+    agent_name: str, agent_config: AgentConfig
+) -> ValueError:
+    """The no-fall-through contract error (issue #202): raised for any
+    consumer type outside the LLM/script/ensemble/loop/dispatch set. The
+    radius is the whole run by design: an unrecognized consumer is an
+    engine bug, not a per-agent runtime error, so the phase-wide
+    comprehension in ensemble_execution takes every sibling down loudly
+    (PR 203 round 2, finding 4)."""
+    return ValueError(
+        f"Unsupported consumer type for agent '{agent_name}': "
+        f"{type(agent_config).__name__}. The dependency input contract "
+        f"covers LLM, script, ensemble, loop, and dispatch agents."
+    )
 
 
 class DependencyResolver:
@@ -67,9 +92,7 @@ class DependencyResolver:
         is_script_agent = isinstance(agent_config, ScriptAgentConfig)
 
         if not dependencies:
-            if is_script_agent:
-                return self._build_script_input(agent_name, base_input, {})
-            return base_input
+            return self._no_dependency_input(agent_name, agent_config, base_input)
 
         # Apply input_key selection (ADR-014)
         effective_results, input_key_error = self._apply_input_key_selection(
@@ -78,48 +101,93 @@ class DependencyResolver:
         if input_key_error:
             return input_key_error
 
-        dep_results_dict = self._extract_dependency_results_as_dict(
-            dependencies, effective_results
-        )
-
         if is_script_agent:
+            dep_results_dict = self._extract_dependency_results_as_dict(
+                dependencies, effective_results
+            )
             return self._build_script_input(agent_name, base_input, dep_results_dict)
 
-        if isinstance(agent_config, DynamicDispatchAgentConfig):
-            return self._dispatch_child_input(
-                agent_config, base_input, effective_results
-            )
+        if isinstance(agent_config, ChildExecutionConfig):
+            selected = self._selected_child_value(agent_config, effective_results)
+            if selected is not None:
+                return selected
 
         dependency_results = self._extract_successful_dependency_results(
             dependencies, effective_results
         )
-        if agent_config.input_scope == "dependencies":
-            return "\n\n".join(dependency_results)
-        if dependency_results:
-            return self._build_enhanced_input_with_dependencies(
-                agent_name, base_input, dependency_results
+
+        if isinstance(agent_config, ChildExecutionConfig):
+            return self._child_contract_input(
+                agent_config, base_input, dependency_results
             )
-        return self._build_enhanced_input_no_dependencies(agent_name, base_input)
 
-    def _dispatch_child_input(
+        if isinstance(agent_config, LlmAgentConfig):
+            if agent_config.input_scope == "dependencies":
+                return self._joined_dependency_results(dependency_results)
+            if dependency_results:
+                return self._build_enhanced_input_with_dependencies(
+                    agent_name, base_input, dependency_results
+                )
+            return self._build_enhanced_input_no_dependencies(agent_name, base_input)
+
+        raise _unsupported_consumer_type(agent_name, agent_config)
+
+    def _no_dependency_input(
         self,
-        agent_config: DynamicDispatchAgentConfig,
+        agent_name: str,
+        agent_config: AgentConfig,
         base_input: str,
-        effective_results: dict[str, Any],
     ) -> str:
-        """Input for a dynamic-dispatch node's child ensemble.
+        """Input for a node with no dependencies (issue #202)."""
+        if isinstance(agent_config, ScriptAgentConfig):
+            return self._build_script_input(agent_name, base_input, {})
+        if isinstance(agent_config, LlmAgentConfig | ChildExecutionConfig):
+            return base_input
+        raise _unsupported_consumer_type(agent_name, agent_config)
 
-        The child is a fresh execution, not an agent in the dependency chain:
-        it receives the input_key-selected value verbatim (already applied to
-        the first dependency's response), or the original ensemble input —
-        never the LLM dependency prose wrapper.
+    def _selected_child_value(
+        self,
+        agent_config: ChildExecutionConfig,
+        effective_results: dict[str, Any],
+    ) -> str | None:
+        """The input_key-selected value for a child-execution node
+        (ADR-014), or None when the composition path should build the
+        input (input_key unset, or the first dependency not successful)."""
+        if not agent_config.input_key:
+            return None
+        first_dep = dep_name(agent_config.depends_on[0])
+        dep_result = effective_results.get(first_dep, {})
+        if dep_result.get("status") == "success":
+            return str(dep_result.get("response", ""))
+        return None
+
+    def _child_contract_input(
+        self,
+        agent_config: ChildExecutionConfig,
+        base_input: str,
+        dependency_results: list[str],
+    ) -> str:
+        """One input contract for child-execution nodes (issue #202).
+
+        The ``ensemble:``, ``loop:``, and ``dispatch:`` runners hand
+        ``input_data`` verbatim to a fresh child executor, so the child is
+        a new execution, not an agent in the dependency chain. The base
+        input is followed by dependency data blocks (honoring
+        ``input_scope``); the input_key-verbatim rule is applied in
+        _compute_agent_input before composition. LLM instruction sentences
+        are never part of this contract: they exist only for LLM consumers.
         """
-        if agent_config.input_key and agent_config.depends_on:
-            first_dep = dep_name(agent_config.depends_on[0])
-            dep_result = effective_results.get(first_dep, {})
-            if dep_result.get("status") == "success":
-                return str(dep_result.get("response", ""))
+        if agent_config.input_scope == "dependencies":
+            return self._joined_dependency_results(dependency_results)
+        if dependency_results:
+            deps_text = self._joined_dependency_results(dependency_results)
+            return f"{base_input}\n\n{deps_text}"
         return base_input
+
+    @staticmethod
+    def _joined_dependency_results(dependency_results: list[str]) -> str:
+        """Dependency data blocks, joined (input_scope: dependencies)."""
+        return "\n\n".join(dependency_results)
 
     def _apply_input_key_selection(
         self,
@@ -303,6 +371,19 @@ class DependencyResolver:
         return all(dep_name(dep) in completed_agents for dep in dependencies)
 
     @staticmethod
+    def _fan_out_child_input(chunk: Any) -> str:
+        """Fan-out instance input for a child-execution node (issue #202).
+
+        The fan-out coordinator already applied input_key selection; each
+        instance is a fresh child execution, so it receives its chunk
+        verbatim — no "Processing chunk N of M" wrapper, which is an LLM
+        framing.
+        """
+        if isinstance(chunk, str):
+            return chunk
+        return json.dumps(chunk)
+
+    @staticmethod
     def is_fan_out_instance_config(agent_config: AgentConfig) -> bool:
         """Check if an agent config is a fan-out instance.
 
@@ -326,20 +407,21 @@ class DependencyResolver:
             base_input: Original ensemble input
 
         Returns:
-            Prepared input string (JSON for scripts, text for LLMs)
+            Prepared input string (JSON for scripts, the chunk verbatim for
+            child-execution nodes, text for LLMs)
         """
         chunk = instance_config.fan_out_chunk
         index = instance_config.fan_out_index or 0
         total = instance_config.fan_out_total or 1
         name = instance_config.name
-        is_script = isinstance(instance_config, ScriptAgentConfig)
 
-        if is_script:
+        if isinstance(instance_config, ScriptAgentConfig):
             return self._build_fan_out_script_input(
                 name, chunk, index, total, base_input
             )
-        else:
-            return self._build_fan_out_llm_input(chunk, index, total, base_input)
+        if isinstance(instance_config, ChildExecutionConfig):
+            return self._fan_out_child_input(chunk)
+        return self._build_fan_out_llm_input(chunk, index, total, base_input)
 
     def _build_fan_out_script_input(
         self,
