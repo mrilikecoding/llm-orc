@@ -215,7 +215,7 @@ class TestEnsembleExecutor:
             fallback_model.generate_response.side_effect = Exception(
                 "Fallback also failed"
             )
-            mock_fallback_model.return_value = fallback_model
+            mock_fallback_model.return_value = (fallback_model, "test-fallback")
 
             result = await executor.execute(config, input_data="Test input")
 
@@ -230,6 +230,74 @@ class TestEnsembleExecutor:
 
         # Failing agent should have error
         assert "error" in result["results"]["failing_agent"]
+
+    @pytest.mark.asyncio
+    async def test_dependent_agent_runs_when_upstream_fails_closed(
+        self, mock_ensemble_executor: Any
+    ) -> None:
+        """Measured (not assumed): when an upstream LLM agent fails with
+        an exhausted fallback chain, its dependent still runs.
+
+        DependencyAnalyzer's phase gating only requires a dependency to
+        have been PROCESSED, not to have SUCCEEDED
+        (agent_dependencies_satisfied). GuardEvaluator only skips a node
+        when ALL its dependencies have status == "skipped", not "failed"
+        (should_run). So the dependent executes; it just doesn't see the
+        failed agent's data in its input (DependencyResolver omits it).
+        This matches domain-model.md's Invariant 13 ("downstream agents
+        ... receive the failure status in their dependency context").
+        Pinned here so a future change to the gating logic is a visible,
+        intentional decision, not a silent behavior shift.
+        """
+        config = EnsembleConfig(
+            name="chain-exhausted-dependent-test",
+            description="Upstream fails closed; does the dependent run?",
+            agents=[
+                LlmAgentConfig(name="upstream", model_profile="local-llama"),
+                LlmAgentConfig(
+                    name="downstream",
+                    model_profile="local-llama",
+                    depends_on=["upstream"],
+                ),
+            ],
+        )
+
+        downstream_model = AsyncMock(spec=ModelInterface)
+        downstream_model.generate_response.return_value = "downstream ran"
+        downstream_model.get_last_usage.return_value = {
+            "total_tokens": 10,
+            "input_tokens": 5,
+            "output_tokens": 5,
+            "cost_usd": 0.0,
+            "duration_ms": 10,
+        }
+
+        executor = mock_ensemble_executor
+        load_calls: list[str] = []
+
+        async def load_model_side_effect(agent_config: dict[str, Any]) -> Any:
+            # "local-llama" has no profile-level fallback_model_profile
+            # (.llm-orc/config.yaml) and neither agent sets an agent-level
+            # one, so upstream's load failure is unrecoverable.
+            load_calls.append(agent_config["name"])
+            if agent_config["name"] == "upstream":
+                raise ValueError("upstream model unavailable")
+            return downstream_model
+
+        with patch.object(
+            executor._model_factory,
+            "load_model_from_agent_config",
+            side_effect=load_model_side_effect,
+        ):
+            result = await executor.execute(config, input_data="go")
+
+        assert load_calls == ["upstream", "downstream"], (
+            "downstream's model load should still be attempted: the "
+            f"dependent runs, it is not skipped. Got: {load_calls}"
+        )
+        assert result["results"]["upstream"]["status"] == "failed"
+        assert result["results"]["downstream"]["status"] == "success"
+        assert result["results"]["downstream"]["response"] == "downstream ran"
 
     @pytest.mark.asyncio
     async def test_execute_ensemble_dependency_based(
@@ -1110,7 +1178,7 @@ class TestEnsembleExecutor:
             patch.object(
                 executor._model_factory,
                 "get_fallback_model",
-                return_value=mock_fallback_model,
+                return_value=(mock_fallback_model, "standard-claude"),
             ),
             patch.object(
                 executor._llm_agent_runner,
@@ -1196,7 +1264,7 @@ class TestEnsembleExecutor:
             patch.object(
                 executor._model_factory,
                 "get_fallback_model",
-                return_value=mock_fallback_model,
+                return_value=(mock_fallback_model, "standard-claude"),
             ),
             patch.object(
                 executor._llm_agent_runner,
@@ -1222,6 +1290,9 @@ class TestEnsembleExecutor:
         assert event_data["agent_name"] == "oauth-agent", "wrong agent_name in event"
         assert event_data["original_model_profile"] == "premium-claude", (
             "event should record the original profile"
+        )
+        assert event_data["fallback_model_profile"] == "standard-claude", (
+            "event should record the real fallback profile, not a hardcoded None"
         )
         assert event_data["fallback_model_name"] == "llama3", (
             "event should record the fallback model"
@@ -1283,7 +1354,7 @@ class TestEnsembleExecutor:
             patch.object(
                 executor._model_factory,
                 "get_fallback_model",
-                return_value=mock_fallback_model,
+                return_value=(mock_fallback_model, "local-llama"),
             ),
             patch.object(
                 executor._llm_agent_runner,
@@ -1360,7 +1431,7 @@ class TestEnsembleExecutor:
             patch.object(
                 executor._model_factory,
                 "get_fallback_model",
-                return_value=mock_fallback_model,
+                return_value=(mock_fallback_model, "local-llama"),
             ),
             patch.object(
                 executor._llm_agent_runner,
@@ -1388,6 +1459,9 @@ class TestEnsembleExecutor:
         )
         assert event_data["original_model_profile"] == "guaranteed-fail", (
             "event should record the original profile"
+        )
+        assert event_data["fallback_model_profile"] == "local-llama", (
+            "event should record the real fallback profile, not a hardcoded None"
         )
         assert event_data["fallback_model_name"] == "llama3", (
             "event should record the fallback model"
