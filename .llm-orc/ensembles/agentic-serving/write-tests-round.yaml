@@ -52,3 +52,7 @@ agents:
   - name: envelope
     script: scripts/agentic_serving/tests_envelope.py
     depends_on: [executor, accept_gate]
+    # tests_envelope.py reads executor/accept_gate defensively and
+    # always emits an ADR-024 envelope with an accept verdict -- this
+    # round's own refusal composer, must run even when both failed.
+    on_dependency_failure: run
