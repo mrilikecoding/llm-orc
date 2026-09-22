@@ -15,6 +15,7 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 from llm_orc.core.config.ensemble_config import EnsembleConfig
+from llm_orc.core.execution.utils import terminal_failure_summary
 from llm_orc.models.base import ModelInterface
 from llm_orc.schemas.agent_config import DynamicDispatchAgentConfig
 
@@ -78,5 +79,13 @@ class DynamicDispatchRunner:
         child_config = self._resolve(target)
         child_executor = self._parent.create_child_executor(depth=child_depth)
         child_result = await child_executor.execute(child_config, input_data)
+
+        failure = terminal_failure_summary(
+            child_config.agents, child_result.get("results", {})
+        )
+        if failure is not None:
+            raise RuntimeError(
+                f"Ensemble '{target}' produced no successful terminal agent ({failure})"
+            )
 
         return json.dumps(child_result), None, False
