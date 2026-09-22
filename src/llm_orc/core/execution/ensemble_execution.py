@@ -53,7 +53,10 @@ from llm_orc.core.execution.scripting.user_input_handler import (
 )
 from llm_orc.core.execution.usage_collector import UsageCollector
 from llm_orc.core.execution.utils import dep_name
-from llm_orc.core.models.model_factory import ModelFactory
+from llm_orc.core.models.model_factory import (
+    ModelFactory,
+    validate_think_options_for_ensemble,
+)
 from llm_orc.core.validation import (
     EnsembleExecutionResult,
     ValidationConfig,
@@ -808,6 +811,12 @@ class EnsembleExecutor:
         Returns:
             Tuple of (final_result, user_inputs_collected)
         """
+        # Invariant 14: structural errors caught before any agent runs —
+        # a think/provider mismatch must fail the whole ensemble, never
+        # reach the runtime fallback chain and come out as a quiet
+        # substitution (fail-closed-composition plan §C).
+        validate_think_options_for_ensemble(config.agents, self._config_manager)
+
         start_time = time.time()
 
         # Apply strict_schema_validation from ensemble config to script runner

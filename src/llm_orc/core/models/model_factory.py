@@ -3,6 +3,7 @@
 import logging
 import os
 import uuid
+from collections.abc import Sequence
 from typing import Any
 
 from llm_orc.core.auth.authentication import CredentialStorage
@@ -14,8 +15,23 @@ from llm_orc.models.anthropic import (
 from llm_orc.models.base import ModelInterface
 from llm_orc.models.mock import MockModel
 from llm_orc.models.openai_compat import OpenAICompatibleModel
+from llm_orc.schemas.agent_config import AgentConfig, LlmAgentConfig
 
 logger = logging.getLogger(__name__)
+
+
+class ModelConfigurationError(ValueError):
+    """An author config error — never a fallback-eligible failure.
+
+    Distinguishes a structural mistake in the ensemble YAML (e.g.
+    ``think`` set on a provider that doesn't speak llama-server's
+    chat-template convention) from a runtime/availability failure
+    (bad credentials, unreachable host) that the fallback chain exists
+    to route around. Still a ``ValueError`` so existing ``except
+    ValueError`` call sites are unaffected; callers that must not let
+    a config error masquerade as a successful fallback substitution
+    check for this type explicitly (``LlmAgentRunner``).
+    """
 
 
 class ModelFactory:
@@ -326,12 +342,55 @@ def _validate_think_option(
         return
     if provider == LLAMA_SERVER_PROVIDER:
         return
-    raise ValueError(
+    raise ModelConfigurationError(
         f"options.think is only supported for provider "
         f"'{LLAMA_SERVER_PROVIDER}' (got provider={provider!r}). Remove "
         "'think' from this profile/agent's options, or point it at a "
         "llama-server-backed profile."
     )
+
+
+def validate_think_options_for_ensemble(
+    agents: Sequence[AgentConfig],
+    config_manager: ConfigurationManager,
+) -> None:
+    """Fail closed BEFORE any agent executes when an ensemble configures
+    ``think`` against a provider that doesn't speak llama-server's
+    chat-template convention (Invariant 14: structural errors are caught
+    at load time and prevent execution — they must never reach the
+    runtime fallback chain, which would silently substitute a working
+    model and report success).
+
+    Resolves each LLM agent's provider and effective options the same
+    way ``ModelFactory.load_model_from_agent_config`` resolves them for
+    a primary load: through ``model_profile`` (profile options merged
+    with agent options, agent wins) when set, else the agent's inline
+    ``model``/``provider``. Non-LLM agents (script, ensemble, loop,
+    dispatch) are skipped. ``_validate_think_option`` on the direct
+    ``ModelFactory.load_model`` path stays in place as defense in depth.
+    """
+    for agent in agents:
+        if not isinstance(agent, LlmAgentConfig):
+            continue
+
+        provider: str | None
+        options: dict[str, Any] | None
+
+        if agent.model_profile:
+            try:
+                _, provider = config_manager.resolve_model_profile(agent.model_profile)
+            except (ValueError, KeyError):
+                # An unresolvable profile is a different structural
+                # error, surfaced elsewhere — nothing to validate here.
+                continue
+            profile = config_manager.get_model_profile(agent.model_profile)
+            profile_options = (profile or {}).get("options")
+            options = _merge_options(profile_options, agent.options)
+        else:
+            provider = agent.provider
+            options = agent.options
+
+        _validate_think_option(provider, options)
 
 
 def _is_openai_compatible(provider: str | None) -> bool:

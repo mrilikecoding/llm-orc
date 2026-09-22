@@ -8,6 +8,7 @@ import pytest
 from llm_orc.core.auth.authentication import CredentialStorage
 from llm_orc.core.config.config_manager import ConfigurationManager
 from llm_orc.core.models.model_factory import (
+    ModelConfigurationError,
     ModelFactory,
     _create_api_key_model,
     _create_authenticated_model,
@@ -15,6 +16,7 @@ from llm_orc.core.models.model_factory import (
     _is_openai_compatible,
     _merge_options,
     _resolve_authentication_method,
+    validate_think_options_for_ensemble,
 )
 from llm_orc.models.anthropic import (
     ClaudeCLIModel,
@@ -22,6 +24,7 @@ from llm_orc.models.anthropic import (
 )
 from llm_orc.models.mock import MockModel
 from llm_orc.models.openai_compat import OpenAICompatibleModel
+from llm_orc.schemas.agent_config import LlmAgentConfig, ScriptAgentConfig
 
 
 class TestModelFactory:
@@ -1006,6 +1009,103 @@ class TestThinkOptionProviderGuard:
         )
 
         assert isinstance(model, OpenAICompatibleModel)
+
+
+class TestValidateThinkOptionsForEnsemble:
+    """Scenario (SF1): ``think`` vs. provider is a structural error caught
+    before any agent executes — never laundered through the runtime
+    fallback chain into a quiet substitution (Invariant 14).
+    """
+
+    @pytest.fixture
+    def config_manager(self) -> Mock:
+        return Mock(spec=ConfigurationManager)
+
+    def test_think_on_hosted_profile_raises_before_execution(
+        self, config_manager: Mock
+    ) -> None:
+        config_manager.resolve_model_profile.return_value = (
+            "minimax-m2.5",
+            "openai-compatible/zen",
+        )
+        config_manager.get_model_profile.return_value = {
+            "model": "minimax-m2.5",
+            "provider": "openai-compatible/zen",
+            "options": {"think": False},
+            "fallback_model_profile": "local-llama",
+        }
+        agents = [
+            LlmAgentConfig(name="decomposer", model_profile="hosted-thinking"),
+        ]
+
+        with pytest.raises(ModelConfigurationError, match="think"):
+            validate_think_options_for_ensemble(agents, config_manager)
+
+    def test_think_in_agent_level_options_also_raises(
+        self, config_manager: Mock
+    ) -> None:
+        config_manager.resolve_model_profile.return_value = (
+            "minimax-m2.5",
+            "openai-compatible/zen",
+        )
+        config_manager.get_model_profile.return_value = {
+            "model": "minimax-m2.5",
+            "provider": "openai-compatible/zen",
+        }
+        agents = [
+            LlmAgentConfig(
+                name="decomposer",
+                model_profile="hosted",
+                options={"think": False},
+            ),
+        ]
+
+        with pytest.raises(ModelConfigurationError, match="think"):
+            validate_think_options_for_ensemble(agents, config_manager)
+
+    def test_think_on_llama_server_profile_does_not_raise(
+        self, config_manager: Mock
+    ) -> None:
+        config_manager.resolve_model_profile.return_value = (
+            "qwen3-8b",
+            "llama-server",
+        )
+        config_manager.get_model_profile.return_value = {
+            "model": "qwen3-8b",
+            "provider": "llama-server",
+            "options": {"think": False},
+        }
+        agents = [LlmAgentConfig(name="worker", model_profile="local-qwen")]
+
+        validate_think_options_for_ensemble(agents, config_manager)
+
+    def test_think_on_inline_model_provider_raises(self, config_manager: Mock) -> None:
+        agents = [
+            LlmAgentConfig(
+                name="worker",
+                model="minimax-m2.5",
+                provider="openai-compatible/zen",
+                options={"think": False},
+            ),
+        ]
+
+        with pytest.raises(ModelConfigurationError, match="think"):
+            validate_think_options_for_ensemble(agents, config_manager)
+
+    def test_unresolvable_profile_is_skipped_not_raised(
+        self, config_manager: Mock
+    ) -> None:
+        config_manager.resolve_model_profile.side_effect = ValueError(
+            "Model profile 'ghost' not found"
+        )
+        agents = [LlmAgentConfig(name="worker", model_profile="ghost")]
+
+        validate_think_options_for_ensemble(agents, config_manager)
+
+    def test_non_llm_agents_are_skipped(self, config_manager: Mock) -> None:
+        agents = [ScriptAgentConfig(name="setup", script="echo hi")]
+
+        validate_think_options_for_ensemble(agents, config_manager)
 
 
 class TestResponseFormatPassThrough:
