@@ -11,7 +11,9 @@ the web-searcher ensemble searched for nothing when composed through
 from __future__ import annotations
 
 import importlib.util
+import io
 import json
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -27,6 +29,7 @@ web_searcher = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(web_searcher)
 
 extract_query = web_searcher._extract_query
+MultipleQueriesError = web_searcher.MultipleQueriesError
 
 
 def _envelope(input_data: Any) -> dict[str, Any]:
@@ -87,6 +90,51 @@ class TestListOfDictItems:
         """A dict item with no query key unwraps to '' — main() emits
         missing_query rather than searching JSON text."""
         assert extract_query(_envelope([{"other": "x"}])) == ""
+
+
+class TestMultiQueryListIsStructuredError:
+    """A selected array with more than one query must not be silently
+    truncated to its first item (PR 203 review blocker). One search runs
+    per invocation; N queries compose via fan_out: true (ADR-014)."""
+
+    def test_envelope_multi_item_list_raises(self) -> None:
+        with pytest.raises(MultipleQueriesError):
+            extract_query(_envelope(["q1", "q2"]))
+
+    def test_envelope_multi_dict_list_raises(self) -> None:
+        with pytest.raises(MultipleQueriesError):
+            extract_query(_envelope([{"query": "a"}, {"query": "b"}]))
+
+    def test_input_json_encoded_multi_item_raises(self) -> None:
+        with pytest.raises(MultipleQueriesError):
+            extract_query({"input": '["q1", "q2"]'})
+
+    def test_direct_list_payload_multi_item_raises(self) -> None:
+        with pytest.raises(MultipleQueriesError):
+            extract_query({"input_data": ["q1", "q2"]})
+
+    def test_single_item_list_still_extracts(self) -> None:
+        """The one-query case is unchanged by the multi-query guard."""
+        assert extract_query(_envelope(["q1"])) == "q1"
+
+
+def test_main_emits_multiple_queries_error(
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """main() converts MultipleQueriesError into a structured error the
+    orchestrator can route on, pointing at the fan_out composition."""
+    monkeypatch.delenv("WEB_SEARCH_BACKEND", raising=False)
+    real_stdin = sys.stdin
+    sys.stdin = io.StringIO(json.dumps(_envelope(["q1", "q2"])))
+    try:
+        assert web_searcher.main() == 0
+    finally:
+        sys.stdin = real_stdin
+    out = json.loads(capsys.readouterr().out)
+    assert out["error"] == "multiple_queries"
+    assert out["backend"] == "ddgs"
+    assert "fan_out" in out["detail"]
 
 
 def test_extract_query_direct_dispatch_shapes_unchanged() -> None:
