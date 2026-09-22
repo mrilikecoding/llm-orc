@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from llm_orc.core.config.ensemble_config import EnsembleConfig
+from llm_orc.core.execution.utils import terminal_agent_names
 from llm_orc.models.base import ModelInterface
 from llm_orc.schemas.agent_config import EnsembleAgentConfig
 
@@ -71,5 +72,52 @@ class EnsembleAgentRunner:
         # Execute child ensemble
         child_result = await child_executor.execute(child_config, input_data)
 
+        failure = self._terminal_failure(child_config, child_result)
+        if failure is not None:
+            raise RuntimeError(
+                f"Ensemble '{agent_config.ensemble}' produced no successful "
+                f"terminal agent ({failure})"
+            )
+
         # Return full result dict as JSON
         return json.dumps(child_result), None, False
+
+    @staticmethod
+    def _terminal_failure(
+        child_config: EnsembleConfig, child_result: dict[str, Any]
+    ) -> str | None:
+        """None when at least one of the child's terminal agents
+        succeeded (fail-closed-composition B1); otherwise a summary of
+        each terminal's status/error, naming why none did.
+
+        An intermediate agent failing does not fail the ensemble agent
+        as long as a terminal still succeeded (Invariant 13 already lets
+        a terminal run on its other successful dependencies) — only
+        terminals are checked here. A child with no terminals at all
+        (an empty ensemble) falls open: there is nothing to name a
+        failure against.
+        """
+        terminals = terminal_agent_names(child_config.agents)
+        if not terminals:
+            return None
+        results = child_result.get("results", {})
+        if any(
+            isinstance(results.get(name), dict)
+            and results[name].get("status") == "success"
+            for name in terminals
+        ):
+            return None
+        return "; ".join(
+            EnsembleAgentRunner._terminal_status_text(name, results.get(name))
+            for name in terminals
+        )
+
+    @staticmethod
+    def _terminal_status_text(name: str, result: Any) -> str:
+        """``name (status): error`` for a failed/skipped terminal, or
+        ``name (missing)`` when the child never recorded it at all."""
+        if not isinstance(result, dict):
+            return f"{name} (missing)"
+        status = result.get("status", "missing")
+        error = result.get("error")
+        return f"{name} ({status}): {error}" if error else f"{name} ({status})"
