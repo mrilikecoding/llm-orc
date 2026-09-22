@@ -874,6 +874,85 @@ class TestOptionsPassThrough:
         assert isinstance(model, ClaudeModel)
 
 
+class TestThinkOptionProviderGuard:
+    """Scenario: `think` only has a home in llama-server's chat-template
+    convention (OpenAICompatibleModel._apply_options folds it into
+    ``chat_template_kwargs``). Every other OpenAI-compatible provider —
+    OpenCode Zen/Go included — rejects an unrecognized
+    ``chat_template_kwargs`` field with an opaque request-time 400
+    (measured 2026-09-22 against
+    ``https://opencode.ai/zen/go/v1/chat/completions``). The guard fails
+    at load time instead, naming the provider and the option.
+    """
+
+    @pytest.fixture
+    def factory(self) -> ModelFactory:
+        config_manager = Mock(spec=ConfigurationManager)
+        credential_storage = Mock(spec=CredentialStorage)
+        credential_storage.get_auth_method.return_value = None
+        return ModelFactory(config_manager, credential_storage)
+
+    async def test_think_on_llama_server_loads(self, factory: ModelFactory) -> None:
+        model = await factory.load_model(
+            "qwen3-8b", "llama-server", options={"think": False}
+        )
+
+        assert isinstance(model, OpenAICompatibleModel)
+
+    async def test_think_on_zen_provider_raises_at_load(
+        self, factory: ModelFactory
+    ) -> None:
+        with pytest.raises(ValueError, match="think"):
+            await factory.load_model(
+                "minimax-m2.5",
+                "openai-compatible/zen",
+                options={"think": False},
+            )
+
+    async def test_think_on_zen_provider_error_names_the_provider(
+        self, factory: ModelFactory
+    ) -> None:
+        with pytest.raises(ValueError, match="openai-compatible/zen"):
+            await factory.load_model(
+                "minimax-m2.5",
+                "openai-compatible/zen",
+                options={"think": False},
+            )
+
+    async def test_think_on_authenticated_provider_raises_at_load(
+        self, factory: ModelFactory
+    ) -> None:
+        """The guard also covers the authenticated (API-key) load path —
+        a real Zen/Go profile carries an API key, so this is the path it
+        actually takes."""
+        storage_mock = cast(Mock, factory._credential_storage)
+        storage_mock.get_auth_method.return_value = "api_key"
+        storage_mock.get_api_key.return_value = "test-key"
+
+        with pytest.raises(ValueError, match="think"):
+            await factory.load_model(
+                "minimax-m2.5",
+                "openai-compatible/zen",
+                options={"think": False},
+            )
+
+    async def test_think_true_also_guarded(self, factory: ModelFactory) -> None:
+        """Presence of the key triggers the guard, not its truthiness."""
+        with pytest.raises(ValueError, match="think"):
+            await factory.load_model(
+                "minimax-m2.5", "openai-compatible/zen", options={"think": True}
+            )
+
+    async def test_think_absent_does_not_raise_for_other_providers(
+        self, factory: ModelFactory
+    ) -> None:
+        model = await factory.load_model(
+            "gpt-4o", "openai-compatible", options={"seed": 11}
+        )
+
+        assert isinstance(model, OpenAICompatibleModel)
+
+
 class TestResponseFormatPassThrough:
     """Scenario: response_format threaded from agent config to the local model."""
 
