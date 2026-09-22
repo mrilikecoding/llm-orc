@@ -7,8 +7,12 @@ serving:
 
 project:
   name: LLM Orchestra Test Project
+  # `default_models` is informational only (shown by `llm-orc config`);
+  # it is not consulted by fallback resolution. Model-load and runtime
+  # failures fall back only through the explicit fallback_model_profile
+  # chain (agent-level, then profile-level) — see model_profiles below.
   default_models:
-    test: micro-local    # Fallback model for reliability and testing
+    test: micro-local
 
 performance:
   streaming_enabled: true
