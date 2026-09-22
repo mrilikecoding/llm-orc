@@ -39,6 +39,46 @@ def terminal_agent_names(agents: list[AgentConfig]) -> list[str]:
     return [agent.name for agent in agents if agent.name not in depended_on]
 
 
+def terminal_failure_summary(
+    agents: list[AgentConfig], results: dict[str, Any]
+) -> str | None:
+    """None when at least one of ``agents``' terminal agents succeeded in
+    ``results`` (fail-closed-composition B1); otherwise a summary of each
+    terminal's status/error, naming why none did.
+
+    Shared by ``EnsembleAgentRunner`` (a static ``ensemble:`` reference)
+    and ``DynamicDispatchRunner`` (a runtime-resolved ``dispatch:``
+    target) — both hand a child executor's full result upward as their
+    own "success", so both need the same check: an intermediate agent
+    failing does not fail the parent as long as a terminal still
+    succeeded (Invariant 13 already lets a terminal run on its other
+    successful dependencies) — only terminals are checked here. A child
+    with no terminals at all (an empty ensemble) falls open: there is
+    nothing to name a failure against.
+    """
+    terminals = terminal_agent_names(agents)
+    if not terminals:
+        return None
+    if any(
+        isinstance(results.get(name), dict) and results[name].get("status") == "success"
+        for name in terminals
+    ):
+        return None
+    return "; ".join(
+        _terminal_status_text(name, results.get(name)) for name in terminals
+    )
+
+
+def _terminal_status_text(name: str, result: Any) -> str:
+    """``name (status): error`` for a failed/skipped terminal, or
+    ``name (missing)`` when the child never recorded it at all."""
+    if not isinstance(result, dict):
+        return f"{name} (missing)"
+    status = result.get("status", "missing")
+    error = result.get("error")
+    return f"{name} ({status}): {error}" if error else f"{name} ({status})"
+
+
 def resolve_agent_timeout(
     agent_config: dict[str, Any], performance_config: dict[str, Any]
 ) -> int:
