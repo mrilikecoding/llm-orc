@@ -3,6 +3,7 @@
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
 import pytest
 
 from llm_orc.models.openai_compat import OpenAICompatibleModel
@@ -808,3 +809,140 @@ class TestOpenAICompatibleModelTimings:
         assert usage is not None
         assert usage["prompt_eval_count"] == 174
         assert usage["eval_count"] == 30
+
+
+def _mock_transport_client(
+    captured: list[httpx.Request],
+) -> httpx.AsyncClient:
+    """A real httpx.AsyncClient over a MockTransport — the request that
+    reaches ``handler`` is the one httpx actually built (headers merged,
+    body serialized), not a mock's recorded call args (Doctrine 11: pin
+    what reaches the wire)."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured.append(request)
+        return httpx.Response(
+            200,
+            json={
+                "choices": [{"message": {"content": "x"}, "finish_reason": "stop"}],
+                "usage": {
+                    "prompt_tokens": 1,
+                    "completion_tokens": 1,
+                    "total_tokens": 2,
+                },
+            },
+        )
+
+    return httpx.AsyncClient(transport=httpx.MockTransport(handler))
+
+
+class TestOpenCodeGoSessionHeader:
+    """Scenario: OpenCode Go asks every client for a stable
+    ``x-opencode-session`` header per conversation, for routing and
+    prompt-cache optimization (docs: opencode.ai/docs/go/; measured
+    2026-09-22: a request without it 400s with ``MissingSessionID``).
+
+    Detected by base_url (host ``opencode.ai``, path under ``/zen/go``),
+    not by provider string, so it also catches a profile that points at
+    the Go endpoint under any provider label. Go's pay-as-you-go sibling
+    (``opencode.ai/zen/v1``, no ``/go``) is NOT in scope (#90 plan §C).
+    """
+
+    async def _post(self, model: OpenAICompatibleModel) -> httpx.Request:
+        captured: list[httpx.Request] = []
+        client = _mock_transport_client(captured)
+        with patch(
+            "llm_orc.models.openai_compat.HTTPConnectionPool.get_httpx_client",
+            return_value=client,
+        ):
+            await model.generate_response("hello", role_prompt="system")
+        return captured[0]
+
+    async def test_go_endpoint_sends_session_header(self) -> None:
+        model = OpenAICompatibleModel(
+            model_name="minimax-m2.5",
+            base_url="https://opencode.ai/zen/go/v1",
+            execution_id="exec-123",
+        )
+
+        request = await self._post(model)
+
+        assert request.headers["x-opencode-session"] == "exec-123"
+
+    async def test_non_go_endpoint_omits_session_header(self) -> None:
+        model = OpenAICompatibleModel(
+            model_name="qwen3-8b",
+            base_url="http://localhost:8080/v1",
+            execution_id="exec-123",
+        )
+
+        request = await self._post(model)
+
+        assert "x-opencode-session" not in request.headers
+
+    async def test_pay_as_you_go_zen_endpoint_omits_session_header(self) -> None:
+        """``opencode.ai/zen/v1`` (no ``/go``) is not Go traffic."""
+        model = OpenAICompatibleModel(
+            model_name="minimax-m2.5",
+            base_url="https://opencode.ai/zen/v1",
+            execution_id="exec-123",
+        )
+
+        request = await self._post(model)
+
+        assert "x-opencode-session" not in request.headers
+
+    async def test_go_endpoint_without_execution_id_omits_session_header(
+        self,
+    ) -> None:
+        model = OpenAICompatibleModel(
+            model_name="minimax-m2.5",
+            base_url="https://opencode.ai/zen/go/v1",
+        )
+
+        request = await self._post(model)
+
+        assert "x-opencode-session" not in request.headers
+
+    async def test_tool_calling_path_also_sends_session_header(self) -> None:
+        model = OpenAICompatibleModel(
+            model_name="minimax-m2.5",
+            base_url="https://opencode.ai/zen/go/v1",
+            execution_id="exec-123",
+        )
+        captured: list[httpx.Request] = []
+        client = _mock_transport_client(captured)
+
+        with patch(
+            "llm_orc.models.openai_compat.HTTPConnectionPool.get_httpx_client",
+            return_value=client,
+        ):
+            await model.generate_with_tools(
+                messages=[{"role": "user", "content": "hi"}], tools=[]
+            )
+
+        assert captured[0].headers["x-opencode-session"] == "exec-123"
+
+    async def test_two_agents_sharing_an_execution_send_the_same_id(self) -> None:
+        """Doctrine 11: two agents in one execution send the SAME id —
+        pinned here by constructing two model instances with the same
+        execution_id, the shape ModelFactory produces for agents sharing
+        one ModelFactory instance (see test_model_factory.py for the
+        factory-level wiring pin)."""
+        captured: list[httpx.Request] = []
+        client = _mock_transport_client(captured)
+
+        with patch(
+            "llm_orc.models.openai_compat.HTTPConnectionPool.get_httpx_client",
+            return_value=client,
+        ):
+            for _ in range(2):
+                model = OpenAICompatibleModel(
+                    model_name="minimax-m2.5",
+                    base_url="https://opencode.ai/zen/go/v1",
+                    execution_id="exec-shared",
+                )
+                await model.generate_response("hello", role_prompt="system")
+
+        assert captured[0].headers["x-opencode-session"] == "exec-shared"
+        assert captured[1].headers["x-opencode-session"] == "exec-shared"
