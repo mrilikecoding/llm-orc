@@ -634,13 +634,13 @@ class EnsembleExecutor:
             phase_agents, results_dict
         )
 
-        fan_out_agents = self._fan_out_coordinator.detect_in_phase(
-            phase_agents, results_dict
+        ready_fan_out_agents, failed_fan_out_agents = (
+            self._fan_out_coordinator.detect_in_phase(phase_agents, results_dict)
         )
         expanded_agents = list(phase_agents)
         fan_out_original_names: list[str] = []
 
-        for agent_config, upstream_array in fan_out_agents:
+        for agent_config, upstream_array in ready_fan_out_agents:
             expanded_agents = [
                 a for a in expanded_agents if a.name != agent_config.name
             ]
@@ -649,6 +649,19 @@ class EnsembleExecutor:
             )
             expanded_agents.extend(instances)
             fan_out_original_names.append(agent_config.name)
+
+        # A fan-out contract failure fails the agent closed: it never
+        # runs un-expanded on a response it can't honor.
+        for agent_config, error_message in failed_fan_out_agents:
+            expanded_agents = [
+                a for a in expanded_agents if a.name != agent_config.name
+            ]
+            results_dict[agent_config.name] = {
+                "response": None,
+                "status": "failed",
+                "model_substituted": False,
+                "error": error_message,
+            }
 
         if fan_out_original_names and base_input is not None:
             if isinstance(input_data, dict):
@@ -685,6 +698,7 @@ class EnsembleExecutor:
             phase_has_errors = await self._phase_result_processor.process_phase_results(
                 phase_results, results_dict, expanded_agents
             )
+            phase_has_errors = phase_has_errors or bool(failed_fan_out_agents)
 
             # Gather fan-out instance results under original agent names
             for original_name in fan_out_original_names:
