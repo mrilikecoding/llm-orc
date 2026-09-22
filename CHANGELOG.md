@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.20.6] - 2026-09-22
+
 ### Fixed
 - `ensemble:` (ADR-013) and `loop:` nodes now share one child-input
   contract with `dispatch:`: with `input_key` the child receives the
@@ -20,8 +22,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   JSON-encoded arrays and dicts unwrapped). A multi-query selected
   array emits a structured `multiple_queries` error pointing at the
   `fan_out: true` composition instead of silently searching the first
-  item (#202). Fan-out scalar chunks serialize with json, and
-  fan-out instances read base input by their pre-expansion name.
+  item (#202). Fan-out scalar chunks serialize with json.
+- Fan-out instances past phase 0 ran with an empty base input (the
+  per-agent input dict is keyed by pre-expansion names), so the LLM
+  frame said `Original task:` with nothing after it and script payloads
+  shipped `base_input=""`. Instances now frame the raw ensemble input;
+  an original that produces zero instances still runs as a single agent
+  with its dependency envelope (#202).
 - `gen-review.review` (dispatch seat, no `input_key`) now receives the
   `gen` output it was previously denied (#202).
 
