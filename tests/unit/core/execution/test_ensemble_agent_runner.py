@@ -436,3 +436,47 @@ class TestEnsembleExecutorTerminalAgentLookups:
         executor._resolve_ensemble_reference = _raise  # type: ignore[assignment]
 
         assert executor._terminal_agents_for_ensemble("missing") == []
+
+    def test_root_executor_wires_working_lookups_into_dependency_resolver(
+        self,
+    ) -> None:
+        """SF6: ``DependencyResolver``'s ``dependency_config_lookup`` /
+        ``ensemble_terminal_agents`` are required constructor arguments,
+        not optional-and-defaulted — a mutant that drops them at this
+        construction site (ensemble_execution.py) raises ``TypeError``
+        here rather than silently reverting every LLM consumer of an
+        ``ensemble:`` dependency to the pre-D full-JSON-record render.
+        Beyond "were they passed", this pins that they actually WORK:
+        the lookup finds a sibling agent by name and the terminal-agents
+        callable resolves a real child ensemble's graph.
+        """
+        executor = ExecutorFactory.create_root_executor()
+        config = EnsembleConfig(
+            name="parent",
+            description="Test parent",
+            agents=[
+                EnsembleAgentConfig(name="searcher", ensemble="web-searcher"),
+            ],
+        )
+        executor._agent_configs = config.agents
+
+        resolver = executor._dependency_resolver
+        found = resolver._get_dependency_config("searcher")
+        assert found is config.agents[0]
+
+        child_config = EnsembleConfig(
+            name="web-searcher",
+            description="Test child",
+            agents=[
+                ScriptAgentConfig(name="fetch", script="echo ok"),
+                ScriptAgentConfig(
+                    name="format", script="echo ok", depends_on=["fetch"]
+                ),
+            ],
+        )
+
+        def _resolve(_ref: str) -> EnsembleConfig:
+            return child_config
+
+        executor._resolve_ensemble_reference = _resolve  # type: ignore[assignment]
+        assert resolver._ensemble_terminal_agents("web-searcher") == ["format"]

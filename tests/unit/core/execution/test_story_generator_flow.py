@@ -115,7 +115,11 @@ class TestStoryGeneratorFlow:
 
         # Create components
         mock_role_resolver = Mock(return_value="User Input Agent")
-        dependency_resolver = DependencyResolver(mock_role_resolver)
+        dependency_resolver = DependencyResolver(
+            mock_role_resolver,
+            dependency_config_lookup=lambda _name: None,
+            ensemble_terminal_agents=lambda _ref: [],
+        )
         processor = AgentRequestProcessor(dependency_resolver)
 
         # Create an AgentRequest (as would be output by story generator)

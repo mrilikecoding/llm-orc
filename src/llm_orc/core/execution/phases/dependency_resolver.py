@@ -43,18 +43,22 @@ class DependencyResolver:
     def __init__(
         self,
         role_resolver: Callable[[str], str | None],
-        dependency_config_lookup: Callable[[str], AgentConfig | None] | None = None,
-        ensemble_terminal_agents: Callable[[str], list[str]] | None = None,
+        dependency_config_lookup: Callable[[str], AgentConfig | None],
+        ensemble_terminal_agents: Callable[[str], list[str]],
     ) -> None:
         """Initialize resolver with role description function.
 
-        ``dependency_config_lookup`` and ``ensemble_terminal_agents`` are
-        optional and only used together. Without them, an LLM consumer of
-        an ``ensemble:`` dependency keeps receiving the full
-        JSON-serialized child result. Wired, they let the resolver tell
-        an ensemble dependency apart from any other and look up its
-        child's terminal agent names, to render terminal responses
-        instead of the execution record (fail-closed-composition D).
+        ``dependency_config_lookup`` and ``ensemble_terminal_agents`` let
+        the resolver tell an ``ensemble:`` dependency apart from any
+        other and look up its child's terminal agent names, to render
+        terminal responses instead of the raw execution record
+        (fail-closed-composition D). SF6: required rather than
+        optional-and-only-used-together — an ensemble_execution.py
+        construction site that drops them used to degrade silently back
+        to the pre-D full-JSON-record behavior; a caller with no
+        meaningful lookup passes an explicit stub (``lambda name: None``
+        / ``lambda ref: []``) instead, so the degradation is visible in
+        the call site rather than absorbed here.
         """
         self._get_agent_role_description = role_resolver
         self._get_dependency_config = dependency_config_lookup
@@ -411,18 +415,15 @@ class DependencyResolver:
     ) -> Any:
         """An ``ensemble:`` dependency's response for an LLM consumer
         (fail-closed-composition D). Falls through to the raw response
-        unchanged when the lookups aren't wired, or the dependency isn't
-        an ensemble agent.
+        unchanged when the dependency isn't an ensemble agent (SF6: the
+        lookups themselves are always wired — a caller with nothing
+        meaningful to look up passes an explicit stub).
         """
         response = result.get("response")
-        lookup = self._get_dependency_config
-        terminal_agents = self._ensemble_terminal_agents
-        if lookup is None or terminal_agents is None:
-            return response
-        dep_config = lookup(dep_agent_name)
+        dep_config = self._get_dependency_config(dep_agent_name)
         if not isinstance(dep_config, EnsembleAgentConfig):
             return response
-        terminals = terminal_agents(dep_config.ensemble)
+        terminals = self._ensemble_terminal_agents(dep_config.ensemble)
         instance_errors = self._fan_out_instance_errors(result)
         return self._render_ensemble_response(response, terminals, instance_errors)
 

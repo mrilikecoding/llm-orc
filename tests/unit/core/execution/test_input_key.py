@@ -20,7 +20,11 @@ class TestInputKeySelectsFromUpstream:
             DependencyResolver,
         )
 
-        resolver = DependencyResolver(lambda _: "Test Role")
+        resolver = DependencyResolver(
+            lambda _: "Test Role",
+            dependency_config_lookup=lambda _name: None,
+            ensemble_terminal_agents=lambda _ref: [],
+        )
 
         agents: list[AgentConfig] = [
             LlmAgentConfig(
@@ -105,7 +109,11 @@ class TestMissingInputKeyIsRuntimeError:
             DependencyResolver,
         )
 
-        resolver = DependencyResolver(lambda _: "Test Role")
+        resolver = DependencyResolver(
+            lambda _: "Test Role",
+            dependency_config_lookup=lambda _name: None,
+            ensemble_terminal_agents=lambda _ref: [],
+        )
 
         agents: list[AgentConfig] = [
             LlmAgentConfig(
@@ -142,7 +150,11 @@ class TestNonDictUpstreamWithInputKey:
             DependencyResolver,
         )
 
-        resolver = DependencyResolver(lambda _: "Test Role")
+        resolver = DependencyResolver(
+            lambda _: "Test Role",
+            dependency_config_lookup=lambda _name: None,
+            ensemble_terminal_agents=lambda _ref: [],
+        )
 
         agents: list[AgentConfig] = [
             LlmAgentConfig(
@@ -177,7 +189,11 @@ class TestNoInputKeyBackwardCompatible:
             DependencyResolver,
         )
 
-        resolver = DependencyResolver(lambda _: "Test Role")
+        resolver = DependencyResolver(
+            lambda _: "Test Role",
+            dependency_config_lookup=lambda _name: None,
+            ensemble_terminal_agents=lambda _ref: [],
+        )
 
         agents: list[AgentConfig] = [
             LlmAgentConfig(
@@ -319,7 +335,11 @@ class TestIntegrationInputKeyRoutingPattern:
         }
 
         # DependencyResolver enhances synthesizer input
-        resolver = DependencyResolver(lambda _: "Test Role")
+        resolver = DependencyResolver(
+            lambda _: "Test Role",
+            dependency_config_lookup=lambda _name: None,
+            ensemble_terminal_agents=lambda _ref: [],
+        )
         enhanced = resolver.enhance_input_with_dependencies(
             "Synthesize all results",
             [agents[3]],  # synthesizer

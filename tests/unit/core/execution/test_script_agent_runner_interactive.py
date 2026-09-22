@@ -410,7 +410,11 @@ class TestScriptAgentsSkipTheOuterTimeout:
 
         dispatcher = AgentDispatcher(
             AgentExecutionCoordinator(perf, _executor),
-            DependencyResolver(lambda name: ""),
+            DependencyResolver(
+                lambda name: "",
+                dependency_config_lookup=lambda _name: None,
+                ensemble_terminal_agents=lambda _ref: [],
+            ),
             NoOpProgressController(),
             lambda name, data: None,
             _resolve,

@@ -27,7 +27,11 @@ class TestDependencyResolver:
         mock_role_resolver = Mock()
         mock_role_resolver.return_value = "Test Role"
 
-        resolver = DependencyResolver(role_resolver=mock_role_resolver)
+        resolver = DependencyResolver(
+            role_resolver=mock_role_resolver,
+            dependency_config_lookup=lambda _name: None,
+            ensemble_terminal_agents=lambda _ref: [],
+        )
 
         return resolver, mock_role_resolver
 
@@ -733,7 +737,11 @@ class TestChildExecutionInputContract:
         """Set up resolver with mocked role description function."""
         mock_role_resolver = Mock()
         mock_role_resolver.return_value = "Test Role"
-        return DependencyResolver(role_resolver=mock_role_resolver)
+        return DependencyResolver(
+            role_resolver=mock_role_resolver,
+            dependency_config_lookup=lambda _name: None,
+            ensemble_terminal_agents=lambda _ref: [],
+        )
 
     def test_ensemble_with_input_key_gets_selected_value(self) -> None:
         """Issue #202 repro: ensemble + input_key passes the selected
@@ -920,7 +928,11 @@ class TestChildInputKeyContractError:
     """
 
     def setup_resolver(self) -> DependencyResolver:
-        return DependencyResolver(role_resolver=Mock(return_value="Role"))
+        return DependencyResolver(
+            role_resolver=Mock(return_value="Role"),
+            dependency_config_lookup=lambda _name: None,
+            ensemble_terminal_agents=lambda _ref: [],
+        )
 
     def test_none_when_input_key_source_succeeded(self) -> None:
         resolver = self.setup_resolver()
@@ -1349,11 +1361,16 @@ class TestLlmConsumerOfEnsembleDependency:
 
         assert "not json at all" in enhanced["compiler"]
 
-    def test_without_wiring_falls_back_to_raw_response(self) -> None:
-        """No dependency_config_lookup / ensemble_terminal_agents wired:
-        an LLM consumer of an ensemble dependency keeps today's raw
-        JSON-serialized response (backward compatible)."""
-        resolver = DependencyResolver(role_resolver=Mock(return_value="Role"))
+    def test_unresolvable_dependency_falls_back_to_raw_response(self) -> None:
+        """dependency_config_lookup returns None for this dependency
+        (SF6: the lookups are always wired, but a lookup miss is still
+        possible): an LLM consumer of it keeps the raw JSON-serialized
+        response rather than crashing."""
+        resolver = DependencyResolver(
+            role_resolver=Mock(return_value="Role"),
+            dependency_config_lookup=lambda _name: None,
+            ensemble_terminal_agents=lambda _ref: [],
+        )
 
         agents: list[AgentConfig] = [
             LlmAgentConfig(
@@ -1383,7 +1400,11 @@ class TestFanOutInputPreparation:
         """Set up resolver for testing."""
         mock_role_resolver = Mock()
         mock_role_resolver.return_value = "Test Role"
-        return DependencyResolver(role_resolver=mock_role_resolver)
+        return DependencyResolver(
+            role_resolver=mock_role_resolver,
+            dependency_config_lookup=lambda _name: None,
+            ensemble_terminal_agents=lambda _ref: [],
+        )
 
     def test_prepare_fan_out_instance_input_scalar_chunk_json(self) -> None:
         """Scalar chunks serialize with json (true/null/3), not str() —
