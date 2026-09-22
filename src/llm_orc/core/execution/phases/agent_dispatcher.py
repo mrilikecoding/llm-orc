@@ -1,6 +1,7 @@
 """Agent dispatch and parallel execution for ensemble phases."""
 
 import asyncio
+import json
 import logging
 import time
 from collections.abc import Awaitable, Callable
@@ -12,6 +13,7 @@ from llm_orc.core.execution.phases.agent_execution_coordinator import (
 from llm_orc.core.execution.phases.dependency_resolver import DependencyResolver
 from llm_orc.core.execution.progress_controller import ProgressController
 from llm_orc.core.execution.result_types import AgentResult
+from llm_orc.core.execution.scripting.agent_runner import reports_failure
 from llm_orc.core.execution.utils import resolve_agent_timeout
 from llm_orc.schemas.agent_config import (
     AgentConfig,
@@ -23,6 +25,27 @@ from llm_orc.schemas.agent_config import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _script_failure_error(response: str) -> str:
+    """The error text a failed script agent's response names.
+
+    ``reports_failure`` has already confirmed ``response`` parses to a
+    dict reporting a failure; prefer its own ``error`` text
+    (web_searcher's convention: ``{"error": ...}``, ADR-020), falling
+    back to the raw response for a bare ``{"success": false}`` with no
+    ``error`` key — never silently empty.
+    """
+    try:
+        parsed = json.loads(response)
+    except (json.JSONDecodeError, TypeError):
+        return response
+    if isinstance(parsed, dict):
+        error = parsed.get("error")
+        if error:
+            return error if isinstance(error, str) else json.dumps(error)
+    return response
+
 
 # Type alias for the resolve profile callback
 ResolveProfileFn = Callable[[AgentConfig], Awaitable[dict[str, Any]]]
@@ -176,6 +199,12 @@ class AgentDispatcher:
         )
 
         await self._emit_agent_completion_events(agent_name, agent_start_time)
+
+        if isinstance(agent_config, ScriptAgentConfig) and reports_failure(response):
+            return agent_name, AgentResult(
+                status="failed",
+                error=_script_failure_error(response),
+            )
 
         return agent_name, AgentResult(
             status="success",

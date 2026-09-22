@@ -1,6 +1,7 @@
 """Tests for AgentDispatcher max-concurrency support."""
 
 import asyncio
+import json
 from typing import Any, cast
 from unittest.mock import AsyncMock, Mock, patch
 
@@ -11,6 +12,7 @@ from llm_orc.schemas.agent_config import (
     AgentConfig,
     EnsembleAgentConfig,
     LlmAgentConfig,
+    ScriptAgentConfig,
 )
 
 
@@ -204,3 +206,84 @@ class TestFanOutInstanceBaseInput:
 
         call = resolver.prepare_fan_out_instance_input.call_args
         assert call.args[1] == "the task"
+
+
+class TestScriptAgentFailureShape:
+    """A script agent's own response can report failure (non-zero exit,
+    timeout, or an ``{"error": ...}`` payload written by a script that
+    still exits 0 — web_searcher's convention) without the subprocess
+    itself raising. Fail-closed-composition B2: that failure becomes the
+    agent's status, not a "success" wrapping an error string a
+    downstream LLM has to notice on its own."""
+
+    @pytest.mark.asyncio
+    async def test_error_shaped_response_fails_the_agent(self) -> None:
+        dispatcher = _make_dispatcher()
+        coordinator = cast(AsyncMock, dispatcher._execution_coordinator)
+        coordinator.execute_agent_with_timeout = AsyncMock(
+            return_value=(
+                json.dumps({"error": "authentication_failed", "backend": "tavily"}),
+                None,
+                False,
+            )
+        )
+        agent = ScriptAgentConfig(name="searcher", script="web_searcher.py")
+
+        results = await dispatcher.execute_agents_in_phase([agent], "test input")
+
+        result = results["searcher"]
+        assert result.status == "failed"
+        assert result.error == "authentication_failed"
+
+    @pytest.mark.asyncio
+    async def test_success_flag_false_fails_the_agent(self) -> None:
+        dispatcher = _make_dispatcher()
+        coordinator = cast(AsyncMock, dispatcher._execution_coordinator)
+        coordinator.execute_agent_with_timeout = AsyncMock(
+            return_value=(json.dumps({"success": False}), None, False)
+        )
+        agent = ScriptAgentConfig(name="worker", script="worker.py")
+
+        results = await dispatcher.execute_agents_in_phase([agent], "test input")
+
+        result = results["worker"]
+        assert result.status == "failed"
+        assert result.error == json.dumps({"success": False})
+
+    @pytest.mark.asyncio
+    async def test_successful_script_response_still_succeeds(self) -> None:
+        dispatcher = _make_dispatcher()
+        coordinator = cast(AsyncMock, dispatcher._execution_coordinator)
+        coordinator.execute_agent_with_timeout = AsyncMock(
+            return_value=(json.dumps({"results": ["a"]}), None, False)
+        )
+        agent = ScriptAgentConfig(name="searcher", script="web_searcher.py")
+
+        results = await dispatcher.execute_agents_in_phase([agent], "test input")
+
+        result = results["searcher"]
+        assert result.status == "success"
+        assert result.response == json.dumps({"results": ["a"]})
+
+    @pytest.mark.asyncio
+    async def test_llm_agent_response_is_never_inspected_for_failure_shape(
+        self,
+    ) -> None:
+        """An LLM agent's own text response happening to contain the word
+        "error" must not be reinterpreted as agent failure — the B2
+        contract is script-agent-only."""
+        dispatcher = _make_dispatcher()
+        coordinator = cast(AsyncMock, dispatcher._execution_coordinator)
+        coordinator.execute_agent_with_timeout = AsyncMock(
+            return_value=(
+                json.dumps({"error": "not a failure, just prose"}),
+                None,
+                False,
+            )
+        )
+        agent = LlmAgentConfig(name="writer", model_profile="local")
+
+        results = await dispatcher.execute_agents_in_phase([agent], "test input")
+
+        result = results["writer"]
+        assert result.status == "success"
