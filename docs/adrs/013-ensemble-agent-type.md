@@ -59,6 +59,8 @@ Recursive ensemble execution is bounded per Invariant 8. A `depth` counter passe
 
 A child ensemble failure is an agent failure, not an orchestration failure, per Invariant 13. The parent ensemble continues executing agents that do not depend on the failed ensemble agent. The failure is recorded in the parent's results with a `has_errors` flag.
 
+*Amendment, 2026-09-22 (fail-closed-composition, Invariant 13):* a dependent whose *every* dependency failed or was skipped is itself skipped rather than executing on an effectively-empty input — this "continues executing agents that do not depend on the failed agent" line was accurate but did not say what happens to agents that *do* depend on it, which used to be "runs anyway, regardless of dependency outcome." A dependent with at least one successful dependency still runs, same as before; its input now names every failed/skipped dependency instead of silently omitting them.
+
 ---
 
 ## Consequences
