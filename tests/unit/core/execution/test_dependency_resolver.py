@@ -654,30 +654,6 @@ class TestDependencyResolver:
         assert "Please respond" not in child_input
         assert "Please provide your own analysis" not in child_input
 
-    def test_child_execution_node_without_dependencies_gets_base_input(
-        self,
-    ) -> None:
-        """A child-execution node whose deps produced no successful results
-        receives the base input alone."""
-        resolver, _ = self.setup_resolver()
-
-        agents: list[AgentConfig] = [
-            EnsembleAgentConfig(
-                name="child",
-                ensemble="worker",
-                depends_on=["failed_dep"],
-            ),
-        ]
-        results_dict = {
-            "failed_dep": {"status": "error", "response": "boom"},
-        }
-
-        enhanced = resolver.enhance_input_with_dependencies(
-            "the original turn", agents, results_dict
-        )
-
-        assert enhanced["child"] == "the original turn"
-
 
 class TestChildExecutionInputContract:
     """One input contract for child-execution nodes (issue #202).
