@@ -58,6 +58,22 @@ class TestHTTPConnectionPool:
         await HTTPConnectionPool.close()
 
     @pytest.mark.asyncio
+    async def test_get_httpx_client_sends_versioned_user_agent(self) -> None:
+        """The shared client's default User-Agent names this package and
+        its installed version, not a hardcoded placeholder."""
+        import httpx
+
+        from llm_orc import __version__
+
+        HTTPConnectionPool.get_httpx_client()
+
+        _, kwargs = httpx.AsyncClient.call_args  # type: ignore[attr-defined]
+        assert kwargs["headers"]["User-Agent"] == f"llm-orc/{__version__}"
+
+        # Cleanup
+        await HTTPConnectionPool.close()
+
+    @pytest.mark.asyncio
     async def test_get_httpx_client_reuses_existing(self) -> None:
         """Test that get_httpx_client reuses existing client."""
         # Given
