@@ -43,9 +43,22 @@ class DependencyResolver:
     def __init__(
         self,
         role_resolver: Callable[[str], str | None],
+        dependency_config_lookup: Callable[[str], AgentConfig | None] | None = None,
+        ensemble_terminal_agents: Callable[[str], list[str]] | None = None,
     ) -> None:
-        """Initialize resolver with role description function."""
+        """Initialize resolver with role description function.
+
+        ``dependency_config_lookup`` and ``ensemble_terminal_agents`` are
+        optional and only used together. Without them, an LLM consumer of
+        an ``ensemble:`` dependency keeps receiving the full
+        JSON-serialized child result. Wired, they let the resolver tell
+        an ensemble dependency apart from any other and look up its
+        child's terminal agent names, to render terminal responses
+        instead of the execution record (fail-closed-composition D).
+        """
         self._get_agent_role_description = role_resolver
+        self._get_dependency_config = dependency_config_lookup
+        self._ensemble_terminal_agents = ensemble_terminal_agents
 
     def enhance_input_with_dependencies(
         self,
@@ -113,7 +126,7 @@ class DependencyResolver:
                 return selected
 
         dependency_results = self._extract_successful_dependency_results(
-            dependencies, effective_results
+            dependencies, effective_results, agent_config
         )
 
         if isinstance(agent_config, ChildExecutionConfig):
@@ -245,17 +258,28 @@ class DependencyResolver:
         return modified, None
 
     def _extract_successful_dependency_results(
-        self, dependencies: list[str | dict[str, Any]], results_dict: dict[str, Any]
+        self,
+        dependencies: list[str | dict[str, Any]],
+        results_dict: dict[str, Any],
+        consumer_config: AgentConfig | None = None,
     ) -> list[str]:
         """Extract successful dependency results with role attribution.
 
         Args:
             dependencies: List of dependency names (str or dict form)
             results_dict: Dictionary of previous agent results
+            consumer_config: The dependent agent's own config. When it is
+                an LLM agent, an ``ensemble:`` dependency's response
+                renders as its child's terminal agent responses instead
+                of the raw execution record (fail-closed-composition D).
+                The dependency selected by the consumer's own
+                ``input_key`` is left verbatim — that selection already
+                happened in ``_apply_input_key_selection``.
 
         Returns:
             List of formatted dependency result strings
         """
+        input_key_dep = self._input_key_selected_dep_name(consumer_config)
         dependency_results = []
         for dep in dependencies:
             agent_dep_name = dep_name(dep)
@@ -264,6 +288,13 @@ class DependencyResolver:
                 and results_dict[agent_dep_name].get("status") == "success"
             ):
                 response = results_dict[agent_dep_name]["response"]
+                if (
+                    isinstance(consumer_config, LlmAgentConfig)
+                    and agent_dep_name != input_key_dep
+                ):
+                    response = self._render_ensemble_dependency(
+                        agent_dep_name, response
+                    )
                 dep_role = self._get_agent_role_description(agent_dep_name)
                 role_text = f" ({dep_role})" if dep_role else ""
 
@@ -272,6 +303,102 @@ class DependencyResolver:
                 )
 
         return dependency_results
+
+    @staticmethod
+    def _input_key_selected_dep_name(
+        consumer_config: AgentConfig | None,
+    ) -> str | None:
+        """The dependency name already resolved by the consumer's own
+        ``input_key`` (ADR-014), or None. That dependency's response was
+        already replaced with the selected value in
+        ``_apply_input_key_selection`` and must not be re-rendered."""
+        if consumer_config is None or not consumer_config.input_key:
+            return None
+        if not consumer_config.depends_on:
+            return None
+        return dep_name(consumer_config.depends_on[0])
+
+    def _render_ensemble_dependency(self, dep_agent_name: str, response: Any) -> Any:
+        """An ``ensemble:`` dependency's response for an LLM consumer
+        (fail-closed-composition D). Falls through to ``response``
+        unchanged when the lookups aren't wired, or the dependency isn't
+        an ensemble agent.
+        """
+        lookup = self._get_dependency_config
+        terminal_agents = self._ensemble_terminal_agents
+        if lookup is None or terminal_agents is None:
+            return response
+        dep_config = lookup(dep_agent_name)
+        if not isinstance(dep_config, EnsembleAgentConfig):
+            return response
+        terminals = terminal_agents(dep_config.ensemble)
+        return self._render_ensemble_response(response, terminals)
+
+    def _render_ensemble_response(self, response: Any, terminals: list[str]) -> str:
+        """One labeled block per terminal agent. A plain (non-fan-out)
+        ensemble dependency is a single child result; a gathered fan-out
+        dependency is a list of them, one per instance."""
+        if isinstance(response, list):
+            blocks = [
+                self._render_child_result(item, terminals, index=idx)
+                for idx, item in enumerate(response)
+            ]
+            return "\n\n".join(blocks)
+        return self._render_child_result(response, terminals, index=None)
+
+    def _render_child_result(
+        self, raw: Any, terminals: list[str], index: int | None
+    ) -> str:
+        """Terminal blocks for a single child result. A child result that
+        doesn't parse into the expected shape — the child failed, or the
+        ensemble reference didn't resolve so ``terminals`` is empty —
+        renders what's there honestly instead of going silently empty.
+        """
+        parsed = self._parse_child_result(raw)
+        results = parsed.get("results") if parsed is not None else None
+        if not isinstance(results, dict):
+            return self._render_raw_fallback(raw, index)
+        names = terminals or list(results.keys())
+        blocks = [
+            self._render_terminal_block(name, results.get(name), index)
+            for name in names
+        ]
+        return "\n\n".join(blocks)
+
+    @staticmethod
+    def _parse_child_result(raw: Any) -> dict[str, Any] | None:
+        """Parse a child result to a dict, or None when it doesn't."""
+        if isinstance(raw, dict):
+            return raw
+        if not isinstance(raw, str):
+            return None
+        try:
+            parsed = json.loads(raw)
+        except (json.JSONDecodeError, TypeError):
+            return None
+        return parsed if isinstance(parsed, dict) else None
+
+    @staticmethod
+    def _render_raw_fallback(raw: Any, index: int | None) -> str:
+        """Honest fallback for a child result that isn't a parseable
+        child-result dict — never silently empty."""
+        label = f"[{index}]" if index is not None else "result"
+        if raw is None:
+            return f"{label}: (no result)"
+        text = raw if isinstance(raw, str) else json.dumps(raw)
+        return f"{label}:\n{text}"
+
+    @staticmethod
+    def _render_terminal_block(name: str, agent_result: Any, index: int | None) -> str:
+        """One labeled block for a single terminal agent's result."""
+        label = f"{name}[{index}]" if index is not None else name
+        if not isinstance(agent_result, dict):
+            return f"{label}: (no result)"
+        if agent_result.get("status") == "success":
+            return f"{label}:\n{agent_result.get('response')}"
+        status = agent_result.get("status", "failed")
+        detail = agent_result.get("error") or agent_result.get("response")
+        return f"{label} ({status}): {detail or 'no response'}"
 
     def _extract_dependency_results_as_dict(
         self, dependencies: list[str | dict[str, Any]], results_dict: dict[str, Any]
