@@ -193,7 +193,11 @@ def agent_request_processor_instance(bdd_context: dict[str, Any]) -> None:
     from unittest.mock import MagicMock
 
     role_resolver = MagicMock()
-    dependency_resolver = DependencyResolver(role_resolver)
+    dependency_resolver = DependencyResolver(
+        role_resolver,
+        dependency_config_lookup=lambda _name: None,
+        ensemble_terminal_agents=lambda _ref: [],
+    )
     bdd_context["agent_request_processor"] = AgentRequestProcessor(dependency_resolver)
 
 
