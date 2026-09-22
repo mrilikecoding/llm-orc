@@ -124,6 +124,24 @@ class TestSkipPropagation:
         }
         assert evaluator.should_run(agent, results) is True
 
+    def test_runs_when_sole_dependency_is_a_partial_fan_out(self) -> None:
+        """A gathered fan-out dependency whose status is "partial" (some
+        instances succeeded, some failed) counts as a successful
+        dependency for the cascade rule — the consumer still runs
+        (fail-closed-composition, partial fan-out decision)."""
+        evaluator = GuardEvaluator()
+        agent = LlmAgentConfig(
+            name="compiler", model_profile="gpt4", depends_on=["searcher"]
+        )
+        results: dict[str, Any] = {
+            "searcher": {
+                "status": "partial",
+                "response": ["a", None],
+                "fan_out": True,
+            },
+        }
+        assert evaluator.should_run(agent, results) is True
+
 
 class TestDependencySkipReason:
     """Rule 1's skip record names each upstream agent and its status, with

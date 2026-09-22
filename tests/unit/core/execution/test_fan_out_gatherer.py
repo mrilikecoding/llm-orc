@@ -83,6 +83,34 @@ class TestFanOutGatherer:
         assert result["status"] == "failed"
         assert result["response"] == [None, None]
 
+    def test_gather_results_failed_status_carries_an_error(
+        self, gatherer: FanOutGatherer
+    ) -> None:
+        """An all-failed gathered result carries a top-level "error"
+        summarizing every instance's error — today's skip reason reads
+        "s (failed)" with no detail because nothing was there to read."""
+        gatherer.record_instance_result("extractor[0]", None, False, error="error_0")
+        gatherer.record_instance_result("extractor[1]", None, False, error="error_1")
+
+        result = gatherer.gather_results("extractor")
+
+        assert "error_0" in result["error"]
+        assert "error_1" in result["error"]
+
+    def test_gather_results_partial_status_has_no_top_level_error(
+        self, gatherer: FanOutGatherer
+    ) -> None:
+        """A partial result's failed instances are already named in
+        "instances"; the top-level "error" key is reserved for "failed"
+        (fail-closed-composition's arc D per-terminal rendering reads
+        the failed instances individually, not a summary string)."""
+        gatherer.record_instance_result("extractor[0]", "result_0", True)
+        gatherer.record_instance_result("extractor[1]", None, False, error="timeout")
+
+        result = gatherer.gather_results("extractor")
+
+        assert "error" not in result
+
     def test_gather_results_instance_statuses(self, gatherer: FanOutGatherer) -> None:
         """gather_results includes per-instance status information."""
         gatherer.record_instance_result("analyzer[0]", {"data": "a"}, True)

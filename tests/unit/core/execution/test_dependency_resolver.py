@@ -1160,6 +1160,98 @@ class TestLlmConsumerOfEnsembleDependency:
         assert "resultB" in compiler_input
         assert "total_tokens" not in compiler_input
 
+    def test_partial_fan_out_renders_successes_and_names_failed_errors(self) -> None:
+        """A "partial" gathered fan-out (some instances failed, some
+        succeeded) counts as a successful dependency: the compiler still
+        gets the successful instances' terminal renders, and each failed
+        instance is named with its own error — never a Python list
+        repr, never the bare word "None" (fail-closed-composition,
+        partial fan-out decision)."""
+        dep_config = EnsembleAgentConfig(
+            name="searcher",
+            ensemble="agentic-serving/web-searcher",
+            fan_out=True,
+        )
+        resolver = self._resolver(dep_config, ["searcher"])
+
+        agents: list[AgentConfig] = [
+            LlmAgentConfig(
+                name="compiler",
+                model_profile="test-profile",
+                depends_on=["searcher"],
+            ),
+        ]
+        succeeded_child = self._child_result(
+            {
+                "searcher": {
+                    "status": "success",
+                    "response": json.dumps({"results": ["resultA"]}),
+                }
+            }
+        )
+        results_dict = {
+            "searcher": {
+                "status": "partial",
+                "fan_out": True,
+                "response": [succeeded_child, None],
+                "instances": [
+                    {"index": 0, "status": "success"},
+                    {
+                        "index": 1,
+                        "status": "failed",
+                        "error": "search backend timed out",
+                    },
+                ],
+            },
+        }
+
+        enhanced = resolver.enhance_input_with_dependencies(
+            "Compile a dossier", agents, results_dict
+        )
+
+        compiler_input = enhanced["compiler"]
+        assert "resultA" in compiler_input
+        assert "search backend timed out" in compiler_input
+        # never a bare Python list repr or the literal word None standing
+        # in for the failed instance
+        assert "None" not in compiler_input
+
+    def test_empty_fan_out_dependency_is_named_explicitly(self) -> None:
+        """A genuinely empty fan-out (upstream array was []) must reach
+        an LLM consumer as an explicit statement, not an empty block
+        (SF4)."""
+        dep_config = EnsembleAgentConfig(
+            name="searcher",
+            ensemble="agentic-serving/web-searcher",
+            fan_out=True,
+        )
+        resolver = self._resolver(dep_config, ["searcher"])
+
+        agents: list[AgentConfig] = [
+            LlmAgentConfig(
+                name="compiler",
+                model_profile="test-profile",
+                depends_on=["searcher"],
+            ),
+        ]
+        results_dict = {
+            "searcher": {
+                "status": "success",
+                "fan_out": True,
+                "response": [],
+                "instances": [],
+            },
+        }
+
+        enhanced = resolver.enhance_input_with_dependencies(
+            "Compile a dossier", agents, results_dict
+        )
+
+        compiler_input = enhanced["compiler"]
+        assert "searcher" in compiler_input
+        assert "zero instances" in compiler_input
+        assert "upstream list was empty" in compiler_input
+
     def test_input_key_on_ensemble_dependency_bypasses_terminal_render(self) -> None:
         """input_key selection wins outright: the resolver never
         re-parses the already-selected value as an execution record.

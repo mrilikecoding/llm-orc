@@ -4,6 +4,14 @@ from typing import Any
 
 from llm_orc.schemas.agent_config import AgentConfig
 
+# A gathered fan-out dependency where some instances succeeded and some
+# failed (fan_out/gatherer.py's "partial") counts as a successful
+# dependency: GuardEvaluator's cascade rule lets a consumer run on it, and
+# DependencyResolver renders it through the same per-terminal path as a
+# fully successful one. Only a fan-out where EVERY instance failed
+# ("failed") does not (fail-closed-composition, partial fan-out decision).
+SUCCEEDED_STATUSES = ("success", "partial")
+
 
 def dep_name(dep: str | dict[str, Any]) -> str:
     """Extract the agent name from a dependency entry.
