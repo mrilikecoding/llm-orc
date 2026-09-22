@@ -3,7 +3,7 @@
 import logging
 import os
 import uuid
-from collections.abc import Sequence
+from collections.abc import AsyncIterator, Sequence
 from typing import Any
 
 from llm_orc.core.auth.authentication import CredentialStorage
@@ -316,7 +316,8 @@ class ModelFactory:
         agent_options: dict[str, Any] | None = None,
         response_format: str | dict[str, Any] | None = None,
     ) -> tuple[ModelInterface, str] | None:
-        """Try configurable fallback chain for a given profile.
+        """The first loadable candidate in ``original_profile``'s
+        fallback_model_profile chain, or None if the chain is exhausted.
 
         Args:
             original_profile: The original profile that failed
@@ -324,10 +325,32 @@ class ModelFactory:
             max_tokens: Carried into whichever hop loads.
             agent_options: Merged with each hop's own options (agent wins).
             response_format: Carried into whichever hop loads.
+        """
+        async for result in self._iter_configurable_fallback_chain(
+            original_profile,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            agent_options=agent_options,
+            response_format=response_format,
+        ):
+            return result
+        return None
 
-        Returns:
-            (model, fallback_model_profile) if successful, None if
-            fallback chain exhausted
+    async def _iter_configurable_fallback_chain(
+        self,
+        original_profile: str,
+        *,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+        agent_options: dict[str, Any] | None = None,
+        response_format: str | dict[str, Any] | None = None,
+    ) -> AsyncIterator[tuple[ModelInterface, str]]:
+        """Yield every profile in ``original_profile``'s
+        fallback_model_profile chain that successfully loads, in chain
+        order — unlike ``_try_configurable_fallback``, which stops at
+        the first one, this walks the whole chain so a caller (the
+        runtime-failure path) can keep trying past a hop that loaded
+        fine but failed to actually generate.
         """
         fallback_chain_visited: set[str] = set()
         current_profile = original_profile
@@ -355,12 +378,54 @@ class ModelFactory:
                     agent_options=agent_options,
                     response_format=response_format,
                 )
-                return model, fallback_profile_name
+                yield model, fallback_profile_name
             except (ValueError, KeyError):
-                current_profile = fallback_profile_name
-                continue
+                pass
 
-        return None
+            current_profile = fallback_profile_name
+
+    async def iter_fallback_chain(
+        self,
+        original_profile: str | None = None,
+        agent_fallback_profile: str | None = None,
+        *,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+        agent_options: dict[str, Any] | None = None,
+        response_format: str | dict[str, Any] | None = None,
+    ) -> AsyncIterator[tuple[ModelInterface, str]]:
+        """Yield every loadable candidate in the explicit fallback chain,
+        in the same priority order as ``get_fallback_model`` (agent-level
+        override first, then the original profile's own chain).
+
+        For a caller that needs to keep trying past a runtime failure on
+        an earlier candidate — ``get_fallback_model`` returns only the
+        first one that loads, which is enough when a model-load failure
+        is the trigger (load success there IS the outcome), but not when
+        the trigger is a runtime failure: the first loadable model can
+        still fail to generate, and the next candidate deserves a try
+        too.
+        """
+        if agent_fallback_profile:
+            agent_result = await self._try_single_fallback(
+                agent_fallback_profile,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                agent_options=agent_options,
+                response_format=response_format,
+            )
+            if agent_result:
+                yield agent_result
+
+        if original_profile:
+            async for result in self._iter_configurable_fallback_chain(
+                original_profile,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                agent_options=agent_options,
+                response_format=response_format,
+            ):
+                yield result
 
 
 LLAMA_SERVER_PROVIDER = "llama-server"

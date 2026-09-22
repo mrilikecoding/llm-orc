@@ -1449,3 +1449,114 @@ class TestFallbackHopLoadsProfileConfig:
         assert model.max_tokens == 222
         assert model._options == {"top_k": 5}
         assert model._response_format == "json"
+
+
+class TestIterFallbackChain:
+    """Scenario: iter_fallback_chain yields every loadable candidate, in
+    the same priority order get_fallback_model uses (agent-level
+    override first, then the profile's own chain) — not just the
+    first one that loads. This is what lets the runtime-failure path
+    keep trying past a candidate that loaded fine but failed to
+    generate."""
+
+    @pytest.fixture
+    def factory(self) -> ModelFactory:
+        config_manager = Mock(spec=ConfigurationManager)
+        credential_storage = Mock(spec=CredentialStorage)
+        credential_storage.get_auth_method.return_value = None
+        return ModelFactory(config_manager, credential_storage)
+
+    async def test_yields_agent_level_then_the_full_profile_chain(
+        self, factory: ModelFactory
+    ) -> None:
+        config_mock = cast(Mock, factory._config_manager)
+        profile_configs: dict[str, dict[str, Any]] = {
+            "premium-claude": {
+                "model": "claude-sonnet-4",
+                "provider": "anthropic-api",
+                "fallback_model_profile": "chain-a",
+            },
+            "chain-a": {
+                "model": "qwen3-0.6b",
+                "provider": "llama-server",
+                "fallback_model_profile": "chain-b",
+            },
+            "chain-b": {"model": "qwen3-8b", "provider": "llama-server"},
+        }
+        config_mock.get_model_profile.side_effect = profile_configs.get
+        resolved = {
+            "agent-fb": ("minimax", "llama-server"),
+            "chain-a": ("qwen3-0.6b", "llama-server"),
+            "chain-b": ("qwen3-8b", "llama-server"),
+        }
+        config_mock.resolve_model_profile.side_effect = lambda name: resolved[name]
+
+        names = [
+            profile_name
+            async for _model, profile_name in factory.iter_fallback_chain(
+                original_profile="premium-claude",
+                agent_fallback_profile="agent-fb",
+            )
+        ]
+
+        assert names == ["agent-fb", "chain-a", "chain-b"]
+
+    async def test_a_hop_that_fails_to_load_is_skipped_not_stopped_at(
+        self, factory: ModelFactory
+    ) -> None:
+        """chain-a fails to resolve; the walk continues to chain-b
+        instead of stopping (this is the multi-hop behavior
+        _try_configurable_fallback intentionally does NOT have — it
+        stops at the first success)."""
+        config_mock = cast(Mock, factory._config_manager)
+        profile_configs: dict[str, dict[str, Any]] = {
+            "premium-claude": {
+                "model": "claude-sonnet-4",
+                "provider": "anthropic-api",
+                "fallback_model_profile": "chain-a",
+            },
+            "chain-a": {
+                "model": "gone",
+                "provider": "llama-server",
+                "fallback_model_profile": "chain-b",
+            },
+            "chain-b": {"model": "qwen3-8b", "provider": "llama-server"},
+        }
+        config_mock.get_model_profile.side_effect = profile_configs.get
+
+        def resolve(name: str) -> tuple[str, str]:
+            if name == "chain-a":
+                raise ValueError("Model profile 'chain-a' not found")
+            return "qwen3-8b", "llama-server"
+
+        config_mock.resolve_model_profile.side_effect = resolve
+
+        names = [
+            profile_name
+            async for _model, profile_name in factory.iter_fallback_chain(
+                original_profile="premium-claude"
+            )
+        ]
+
+        assert names == ["chain-b"]
+
+    async def test_cycle_is_still_detected(self, factory: ModelFactory) -> None:
+        config_mock = cast(Mock, factory._config_manager)
+        profile_configs: dict[str, dict[str, Any]] = {
+            "profile-a": {
+                "model": "model-a",
+                "provider": "provider-a",
+                "fallback_model_profile": "profile-b",
+            },
+            "profile-b": {
+                "model": "model-b",
+                "provider": "provider-b",
+                "fallback_model_profile": "profile-a",
+            },
+        }
+        config_mock.get_model_profile.side_effect = profile_configs.get
+        config_mock.resolve_model_profile.side_effect = ValueError("always fails")
+
+        with pytest.raises(ValueError, match="Cycle detected in fallback chain"):
+            async for _ in factory.iter_fallback_chain(original_profile="profile-a"):
+                pass

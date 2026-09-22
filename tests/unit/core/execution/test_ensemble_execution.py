@@ -1477,6 +1477,9 @@ class TestEnsembleExecutor:
             "cost_usd": 0.02,
         }
 
+        async def fake_chain(**_kwargs: Any) -> Any:
+            yield mock_fallback_model, "standard-claude"
+
         streaming_events: list[dict[str, Any]] = []
         with (
             patch.object(
@@ -1486,8 +1489,8 @@ class TestEnsembleExecutor:
             ),
             patch.object(
                 executor._model_factory,
-                "get_fallback_model",
-                return_value=(mock_fallback_model, "standard-claude"),
+                "iter_fallback_chain",
+                new=fake_chain,
             ),
             patch.object(
                 executor._llm_agent_runner,
@@ -1563,6 +1566,9 @@ class TestEnsembleExecutor:
             "cost_usd": 0.02,
         }
 
+        async def fake_chain(**_kwargs: Any) -> Any:
+            yield mock_fallback_model, "standard-claude"
+
         streaming_events: list[dict[str, Any]] = []
         with (
             patch.object(
@@ -1572,8 +1578,8 @@ class TestEnsembleExecutor:
             ),
             patch.object(
                 executor._model_factory,
-                "get_fallback_model",
-                return_value=(mock_fallback_model, "standard-claude"),
+                "iter_fallback_chain",
+                new=fake_chain,
             ),
             patch.object(
                 executor._llm_agent_runner,
