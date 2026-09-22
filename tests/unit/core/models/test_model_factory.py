@@ -764,6 +764,61 @@ class TestMergeOptions:
         assert result == {"num_ctx": 8192, "top_k": 20}
 
 
+class TestModelFactoryExecutionId:
+    """Scenario: ModelFactory.execution_id identifies one top-level
+    ensemble execution, for the OpenCode Go session header (#90 plan §C).
+    Two agents sharing a ModelFactory instance must see the SAME id;
+    two ModelFactory instances (two executions) must see DIFFERENT ones
+    (Doctrine 11)."""
+
+    def test_generates_an_id_when_omitted(self) -> None:
+        config_manager = Mock(spec=ConfigurationManager)
+        credential_storage = Mock(spec=CredentialStorage)
+
+        factory = ModelFactory(config_manager, credential_storage)
+
+        assert isinstance(factory.execution_id, str)
+        assert factory.execution_id
+
+    def test_honors_a_provided_id(self) -> None:
+        config_manager = Mock(spec=ConfigurationManager)
+        credential_storage = Mock(spec=CredentialStorage)
+
+        factory = ModelFactory(
+            config_manager, credential_storage, execution_id="exec-fixed"
+        )
+
+        assert factory.execution_id == "exec-fixed"
+
+    def test_two_factories_get_different_ids(self) -> None:
+        config_manager = Mock(spec=ConfigurationManager)
+        credential_storage = Mock(spec=CredentialStorage)
+
+        first = ModelFactory(config_manager, credential_storage)
+        second = ModelFactory(config_manager, credential_storage)
+
+        assert first.execution_id != second.execution_id
+
+    async def test_two_agents_from_one_factory_get_the_same_id_on_the_model(
+        self,
+    ) -> None:
+        """Two ``load_model`` calls from the same factory (two agents in
+        one execution) both hand the same execution_id to their model
+        instances."""
+        config_manager = Mock(spec=ConfigurationManager)
+        credential_storage = Mock(spec=CredentialStorage)
+        credential_storage.get_auth_method.return_value = None
+        factory = ModelFactory(config_manager, credential_storage)
+
+        first = await factory.load_model("qwen3-8b", "llama-server")
+        second = await factory.load_model("qwen3-14b", "llama-server")
+
+        assert isinstance(first, OpenAICompatibleModel)
+        assert isinstance(second, OpenAICompatibleModel)
+        assert first._execution_id == factory.execution_id
+        assert second._execution_id == factory.execution_id
+
+
 class TestOptionsPassThrough:
     """Scenario: options threaded from config to the router-backed model."""
 
