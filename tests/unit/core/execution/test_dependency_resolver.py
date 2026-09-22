@@ -837,6 +837,259 @@ class TestChildExecutionInputContract:
             resolver.enhance_input_with_dependencies("base", agents, results_dict)
 
 
+class TestLlmConsumerOfEnsembleDependency:
+    """An LLM consumer of an ``ensemble:`` dependency gets the child's
+    terminal agent responses, not the JSON-serialized execution record
+    (fail-closed-composition D). The record's status/input/metadata/usage
+    fields — the overhead measured on research-dossier — never reach the
+    consumer; a failed or unparseable child renders honestly instead of
+    going silently empty.
+    """
+
+    @staticmethod
+    def _child_result(results: dict[str, Any], **extra: Any) -> str:
+        """A serialized child result (ExecutionResult.to_dict() shape)."""
+        payload: dict[str, Any] = {
+            "ensemble": "web-searcher",
+            "status": "completed",
+            "input": {"searcher": "orphanages mississippi"},
+            "results": results,
+            "metadata": {
+                "agents_used": len(results),
+                "started_at": 0.0,
+                "usage": {"totals": {"total_tokens": 555}},
+            },
+        }
+        payload.update(extra)
+        return json.dumps(payload)
+
+    def _resolver(
+        self,
+        dep_config: AgentConfig | None,
+        terminals: list[str],
+    ) -> DependencyResolver:
+        return DependencyResolver(
+            role_resolver=Mock(return_value="Web Searcher"),
+            dependency_config_lookup=lambda name: (
+                dep_config if name == "searcher" else None
+            ),
+            ensemble_terminal_agents=lambda ref: terminals,
+        )
+
+    def test_renders_terminal_response_not_execution_record(self) -> None:
+        """Outcome pin: the compiler's input contains the terminal's
+        response and does not contain the record's metadata/usage keys."""
+        dep_config = EnsembleAgentConfig(
+            name="searcher", ensemble="agentic-serving/web-searcher"
+        )
+        resolver = self._resolver(dep_config, ["searcher"])
+
+        agents: list[AgentConfig] = [
+            LlmAgentConfig(
+                name="compiler",
+                model_profile="test-profile",
+                depends_on=["searcher"],
+            ),
+        ]
+        child_result = self._child_result(
+            {
+                "searcher": {
+                    "status": "success",
+                    "response": json.dumps(
+                        {"results": [{"url": "http://x", "title": "T"}]}
+                    ),
+                }
+            }
+        )
+        results_dict = {
+            "searcher": {"status": "success", "response": child_result},
+        }
+
+        enhanced = resolver.enhance_input_with_dependencies(
+            "Compile a dossier", agents, results_dict
+        )
+
+        compiler_input = enhanced["compiler"]
+        assert "http://x" in compiler_input
+        assert "searcher:" in compiler_input
+        assert "total_tokens" not in compiler_input
+        assert "started_at" not in compiler_input
+        assert "agents_used" not in compiler_input
+
+    def test_renders_each_fan_out_gathered_terminal(self) -> None:
+        """A gathered fan-out dependency (list of child results) renders
+        one labeled block per instance's terminal."""
+        dep_config = EnsembleAgentConfig(
+            name="searcher",
+            ensemble="agentic-serving/web-searcher",
+            fan_out=True,
+        )
+        resolver = self._resolver(dep_config, ["searcher"])
+
+        agents: list[AgentConfig] = [
+            LlmAgentConfig(
+                name="compiler",
+                model_profile="test-profile",
+                depends_on=["searcher"],
+            ),
+        ]
+        response_list = [
+            self._child_result(
+                {
+                    "searcher": {
+                        "status": "success",
+                        "response": json.dumps({"results": ["resultA"]}),
+                    }
+                }
+            ),
+            self._child_result(
+                {
+                    "searcher": {
+                        "status": "success",
+                        "response": json.dumps({"results": ["resultB"]}),
+                    }
+                }
+            ),
+        ]
+        results_dict = {
+            "searcher": {"status": "success", "response": response_list},
+        }
+
+        enhanced = resolver.enhance_input_with_dependencies(
+            "Compile a dossier", agents, results_dict
+        )
+
+        compiler_input = enhanced["compiler"]
+        assert "searcher[0]:" in compiler_input
+        assert "searcher[1]:" in compiler_input
+        assert "resultA" in compiler_input
+        assert "resultB" in compiler_input
+        assert "total_tokens" not in compiler_input
+
+    def test_input_key_on_ensemble_dependency_bypasses_terminal_render(self) -> None:
+        """input_key selection wins outright: the resolver never
+        re-parses the already-selected value as an execution record.
+
+        Unlike a child-execution consumer (ADR-014's verbatim
+        short-circuit), an LLM consumer's input_key selection still
+        flows through the normal dependency-block envelope — only the
+        ensemble-terminal-render step is skipped for that dependency.
+        """
+        dep_config = EnsembleAgentConfig(
+            name="searcher", ensemble="agentic-serving/web-searcher"
+        )
+        resolver = self._resolver(dep_config, ["searcher"])
+
+        agents: list[AgentConfig] = [
+            LlmAgentConfig(
+                name="compiler",
+                model_profile="test-profile",
+                depends_on=["searcher"],
+                input_key="deliverable",
+            ),
+        ]
+        child_result = self._child_result(
+            {"searcher": {"status": "success", "response": "x"}},
+            deliverable="already selected text",
+        )
+        results_dict = {
+            "searcher": {"status": "success", "response": child_result},
+        }
+
+        enhanced = resolver.enhance_input_with_dependencies(
+            "base input", agents, results_dict
+        )
+
+        assert (
+            "Agent searcher (Web Searcher):\nalready selected text"
+            in enhanced["compiler"]
+        )
+
+    def test_failed_terminal_renders_error_not_silently_empty(self) -> None:
+        """A terminal that failed inside a successfully-returned child
+        result renders its error, never an empty block."""
+        dep_config = EnsembleAgentConfig(
+            name="searcher", ensemble="agentic-serving/web-searcher"
+        )
+        resolver = self._resolver(dep_config, ["searcher"])
+
+        agents: list[AgentConfig] = [
+            LlmAgentConfig(
+                name="compiler",
+                model_profile="test-profile",
+                depends_on=["searcher"],
+            ),
+        ]
+        child_result = self._child_result(
+            {
+                "searcher": {
+                    "status": "failed",
+                    "error": "timeout contacting search API",
+                }
+            }
+        )
+        results_dict = {
+            "searcher": {"status": "success", "response": child_result},
+        }
+
+        enhanced = resolver.enhance_input_with_dependencies(
+            "base input", agents, results_dict
+        )
+
+        assert "timeout contacting search API" in enhanced["compiler"]
+
+    def test_unparseable_child_result_renders_raw_text(self) -> None:
+        """A response that isn't a child-result dict at all (the child
+        crashed before producing one) renders honestly, not empty."""
+        dep_config = EnsembleAgentConfig(
+            name="searcher", ensemble="agentic-serving/web-searcher"
+        )
+        resolver = self._resolver(dep_config, ["searcher"])
+
+        agents: list[AgentConfig] = [
+            LlmAgentConfig(
+                name="compiler",
+                model_profile="test-profile",
+                depends_on=["searcher"],
+            ),
+        ]
+        results_dict = {
+            "searcher": {"status": "success", "response": "not json at all"},
+        }
+
+        enhanced = resolver.enhance_input_with_dependencies(
+            "base input", agents, results_dict
+        )
+
+        assert "not json at all" in enhanced["compiler"]
+
+    def test_without_wiring_falls_back_to_raw_response(self) -> None:
+        """No dependency_config_lookup / ensemble_terminal_agents wired:
+        an LLM consumer of an ensemble dependency keeps today's raw
+        JSON-serialized response (backward compatible)."""
+        resolver = DependencyResolver(role_resolver=Mock(return_value="Role"))
+
+        agents: list[AgentConfig] = [
+            LlmAgentConfig(
+                name="compiler",
+                model_profile="test-profile",
+                depends_on=["searcher"],
+            ),
+        ]
+        child_result = self._child_result(
+            {"searcher": {"status": "success", "response": "raw content"}}
+        )
+        results_dict = {
+            "searcher": {"status": "success", "response": child_result},
+        }
+
+        enhanced = resolver.enhance_input_with_dependencies(
+            "base input", agents, results_dict
+        )
+
+        assert child_result in enhanced["compiler"]
+
+
 class TestFanOutInputPreparation:
     """Test fan-out instance input preparation (issue #73)."""
 

@@ -52,6 +52,7 @@ from llm_orc.core.execution.scripting.user_input_handler import (
     ScriptUserInputHandler,
 )
 from llm_orc.core.execution.usage_collector import UsageCollector
+from llm_orc.core.execution.utils import dep_name
 from llm_orc.core.models.model_factory import ModelFactory
 from llm_orc.core.validation import (
     EnsembleExecutionResult,
@@ -239,7 +240,11 @@ class EnsembleExecutor:
             raise ValueError(msg)
         self._model_factory = _model_factory
         self._dependency_analyzer = DependencyAnalyzer()
-        self._dependency_resolver = DependencyResolver(self._get_agent_role_description)
+        self._dependency_resolver = DependencyResolver(
+            self._get_agent_role_description,
+            self._get_agent_config,
+            self._terminal_agents_for_ensemble,
+        )
         self._guard_evaluator = GuardEvaluator()
         self._usage_collector = UsageCollector()
 
@@ -962,3 +967,40 @@ class EnsembleExecutor:
                     return agent_name.replace("-", " ").title()
 
         return agent_name.replace("-", " ").title()
+
+    def _get_agent_config(self, agent_name: str) -> AgentConfig | None:
+        """Look up a sibling agent's own config by name.
+
+        Used by DependencyResolver to tell an ``ensemble:`` dependency
+        apart from any other before rendering its terminal responses
+        (fail-closed-composition D).
+        """
+        if self._agent_configs is None:
+            return None
+        for agent_config in self._agent_configs:
+            if agent_config.name == agent_name:
+                return agent_config
+        return None
+
+    def _terminal_agents_for_ensemble(self, ensemble_ref: str) -> list[str]:
+        """Terminal agent names (no dependents) for a referenced ensemble.
+
+        Resolves the same reference EnsembleAgentRunner used to execute
+        the child, so the graph matches what actually ran. Mirrors
+        resolve_deliverable's terminal computation (results_processor.py)
+        but returns every terminal, not the single collapsed deliverable:
+        an LLM consumer of an ensemble dependency renders one labeled
+        block per terminal agent (fail-closed-composition D). A
+        resolution failure yields an empty list; the resolver falls back
+        to the child's own results dict.
+        """
+        try:
+            child_config = self._resolve_ensemble_reference(ensemble_ref)
+        except FileNotFoundError:
+            return []
+        depended_on = {
+            dep_name(dep) for agent in child_config.agents for dep in agent.depends_on
+        }
+        return [
+            agent.name for agent in child_config.agents if agent.name not in depended_on
+        ]
