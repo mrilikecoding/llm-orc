@@ -300,6 +300,114 @@ class TestEnsembleExecutor:
         assert result["results"]["downstream"]["response"] == "downstream ran"
 
     @pytest.mark.asyncio
+    async def test_fan_out_contract_failure_fails_agent_without_running_it(
+        self, mock_ensemble_executor: Any
+    ) -> None:
+        """A fan-out agent whose upstream response fails the contract
+        (unparseable, here) is recorded as failed and never dispatched
+        un-expanded — replacing today's silent "zero instances —
+        skipping" pass-through that ran it once on garbage input."""
+        config = EnsembleConfig(
+            name="fan-out-contract-failure-test",
+            description="decomposer emits prose; searcher's fan-out contract fails",
+            agents=[
+                LlmAgentConfig(name="decomposer", model_profile="test-tester"),
+                LlmAgentConfig(
+                    name="searcher",
+                    model_profile="test-tester",
+                    depends_on=["decomposer"],
+                    fan_out=True,
+                    input_key="queries",
+                ),
+            ],
+        )
+
+        decomposer_model = AsyncMock(spec=ModelInterface)
+        decomposer_model.generate_response.return_value = "Not JSON, just prose."
+        decomposer_model.get_last_usage.return_value = {
+            "total_tokens": 5,
+            "input_tokens": 2,
+            "output_tokens": 3,
+            "cost_usd": 0.0,
+            "duration_ms": 5,
+        }
+
+        executor = mock_ensemble_executor
+        load_calls: list[str] = []
+
+        async def load_model_side_effect(agent_config: dict[str, Any]) -> Any:
+            load_calls.append(agent_config["name"])
+            return decomposer_model
+
+        with patch.object(
+            executor._model_factory,
+            "load_model_from_agent_config",
+            side_effect=load_model_side_effect,
+        ):
+            result = await executor.execute(config, input_data="go")
+
+        assert load_calls == ["decomposer"], (
+            "searcher must not run un-expanded on the unparseable "
+            f"response. Got: {load_calls}"
+        )
+        assert result["results"]["searcher"]["status"] == "failed"
+        assert "decomposer" in result["results"]["searcher"]["error"]
+        assert "queries" in result["results"]["searcher"]["error"]
+        assert result["status"] == "completed_with_errors"
+
+    @pytest.mark.asyncio
+    async def test_fan_out_genuinely_empty_list_succeeds(
+        self, mock_ensemble_executor: Any
+    ) -> None:
+        """A parsed, genuinely empty array is a legitimate zero-instance
+        success, not a contract failure."""
+        config = EnsembleConfig(
+            name="fan-out-empty-list-test",
+            description="decomposer legitimately finds nothing to search",
+            agents=[
+                LlmAgentConfig(name="decomposer", model_profile="test-tester"),
+                LlmAgentConfig(
+                    name="searcher",
+                    model_profile="test-tester",
+                    depends_on=["decomposer"],
+                    fan_out=True,
+                    input_key="queries",
+                ),
+            ],
+        )
+
+        decomposer_model = AsyncMock(spec=ModelInterface)
+        decomposer_model.generate_response.return_value = '{"queries": []}'
+        decomposer_model.get_last_usage.return_value = {
+            "total_tokens": 5,
+            "input_tokens": 2,
+            "output_tokens": 3,
+            "cost_usd": 0.0,
+            "duration_ms": 5,
+        }
+
+        executor = mock_ensemble_executor
+        load_calls: list[str] = []
+
+        async def load_model_side_effect(agent_config: dict[str, Any]) -> Any:
+            load_calls.append(agent_config["name"])
+            return decomposer_model
+
+        with patch.object(
+            executor._model_factory,
+            "load_model_from_agent_config",
+            side_effect=load_model_side_effect,
+        ):
+            result = await executor.execute(config, input_data="go")
+
+        assert load_calls == ["decomposer"], (
+            "zero real instances means no instance ever loads a model"
+        )
+        assert result["results"]["searcher"]["status"] == "success"
+        assert result["results"]["searcher"]["response"] == []
+        assert result["status"] == "completed"
+
+    @pytest.mark.asyncio
     async def test_execute_ensemble_dependency_based(
         self, mock_ensemble_executor: Any
     ) -> None:
@@ -2536,12 +2644,13 @@ class TestFanOutExecution:
             },
         }
 
-        fan_out_agents = executor._fan_out_coordinator.detect_in_phase(
+        ready, failed = executor._fan_out_coordinator.detect_in_phase(
             phase_agents, results_dict
         )
 
-        assert len(fan_out_agents) == 1
-        agent_config, upstream_array = fan_out_agents[0]
+        assert failed == []
+        assert len(ready) == 1
+        agent_config, upstream_array = ready[0]
         assert agent_config.name == "extractor"
         assert upstream_array == ["chunk1", "chunk2", "chunk3"]
 
@@ -2549,7 +2658,8 @@ class TestFanOutExecution:
     async def test_detect_fan_out_no_array_upstream(
         self, mock_ensemble_executor: Any
     ) -> None:
-        """Test that fan-out is skipped when upstream is not an array."""
+        """A non-array upstream response fails the fan-out agent closed
+        (no input_key: parse_array_from_result returns None)."""
         executor = mock_ensemble_executor
 
         phase_agents = [
@@ -2568,12 +2678,15 @@ class TestFanOutExecution:
             },
         }
 
-        fan_out_agents = executor._fan_out_coordinator.detect_in_phase(
+        ready, failed = executor._fan_out_coordinator.detect_in_phase(
             phase_agents, results_dict
         )
 
-        # Should return empty - upstream is not an array
-        assert len(fan_out_agents) == 0
+        assert ready == []
+        assert len(failed) == 1
+        agent_config, message = failed[0]
+        assert agent_config.name == "extractor"
+        assert "processor" in message
 
     @pytest.mark.asyncio
     async def test_expand_fan_out_instances(self, mock_ensemble_executor: Any) -> None:
@@ -2712,12 +2825,12 @@ class TestFanOutExecution:
             assert '["a", "b"]' not in frame
 
     @pytest.mark.asyncio
-    async def test_fan_out_original_that_does_not_expand_keeps_enhanced_input(
+    async def test_fan_out_original_that_does_not_expand_fails_closed(
         self, mock_ensemble_executor: Any
     ) -> None:
-        """Zero instances (upstream key is not an array): the original runs
-        as a single agent and still sees its dependency envelope. The raw
-        base input replaces the dict entry only for originals that fan out.
+        """Contract failure (upstream key is not an array): the fan-out
+        agent is recorded as failed and never runs un-expanded — it no
+        longer falls back to a single agent call on the raw envelope.
         """
         config = EnsembleConfig(
             name="fan_out_fallback",
@@ -2760,11 +2873,10 @@ class TestFanOutExecution:
                 return_value=model,
             ),
         ):
-            await executor.execute(config, input_data="summarize each item")
+            result = await executor.execute(config, input_data="summarize each item")
 
         messages = [c.kwargs["message"] for c in model.generate_response.call_args_list]
-        assert len(messages) == 2
-        assert not messages[1].startswith("Processing chunk")
-        assert "Original Input:\nsummarize each item" in messages[1]
-        assert "Agent classifier" in messages[1]
-        assert "not an array" in messages[1]
+        assert len(messages) == 1, "only classifier should have run a model call"
+        assert result["results"]["processor"]["status"] == "failed"
+        assert "classifier" in result["results"]["processor"]["error"]
+        assert "items" in result["results"]["processor"]["error"]
