@@ -13,7 +13,10 @@ from llm_orc.core.execution.orchestration import Agent
 from llm_orc.core.execution.usage_collector import (
     UsageCollector,
 )
-from llm_orc.core.models.model_factory import ModelFactory
+from llm_orc.core.models.model_factory import (
+    ModelConfigurationError,
+    ModelFactory,
+)
 from llm_orc.models.base import ModelInterface
 from llm_orc.schemas.agent_config import AgentConfig, LlmAgentConfig
 
@@ -82,6 +85,11 @@ class LlmAgentRunner:
             config_dict = agent_config.model_dump()
             model = await self._model_factory.load_model_from_agent_config(config_dict)
             return model, False
+        except ModelConfigurationError:
+            # A config error (e.g. think on a provider that doesn't
+            # support it) is never fallback-eligible — substituting a
+            # working model would report success on a broken config.
+            raise
         except Exception as model_loading_error:
             fallback = await self._handle_model_loading_fallback(
                 agent_config, model_loading_error
