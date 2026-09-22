@@ -175,6 +175,16 @@ sees the error shape and produces a calibration signal appropriate to
 the error; the orchestrator's reasoning surface acts on the structured
 error rather than crashing the session.
 
+*Amendment, 2026-09-22 (fail-closed-composition B2):* the agent's own
+status now reflects this — `{"error": ...}` (or a non-zero exit, or a
+timeout) makes the agent `failed`, with the error text as its `error`
+field, rather than a `success` response wrapping the same JSON. The
+error is still not lost: Invariant 13 rule 2 names every failed
+dependency (status + error) in a downstream consumer's input, so the
+orchestrator's reasoning surface still acts on the structured error —
+it reads it off the failed dependency's named block instead of
+parsing it back out of a "successful" response.
+
 ## Cross-references
 
 - **ADR-019** — Skill-framework-agnostic orchestrator + operation-named
