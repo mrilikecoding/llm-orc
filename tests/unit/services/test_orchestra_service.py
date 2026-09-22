@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Iterator
+from contextlib import ExitStack, contextmanager
 from pathlib import Path
 from typing import Any
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -132,3 +134,60 @@ class TestHandleSetProjectAsyncConcurrency:
 
         # project_path must be one of the two valid directories (not None or corrupt).
         assert service.project_path in {dir_a, dir_b}
+
+
+@contextmanager
+def _mocked_config_io() -> Iterator[None]:
+    """Mock ConfigurationManager's disk-writing setup, matching the
+    established tests/conftest.py mock_ensemble_executor pattern, so a
+    real root executor can be built without touching global config."""
+    with ExitStack() as stack:
+        for method in (
+            "_setup_default_config",
+            "_setup_default_ensembles",
+            "_copy_profile_templates",
+        ):
+            stack.enter_context(
+                patch(
+                    f"llm_orc.core.config.config_manager.ConfigurationManager.{method}"
+                )
+            )
+        yield
+
+
+class TestGetExecutor:
+    """SF5: every call mints a fresh execution_id (and therefore a fresh
+    ModelFactory), so two MCP/REST invocations through one
+    OrchestraService instance never share one x-opencode-session on the
+    wire. The expensive ConfigurationManager/CredentialStorage infra
+    built on the first call is reused rather than rebuilt."""
+
+    def test_two_calls_get_different_execution_ids(self) -> None:
+        with _mocked_config_io():
+            service = OrchestraService()
+            first = service._get_executor()
+            second = service._get_executor()
+
+        assert first._model_factory.execution_id != second._model_factory.execution_id
+
+    def test_second_call_reuses_config_manager_and_credential_storage(self) -> None:
+        with _mocked_config_io():
+            service = OrchestraService()
+            first = service._get_executor()
+            second = service._get_executor()
+
+        assert second._config_manager is first._config_manager
+        assert second._credential_storage is first._credential_storage
+
+    def test_a_child_ensemble_shares_the_parent_invocation_id(self) -> None:
+        """One invoke, one id: a child executor spawned within it shares
+        the same ModelFactory (and therefore the same execution_id) as
+        the invocation's own executor."""
+        from llm_orc.core.execution.executor_factory import ExecutorFactory
+
+        with _mocked_config_io():
+            service = OrchestraService()
+            executor = service._get_executor()
+            child = ExecutorFactory.create_child_executor(executor, depth=1)
+
+        assert child._model_factory.execution_id == executor._model_factory.execution_id

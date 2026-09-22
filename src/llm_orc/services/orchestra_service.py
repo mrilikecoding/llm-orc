@@ -114,14 +114,33 @@ class OrchestraService:
             pass  # Pool will use module-level defaults
 
     def _get_executor(self) -> EnsembleExecutor:
-        if self._executor is None:
-            from llm_orc.core.execution.executor_factory import (
-                ExecutorFactory,
-            )
+        """Build the executor for one MCP/REST invocation.
 
+        A fresh execution_id — and therefore a fresh ModelFactory — is
+        minted on every call, so two invocations through this service
+        never share one x-opencode-session on the wire (SF5); any child
+        ensemble spawned within a single invocation still shares that
+        invocation's id (Invariant 10: child executors share their
+        parent's ModelFactory instance). The first call's
+        ConfigurationManager and CredentialStorage — real disk I/O — are
+        cached and reused by every later call; only the cheap
+        ModelFactory/EnsembleExecutor wiring is rebuilt each time.
+        """
+        from llm_orc.core.execution.executor_factory import (
+            ExecutorFactory,
+        )
+
+        if self._executor is None:
             self._executor = ExecutorFactory.create_root_executor(
                 project_dir=self._project_path
             )
+            return self._executor
+
+        self._executor = ExecutorFactory.create_root_executor(
+            project_dir=self._project_path,
+            config_manager=self._executor._config_manager,
+            credential_storage=self._executor._credential_storage,
+        )
         return self._executor
 
     def find_ensemble_by_name(self, ensemble_name: str) -> Any:
