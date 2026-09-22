@@ -704,6 +704,7 @@ class TestLoadModelHelperMethods:
             temperature=None,
             max_tokens=None,
             base_url=None,
+            execution_id=None,
         )
 
     def test_create_authenticated_model_no_api_key(

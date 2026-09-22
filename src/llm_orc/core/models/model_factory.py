@@ -2,6 +2,7 @@
 
 import logging
 import os
+import uuid
 from typing import Any
 
 from llm_orc.core.auth.authentication import CredentialStorage
@@ -24,15 +25,24 @@ class ModelFactory:
         self,
         config_manager: ConfigurationManager,
         credential_storage: CredentialStorage,
+        *,
+        execution_id: str | None = None,
     ) -> None:
         """Initialize the model factory.
 
         Args:
             config_manager: Configuration manager instance
             credential_storage: Credential storage instance
+            execution_id: Stable identifier for the top-level ensemble
+                execution this factory serves. Generated when omitted.
+                Child executors share their parent's ModelFactory
+                instance (ExecutorFactory.create_child_executor), so
+                this id is naturally shared by every agent in the
+                execution tree, including fan-out instances.
         """
         self._config_manager = config_manager
         self._credential_storage = credential_storage
+        self.execution_id = execution_id or uuid.uuid4().hex
 
     async def load_model_from_agent_config(
         self, agent_config: dict[str, Any]
@@ -144,6 +154,7 @@ class ModelFactory:
                 options=options,
                 response_format=response_format,
                 base_url=base_url,
+                execution_id=self.execution_id,
             )
 
         # Create authenticated model (cloud providers don't use options)
@@ -155,6 +166,7 @@ class ModelFactory:
             temperature=temperature,
             max_tokens=max_tokens,
             base_url=base_url,
+            execution_id=self.execution_id,
         )
 
     async def get_fallback_model(
@@ -305,6 +317,7 @@ def _create_authenticated_model(
     temperature: float | None = None,
     max_tokens: int | None = None,
     base_url: str | None = None,
+    execution_id: str | None = None,
 ) -> ModelInterface:
     """Create authenticated model based on authentication method.
 
@@ -316,6 +329,7 @@ def _create_authenticated_model(
         temperature: Optional temperature for generation
         max_tokens: Optional max tokens for generation
         base_url: Optional base URL for OpenAI-compatible endpoints
+        execution_id: Stable id for the top-level ensemble execution
 
     Returns:
         Configured model interface
@@ -336,6 +350,7 @@ def _create_authenticated_model(
             temperature=temperature,
             max_tokens=max_tokens,
             base_url=base_url,
+            execution_id=execution_id,
         )
 
     else:
@@ -351,6 +366,7 @@ def _handle_no_authentication(
     options: dict[str, Any] | None = None,
     response_format: str | dict[str, Any] | None = None,
     base_url: str | None = None,
+    execution_id: str | None = None,
 ) -> ModelInterface:
     """Handle cases when no authentication is configured.
 
@@ -362,6 +378,7 @@ def _handle_no_authentication(
         options: Optional provider-specific options forwarded to local models
         response_format: Optional structured-output format (schema dict or 'json')
         base_url: Optional base URL for OpenAI-compatible endpoints
+        execution_id: Stable id for the top-level ensemble execution
 
     Returns:
         Model interface for providers that don't require auth
@@ -379,6 +396,7 @@ def _handle_no_authentication(
             max_tokens=max_tokens,
             options=options,
             response_format=response_format,
+            execution_id=execution_id,
         )
     elif _is_openai_compatible(provider):
         return OpenAICompatibleModel(
@@ -388,6 +406,7 @@ def _handle_no_authentication(
             max_tokens=max_tokens,
             options=options,
             response_format=response_format,
+            execution_id=execution_id,
         )
     elif provider:
         raise ValueError(
@@ -408,6 +427,7 @@ def _handle_no_authentication(
             max_tokens=max_tokens,
             options=options,
             response_format=response_format,
+            execution_id=execution_id,
         )
 
 
@@ -419,6 +439,7 @@ def _create_api_key_model(
     temperature: float | None = None,
     max_tokens: int | None = None,
     base_url: str | None = None,
+    execution_id: str | None = None,
 ) -> ModelInterface:
     """Create model using API key authentication.
 
@@ -429,6 +450,7 @@ def _create_api_key_model(
         temperature: Optional temperature for generation
         max_tokens: Optional max tokens for generation
         base_url: Optional base URL for OpenAI-compatible endpoints
+        execution_id: Stable id for the top-level ensemble execution
 
     Returns:
         Configured model interface
@@ -455,6 +477,7 @@ def _create_api_key_model(
             api_key=api_key,
             temperature=temperature,
             max_tokens=max_tokens,
+            execution_id=execution_id,
         )
     else:
         return ClaudeModel(

@@ -27,12 +27,19 @@ class ExecutorFactory:
         project_dir: Path | None = None,
         *,
         save_artifacts: bool = True,
+        execution_id: str | None = None,
     ) -> EnsembleExecutor:
         """Create a top-level executor with fresh infrastructure.
 
         Args:
             project_dir: Project directory path.
             save_artifacts: Whether to save execution artifacts.
+            execution_id: Stable id for this top-level execution, shared
+                by every child executor and fan-out instance it spawns
+                (they share this ModelFactory instance). Generated when
+                omitted. Callers that already have a stable per-
+                conversation id (e.g. the serve's resolved Session
+                identity) should pass it through here.
 
         Returns:
             Configured EnsembleExecutor.
@@ -45,7 +52,9 @@ class ExecutorFactory:
             template_provider=LibraryTemplateProvider(),
         )
         credential_storage = CredentialStorage(config_manager)
-        model_factory = ModelFactory(config_manager, credential_storage)
+        model_factory = ModelFactory(
+            config_manager, credential_storage, execution_id=execution_id
+        )
 
         return EnsembleExecutor(
             project_dir=project_dir,
