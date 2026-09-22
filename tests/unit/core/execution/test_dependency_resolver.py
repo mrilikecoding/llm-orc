@@ -846,6 +846,26 @@ class TestFanOutInputPreparation:
         mock_role_resolver.return_value = "Test Role"
         return DependencyResolver(role_resolver=mock_role_resolver)
 
+    def test_prepare_fan_out_instance_input_scalar_chunk_json(self) -> None:
+        """Scalar chunks serialize with json (true/null/3), not str() —
+        the same rule the non-fan-out input_key path applies, so a child
+        that json.loads its input sees one shape (PR 203 round 2)."""
+        resolver = self.setup_resolver()
+
+        for chunk, expected in ((True, "true"), (None, "null"), (3, "3")):
+            instance = EnsembleAgentConfig(
+                name="processor[0]",
+                ensemble="pdf-processor",
+                fan_out_chunk=chunk,
+                fan_out_index=0,
+                fan_out_total=1,
+                fan_out_original="processor",
+            )
+            result = resolver.prepare_fan_out_instance_input(
+                instance_config=instance, base_input="Process"
+            )
+            assert result == expected, (chunk, result)
+
     def test_prepare_fan_out_instance_input_ensemble_child(self) -> None:
         """A fan-out ensemble instance receives its chunk verbatim — the
         "Processing chunk N of M" wrapper is an LLM framing, not part of
