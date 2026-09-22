@@ -524,6 +524,30 @@ def test_the_failing_node_is_still_named() -> None:
     assert "classify" in str(shaped.get("routing_failed", ""))
 
 
+def test_status_failed_resolve_fails_closed_to_a_routing_refusal() -> None:
+    """fail-closed-composition: AgentDispatcher's B2 contract makes a
+    crashed script's own failure ``status: "failed"`` + ``error``, with
+    ``response: None`` -- no engine-wrap JSON embedded in response to
+    parse any more. shape must read the failed dep's status/error
+    directly, not just the old response-embedded-error shape."""
+    shaped = _shape_raw(
+        {
+            "resolve": {
+                "response": None,
+                "status": "failed",
+                "error": (
+                    "Schema JSON execution failed: Command "
+                    f"{_ARGV} returned non-zero exit status 1."
+                ),
+            },
+            "seat": {"response": None, "status": "skipped"},
+        }
+    )
+    assert shaped["build"] is False
+    assert "(resolve:" in shaped["routing_failed"]
+    assert "exited non-zero, status 1" in shaped["routing_failed"]
+
+
 def test_a_readable_routing_decision_is_unaffected() -> None:
     """The over-refusal direction. This CANNOT fail under deletion of the
     sanitiser — it is here so the fix does not become "refuse everything"."""
@@ -609,6 +633,32 @@ def test_a_dispatch_level_wrap_is_also_a_dead_seat() -> None:
                         "returned non-zero exit status 1."
                     )
                 )
+            },
+        }
+    )
+
+    assert shaped["seat_failed"]
+    assert "exited non-zero" in shaped["seat_failed"]
+    assert shaped["content"] == ""
+
+
+def test_a_status_failed_seat_sets_seat_failed_and_zeroes_content() -> None:
+    """fail-closed-composition: the dispatch: agent (seat) now fails
+    closed itself (B1, extended to dynamic dispatch) when none of the
+    dispatched ensemble's terminals succeeded -- ``status: "failed"`` +
+    ``error`` naming the terminal, ``response: None``. shape must read
+    that directly rather than trying to parse a (now nonexistent)
+    response for a dead-dict-without-status shape."""
+    shaped = _shape_raw(
+        {
+            "classify": {"response": json.dumps(_NONBUILD_DECISION)},
+            "seat": {
+                "response": None,
+                "status": "failed",
+                "error": (
+                    "Ensemble 'run-verdict' produced no successful terminal "
+                    "agent (verdict (failed): Script failed with exit code 1)"
+                ),
             },
         }
     )
