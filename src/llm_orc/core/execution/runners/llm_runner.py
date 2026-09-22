@@ -168,32 +168,75 @@ class LlmAgentRunner:
         input_data: str,
         error: Exception,
     ) -> tuple[str, ModelInterface, bool]:
-        """Handle runtime failure with fallback model."""
+        """Handle runtime failure by walking the explicit fallback chain.
+
+        Each candidate that loads is tried in turn; a runtime failure on
+        one candidate continues to the next hop instead of giving up
+        after a single try. Exhausted (or nothing configured) re-raises
+        the ORIGINAL runtime error, chained to the last failure seen.
+        """
         model_profile, agent_fallback_profile = self._fallback_chain_inputs(
             agent_config
         )
+        gen_params = self._generation_params(agent_config)
 
+        last_error: Exception = error
         try:
-            (
+            async for (
                 fallback_model,
                 fallback_profile_name,
-            ) = await self._model_factory.get_fallback_model(
-                context=f"agent_{agent_config.name}",
+            ) in self._model_factory.iter_fallback_chain(
                 original_profile=model_profile,
                 agent_fallback_profile=agent_fallback_profile,
+                **gen_params,
+            ):
+                response, hop_error = await self._try_fallback_hop(
+                    agent_config,
+                    role,
+                    input_data,
+                    last_error,
+                    model_profile,
+                    fallback_model,
+                    fallback_profile_name,
+                )
+                if hop_error is None:
+                    assert response is not None
+                    return response, fallback_model, True
+                last_error = hop_error
+        except Exception as chain_error:
+            last_error = chain_error
+
+        if last_error is error:
+            raise error from ValueError(
+                f"No fallback_model_profile configured for agent_"
+                f"{agent_config.name}; fallback chain exhausted"
             )
-        except Exception as fallback_unavailable:
-            raise error from fallback_unavailable
+        raise error from last_error
 
+    async def _try_fallback_hop(
+        self,
+        agent_config: AgentConfig,
+        role: RoleDefinition,
+        input_data: str,
+        prior_error: Exception,
+        model_profile: str | None,
+        fallback_model: ModelInterface,
+        fallback_profile_name: str,
+    ) -> tuple[str, None] | tuple[None, Exception]:
+        """Try generating a response with one fallback-chain candidate.
+
+        Returns (response, None) on success, or (None, error) on
+        failure — having already emitted the corresponding event — so
+        the caller can continue to the next hop with the real error.
+        """
         fallback_model_name = getattr(fallback_model, "model_name", "unknown")
-
-        failure_type = self._classify_failure(str(error))
+        failure_type = self._classify_failure(str(prior_error))
         self._emit_event(
             "agent_fallback_started",
             {
                 "agent_name": agent_config.name,
                 "failure_type": failure_type,
-                "original_error": str(error),
+                "original_error": str(prior_error),
                 "original_model_profile": model_profile or "unknown",
                 "fallback_model_profile": fallback_profile_name,
                 "fallback_model_name": fallback_model_name,
@@ -201,22 +244,22 @@ class LlmAgentRunner:
         )
 
         fallback_agent = Agent(agent_config.name, role, fallback_model)
-
         try:
             response = await fallback_agent.respond_to_message(input_data)
-            self._emit_fallback_success_event(
-                agent_config.name,
-                fallback_model,
-                response,
-            )
-            return response, fallback_model, True
         except Exception as fallback_error:
             self._emit_fallback_failure_event(
                 agent_config.name,
                 fallback_model_name,
                 fallback_error,
             )
-            raise fallback_error
+            return None, fallback_error
+
+        self._emit_fallback_success_event(
+            agent_config.name,
+            fallback_model,
+            response,
+        )
+        return response, None
 
     def _emit_fallback_success_event(
         self,

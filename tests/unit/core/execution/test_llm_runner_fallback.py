@@ -8,6 +8,7 @@ is empty or exhausted, the agent fails with the original error.
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from unittest.mock import AsyncMock, Mock
 
 import pytest
@@ -146,51 +147,116 @@ class TestModelLoadingFallbackWiring:
 
 
 class TestRuntimeFallbackWiring:
-    """A runtime (post-load) failure also resolves through the explicit chain."""
+    """A runtime (post-load) failure walks the explicit fallback chain,
+    trying each candidate in turn until one actually generates a
+    response - not stopping at the first candidate merely offered."""
 
     @pytest.mark.asyncio
-    async def test_passes_original_profile_to_factory(self) -> None:
-        """Runtime fallback honors the model_profile chain (previously
-        called get_fallback_model with no original_profile at all)."""
+    async def test_runtime_failure_walks_the_chain_to_a_working_model(self) -> None:
+        """OUTCOME pin: the primary fails at runtime, and so does the
+        FIRST fallback hop - the response that comes back must be the
+        one the SECOND hop actually generated, not just whichever
+        model the chain offered first (doctrine 11: pin the harm, not
+        the mechanism)."""
         events: list[tuple[str, dict[str, object]]] = []
         model_factory = Mock()
-        working_model = AsyncMock()
-        working_model.model_name = "primary-model"
-        working_model.generate_response = AsyncMock(
-            side_effect=Exception("runtime failure")
+
+        primary_model = AsyncMock()
+        primary_model.model_name = "primary-model"
+        primary_model.generate_response = AsyncMock(
+            side_effect=Exception("primary runtime failure")
         )
         model_factory.load_model_from_agent_config = AsyncMock(
-            return_value=working_model
+            return_value=primary_model
         )
-        fallback_model = AsyncMock()
-        fallback_model.model_name = "fallback-model"
-        fallback_model.generate_response.return_value = "recovered"
-        model_factory.get_fallback_model = AsyncMock(
-            return_value=(fallback_model, "runtime-fallback")
+
+        hop1_model = AsyncMock()
+        hop1_model.model_name = "hop1-model"
+        hop1_model.generate_response = AsyncMock(
+            side_effect=Exception("hop1 runtime failure")
         )
+        hop2_model = AsyncMock()
+        hop2_model.model_name = "hop2-model"
+        hop2_model.generate_response = AsyncMock(return_value="hop2 answered")
+
+        async def fake_chain(
+            **_kwargs: object,
+        ) -> AsyncIterator[tuple[object, str]]:
+            yield hop1_model, "hop1-profile"
+            yield hop2_model, "hop2-profile"
+
+        model_factory.iter_fallback_chain = fake_chain
 
         runner = _make_runner(model_factory, events)
         agent = LlmAgentConfig(
             name="worker",
             model_profile="primary",
-            fallback_model_profile="runtime-fallback",
+            fallback_model_profile="hop1-profile",
         )
 
         response, model, substituted = await runner.execute(agent, "input")
 
-        model_factory.get_fallback_model.assert_called_once_with(
-            context="agent_worker",
-            original_profile="primary",
-            agent_fallback_profile="runtime-fallback",
-        )
-        assert response == "recovered"
-        assert model is fallback_model
+        assert response == "hop2 answered"
+        assert model is hop2_model
         assert substituted is True
+        hop1_model.generate_response.assert_awaited_once()
+        hop2_model.generate_response.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_every_hop_failing_raises_the_original_chained_to_the_last(
+        self,
+    ) -> None:
+        """Every candidate in the chain is actually tried; when all of
+        them fail at runtime, the agent fails with the ORIGINAL error
+        (not the last hop's), chained to the last hop's failure."""
+        events: list[tuple[str, dict[str, object]]] = []
+        model_factory = Mock()
+
+        primary_model = AsyncMock()
+        primary_model.model_name = "primary-model"
+        primary_error = RuntimeError("primary blew up")
+        primary_model.generate_response = AsyncMock(side_effect=primary_error)
+        model_factory.load_model_from_agent_config = AsyncMock(
+            return_value=primary_model
+        )
+
+        hop1_model = AsyncMock()
+        hop1_model.model_name = "hop1-model"
+        hop1_model.generate_response = AsyncMock(
+            side_effect=RuntimeError("hop1 blew up")
+        )
+        hop2_model = AsyncMock()
+        hop2_model.model_name = "hop2-model"
+        hop2_error = RuntimeError("hop2 blew up")
+        hop2_model.generate_response = AsyncMock(side_effect=hop2_error)
+
+        async def fake_chain(
+            **_kwargs: object,
+        ) -> AsyncIterator[tuple[object, str]]:
+            yield hop1_model, "hop1-profile"
+            yield hop2_model, "hop2-profile"
+
+        model_factory.iter_fallback_chain = fake_chain
+
+        runner = _make_runner(model_factory, events)
+        agent = LlmAgentConfig(
+            name="worker",
+            model_profile="primary",
+            fallback_model_profile="hop1-profile",
+        )
+
+        with pytest.raises(RuntimeError, match="primary blew up") as exc_info:
+            await runner.execute(agent, "input")
+
+        assert exc_info.value is primary_error
+        assert exc_info.value.__cause__ is hop2_error
+        hop1_model.generate_response.assert_awaited_once()
+        hop2_model.generate_response.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_chain_exhausted_raises_original_runtime_error(self) -> None:
         """No fallback available at runtime: the agent fails with the
-        ORIGINAL runtime error, chained to the exhaustion cause."""
+        ORIGINAL error, chained to the fallback-exhaustion cause."""
         events: list[tuple[str, dict[str, object]]] = []
         model_factory = Mock()
         working_model = AsyncMock()
@@ -200,9 +266,14 @@ class TestRuntimeFallbackWiring:
         model_factory.load_model_from_agent_config = AsyncMock(
             return_value=working_model
         )
-        model_factory.get_fallback_model = AsyncMock(
-            side_effect=ValueError("fallback chain exhausted")
-        )
+
+        async def empty_chain(
+            **_kwargs: object,
+        ) -> AsyncIterator[tuple[object, str]]:
+            return
+            yield  # pragma: no cover - makes this an async generator
+
+        model_factory.iter_fallback_chain = empty_chain
 
         runner = _make_runner(model_factory, events)
         agent = LlmAgentConfig(name="worker", model_profile="primary")
