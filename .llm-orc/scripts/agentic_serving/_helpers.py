@@ -394,9 +394,22 @@ def deps(payload_dict: dict[str, Any]) -> dict[str, Any]:
 
 
 def response(dep: Any) -> str:
-    """A dependency node's response string ('' when absent or non-string)."""
+    """A dependency node's response string ('' when absent, failed, or
+    non-string).
+
+    A failed or skipped dependency's ``response`` field is PRESENT but
+    ``None`` (AgentResult's default) — not absent — so a bare
+    ``.get("response", "")`` returns ``None``, and the non-string
+    fallback below used to turn that into ``json.dumps(None)``: the
+    literal three-byte string ``"null"``, which every downstream
+    ``json.loads`` and code/text extractor accepts as real content
+    (SF7: ``extract_code`` shipping "null" as a code deliverable). A
+    ``None`` response is treated identically to an absent one instead.
+    """
     if isinstance(dep, dict):
-        resp = dep.get("response", "")
+        resp = dep.get("response")
+        if resp is None:
+            return ""
         return resp if isinstance(resp, str) else json.dumps(resp)
     return ""
 
