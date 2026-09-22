@@ -71,23 +71,12 @@ class ModelFactory:
         # Check if model_profile is specified (takes precedence)
         # Use .get() truthy check: model_dump() includes None values as keys
         if agent_config.get("model_profile"):
-            profile_name = agent_config["model_profile"]
-            resolved_model, resolved_provider = (
-                self._config_manager.resolve_model_profile(profile_name)
-            )
-            # Merge profile options with agent options (agent wins)
-            profile = self._config_manager.get_model_profile(profile_name)
-            profile_options = (profile or {}).get("options")
-            merged_options = _merge_options(profile_options, agent_options)
-            base_url: str | None = (profile or {}).get("base_url")
-            return await self.load_model(
-                resolved_model,
-                resolved_provider,
+            return await self._load_profile(
+                agent_config["model_profile"],
                 temperature=temperature,
                 max_tokens=max_tokens,
-                options=merged_options,
+                agent_options=agent_options,
                 response_format=response_format,
-                base_url=base_url,
             )
 
         # Fall back to explicit model+provider
@@ -106,6 +95,40 @@ class ModelFactory:
             max_tokens=max_tokens,
             options=agent_options,
             response_format=response_format,
+        )
+
+    async def _load_profile(
+        self,
+        profile_name: str,
+        *,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+        agent_options: dict[str, Any] | None = None,
+        response_format: str | dict[str, Any] | None = None,
+    ) -> ModelInterface:
+        """Load a named model profile — the one code path every profile
+        load goes through, whether it is the agent's primary profile or a
+        hop in its fallback chain.
+
+        Resolves the profile's model+provider, merges the profile's own
+        ``options`` with the caller's agent-level ``options`` (agent
+        wins), and carries the profile's ``base_url``.
+        """
+        resolved_model, resolved_provider = self._config_manager.resolve_model_profile(
+            profile_name
+        )
+        profile = self._config_manager.get_model_profile(profile_name)
+        profile_options = (profile or {}).get("options")
+        merged_options = _merge_options(profile_options, agent_options)
+        base_url: str | None = (profile or {}).get("base_url")
+        return await self.load_model(
+            resolved_model,
+            resolved_provider,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            options=merged_options,
+            response_format=response_format,
+            base_url=base_url,
         )
 
     async def load_model(
