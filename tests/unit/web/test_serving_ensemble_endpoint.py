@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 import shutil
 from pathlib import Path
+from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
@@ -491,6 +492,51 @@ def test_explain_turn_returns_prose_not_a_tool_call(
     content = choice["message"]["content"]
     assert content
     assert "add" in content
+
+
+def test_wire_execution_id_is_a_salted_hash_not_the_raw_user_field(
+    serving_client: TestClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """SF5: the execution id threaded toward the wire (x-opencode-session,
+    when the resolved profile targets OpenCode Go) must never equal the
+    raw SessionIdentity value - for the user_field method that value is
+    the client's OpenAI 'user' field verbatim - and must stay stable
+    across turns of the same conversation.
+    """
+    from llm_orc.core.execution.executor_factory import ExecutorFactory
+    from llm_orc.core.session import identity_salt
+
+    # Hermetic: a salt file of its own, never the developer's real one.
+    monkeypatch.setattr(
+        identity_salt, "resolve_global_config_dir", lambda: tmp_path / "llm-orc"
+    )
+
+    captured: list[Any] = []
+    original = ExecutorFactory.create_root_executor
+
+    def _capture(*args: Any, **kwargs: Any) -> Any:
+        captured.append(kwargs.get("execution_id"))
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(ExecutorFactory, "create_root_executor", _capture)
+
+    payload = {
+        "model": "ensemble-agent",
+        "user": "raw-client-user-id",
+        "messages": [{"role": "user", "content": "what is this"}],
+        "tools": [_WRITE_TOOL],
+    }
+
+    resp1 = serving_client.post("/v1/chat/completions", json=payload)
+    resp2 = serving_client.post("/v1/chat/completions", json=payload)
+
+    assert resp1.status_code == 200
+    assert resp2.status_code == 200
+    assert len(captured) >= 2
+    assert all(cid is not None for cid in captured)
+    assert all(cid != "raw-client-user-id" for cid in captured)
+    # Stable across turns of the same conversation (same identity).
+    assert len(set(captured)) == 1
 
 
 def test_bare_symbol_explain_globs_before_any_prose_answer(

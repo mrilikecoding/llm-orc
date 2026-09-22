@@ -28,6 +28,7 @@ import yaml
 
 from llm_orc.core.config.ensemble_config import EnsembleLoader
 from llm_orc.core.execution.executor_factory import ExecutorFactory
+from llm_orc.core.session.identity_salt import hash_identity_for_wire
 from llm_orc.web.serving.chunks import (
     ClientToolCall,
     Completion,
@@ -1734,7 +1735,7 @@ class ServingEnsembleCaller:
                 previous_ask=_previous_ask(context.messages, reject_prefixes),
                 self_read_round=round_index,
                 read_paths=_read_paths_this_turn(context.messages) + list(self_reads),
-                execution_id=context.state.identity.value,
+                execution_id=hash_identity_for_wire(context.state.identity.value),
             )
             requested = _self_read_requests(outcome)
             if not requested:
