@@ -232,22 +232,21 @@ class TestEnsembleExecutor:
         assert "error" in result["results"]["failing_agent"]
 
     @pytest.mark.asyncio
-    async def test_dependent_agent_runs_when_upstream_fails_closed(
+    async def test_dependent_agent_is_skipped_when_sole_upstream_fails(
         self, mock_ensemble_executor: Any
     ) -> None:
-        """Measured (not assumed): when an upstream LLM agent fails with
-        an exhausted fallback chain, its dependent still runs.
+        """Fail-closed-composition rule 1: when an upstream LLM agent
+        fails with an exhausted fallback chain and it is the dependent's
+        ONLY dependency, the dependent is skipped, not run.
 
-        DependencyAnalyzer's phase gating only requires a dependency to
-        have been PROCESSED, not to have SUCCEEDED
-        (agent_dependencies_satisfied). GuardEvaluator only skips a node
-        when ALL its dependencies have status == "skipped", not "failed"
-        (should_run). So the dependent executes; it just doesn't see the
-        failed agent's data in its input (DependencyResolver omits it).
-        This matches domain-model.md's Invariant 13 ("downstream agents
-        ... receive the failure status in their dependency context").
-        Pinned here so a future change to the gating logic is a visible,
-        intentional decision, not a silent behavior shift.
+        Superseded pin (was test_dependent_agent_runs_when_upstream_fails_
+        closed): GuardEvaluator used to skip a node only when ALL its
+        dependencies had status == "skipped", not "failed", so the
+        dependent ran anyway — measured as the compiler-fabricates-a-
+        dossier defect on research-dossier. GuardEvaluator.should_run now
+        treats "failed" the same as "skipped" for this cascade. The
+        dependent's model is never loaded — no model call, same as the
+        upstream failure never happened for it.
         """
         config = EnsembleConfig(
             name="chain-exhausted-dependent-test",
@@ -291,13 +290,15 @@ class TestEnsembleExecutor:
         ):
             result = await executor.execute(config, input_data="go")
 
-        assert load_calls == ["upstream", "downstream"], (
-            "downstream's model load should still be attempted: the "
-            f"dependent runs, it is not skipped. Got: {load_calls}"
+        assert load_calls == ["upstream"], (
+            "downstream's model load must not be attempted: its sole "
+            f"dependency failed, so it is skipped. Got: {load_calls}"
         )
         assert result["results"]["upstream"]["status"] == "failed"
-        assert result["results"]["downstream"]["status"] == "success"
-        assert result["results"]["downstream"]["response"] == "downstream ran"
+        assert result["results"]["downstream"]["status"] == "skipped"
+        assert result["results"]["downstream"]["response"] is None
+        assert "upstream" in result["results"]["downstream"]["reason"]
+        assert "failed" in result["results"]["downstream"]["reason"]
 
     @pytest.mark.asyncio
     async def test_fan_out_contract_failure_fails_agent_without_running_it(
@@ -354,6 +355,206 @@ class TestEnsembleExecutor:
         assert "decomposer" in result["results"]["searcher"]["error"]
         assert "queries" in result["results"]["searcher"]["error"]
         assert result["status"] == "completed_with_errors"
+
+    @pytest.mark.asyncio
+    async def test_compiler_skipped_not_fabricated_when_searcher_fails(
+        self, mock_ensemble_executor: Any
+    ) -> None:
+        """The measured research-dossier defect (fail-closed-composition
+        plan): decomposer emits prose, searcher's fan-out contract fails
+        closed (already covered above), and a compiler that depends
+        SOLELY on searcher used to still run on nothing but the base
+        input and fabricate a cited dossier. Rule 1's cascade now skips
+        the compiler — it makes no model call at all."""
+        config = EnsembleConfig(
+            name="research-dossier-fault-test",
+            description="decomposer emits prose; searcher fails; compiler must not run",
+            agents=[
+                LlmAgentConfig(name="decomposer", model_profile="test-tester"),
+                LlmAgentConfig(
+                    name="searcher",
+                    model_profile="test-tester",
+                    depends_on=["decomposer"],
+                    fan_out=True,
+                    input_key="queries",
+                ),
+                LlmAgentConfig(
+                    name="compiler",
+                    model_profile="test-tester",
+                    depends_on=["searcher"],
+                ),
+            ],
+        )
+
+        decomposer_model = AsyncMock(spec=ModelInterface)
+        decomposer_model.generate_response.return_value = "Not JSON, just prose."
+        decomposer_model.get_last_usage.return_value = {
+            "total_tokens": 5,
+            "input_tokens": 2,
+            "output_tokens": 3,
+            "cost_usd": 0.0,
+            "duration_ms": 5,
+        }
+
+        executor = mock_ensemble_executor
+        load_calls: list[str] = []
+
+        async def load_model_side_effect(agent_config: dict[str, Any]) -> Any:
+            load_calls.append(agent_config["name"])
+            return decomposer_model
+
+        with patch.object(
+            executor._model_factory,
+            "load_model_from_agent_config",
+            side_effect=load_model_side_effect,
+        ):
+            result = await executor.execute(config, input_data="go")
+
+        assert load_calls == ["decomposer"], (
+            "the compiler must never load a model once its sole "
+            f"dependency (searcher) failed. Got: {load_calls}"
+        )
+        assert result["results"]["searcher"]["status"] == "failed"
+        assert result["results"]["compiler"]["status"] == "skipped"
+        assert result["results"]["compiler"]["response"] is None
+        assert "searcher" in result["results"]["compiler"]["reason"]
+        assert result["status"] == "completed_with_errors"
+
+    @pytest.mark.asyncio
+    async def test_child_execution_skipped_when_input_key_source_failed(
+        self, mock_ensemble_executor: Any
+    ) -> None:
+        """input_key/depends_on[0] decision: a non-fan-out ensemble: node
+        whose input_key source (depends_on[0]) failed never reaches the
+        child executor, even though another dependency succeeded —
+        DependencyResolver.child_input_key_contract_error fails it
+        closed before dispatch (no child ensemble execution)."""
+        from llm_orc.schemas.agent_config import EnsembleAgentConfig
+
+        config = EnsembleConfig(
+            name="input-key-contract-failure-test",
+            description="producer fails; other succeeds; consumer must not run",
+            agents=[
+                LlmAgentConfig(name="producer", model_profile="test-tester"),
+                LlmAgentConfig(name="other", model_profile="test-tester"),
+                EnsembleAgentConfig(
+                    name="consumer",
+                    ensemble="worker",
+                    depends_on=["producer", "other"],
+                    input_key="queries",
+                ),
+            ],
+        )
+
+        other_model = AsyncMock(spec=ModelInterface)
+        other_model.generate_response.return_value = "fine"
+        other_model.get_last_usage.return_value = {
+            "total_tokens": 5,
+            "input_tokens": 2,
+            "output_tokens": 3,
+            "cost_usd": 0.0,
+            "duration_ms": 5,
+        }
+
+        executor = mock_ensemble_executor
+
+        async def load_model_side_effect(agent_config: dict[str, Any]) -> Any:
+            if agent_config["name"] == "producer":
+                raise ValueError("producer model unavailable")
+            return other_model
+
+        with (
+            patch.object(
+                executor._model_factory,
+                "load_model_from_agent_config",
+                side_effect=load_model_side_effect,
+            ),
+            patch.object(
+                executor._ensemble_agent_runner,
+                "execute",
+                new_callable=AsyncMock,
+            ) as mock_child_execute,
+        ):
+            result = await executor.execute(config, input_data="go")
+
+        mock_child_execute.assert_not_called()
+        assert result["results"]["producer"]["status"] == "failed"
+        assert result["results"]["other"]["status"] == "success"
+        assert result["results"]["consumer"]["status"] == "failed"
+        assert "producer" in result["results"]["consumer"]["error"]
+        assert "queries" in result["results"]["consumer"]["error"]
+
+    @pytest.mark.asyncio
+    async def test_input_key_contract_failure_alone_sets_has_errors(
+        self, mock_ensemble_executor: Any
+    ) -> None:
+        """An input_key contract failure never runs its agent, so it never
+        appears in a dispatched phase's own results — the ONE thing that
+        normally sets ``has_errors``. Isolates this from any other
+        failure: ``source`` is guarded off by a `when:` skip (not a
+        dispatch failure), ``other`` succeeds, so the only failure in the
+        whole run is ``child``'s contract failure. The top-level status
+        must still report it.
+        """
+        from llm_orc.schemas.agent_config import EnsembleAgentConfig
+
+        config = EnsembleConfig(
+            name="input-key-contract-failure-alone-test",
+            description="source guard-skipped; other succeeds; child's contract fails",
+            agents=[
+                LlmAgentConfig(name="other", model_profile="test-tester"),
+                LlmAgentConfig(
+                    name="source",
+                    model_profile="test-tester",
+                    depends_on=["other"],
+                    when="${other.proceed}",
+                ),
+                EnsembleAgentConfig(
+                    name="child",
+                    ensemble="worker",
+                    depends_on=["source", "other"],
+                    input_key="x",
+                ),
+            ],
+        )
+
+        other_model = AsyncMock(spec=ModelInterface)
+        other_model.generate_response.return_value = '{"proceed": false}'
+        other_model.get_last_usage.return_value = {
+            "total_tokens": 5,
+            "input_tokens": 2,
+            "output_tokens": 3,
+            "cost_usd": 0.0,
+            "duration_ms": 5,
+        }
+
+        executor = mock_ensemble_executor
+
+        async def load_model_side_effect(agent_config: dict[str, Any]) -> Any:
+            return other_model
+
+        with (
+            patch.object(
+                executor._model_factory,
+                "load_model_from_agent_config",
+                side_effect=load_model_side_effect,
+            ),
+            patch.object(
+                executor._ensemble_agent_runner,
+                "execute",
+                new_callable=AsyncMock,
+            ) as mock_child_execute,
+        ):
+            result = await executor.execute(config, input_data="go")
+
+        mock_child_execute.assert_not_called()
+        assert result["results"]["other"]["status"] == "success"
+        assert result["results"]["source"]["status"] == "skipped"
+        assert result["results"]["child"]["status"] == "failed"
+        assert result["status"] == "completed_with_errors", (
+            "child's contract failure is the only failure in this run "
+            "and must still flip the top-level status"
+        )
 
     @pytest.mark.asyncio
     async def test_fan_out_genuinely_empty_list_succeeds(

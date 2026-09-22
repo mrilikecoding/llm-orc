@@ -597,18 +597,67 @@ class EnsembleExecutor:
         Guards are evaluated against accumulated upstream results, which are
         complete for this phase's dependencies by topological ordering. A
         skipped node is recorded so downstream guards and joins can see it.
+        A skip caused by dependency cascading (fail-closed-composition rule
+        1 — no dependency succeeded) carries a ``reason`` naming each
+        upstream agent and its status; a plain ``when:``-false skip does
+        not (there is nothing to name).
         """
         active: list[AgentConfig] = []
         for agent_config in phase_agents:
             if self._guard_evaluator.should_run(agent_config, results_dict):
                 active.append(agent_config)
-            else:
-                results_dict[agent_config.name] = {
-                    "response": None,
-                    "status": "skipped",
-                    "model_substituted": False,
-                }
+                continue
+            skip_record: dict[str, Any] = {
+                "response": None,
+                "status": "skipped",
+                "model_substituted": False,
+            }
+            reason = self._guard_evaluator.dependency_skip_reason(
+                agent_config, results_dict
+            )
+            if reason is not None:
+                skip_record["reason"] = reason
+            results_dict[agent_config.name] = skip_record
         return active
+
+    def _partition_by_input_key_contract(
+        self,
+        phase_agents: list[AgentConfig],
+        results_dict: dict[str, Any],
+    ) -> tuple[list[AgentConfig], bool]:
+        """Drop non-fan-out child-execution nodes whose ``input_key``
+        contract can't be honored, recording each as failed.
+
+        Runs after ``_partition_by_guard`` so it only sees agents rule 1
+        already let through (a node with no successful dependency at all
+        is already skipped by then). This catches the narrower case: the
+        node's ``input_key`` source (``depends_on[0]``) specifically did
+        not succeed, even though some other dependency did (fail-closed-
+        composition, the input_key/depends_on[0] decision).
+
+        Returns ``(active, any_failed)``. A failure here never reaches
+        the agent dispatcher, so it never appears in a dispatched phase's
+        own results — the caller must fold ``any_failed`` into
+        ``phase_has_errors`` itself, the same way fan-out contract
+        failures are folded in.
+        """
+        active: list[AgentConfig] = []
+        any_failed = False
+        for agent_config in phase_agents:
+            error = self._dependency_resolver.child_input_key_contract_error(
+                agent_config, results_dict
+            )
+            if error is None:
+                active.append(agent_config)
+                continue
+            any_failed = True
+            results_dict[agent_config.name] = {
+                "response": None,
+                "status": "failed",
+                "model_substituted": False,
+                "error": error,
+            }
+        return active, any_failed
 
     async def _execute_phase_with_monitoring(
         self,
@@ -635,6 +684,9 @@ class EnsembleExecutor:
             Tuple of (has_errors, user_inputs_collected)
         """
         phase_agents = self._partition_by_guard(phase_agents, results_dict)
+        phase_agents, input_key_contract_failed = self._partition_by_input_key_contract(
+            phase_agents, results_dict
+        )
         phase_agents = self._dispatch_resolver.resolve_targets(
             phase_agents, results_dict
         )
@@ -703,7 +755,11 @@ class EnsembleExecutor:
             phase_has_errors = await self._phase_result_processor.process_phase_results(
                 phase_results, results_dict, expanded_agents
             )
-            phase_has_errors = phase_has_errors or bool(failed_fan_out_agents)
+            phase_has_errors = (
+                phase_has_errors
+                or bool(failed_fan_out_agents)
+                or input_key_contract_failed
+            )
 
             # Gather fan-out instance results under original agent names
             for original_name in fan_out_original_names:
