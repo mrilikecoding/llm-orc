@@ -21,7 +21,8 @@ class GuardEvaluator:
     def should_run(
         self, agent_config: AgentConfig, results_dict: dict[str, Any]
     ) -> bool:
-        if self._no_dependency_succeeded(agent_config, results_dict):
+        cascades = agent_config.on_dependency_failure != "run"
+        if cascades and self._no_dependency_succeeded(agent_config, results_dict):
             return False
         when = agent_config.when
         if when is None:
@@ -39,8 +40,13 @@ class GuardEvaluator:
         with error text for failed ones. None when the agent is not
         skipped by this rule — in particular, a `when:`-false skip has no
         reason here (rule 1 is evaluated before `when:`, so the two never
-        both apply to the same skip).
+        both apply to the same skip). A node marked
+        `on_dependency_failure: run` is never skipped by rule 1
+        (`should_run` already returns True for it regardless of its
+        dependencies' statuses), so it carries no reason here either.
         """
+        if agent_config.on_dependency_failure == "run":
+            return None
         if not self._no_dependency_succeeded(agent_config, results_dict):
             return None
         deps = [dep_name(d) for d in agent_config.depends_on]

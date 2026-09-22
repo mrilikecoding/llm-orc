@@ -124,6 +124,38 @@ class TestSkipPropagation:
         }
         assert evaluator.should_run(agent, results) is True
 
+    def test_run_marked_node_runs_despite_no_dependency_succeeding(self) -> None:
+        """on_dependency_failure: run waives rule 1's cascade — a
+        failure-handling node (a refusal composer) executes so it can
+        read the failure it exists to report."""
+        evaluator = GuardEvaluator()
+        agent = LlmAgentConfig(
+            name="shape",
+            model_profile="gpt4",
+            depends_on=["upstream"],
+            on_dependency_failure="run",
+        )
+        results: dict[str, Any] = {
+            "upstream": {"status": "failed", "error": "boom", "response": None},
+        }
+        assert evaluator.should_run(agent, results) is True
+
+    def test_run_marked_node_still_honors_when_false(self) -> None:
+        """The flag only waives rule 1; `when:` semantics are unchanged
+        and are still evaluated (after rule 1, per the field's contract)."""
+        evaluator = GuardEvaluator()
+        agent = LlmAgentConfig(
+            name="shape",
+            model_profile="gpt4",
+            depends_on=["upstream"],
+            on_dependency_failure="run",
+            when="${upstream.ok}",
+        )
+        results: dict[str, Any] = {
+            "upstream": {"status": "failed", "error": "boom", "response": None},
+        }
+        assert evaluator.should_run(agent, results) is False
+
     def test_runs_when_sole_dependency_is_a_partial_fan_out(self) -> None:
         """A gathered fan-out dependency whose status is "partial" (some
         instances succeeded, some failed) counts as a successful
@@ -200,3 +232,19 @@ class TestDependencySkipReason:
         }
         reason = evaluator.dependency_skip_reason(agent, results)
         assert reason == "no dependency succeeded: a (failed: boom), b (skipped)"
+
+    def test_reason_none_for_a_run_marked_node(self) -> None:
+        """A run-marked node is never skipped by rule 1 (should_run
+        already returns True for it), so it carries no cascade reason —
+        even though none of its dependencies succeeded."""
+        evaluator = GuardEvaluator()
+        agent = LlmAgentConfig(
+            name="shape",
+            model_profile="gpt4",
+            depends_on=["upstream"],
+            on_dependency_failure="run",
+        )
+        results: dict[str, Any] = {
+            "upstream": {"status": "failed", "error": "boom", "response": None},
+        }
+        assert evaluator.dependency_skip_reason(agent, results) is None
