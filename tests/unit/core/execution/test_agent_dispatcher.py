@@ -1,13 +1,17 @@
 """Tests for AgentDispatcher max-concurrency support."""
 
 import asyncio
-from typing import Any
+from typing import Any, cast
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
 from llm_orc.core.execution.phases.agent_dispatcher import AgentDispatcher
-from llm_orc.schemas.agent_config import AgentConfig, LlmAgentConfig
+from llm_orc.schemas.agent_config import (
+    AgentConfig,
+    EnsembleAgentConfig,
+    LlmAgentConfig,
+)
 
 
 def _make_dispatcher(
@@ -170,3 +174,33 @@ class TestMaxConcurrentAgents:
 
         assert len(results) == 3
         assert all(r.status == "success" for r in results.values())
+
+
+class TestFanOutInstanceBaseInput:
+    """PR 203 round 2: fan-out instances run in phases past phase 0, where
+    the per-agent input dict is keyed by the PRE-expansion agent name; an
+    instance named processor[0] must read its base input under
+    fan_out_original, not its own instance name."""
+
+    @pytest.mark.asyncio
+    async def test_instance_reads_base_input_by_original_name(self) -> None:
+        dispatcher = _make_dispatcher()
+        resolver = cast(Mock, dispatcher._dependency_resolver)
+        resolver.is_fan_out_instance_config.return_value = True
+        resolver.prepare_fan_out_instance_input.return_value = "prepared"
+
+        instance = EnsembleAgentConfig(
+            name="processor[0]",
+            ensemble="pdf-processor",
+            fan_out_chunk="a.pdf",
+            fan_out_index=0,
+            fan_out_total=2,
+            fan_out_original="processor",
+        )
+
+        await dispatcher._execute_single_agent_in_phase(
+            instance, {"processor": "the task"}
+        )
+
+        call = resolver.prepare_fan_out_instance_input.call_args
+        assert call.args[1] == "the task"

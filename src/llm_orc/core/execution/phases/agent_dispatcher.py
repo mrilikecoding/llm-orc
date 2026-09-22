@@ -124,10 +124,17 @@ class AgentDispatcher:
         agent_name = agent_config.name
 
         if self._dependency_resolver.is_fan_out_instance_config(agent_config):
+            # The per-agent input dict is keyed by PRE-expansion agent names
+            # (ensemble_execution builds it before FanOutExpander renames
+            # processor -> processor[0]); the instance reads its base input
+            # under fan_out_original (PR 203 round 2: it ran with "" past
+            # phase 0, so the LLM frame said "Original task: " with nothing
+            # after it and script payloads shipped base_input="").
+            lookup_name = agent_config.fan_out_original or agent_name
             base_input = (
                 phase_input
                 if isinstance(phase_input, str)
-                else phase_input.get(agent_name, "")
+                else phase_input.get(lookup_name, "")
             )
             phase_input = self._dependency_resolver.prepare_fan_out_instance_input(
                 agent_config, base_input
@@ -202,6 +209,7 @@ class AgentDispatcher:
     ) -> None:
         """Emit agent completion events and update progress."""
         agent_end_time = time.time()
+        # Both operands are time.time() floats; the conversion cannot raise.
         duration_ms = int((agent_end_time - start_time) * 1000)
 
         self._emit_event(
