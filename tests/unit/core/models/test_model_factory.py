@@ -35,9 +35,6 @@ class TestModelFactory:
             "claude-3-sonnet",
             "anthropic",
         )
-        manager.load_project_config.return_value = {
-            "project": {"default_models": {"test": "test-local"}}
-        }
         return manager
 
     @pytest.fixture
@@ -359,122 +356,54 @@ class TestModelFactory:
         with pytest.raises(Exception, match=r"Auth error"):
             await model_factory.load_model("unknown-model")
 
-    async def test_get_fallback_model_with_configured_test_profile_local(
+    async def test_get_fallback_model_raises_when_chain_exhausted(
         self,
         model_factory: ModelFactory,
         mock_config_manager: Mock,
     ) -> None:
-        """Test fallback with a configured local test profile."""
-        mock_config_manager.load_project_config.return_value = {
-            "project": {"default_models": {"test": "test-local"}}
+        """No original_profile and no agent_fallback_profile: no implicit
+        fallback exists, so the chain is empty and the call raises."""
+        with patch.object(
+            model_factory,
+            "load_model",
+            return_value=AsyncMock(),
+        ) as mock_load:
+            with pytest.raises(ValueError, match="fallback chain exhausted"):
+                await model_factory.get_fallback_model("test-context")
+
+            mock_load.assert_not_called()
+
+    async def test_get_fallback_model_raises_when_profile_chain_ends(
+        self,
+        model_factory: ModelFactory,
+        mock_config_manager: Mock,
+    ) -> None:
+        """original_profile has no fallback_model_profile of its own and
+        there is no agent-level override: the chain is exhausted, not a
+        hardcoded default."""
+        mock_config_manager.get_model_profile.return_value = {
+            "model": "qwen3-8b",
+            "provider": "llama-server",
         }
-        mock_config_manager.resolve_model_profile.return_value = (
-            "qwen3-8b",
-            "llama-server",
-        )
 
         with patch.object(
             model_factory,
             "load_model",
             return_value=AsyncMock(),
         ) as mock_load:
-            await model_factory.get_fallback_model("test-context")
+            with pytest.raises(ValueError, match="fallback chain exhausted"):
+                await model_factory.get_fallback_model(
+                    context="agent_test", original_profile="local-llama"
+                )
 
-            mock_config_manager.resolve_model_profile.assert_called_once_with(
-                "test-local"
-            )
-            mock_load.assert_called_once_with("qwen3-8b", "llama-server")
-
-    async def test_get_fallback_model_with_configured_test_profile_cloud(
-        self,
-        model_factory: ModelFactory,
-        mock_config_manager: Mock,
-    ) -> None:
-        """Test fallback with a cloud configured profile."""
-        mock_config_manager.load_project_config.return_value = {
-            "project": {"default_models": {"test": "expensive-model"}}
-        }
-        mock_config_manager.resolve_model_profile.return_value = (
-            "claude-3-opus",
-            "anthropic",
-        )
-
-        with patch.object(
-            model_factory,
-            "load_model",
-            return_value=AsyncMock(),
-        ) as mock_load:
-            await model_factory.get_fallback_model()
-
-            assert mock_load.call_args_list[-1] == (("qwen3-8b", "llama-server"),)
-
-    async def test_get_fallback_model_no_configured_profile(
-        self,
-        model_factory: ModelFactory,
-        mock_config_manager: Mock,
-    ) -> None:
-        """Test fallback when no test profile configured."""
-        mock_config_manager.load_project_config.return_value = {"project": {}}
-
-        with patch.object(
-            model_factory,
-            "load_model",
-            return_value=AsyncMock(),
-        ) as mock_load:
-            await model_factory.get_fallback_model()
-
-            mock_load.assert_called_with("qwen3-8b", "llama-server")
-
-    async def test_get_fallback_model_hardcoded_fallback_fails(
-        self,
-        model_factory: ModelFactory,
-        mock_config_manager: Mock,
-    ) -> None:
-        """Test last resort when default fallback model fails to load."""
-        mock_config_manager.load_project_config.return_value = {"project": {}}
-
-        with patch.object(
-            model_factory,
-            "load_model",
-            side_effect=ValueError("router not available"),
-        ):
-            model = await model_factory.get_fallback_model()
-
-            assert isinstance(model, OpenAICompatibleModel)
-            assert model.model_name == "qwen3-8b"
-
-    async def test_get_fallback_model_with_configured_fallback_model(
-        self,
-        model_factory: ModelFactory,
-        mock_config_manager: Mock,
-    ) -> None:
-        """Test that default_models.fallback and fallback_provider are used."""
-        mock_config_manager.load_project_config.return_value = {
-            "project": {
-                "default_models": {
-                    "fallback": "qwen3-0.6b",
-                    "fallback_provider": "llama-server",
-                }
-            }
-        }
-
-        with patch.object(
-            model_factory,
-            "load_model",
-            return_value=OpenAICompatibleModel("qwen3-0.6b"),
-        ) as mock_load:
-            model = await model_factory.get_fallback_model()
-
-            mock_load.assert_called_with("qwen3-0.6b", "llama-server")
-            assert isinstance(model, OpenAICompatibleModel)
-            assert model.model_name == "qwen3-0.6b"
+            mock_load.assert_not_called()
 
     async def test_get_fallback_model_with_configurable_fallback_profile(
         self,
         model_factory: ModelFactory,
         mock_config_manager: Mock,
     ) -> None:
-        """Test fallback using configurable fallback_model_profile."""
+        """Test fallback using the failed profile's own fallback_model_profile."""
         mock_config_manager.get_model_profile.return_value = {
             "model": "claude-sonnet-4",
             "provider": "anthropic-api",
@@ -491,7 +420,7 @@ class TestModelFactory:
             "load_model",
             return_value=OpenAICompatibleModel("qwen3-0.6b"),
         ) as mock_load:
-            model = await model_factory.get_fallback_model(
+            model, fallback_profile = await model_factory.get_fallback_model(
                 context="agent_test",
                 original_profile="premium-claude",
             )
@@ -500,13 +429,83 @@ class TestModelFactory:
             mock_config_manager.resolve_model_profile.assert_called_with("micro-local")
             mock_load.assert_called_with("qwen3-0.6b", "llama-server")
             assert isinstance(model, OpenAICompatibleModel)
+            assert fallback_profile == "micro-local"
+
+    async def test_get_fallback_model_agent_level_tried_first(
+        self,
+        model_factory: ModelFactory,
+        mock_config_manager: Mock,
+    ) -> None:
+        """The agent-level fallback_model_profile is tried before the
+        original profile's own fallback_model_profile chain."""
+        mock_config_manager.resolve_model_profile.return_value = (
+            "qwen3-0.6b",
+            "llama-server",
+        )
+
+        with patch.object(
+            model_factory,
+            "load_model",
+            return_value=OpenAICompatibleModel("qwen3-0.6b"),
+        ) as mock_load:
+            model, fallback_profile = await model_factory.get_fallback_model(
+                context="agent_test",
+                original_profile="premium-claude",
+                agent_fallback_profile="my-explicit-fallback",
+            )
+
+            mock_config_manager.resolve_model_profile.assert_called_once_with(
+                "my-explicit-fallback"
+            )
+            mock_load.assert_called_once_with("qwen3-0.6b", "llama-server")
+            assert fallback_profile == "my-explicit-fallback"
+            assert isinstance(model, OpenAICompatibleModel)
+            # The original profile's own chain is never consulted.
+            mock_config_manager.get_model_profile.assert_not_called()
+
+    async def test_get_fallback_model_agent_level_failure_falls_through(
+        self,
+        model_factory: ModelFactory,
+        mock_config_manager: Mock,
+    ) -> None:
+        """When the agent-level fallback_model_profile doesn't resolve,
+        the original profile's own chain is still tried."""
+        mock_config_manager.get_model_profile.return_value = {
+            "model": "claude-sonnet-4",
+            "provider": "anthropic-api",
+            "fallback_model_profile": "micro-local",
+        }
+
+        def mock_resolve_side_effect(profile: str) -> tuple[str, str]:
+            if profile == "my-explicit-fallback":
+                raise ValueError("Model profile 'my-explicit-fallback' not found")
+            return ("qwen3-0.6b", "llama-server")
+
+        mock_config_manager.resolve_model_profile.side_effect = mock_resolve_side_effect
+
+        with patch.object(
+            model_factory,
+            "load_model",
+            return_value=OpenAICompatibleModel("qwen3-0.6b"),
+        ) as mock_load:
+            model, fallback_profile = await model_factory.get_fallback_model(
+                context="agent_test",
+                original_profile="premium-claude",
+                agent_fallback_profile="my-explicit-fallback",
+            )
+
+            mock_load.assert_called_once_with("qwen3-0.6b", "llama-server")
+            assert fallback_profile == "micro-local"
+            assert isinstance(model, OpenAICompatibleModel)
 
     async def test_get_fallback_model_with_cascading_fallbacks(
         self,
         model_factory: ModelFactory,
         mock_config_manager: Mock,
     ) -> None:
-        """Test cascading fallbacks: A -> B -> C -> default."""
+        """Test cascading fallbacks entirely within the profile chain:
+        A -> B (load fails) -> C (load succeeds). No legacy fallback
+        exists to catch an exhausted chain."""
         profile_configs = {
             "premium-claude": {
                 "model": "claude-sonnet-4",
@@ -528,22 +527,17 @@ class TestModelFactory:
             profile_configs.get(profile)
         )
 
-        mock_config_manager.load_project_config.return_value = {"project": {}}
-
         model_load_calls: list[tuple[str, str]] = []
 
         def mock_load_side_effect(model: str, provider: str) -> OpenAICompatibleModel:
             model_load_calls.append((model, provider))
-            if len(model_load_calls) <= 2:
+            if len(model_load_calls) == 1:
                 raise ValueError("Model failed")
             return OpenAICompatibleModel("qwen3-8b")
-
-        resolve_calls: list[str] = []
 
         def mock_resolve_side_effect(
             profile: str,
         ) -> tuple[str, str]:
-            resolve_calls.append(profile)
             if profile == "micro-local":
                 return ("qwen3-0.6b", "llama-server")
             elif profile == "tiny-local":
@@ -558,24 +552,15 @@ class TestModelFactory:
             "load_model",
             side_effect=mock_load_side_effect,
         ):
-            model = await model_factory.get_fallback_model(
+            model, fallback_profile = await model_factory.get_fallback_model(
                 context="agent_test",
                 original_profile="premium-claude",
             )
 
-            assert len(model_load_calls) == 3
-            assert model_load_calls[0] == (
-                "qwen3-0.6b",
-                "llama-server",
-            )
-            assert model_load_calls[1] == (
-                "qwen3-8b",
-                "llama-server",
-            )
-            assert model_load_calls[2] == (
-                "qwen3-8b",
-                "llama-server",
-            )
+            assert len(model_load_calls) == 2
+            assert model_load_calls[0] == ("qwen3-0.6b", "llama-server")
+            assert model_load_calls[1] == ("qwen3-8b", "llama-server")
+            assert fallback_profile == "tiny-local"
             assert isinstance(model, OpenAICompatibleModel)
 
     async def test_get_fallback_model_prevents_cycles(

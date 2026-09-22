@@ -161,33 +161,73 @@ class ModelFactory:
         self,
         context: str = "general",
         original_profile: str | None = None,
-    ) -> ModelInterface:
-        """Get a fallback model with configurable fallback support.
+        agent_fallback_profile: str | None = None,
+    ) -> tuple[ModelInterface, str]:
+        """Get a fallback model from the explicit fallback_model_profile chain.
+
+        There is no implicit fallback: the agent-level
+        ``fallback_model_profile`` is tried first, then the original
+        profile's own ``fallback_model_profile`` chain. If neither
+        yields a loadable model, the chain is exhausted and the caller
+        is expected to fail the agent with its original error.
 
         Args:
             context: Context for fallback (for logging)
             original_profile: Original model profile that failed
+            agent_fallback_profile: Agent-level fallback_model_profile
+                override, tried before the profile's own chain
 
         Returns:
-            Fallback model interface
-        """
-        if original_profile:
-            model = await self._try_configurable_fallback(original_profile)
-            if model:
-                return model
+            Tuple of (model, fallback_model_profile) naming the profile
+            that actually loaded.
 
-        return await self._try_legacy_fallback()
+        Raises:
+            ValueError: If the fallback chain is empty or exhausted.
+        """
+        if agent_fallback_profile:
+            agent_result = await self._try_single_fallback(agent_fallback_profile)
+            if agent_result:
+                return agent_result
+
+        if original_profile:
+            chain_result = await self._try_configurable_fallback(original_profile)
+            if chain_result:
+                return chain_result
+
+        raise ValueError(
+            f"No fallback_model_profile configured for {context}; "
+            "fallback chain exhausted"
+        )
+
+    async def _try_single_fallback(
+        self, profile_name: str
+    ) -> tuple[ModelInterface, str] | None:
+        """Try loading one named fallback profile.
+
+        Returns:
+            (model, profile_name) if successful, None if the profile
+            doesn't resolve or load — callers continue down the chain.
+        """
+        try:
+            resolved_model, resolved_provider = (
+                self._config_manager.resolve_model_profile(profile_name)
+            )
+            model = await self.load_model(resolved_model, resolved_provider)
+            return model, profile_name
+        except (ValueError, KeyError):
+            return None
 
     async def _try_configurable_fallback(
         self, original_profile: str
-    ) -> ModelInterface | None:
+    ) -> tuple[ModelInterface, str] | None:
         """Try configurable fallback chain for a given profile.
 
         Args:
             original_profile: The original profile that failed
 
         Returns:
-            Model if successful, None if fallback chain exhausted
+            (model, fallback_model_profile) if successful, None if
+            fallback chain exhausted
         """
         fallback_chain_visited: set[str] = set()
         current_profile = original_profile
@@ -211,55 +251,16 @@ class ModelFactory:
                 resolved_model, resolved_provider = (
                     self._config_manager.resolve_model_profile(fallback_profile_name)
                 )
-                return await self.load_model(resolved_model, resolved_provider)
+                model = await self.load_model(resolved_model, resolved_provider)
+                return model, fallback_profile_name
             except (ValueError, KeyError):
                 current_profile = fallback_profile_name
                 continue
 
         return None
 
-    async def _try_legacy_fallback(self) -> ModelInterface:
-        """Try legacy fallback system.
-
-        Returns:
-            Model interface (guaranteed to return something)
-        """
-        project_config = self._config_manager.load_project_config()
-        default_models = project_config.get("project", {}).get("default_models", {})
-
-        fallback_profile = default_models.get("test")
-
-        if fallback_profile and isinstance(fallback_profile, str):
-            try:
-                resolved_model, resolved_provider = (
-                    self._config_manager.resolve_model_profile(fallback_profile)
-                )
-                if resolved_provider == LLAMA_SERVER_PROVIDER:
-                    try:
-                        return await self.load_model(resolved_model, resolved_provider)
-                    except (ValueError, OSError):
-                        logger.warning(
-                            "Failed to load fallback profile %r",
-                            fallback_profile,
-                            exc_info=True,
-                        )
-            except (ValueError, KeyError):
-                pass
-
-        fallback_model = default_models.get("fallback", DEFAULT_LOCAL_MODEL)
-        fallback_provider = default_models.get(
-            "fallback_provider", LLAMA_SERVER_PROVIDER
-        )
-        try:
-            return await self.load_model(fallback_model, fallback_provider)
-        except (ValueError, OSError):
-            return OpenAICompatibleModel(
-                model_name=fallback_model, base_url=_llama_server_url()
-            )
-
 
 LLAMA_SERVER_PROVIDER = "llama-server"
-DEFAULT_LOCAL_MODEL = "qwen3-8b"
 LLAMA_SERVER_URL_ENV = "LLAMA_SERVER_URL"
 DEFAULT_LLAMA_SERVER_URL = "http://127.0.0.1:8080/v1"
 
