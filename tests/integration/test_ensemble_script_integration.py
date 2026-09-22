@@ -29,6 +29,12 @@ def mock_expensive_dependencies() -> Generator[None, None, None]:
         },
     }
     mock_config_manager.get_model_profiles.return_value = {}
+    # Matches real ConfigurationManager: an unconfigured profile name
+    # (these tests use "claude-analyst", never actually registered)
+    # raises ValueError, not a Mock that can't be unpacked.
+    mock_config_manager.resolve_model_profile.side_effect = ValueError(
+        "Model profile not found"
+    )
 
     with patch(
         "llm_orc.core.execution.executor_factory.ConfigurationManager",
