@@ -47,6 +47,8 @@ import urllib.request
 from collections.abc import Callable
 from typing import Any
 
+import _helpers
+
 DEFAULT_RESULT_COUNT = 5
 DEFAULT_TIMEOUT_SECONDS = 30
 
@@ -58,31 +60,19 @@ def _read_input() -> dict[str, Any]:
     """Read the dispatch JSON payload from stdin."""
     if sys.stdin.isatty():
         return {}
-    try:
-        return json.loads(sys.stdin.read() or "{}")
-    except json.JSONDecodeError:
-        return {}
+    return _read_input_from(sys.stdin.read() or "{}")
+
+
+def _read_input_from(raw: str) -> dict[str, Any]:
+    """The payload dict from a raw stdin string (_helpers.payload: {} on
+    anything malformed, including a bare JSON list — main() then emits
+    missing_query instead of crashing on .get)."""
+    return _helpers.payload(raw)
 
 
 def _extract_query(payload: dict[str, Any]) -> str:
-    """Pull the query string from the dispatch payload.
-
-    The orchestrator's script-agent dispatch convention nests the
-    user-supplied parameters under ``parameters``. Accept either the
-    nested shape (``{"parameters": {"query": "..."}}``) or a flat
-    ``{"query": "..."}`` for ergonomics.
-    """
-    if "query" in payload and isinstance(payload["query"], str):
-        return payload["query"]
-    parameters = payload.get("parameters") or {}
-    if isinstance(parameters, dict) and isinstance(parameters.get("query"), str):
-        return parameters["query"]
-    # Fallback — some dispatch shapes pass the prompt as `input` or `data`.
-    if isinstance(payload.get("input"), str):
-        return payload["input"]
-    if isinstance(payload.get("data"), str):
-        return payload["data"]
-    return ""
+    """Pull the query string from the dispatch payload (issue #202)."""
+    return _helpers.extract_query(payload)
 
 
 def _emit_error(error: str, backend: str, detail: str = "") -> None:
@@ -108,9 +98,9 @@ def _search_kagi(query: str, api_key: str) -> dict[str, Any]:
         method="GET",
     )
 
-    with urllib.request.urlopen(
-        request, timeout=DEFAULT_TIMEOUT_SECONDS
-    ) as response:
+    with urllib.request.urlopen(request, timeout=DEFAULT_TIMEOUT_SECONDS) as response:
+        # json.JSONDecodeError propagates to _dispatch_adapter, which maps
+        # it to backend_invalid_response — the caller owns the mapping.
         response_data: dict[str, Any] = json.loads(response.read())
 
     raw_results = response_data.get("data") or []
@@ -161,9 +151,9 @@ def _search_tavily(query: str, api_key: str) -> dict[str, Any]:
         method="POST",
     )
 
-    with urllib.request.urlopen(
-        request, timeout=DEFAULT_TIMEOUT_SECONDS
-    ) as response:
+    with urllib.request.urlopen(request, timeout=DEFAULT_TIMEOUT_SECONDS) as response:
+        # json.JSONDecodeError propagates to _dispatch_adapter, which maps
+        # it to backend_invalid_response — the caller owns the mapping.
         response_data: dict[str, Any] = json.loads(response.read())
 
     raw_results = response_data.get("results") or []
@@ -254,9 +244,7 @@ def _resolve_api_key(spec: dict[str, Any], backend: str) -> str | None:
     if not spec["requires_key"]:
         return ""
     key_env = spec["key_env"]
-    api_key = (
-        os.environ.get(key_env, "").strip() if isinstance(key_env, str) else ""
-    )
+    api_key = os.environ.get(key_env, "").strip() if isinstance(key_env, str) else ""
     if not api_key:
         _emit_error(
             error="authentication_failed",
@@ -321,7 +309,19 @@ def main() -> int:
     if api_key is None:
         return 0
 
-    query = _extract_query(_read_input()).strip()
+    try:
+        query = _extract_query(_read_input()).strip()
+    except _helpers.MultipleQueriesError as exc:
+        _emit_error(
+            error="multiple_queries",
+            backend=backend,
+            detail=(
+                f"Child input carries {exc.count} queries; one search runs "
+                "per invocation. Compose N searches with fan_out: true "
+                "(ADR-014), one child execution per query."
+            ),
+        )
+        return 0
     if not query:
         _emit_error(
             error="missing_query",

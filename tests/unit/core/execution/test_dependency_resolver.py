@@ -1,13 +1,20 @@
 """Tests for dependency resolver."""
 
+import json
 from typing import Any
 from unittest.mock import Mock
+
+import pytest
 
 from llm_orc.core.execution.phases.dependency_resolver import DependencyResolver
 from llm_orc.schemas.agent_config import (
     AgentConfig,
+    BaseAgentConfig,
     DynamicDispatchAgentConfig,
+    EnsembleAgentConfig,
     LlmAgentConfig,
+    LoopAgentConfig,
+    LoopSpec,
     ScriptAgentConfig,
 )
 
@@ -618,9 +625,10 @@ class TestDependencyResolver:
 
         assert enhanced["seat"] == "hello"
 
-    def test_dispatch_agent_without_input_key_gets_base_input(self) -> None:
-        """Without input_key, a dispatch node's child receives the original
-        ensemble input — still no dependency prose wrapper.
+    def test_dispatch_agent_without_input_key_gets_composed_data(self) -> None:
+        """Without input_key, a dispatch node's child receives the base
+        input plus its dependency data — the shared child-execution
+        contract (issue #202), with no LLM instruction sentences.
         """
         resolver, _ = self.setup_resolver()
 
@@ -639,7 +647,194 @@ class TestDependencyResolver:
             "the original turn", agents, results_dict
         )
 
-        assert enhanced["seat"] == "the original turn"
+        child_input = enhanced["seat"]
+        assert child_input.startswith("the original turn")
+        assert "Agent resolve (Test Role):" in child_input
+        assert '{"target": "explainer"}' in child_input
+        assert "Please respond" not in child_input
+        assert "Please provide your own analysis" not in child_input
+
+
+class TestChildExecutionInputContract:
+    """One input contract for child-execution nodes (issue #202).
+
+    ``ensemble:`` (ADR-013), ``loop:``, and ``dispatch:`` all run a fresh
+    child execution — the runner hands input_data verbatim to a child
+    executor. With ``input_key`` the child receives the selected value
+    verbatim (ADR-014). Without it, the child receives the base input
+    followed by dependency data blocks — never the LLM instruction
+    sentences ("Please respond...", "Please provide your own analysis..."),
+    which exist only for LLM consumers.
+    """
+
+    def setup_resolver(self) -> DependencyResolver:
+        """Set up resolver with mocked role description function."""
+        mock_role_resolver = Mock()
+        mock_role_resolver.return_value = "Test Role"
+        return DependencyResolver(role_resolver=mock_role_resolver)
+
+    def test_ensemble_with_input_key_gets_selected_value(self) -> None:
+        """Issue #202 repro: ensemble + input_key passes the selected
+        value, never the dependency-chain prose envelope."""
+        resolver = self.setup_resolver()
+
+        agents: list[AgentConfig] = [
+            EnsembleAgentConfig(
+                name="consumer",
+                ensemble="web-searcher",
+                depends_on=["producer"],
+                input_key="queries",
+            ),
+        ]
+        results_dict = {
+            "producer": {
+                "status": "success",
+                "response": json.dumps({"queries": ["q1", "q2"], "meta": "ignored"}),
+            },
+        }
+
+        enhanced = resolver.enhance_input_with_dependencies(
+            "the original turn", agents, results_dict
+        )
+
+        assert enhanced["consumer"] == '["q1", "q2"]'
+
+    def test_loop_with_input_key_gets_selected_value(self) -> None:
+        """A loop node shares the child-execution input contract."""
+        resolver = self.setup_resolver()
+
+        agents: list[AgentConfig] = [
+            LoopAgentConfig(
+                name="iterate",
+                loop=LoopSpec(body="worker", until="done", max_iterations=3),
+                depends_on=["producer"],
+                input_key="queries",
+            ),
+        ]
+        results_dict = {
+            "producer": {
+                "status": "success",
+                "response": json.dumps({"queries": ["q1"], "meta": "x"}),
+            },
+        }
+
+        enhanced = resolver.enhance_input_with_dependencies(
+            "the original turn", agents, results_dict
+        )
+
+        assert enhanced["iterate"] == '["q1"]'
+
+    def test_ensemble_without_input_key_gets_composed_data(self) -> None:
+        """Without input_key, the child gets base input plus dependency
+        data blocks — no LLM instruction sentences."""
+        resolver = self.setup_resolver()
+
+        agents: list[AgentConfig] = [
+            EnsembleAgentConfig(
+                name="code_writer",
+                ensemble="code-generator",
+                depends_on=["test_writer"],
+            ),
+        ]
+        results_dict = {
+            "test_writer": {
+                "status": "success",
+                "response": "def test_add(): assert add(1, 2) == 3",
+            },
+        }
+
+        enhanced = resolver.enhance_input_with_dependencies(
+            "Implement add()", agents, results_dict
+        )
+
+        child_input = enhanced["code_writer"]
+        assert child_input.startswith("Implement add()")
+        assert "Agent test_writer (Test Role):" in child_input
+        assert "def test_add(): assert add(1, 2) == 3" in child_input
+        assert "Please respond" not in child_input
+        assert "Please provide your own analysis" not in child_input
+
+    def test_child_input_scope_dependencies_omits_base_input(self) -> None:
+        """input_scope: dependencies composes child input from dependency
+        results only — no base input, no instructions."""
+        resolver = self.setup_resolver()
+
+        agents: list[AgentConfig] = [
+            EnsembleAgentConfig(
+                name="child",
+                ensemble="worker",
+                depends_on=["upstream"],
+                input_scope="dependencies",
+            ),
+        ]
+        results_dict = {
+            "upstream": {"status": "success", "response": "upstream data"},
+        }
+
+        enhanced = resolver.enhance_input_with_dependencies(
+            "SECRET CONVERSATION CONTEXT", agents, results_dict
+        )
+
+        child_input = enhanced["child"]
+        assert "SECRET CONVERSATION CONTEXT" not in child_input
+        assert child_input == "Agent upstream (Test Role):\nupstream data"
+
+    def test_unknown_consumer_type_without_dependencies_raises(self) -> None:
+        """The raise-on-unknown guard covers the no-dependencies path too,
+        not only the with-dependencies path (PR 203 review nit)."""
+        resolver = self.setup_resolver()
+
+        agents: list[Any] = [
+            BaseAgentConfig(name="mystery"),
+        ]
+
+        with pytest.raises(ValueError, match="consumer type"):
+            resolver.enhance_input_with_dependencies("base", agents, {})
+
+    def test_child_input_key_with_failed_upstream_gets_composed(self) -> None:
+        """input_key set but the first dependency failed: the child gets
+        base input plus the other successful deps' data (failed-dep-omitted
+        semantics, matching the LLM path), never the selection error text
+        (PR 203 review note)."""
+        resolver = self.setup_resolver()
+
+        agents: list[AgentConfig] = [
+            EnsembleAgentConfig(
+                name="consumer",
+                ensemble="worker",
+                depends_on=["failed", "other"],
+                input_key="queries",
+            ),
+        ]
+        results_dict = {
+            "failed": {"status": "error", "response": "boom"},
+            "other": {"status": "success", "response": "other data"},
+        }
+
+        enhanced = resolver.enhance_input_with_dependencies(
+            "the original turn", agents, results_dict
+        )
+
+        child_input = enhanced["consumer"]
+        assert child_input.startswith("the original turn")
+        assert "Agent other (Test Role):" in child_input
+        assert "other data" in child_input
+        assert "boom" not in child_input
+
+    def test_unknown_consumer_type_raises(self) -> None:
+        """No fall-through default: an unrecognized consumer type raises
+        instead of receiving the LLM envelope (issue #202 root cause)."""
+        resolver = self.setup_resolver()
+
+        agents: list[Any] = [
+            BaseAgentConfig(name="mystery", depends_on=["upstream"]),
+        ]
+        results_dict = {
+            "upstream": {"status": "success", "response": "data"},
+        }
+
+        with pytest.raises(ValueError, match="consumer type"):
+            resolver.enhance_input_with_dependencies("base", agents, results_dict)
 
 
 class TestFanOutInputPreparation:
@@ -650,6 +845,49 @@ class TestFanOutInputPreparation:
         mock_role_resolver = Mock()
         mock_role_resolver.return_value = "Test Role"
         return DependencyResolver(role_resolver=mock_role_resolver)
+
+    def test_prepare_fan_out_instance_input_scalar_chunk_json(self) -> None:
+        """Scalar chunks serialize with json (true/null/3), not str() —
+        the same rule the non-fan-out input_key path applies, so a child
+        that json.loads its input sees one shape (PR 203 round 2)."""
+        resolver = self.setup_resolver()
+
+        for chunk, expected in ((True, "true"), (None, "null"), (3, "3")):
+            instance = EnsembleAgentConfig(
+                name="processor[0]",
+                ensemble="pdf-processor",
+                fan_out_chunk=chunk,
+                fan_out_index=0,
+                fan_out_total=1,
+                fan_out_original="processor",
+            )
+            result = resolver.prepare_fan_out_instance_input(
+                instance_config=instance, base_input="Process"
+            )
+            assert result == expected, (chunk, result)
+
+    def test_prepare_fan_out_instance_input_ensemble_child(self) -> None:
+        """A fan-out ensemble instance receives its chunk verbatim — the
+        "Processing chunk N of M" wrapper is an LLM framing, not part of
+        the child-execution contract (issue #202)."""
+        resolver = self.setup_resolver()
+
+        instance_config = EnsembleAgentConfig(
+            name="processor[0]",
+            ensemble="pdf-processor",
+            fan_out_chunk="a.pdf",
+            fan_out_index=0,
+            fan_out_total=2,
+            fan_out_original="processor",
+        )
+
+        result = resolver.prepare_fan_out_instance_input(
+            instance_config=instance_config,
+            base_input="Process these",
+        )
+
+        assert result == "a.pdf"
+        assert "Processing chunk" not in result
 
     def test_prepare_fan_out_instance_input_script_agent(self) -> None:
         """Test preparing input for a fan-out script agent instance."""
