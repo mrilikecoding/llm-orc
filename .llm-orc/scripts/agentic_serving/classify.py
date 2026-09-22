@@ -35,6 +35,7 @@ from pathlib import Path
 from typing import NamedTuple
 
 from _helpers import PRIOR_CODE_MARKER as _PRIOR_CODE_MARKER
+from _helpers import child_input_value as _child_input_value
 from _helpers import latest_ran_block as _latest_ran_block
 from chain_plan import _EXPLAIN_SEAT, _TESTS_SEAT
 from chain_plan import SignalBundle as _SignalBundle
@@ -2275,9 +2276,8 @@ def _turn(raw: str) -> dict:
         return {"task": raw}
     if not isinstance(data, dict):
         return {"task": str(data)}
-    inner = data.get("input_data")
-    if inner is None:
-        inner = data.get("input")
+    # The same payload contract web_searcher unwraps (_helpers).
+    inner = _child_input_value(data)
     if inner is None:
         inner = data
     if isinstance(inner, dict):
