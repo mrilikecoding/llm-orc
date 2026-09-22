@@ -107,6 +107,19 @@ and paid comparison runs within reason; cheaper subagents; meter usage).
   edge nginx set to 3600 s / buffering off / 50 m body);
   http://llm-orc.homelab.nate.green answers 502 until the serve exists on
   ng-mini. `deploy/ng-mini/` carries the launchd unit and setup notes.
+- **#202 (2026-09-22, PR #203 merged as `774c9359`, released v0.20.6,
+  formula bumped).** Core-engine fix outside the serving track but landing
+  on it: `ensemble:`/`loop:`/`dispatch:` children now share one input
+  contract (Option B on the issue: `input_key` value verbatim; otherwise
+  base input plus dependency blocks, no LLM instruction sentences). Three
+  live seats see a different prompt as a result: `build-gated-round.
+  code_writer` and `re-fix.model_edit` lose the chain-member framing and
+  keep their upstream; `gen-review.review` now sees `gen` (it never had).
+  Fan-out instances past phase 0 now frame the raw ensemble input
+  (previously empty). The ladder T1 re-run was skipped for this change
+  by practitioner decision; the regression gate below therefore also
+  measures these three seats under the new input shape. Not deployed to
+  ng-mini yet (brew upgrade + `homelab doctor --fix`).
 
 ### Evidence carried forward (2026-09-12)
 
