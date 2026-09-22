@@ -1262,3 +1262,25 @@ def test_a_real_testcase_still_runs() -> None:
 
     assert verdict["tests_pass"] is True, verdict["report"]
     assert verdict["n_tests"] == 2
+
+
+def test_failed_classify_and_resolve_dependencies_do_not_crash() -> None:
+    """fail-closed-composition rule 2: a failed classify/resolve
+    dependency now reaches shape.py as ``{"status": "failed", "error":
+    ..., "response": None}`` instead of vanishing. ``_readable_decision``
+    and ``_routing_failure_reason`` must not crash on a ``None``
+    response — the routing decision is unreadable either way, so shape
+    degrades to its existing ``routing_failed`` refusal."""
+    deps = {
+        "classify": {"status": "failed", "error": "boom", "response": None},
+        "resolve": {"status": "skipped", "response": None},
+    }
+    out = subprocess.run(
+        [sys.executable, str(SHAPE)],
+        input=json.dumps({"dependencies": deps}),
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    shaped: dict[str, Any] = json.loads(out)
+    assert shaped["routing_failed"]

@@ -57,7 +57,12 @@ def _deps(raw: str) -> dict:
 
 
 def _response(dep: object) -> str:
-    return dep.get("response", "") if isinstance(dep, dict) else ""
+    # A failed or skipped dependency (fail-closed-composition rule 2) is
+    # now present with an explicit "response": None rather than vanishing
+    # from the dependencies dict — dict.get's default only covers an
+    # ABSENT key, so a bare ``.get("response", "")`` still hands `None`
+    # through here on a present-but-null value.
+    return (dep.get("response") or "") if isinstance(dep, dict) else ""
 
 
 def _pick_choice(response: str, menu: dict) -> str:
