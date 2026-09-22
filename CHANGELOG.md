@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- `ensemble:` (ADR-013) and `loop:` nodes now share one child-input
+  contract with `dispatch:`: with `input_key` the child receives the
+  selected value verbatim; without, base input plus dependency data
+  blocks with no LLM instruction sentences (#202). Fan-out instances of
+  these nodes receive their chunk verbatim. An unrecognized consumer
+  type raises instead of receiving the LLM envelope, on both the
+  with-dependencies and no-dependencies paths.
+- `web_searcher` extracts the query from a child ensemble's payload
+  (dispatch `input` and ScriptAgentInput `input_data` shapes,
+  JSON-encoded arrays and dicts unwrapped). A multi-query selected
+  array emits a structured `multiple_queries` error pointing at the
+  `fan_out: true` composition instead of silently searching the first
+  item (#202). Fan-out scalar chunks serialize with json, and
+  fan-out instances read base input by their pre-expansion name.
+- `gen-review.review` (dispatch seat, no `input_key`) now receives the
+  `gen` output it was previously denied (#202).
+
+### Security
+- `anyio` bumped to 4.15.1 (CVE-2026-63374, CVE-2026-64847, both patched
+  upstream in 4.14.2). Unrelated to #202; the lockfile bump clears the
+  CI security job for any branch.
+
 ## [0.20.5] - 2026-09-19
 
 ### Fixed
