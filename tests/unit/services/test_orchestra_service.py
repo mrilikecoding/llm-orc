@@ -191,3 +191,14 @@ class TestGetExecutor:
             child = ExecutorFactory.create_child_executor(executor, depth=1)
 
         assert child._model_factory.execution_id == executor._model_factory.execution_id
+
+    def test_an_injected_executor_is_returned_as_is_every_call(self) -> None:
+        """A caller-injected executor (dependency injection for tests /
+        embedders) bypasses ExecutorFactory entirely and must be
+        returned unchanged - never rebuilt with a fresh id."""
+        injected = MagicMock()
+
+        service = OrchestraService(executor=injected)
+
+        assert service._get_executor() is injected
+        assert service._get_executor() is injected
