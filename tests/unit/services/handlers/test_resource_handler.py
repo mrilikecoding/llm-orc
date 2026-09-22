@@ -392,6 +392,30 @@ class TestReadEnsemble:
         assert result["agents"][1]["ensemble"] == "other"
         assert result["agents"][2]["script"] == "echo hi"
 
+    async def test_preserves_on_dependency_failure(
+        self,
+        handler: ResourceHandler,
+        mock_config_manager: Any,
+        mock_ensemble_loader: Any,
+    ) -> None:
+        """A node marked on_dependency_failure: run round-trips through
+        the JSON resource read (fail-closed-composition, #200)."""
+        from llm_orc.schemas.agent_config import ScriptAgentConfig
+
+        agent = ScriptAgentConfig(
+            name="shape",
+            script="shape.py",
+            depends_on=["seat"],
+            on_dependency_failure="run",
+        )
+        config = _fake_ensemble_config("serving", agents=[agent])
+        mock_config_manager.get_ensembles_dirs.return_value = ["/fake"]
+        mock_ensemble_loader.find_ensemble.return_value = config
+
+        result = await handler.read_ensemble("serving")
+
+        assert result["agents"][0]["on_dependency_failure"] == "run"
+
 
 # ---------------------------------------------------------------------------
 # read_artifact (lines 204-211)
