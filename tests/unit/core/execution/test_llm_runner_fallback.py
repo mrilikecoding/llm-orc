@@ -14,6 +14,7 @@ import pytest
 
 from llm_orc.core.execution.runners.llm_runner import LlmAgentRunner
 from llm_orc.core.execution.usage_collector import UsageCollector
+from llm_orc.core.models.model_factory import ModelConfigurationError
 from llm_orc.schemas.agent_config import LlmAgentConfig
 
 
@@ -113,6 +114,30 @@ class TestModelLoadingFallbackWiring:
         assert exc_info.value.__cause__ is not None
         assert "fallback chain exhausted" in str(exc_info.value.__cause__)
         # No fallback event fires when there is nothing to fall back to.
+        assert not [d for n, d in events if n == "agent_fallback_started"]
+
+    @pytest.mark.asyncio
+    async def test_model_configuration_error_is_never_fallback_eligible(self) -> None:
+        """SF1 defense in depth: a ModelConfigurationError from the direct
+        ModelFactory.load_model path (e.g. think on a non-llama-server
+        provider) must propagate as-is, never trigger a substitution."""
+        events: list[tuple[str, dict[str, object]]] = []
+        model_factory = Mock()
+        config_error = ModelConfigurationError("options.think is only supported ...")
+        model_factory.load_model_from_agent_config = AsyncMock(side_effect=config_error)
+        model_factory.get_fallback_model = AsyncMock()
+
+        runner = _make_runner(model_factory, events)
+        agent = LlmAgentConfig(
+            name="worker",
+            model_profile="hosted-thinking",
+            fallback_model_profile="local-llama",
+        )
+
+        with pytest.raises(ModelConfigurationError):
+            await runner.execute(agent, "input")
+
+        model_factory.get_fallback_model.assert_not_called()
         assert not [d for n, d in events if n == "agent_fallback_started"]
 
 
