@@ -31,6 +31,7 @@ class OpenAICompatibleModel(ModelInterface):
         max_tokens: int | None = None,
         options: dict[str, Any] | None = None,
         response_format: str | dict[str, Any] | None = None,
+        execution_id: str | None = None,
     ) -> None:
         super().__init__(temperature=temperature, max_tokens=max_tokens)
         self.model_name = model_name
@@ -38,6 +39,7 @@ class OpenAICompatibleModel(ModelInterface):
         self.api_key = api_key
         self._options = options
         self._response_format = response_format
+        self._execution_id = execution_id
 
     def _apply_options(self, body: dict[str, Any]) -> None:
         """Fold provider options into the request body.
@@ -90,13 +92,18 @@ class OpenAICompatibleModel(ModelInterface):
     def name(self) -> str:
         return f"openai-compat-{self.model_name}"
 
+    def _build_headers(self) -> dict[str, str]:
+        """Request headers common to every OpenAI-compat call."""
+        headers: dict[str, str] = {"Content-Type": "application/json"}
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+        return headers
+
     async def generate_response(self, message: str, role_prompt: str) -> str:
         """Generate response using an OpenAI-compatible chat completions API."""
         start_time = time.time()
 
-        headers: dict[str, str] = {"Content-Type": "application/json"}
-        if self.api_key:
-            headers["Authorization"] = f"Bearer {self.api_key}"
+        headers = self._build_headers()
 
         body: dict[str, Any] = {
             "model": self.model_name,
@@ -158,9 +165,7 @@ class OpenAICompatibleModel(ModelInterface):
         """
         start_time = time.time()
 
-        headers: dict[str, str] = {"Content-Type": "application/json"}
-        if self.api_key:
-            headers["Authorization"] = f"Bearer {self.api_key}"
+        headers = self._build_headers()
 
         body: dict[str, Any] = {
             "model": self.model_name,
