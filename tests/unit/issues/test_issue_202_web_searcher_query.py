@@ -1,11 +1,13 @@
-"""Issue #202, second cause: web_searcher cannot read the envelope.
+"""Issue #202, second cause: web_searcher cannot read the child input.
 
-A root script agent inside a child ensemble receives the ScriptAgentInput
-envelope (``{"agent_name", "input_data", "context", "dependencies"}``),
-not the flat dispatch payload ``{"query": ...}``. _extract_query read only
-query/parameters/input/data and returned '' for every envelope shape, so
+The engine's dispatch payload for a root script agent is
+``{"input": <child input>, "parameters": {...}}`` (agents/script_agent.py,
+core/execution/scripting/agent_runner.py); a dependent script receives the
+ScriptAgentInput sibling shape (``input_data``). _extract_query read only
+query/parameters/input/data and returned '' for both envelope shapes, so
 the web-searcher ensemble searched for nothing when composed through
-``ensemble:`` + ``input_key:``.
+``ensemble:`` + ``input_key:``. The unwrap lives in _helpers now
+(child_input_value / extract_query); web_searcher calls it.
 """
 
 from __future__ import annotations
@@ -20,7 +22,13 @@ from typing import Any
 import pytest
 
 REPO = Path(__file__).resolve().parents[3]
-WEB_SEARCHER = REPO / ".llm-orc" / "scripts" / "agentic_serving" / "web_searcher.py"
+SCRIPTS = REPO / ".llm-orc" / "scripts" / "agentic_serving"
+WEB_SEARCHER = SCRIPTS / "web_searcher.py"
+
+# web_searcher imports its _helpers sibling the way the engine runs it
+# (Python sets sys.path[0] to the script's directory).
+if str(SCRIPTS) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS))
 
 _spec = importlib.util.spec_from_file_location("web_searcher", WEB_SEARCHER)
 assert _spec is not None
@@ -29,7 +37,7 @@ web_searcher = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(web_searcher)
 
 extract_query = web_searcher._extract_query
-MultipleQueriesError = web_searcher.MultipleQueriesError
+MultipleQueriesError = web_searcher._helpers.MultipleQueriesError
 
 
 def _envelope(input_data: Any) -> dict[str, Any]:
@@ -135,6 +143,44 @@ def test_main_emits_multiple_queries_error(
     assert out["error"] == "multiple_queries"
     assert out["backend"] == "ddgs"
     assert "fan_out" in out["detail"]
+
+
+class TestMalformedPayload:
+    """A malformed stdin payload becomes {} (missing_query), not a crash
+    on .get (PR 203 round 2, finding 5)."""
+
+    def test_bare_list_stdin_is_missing_query(self) -> None:
+        """_read_input_from tolerates a bare-list payload ({} via
+        _helpers.payload); main() then emits missing_query instead of
+        crashing on .get."""
+        assert web_searcher._read_input_from("[1, 2]") == {}
+        assert web_searcher._read_input_from("not json") == {}
+        assert web_searcher._read_input_from('{"query": "q"}') == {"query": "q"}
+
+    def test_query_value_dict_recurses(self) -> None:
+        assert extract_query({"query": {"query": "hello"}}) == "hello"
+
+
+class TestScalarAndQueryValueShapes:
+    """Round-2 review pins: scalar array items have no usable query, and
+    a query key carrying an array follows the same one-query rule as the
+    input path (PR 203 round 2, finding 5)."""
+
+    def test_scalar_array_items_are_missing_query(self) -> None:
+        """[42] / [None] / [True] do not become live searches for '42'."""
+        assert extract_query({"input": "[42]"}) == ""
+        assert extract_query(_envelope([42])) == ""
+        assert extract_query(_envelope([None])) == ""
+
+    def test_query_value_list_single_item_unwraps(self) -> None:
+        assert extract_query({"query": ["hello"]}) == "hello"
+
+    def test_query_value_multi_item_list_raises(self) -> None:
+        with pytest.raises(MultipleQueriesError):
+            extract_query({"query": ["q1", "q2"]})
+
+    def test_query_value_dict_recurses(self) -> None:
+        assert extract_query({"query": {"query": "hello"}}) == "hello"
 
 
 def test_extract_query_direct_dispatch_shapes_unchanged() -> None:

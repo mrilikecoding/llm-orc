@@ -381,9 +381,7 @@ class DependencyResolver:
         """
         if isinstance(chunk, str):
             return chunk
-        if isinstance(chunk, (dict, list)):
-            return json.dumps(chunk)
-        return str(chunk)
+        return json.dumps(chunk)
 
     @staticmethod
     def is_fan_out_instance_config(agent_config: AgentConfig) -> bool:
