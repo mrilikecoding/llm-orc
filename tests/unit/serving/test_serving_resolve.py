@@ -525,3 +525,20 @@ def test_classify_failure_envelope_launders_to_an_empty_target() -> None:
     out = _resolve({"success": False, "error": "Script failed with exit code 1"})
     assert out["target"] == ""
     assert out["build"] is False
+
+
+def test_failed_classify_dependency_does_not_crash() -> None:
+    """fail-closed-composition rule 2: a failed classify dependency now
+    reaches resolve.py as ``{"status": "failed", "error": ..., "response":
+    None}`` instead of vanishing from the dependencies dict. ``_response``
+    must hand ``json.loads`` a string, never ``None``, uncaught."""
+    deps = {"classify": {"status": "failed", "error": "boom", "response": None}}
+    out = subprocess.run(
+        [sys.executable, str(RESOLVE)],
+        input=json.dumps({"dependencies": deps}),
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    result: dict[str, Any] = json.loads(out)
+    assert result["target"] == ""

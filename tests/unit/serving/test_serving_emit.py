@@ -997,3 +997,22 @@ def test_a_seat_contract_rejection_outranks_a_dead_seat() -> None:
 
     assert outcome["content"].startswith(SEAT_CONTRACT_REJECT_PREFIX)
     assert "seat contract" not in outcome["content"]
+
+
+def test_failed_form_gate_dependency_does_not_crash() -> None:
+    """fail-closed-composition rule 2: a failed form_gate dependency
+    reaches emit.py as ``{"status": "failed", "error": ..., "response":
+    None}`` instead of vanishing. ``_readable_gate`` already catches the
+    resulting TypeError, so this stays green — pinned so the accessor
+    parity fix (matching resolve/shape/seat_contract) never regresses."""
+    deps = {"form_gate": {"status": "failed", "error": "boom", "response": None}}
+    out = subprocess.run(
+        [sys.executable, str(EMIT)],
+        input=json.dumps({"dependencies": deps}),
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    outcome: dict[str, Any] = json.loads(out)
+    assert outcome["finish"] is True
+    assert "form gate node" in outcome["content"]
