@@ -17,6 +17,7 @@ from typing import Any
 import pytest
 
 from llm_orc.core.session.messages import ChatMessage
+from llm_orc.core.session.registry import SessionIdentity, SessionState
 from llm_orc.web.serving.chunks import ClientToolCall, ContentDelta
 from llm_orc.web.serving.serving_ensemble_caller import (
     _SELF_READ_MAX_ROUNDS,
@@ -27,6 +28,12 @@ from llm_orc.web.serving.serving_ensemble_caller import (
 from llm_orc.web.serving.turn_trace import emit_turn_trace
 
 _LABEL = ".llm-orc/scripts/agentic_serving/resolve.py"
+
+
+def _fake_state() -> SessionState:
+    return SessionState(
+        identity=SessionIdentity(value="test-session", method="cold_start")
+    )
 
 
 @pytest.fixture
@@ -147,6 +154,7 @@ async def test_run_exhausting_self_read_rounds_fails_closed(
     context = SimpleNamespace(
         tools=[{"type": "function", "function": {"name": "glob"}}],
         messages=[ChatMessage(role="user", content="how does resolve work?")],
+        state=_fake_state(),
     )
     chunks = [chunk async for chunk in caller.run(context)]  # type: ignore[arg-type]
     assert calls["count"] == _SELF_READ_MAX_ROUNDS + 1
@@ -174,6 +182,7 @@ async def test_run_executes_the_self_read_then_ships_the_next_outcome(
     context = SimpleNamespace(
         tools=[{"type": "function", "function": {"name": "glob"}}],
         messages=[ChatMessage(role="user", content="how does resolve work?")],
+        state=_fake_state(),
     )
     chunks = [chunk async for chunk in caller.run(context)]  # type: ignore[arg-type]
     # Pass 2 saw the self-read block in its rendered context.

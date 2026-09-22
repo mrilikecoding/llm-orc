@@ -30,6 +30,27 @@ class TestCreateRootExecutor:
 
         assert executor._save_artifacts is False
 
+    def test_generates_an_execution_id_when_omitted(self) -> None:
+        """A root executor's ModelFactory gets a generated execution_id."""
+        executor = ExecutorFactory.create_root_executor()
+
+        assert executor._model_factory.execution_id
+
+    def test_honors_a_provided_execution_id(self) -> None:
+        """Callers with a stable per-conversation id (the serve's resolved
+        Session identity) can pass it through."""
+        executor = ExecutorFactory.create_root_executor(execution_id="exec-fixed")
+
+        assert executor._model_factory.execution_id == "exec-fixed"
+
+    def test_two_root_executors_get_different_execution_ids(self) -> None:
+        """Doctrine 11: two separate top-level executions get different
+        ids (each is a fresh ModelFactory)."""
+        first = ExecutorFactory.create_root_executor()
+        second = ExecutorFactory.create_root_executor()
+
+        assert first._model_factory.execution_id != second._model_factory.execution_id
+
 
 class TestCreateChildExecutor:
     """Tests for ExecutorFactory.create_child_executor."""

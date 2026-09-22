@@ -1734,6 +1734,7 @@ class ServingEnsembleCaller:
                 previous_ask=_previous_ask(context.messages, reject_prefixes),
                 self_read_round=round_index,
                 read_paths=_read_paths_this_turn(context.messages) + list(self_reads),
+                execution_id=context.state.identity.value,
             )
             requested = _self_read_requests(outcome)
             if not requested:
@@ -1757,9 +1758,12 @@ class ServingEnsembleCaller:
         previous_ask: dict[str, str] | None = None,
         self_read_round: int = 0,
         read_paths: list[str] | None = None,
+        execution_id: str | None = None,
     ) -> dict[str, Any]:
         config = self._load_config()
-        executor = ExecutorFactory.create_root_executor(project_dir=self._project_dir)
+        executor = ExecutorFactory.create_root_executor(
+            project_dir=self._project_dir, execution_id=execution_id
+        )
         result = await executor.execute(
             config,
             json.dumps(
