@@ -1477,6 +1477,9 @@ class TestEnsembleExecutor:
             "cost_usd": 0.02,
         }
 
+        async def fake_chain(**_kwargs: Any) -> Any:
+            yield mock_fallback_model, "standard-claude"
+
         streaming_events: list[dict[str, Any]] = []
         with (
             patch.object(
@@ -1486,8 +1489,8 @@ class TestEnsembleExecutor:
             ),
             patch.object(
                 executor._model_factory,
-                "get_fallback_model",
-                return_value=(mock_fallback_model, "standard-claude"),
+                "iter_fallback_chain",
+                new=fake_chain,
             ),
             patch.object(
                 executor._llm_agent_runner,
@@ -1563,6 +1566,9 @@ class TestEnsembleExecutor:
             "cost_usd": 0.02,
         }
 
+        async def fake_chain(**_kwargs: Any) -> Any:
+            yield mock_fallback_model, "standard-claude"
+
         streaming_events: list[dict[str, Any]] = []
         with (
             patch.object(
@@ -1572,8 +1578,8 @@ class TestEnsembleExecutor:
             ),
             patch.object(
                 executor._model_factory,
-                "get_fallback_model",
-                return_value=(mock_fallback_model, "standard-claude"),
+                "iter_fallback_chain",
+                new=fake_chain,
             ),
             patch.object(
                 executor._llm_agent_runner,
@@ -3081,3 +3087,63 @@ class TestFanOutExecution:
         assert result["results"]["processor"]["status"] == "failed"
         assert "classifier" in result["results"]["processor"]["error"]
         assert "items" in result["results"]["processor"]["error"]
+
+
+class TestThinkOptionFailsClosedBeforeExecution:
+    """Scenario (SF1): an ensemble configuring ``think`` against a hosted
+    (non-llama-server) profile fails validation before any agent runs —
+    even when that agent has a fallback chain configured. A config error
+    must never be laundered into a quiet fallback substitution
+    (Invariant 14; fail-closed-composition plan §C).
+    """
+
+    @pytest.mark.asyncio
+    async def test_think_on_hosted_profile_with_fallback_never_executes(
+        self, mock_ensemble_executor: Any
+    ) -> None:
+        config = EnsembleConfig(
+            name="thinking_ensemble",
+            description="decomposer configured with think on a hosted profile",
+            agents=[
+                LlmAgentConfig(
+                    name="decomposer",
+                    model_profile="hosted-thinking",
+                    fallback_model_profile="local-llama",
+                ),
+                LlmAgentConfig(name="independent", model_profile="hosted-thinking"),
+            ],
+        )
+        executor = mock_ensemble_executor
+
+        def fake_resolve(profile_name: str) -> tuple[str, str]:
+            return "minimax-m2.5", "openai-compatible/zen"
+
+        def fake_get_profile(profile_name: str) -> dict[str, Any]:
+            return {
+                "model": "minimax-m2.5",
+                "provider": "openai-compatible/zen",
+                "options": {"think": False},
+            }
+
+        with (
+            patch.object(
+                executor._config_manager,
+                "resolve_model_profile",
+                side_effect=fake_resolve,
+            ),
+            patch.object(
+                executor._config_manager,
+                "get_model_profile",
+                side_effect=fake_get_profile,
+            ),
+            patch.object(
+                executor._model_factory,
+                "load_model_from_agent_config",
+                new_callable=AsyncMock,
+            ) as mock_load_model,
+        ):
+            with pytest.raises(Exception, match="think"):
+                await executor.execute(config, input_data="decompose this")
+
+            # Never executes: not the offending agent, not its sibling.
+            mock_load_model.assert_not_called()
