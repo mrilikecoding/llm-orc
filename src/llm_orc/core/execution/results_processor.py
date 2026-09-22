@@ -9,6 +9,7 @@ from llm_orc.core.execution.result_types import (
     ExecutionMetadata,
     ExecutionResult,
 )
+from llm_orc.core.execution.utils import terminal_agent_names
 from llm_orc.schemas.agent_config import AgentConfig
 
 
@@ -79,8 +80,7 @@ def resolve_deliverable(
     receives a projection that has already dropped the config).
     Multi-terminal DAGs take the last terminal by declaration order.
     """
-    depended_on = _depended_on_names(agents)
-    terminals = [agent.name for agent in agents if agent.name not in depended_on]
+    terminals = terminal_agent_names(agents)
 
     for name in reversed(terminals):
         response = _successful_response(results.get(name))
@@ -92,21 +92,6 @@ def resolve_deliverable(
         if response is not None:
             return response
     return None
-
-
-def _depended_on_names(agents: list[AgentConfig]) -> set[str]:
-    """Collect every agent name that appears as a dependency.
-
-    Tolerates both string and conditional dict-form ``depends_on``
-    entries, mirroring ``ensemble_config.detect_cycle``'s traversal.
-    """
-    names: set[str] = set()
-    for agent in agents:
-        for dep in agent.depends_on:
-            dep_name = dep if isinstance(dep, str) else dep.get("agent_name")
-            if dep_name:
-                names.add(dep_name)
-    return names
 
 
 def _successful_response(agent_result: Any) -> str | None:

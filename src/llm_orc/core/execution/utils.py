@@ -2,6 +2,8 @@
 
 from typing import Any
 
+from llm_orc.schemas.agent_config import AgentConfig
+
 
 def dep_name(dep: str | dict[str, Any]) -> str:
     """Extract the agent name from a dependency entry.
@@ -12,6 +14,21 @@ def dep_name(dep: str | dict[str, Any]) -> str:
     if isinstance(dep, dict):
         return str(dep["agent_name"])
     return dep
+
+
+def terminal_agent_names(agents: list[AgentConfig]) -> list[str]:
+    """Names of agents no other agent in ``agents`` depends on, in
+    declaration order — the DAG's terminal nodes.
+
+    One definition, three readers: ``resolve_deliverable``'s single
+    collapsed deliverable, ``EnsembleExecutor._terminal_agents_for_
+    ensemble`` (every terminal, for DependencyResolver's per-terminal
+    rendering), and the ``ensemble:`` agent's own success rule
+    (fail-closed-composition B1) — FAILS when none of its child's
+    terminals succeeded.
+    """
+    depended_on = {dep_name(dep) for agent in agents for dep in agent.depends_on}
+    return [agent.name for agent in agents if agent.name not in depended_on]
 
 
 def resolve_agent_timeout(
