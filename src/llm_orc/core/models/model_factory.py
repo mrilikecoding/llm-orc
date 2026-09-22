@@ -140,6 +140,8 @@ class ModelFactory:
         if model_name.startswith("mock"):
             return MockModel(model_name)
 
+        _validate_think_option(provider, options)
+
         storage = self._credential_storage
 
         # Get authentication method
@@ -280,6 +282,33 @@ DEFAULT_LLAMA_SERVER_URL = "http://127.0.0.1:8080/v1"
 def _llama_server_url() -> str:
     """The llama-server router's OpenAI-compatible base URL."""
     return os.environ.get(LLAMA_SERVER_URL_ENV, DEFAULT_LLAMA_SERVER_URL)
+
+
+def _validate_think_option(
+    provider: str | None, options: dict[str, Any] | None
+) -> None:
+    """Fail closed at load time when ``think`` targets a provider that
+    doesn't speak llama-server's chat-template convention.
+
+    ``think`` only has a home in ``OpenAICompatibleModel._apply_options``,
+    which folds it into ``chat_template_kwargs.enable_thinking`` — a
+    llama-server-specific request field. Other OpenAI-compatible
+    providers (OpenCode Zen/Go, OpenAI proper, ...) reject an unknown
+    field with an opaque request-time 400 (measured 2026-09-22 against
+    OpenCode Go). Raising here, while the provider and the option are
+    both still in hand, turns that into a load-time config error that
+    names both.
+    """
+    if not options or "think" not in options:
+        return
+    if provider == LLAMA_SERVER_PROVIDER:
+        return
+    raise ValueError(
+        f"options.think is only supported for provider "
+        f"'{LLAMA_SERVER_PROVIDER}' (got provider={provider!r}). Remove "
+        "'think' from this profile/agent's options, or point it at a "
+        "llama-server-backed profile."
+    )
 
 
 def _is_openai_compatible(provider: str | None) -> bool:
