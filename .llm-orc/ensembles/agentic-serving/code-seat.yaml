@@ -19,6 +19,16 @@ agents:
   - name: envelope
     script: scripts/agentic_serving/emit_envelope.py
     depends_on: [generate]
+    # NOT marked on_dependency_failure: run, deliberately. emit_envelope.py
+    # carries no accept/diagnostics gate (code-seat has no verification
+    # round) -- if generate failed and envelope ran anyway, it would
+    # compose a "status": "success" envelope with empty content, and
+    # nothing downstream (seat_contract's assertions, form_gate's
+    # ast.parse("")) would refuse an empty write. Left to skip: seat's
+    # own dispatch-agent status then correctly reports "failed" (no
+    # terminal succeeded), and shape reads that directly -- a "Build
+    # refused: serving pipeline error" naming the crash, not a masked
+    # empty-file ship.
 
 # Seat-owned admission contract (ADR-046 §2; WP-E8). The serving skeleton's
 # seat_contract node validates this seat's output envelope against these

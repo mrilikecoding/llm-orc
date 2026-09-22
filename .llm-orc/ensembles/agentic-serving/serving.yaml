@@ -113,6 +113,12 @@ agents:
   - name: resolve
     script: scripts/agentic_serving/resolve.py
     depends_on: [classify, decide, pick]
+    # resolve.py reads classify/decide/pick defensively (a failed/absent
+    # dep's response is "", parsed to {}) and always composes a routing
+    # decision, even an empty-target one -- it must run even when none
+    # of classify/decide/pick succeeded, or the turn cannot refuse with
+    # a reason (fail-closed-composition, on_dependency_failure).
+    on_dependency_failure: run
 
   - name: seat
     dispatch: "${resolve.target}"
@@ -129,11 +135,26 @@ agents:
   - name: shape
     script: scripts/agentic_serving/shape.py
     depends_on: [resolve, seat, seat_contract]
+    # shape composes the refusal when resolve/seat/seat_contract crashed
+    # (_routing_failure_reason, _dead_seat_reason) -- it must run to read
+    # that failure, never vanish along with it.
+    on_dependency_failure: run
 
   - name: form_gate
     script: scripts/agentic_serving/form_gate.py
     depends_on: [shape]
+    # form_gate's _readable_shape already degrades an unreadable shape
+    # to a "the shape node returned unreadable output" node_failed
+    # reason -- it must run even when shape itself failed, so that
+    # reason reaches emit instead of the turn silently losing its
+    # refusal.
+    on_dependency_failure: run
 
   - name: emit
     script: scripts/agentic_serving/emit.py
     depends_on: [form_gate]
+    # emit is the terminal: its _readable_gate/_seam_outcome compose the
+    # client-facing "Refused: serving pipeline error: ..." message when
+    # form_gate itself is unreadable -- it must run even when form_gate
+    # failed, or the client gets nothing at all instead of a refusal.
+    on_dependency_failure: run
