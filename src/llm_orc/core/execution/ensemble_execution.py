@@ -52,7 +52,7 @@ from llm_orc.core.execution.scripting.user_input_handler import (
     ScriptUserInputHandler,
 )
 from llm_orc.core.execution.usage_collector import UsageCollector
-from llm_orc.core.execution.utils import dep_name
+from llm_orc.core.execution.utils import terminal_agent_names
 from llm_orc.core.models.model_factory import ModelFactory
 from llm_orc.core.validation import (
     EnsembleExecutionResult,
@@ -1042,21 +1042,18 @@ class EnsembleExecutor:
         """Terminal agent names (no dependents) for a referenced ensemble.
 
         Resolves the same reference EnsembleAgentRunner used to execute
-        the child, so the graph matches what actually ran. Mirrors
-        resolve_deliverable's terminal computation (results_processor.py)
-        but returns every terminal, not the single collapsed deliverable:
-        an LLM consumer of an ensemble dependency renders one labeled
-        block per terminal agent (fail-closed-composition D). A
-        resolution failure yields an empty list; the resolver falls back
-        to the child's own results dict.
+        the child, so the graph matches what actually ran. Shares
+        ``terminal_agent_names`` with resolve_deliverable's terminal
+        computation (results_processor.py) and the ``ensemble:`` agent's
+        own success rule (fail-closed-composition B1), but this caller
+        returns every terminal, not the single collapsed deliverable: an
+        LLM consumer of an ensemble dependency renders one labeled block
+        per terminal agent (fail-closed-composition D). A resolution
+        failure yields an empty list; the resolver falls back to the
+        child's own results dict.
         """
         try:
             child_config = self._resolve_ensemble_reference(ensemble_ref)
         except FileNotFoundError:
             return []
-        depended_on = {
-            dep_name(dep) for agent in child_config.agents for dep in agent.depends_on
-        }
-        return [
-            agent.name for agent in child_config.agents if agent.name not in depended_on
-        ]
+        return terminal_agent_names(child_config.agents)
