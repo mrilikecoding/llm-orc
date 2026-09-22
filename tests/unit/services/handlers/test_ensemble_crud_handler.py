@@ -431,6 +431,27 @@ class TestCopyFromTemplate:
         assert agents[0]["fan_out"] is True
         assert agents[0]["depends_on"] == ["classifier"]
 
+    def test_preserves_on_dependency_failure(self) -> None:
+        """A node marked on_dependency_failure: run round-trips through
+        the ensemble CRUD copy path (fail-closed-composition, #200)."""
+        from llm_orc.schemas.agent_config import ScriptAgentConfig
+
+        agent = ScriptAgentConfig(
+            name="shape",
+            script="shape.py",
+            depends_on=["seat"],
+            on_dependency_failure="run",
+        )
+        template = MagicMock()
+        template.description = "serving"
+        template.agents = [agent]
+
+        handler = _make_handler(find_ensemble_return=template)
+
+        agents, _description, _count = handler._copy_from_template("tmpl", "")
+
+        assert agents[0]["on_dependency_failure"] == "run"
+
     def test_copies_loop_agent_as_plain_dict(self) -> None:
         """Loop agents are dumped as plain dicts, not Python objects."""
         from llm_orc.schemas.agent_config import LoopAgentConfig, LoopSpec
