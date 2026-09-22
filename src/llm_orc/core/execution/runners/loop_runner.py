@@ -21,6 +21,7 @@ from llm_orc.core.execution.phases.loop_controller import (
     LoopController,
     Predicate,
 )
+from llm_orc.core.execution.utils import terminal_failure_summary
 from llm_orc.models.base import ModelInterface
 from llm_orc.schemas.agent_config import LoopAgentConfig
 
@@ -69,9 +70,13 @@ class LoopAgentRunner:
         body_config = self._resolve(spec.body)
         parent = self._parent
 
+        last_child_result: dict[str, Any] = {}
+
         async def body_executor(inp: str) -> dict[str, Any]:
+            nonlocal last_child_result
             child = parent.create_child_executor(depth=child_depth)
             child_result = await child.execute(body_config, inp)
+            last_child_result = child_result
             return self._terminal_output(child_result)
 
         outcome = await self._controller.run(
@@ -81,6 +86,16 @@ class LoopAgentRunner:
             self._compile_carry(spec.carry),
             input_data,
         )
+
+        failure = terminal_failure_summary(
+            body_config.agents, last_child_result.get("results", {})
+        )
+        if failure is not None:
+            raise RuntimeError(
+                f"Loop body '{spec.body}' produced no successful terminal "
+                f"agent on its final iteration ({failure})"
+            )
+
         return (
             json.dumps(
                 {
