@@ -803,6 +803,48 @@ class TestChildExecutionInputContract:
         assert "SECRET CONVERSATION CONTEXT" not in child_input
         assert child_input == "Agent upstream (Test Role):\nupstream data"
 
+    def test_unknown_consumer_type_without_dependencies_raises(self) -> None:
+        """The raise-on-unknown guard covers the no-dependencies path too,
+        not only the with-dependencies path (PR 203 review nit)."""
+        resolver = self.setup_resolver()
+
+        agents: list[Any] = [
+            BaseAgentConfig(name="mystery"),
+        ]
+
+        with pytest.raises(ValueError, match="consumer type"):
+            resolver.enhance_input_with_dependencies("base", agents, {})
+
+    def test_child_input_key_with_failed_upstream_gets_composed(self) -> None:
+        """input_key set but the first dependency failed: the child gets
+        base input plus the other successful deps' data (failed-dep-omitted
+        semantics, matching the LLM path), never the selection error text
+        (PR 203 review note)."""
+        resolver = self.setup_resolver()
+
+        agents: list[AgentConfig] = [
+            EnsembleAgentConfig(
+                name="consumer",
+                ensemble="worker",
+                depends_on=["failed", "other"],
+                input_key="queries",
+            ),
+        ]
+        results_dict = {
+            "failed": {"status": "error", "response": "boom"},
+            "other": {"status": "success", "response": "other data"},
+        }
+
+        enhanced = resolver.enhance_input_with_dependencies(
+            "the original turn", agents, results_dict
+        )
+
+        child_input = enhanced["consumer"]
+        assert child_input.startswith("the original turn")
+        assert "Agent other (Test Role):" in child_input
+        assert "other data" in child_input
+        assert "boom" not in child_input
+
     def test_unknown_consumer_type_raises(self) -> None:
         """No fall-through default: an unrecognized consumer type raises
         instead of receiving the LLM envelope (issue #202 root cause)."""

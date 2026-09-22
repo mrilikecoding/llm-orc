@@ -78,7 +78,13 @@ class DependencyResolver:
         if not dependencies:
             if is_script_agent:
                 return self._build_script_input(agent_name, base_input, {})
-            return base_input
+            if isinstance(agent_config, LlmAgentConfig | ChildExecutionConfig):
+                return base_input
+            raise ValueError(
+                f"Unsupported consumer type for agent '{agent_name}': "
+                f"{type(agent_config).__name__}. The dependency input contract "
+                f"covers LLM, script, ensemble, loop, and dispatch agents."
+            )
 
         # Apply input_key selection (ADR-014)
         effective_results, input_key_error = self._apply_input_key_selection(

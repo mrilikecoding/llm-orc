@@ -50,6 +50,19 @@ from typing import Any
 DEFAULT_RESULT_COUNT = 5
 DEFAULT_TIMEOUT_SECONDS = 30
 
+
+class MultipleQueriesError(ValueError):
+    """A selected child input carries more than one query (issue #202).
+
+    One search runs per invocation; N queries compose via `fan_out: true`
+    (ADR-014), one child execution per query. Silent truncation would run
+    one search and discard the rest with no signal.
+    """
+
+    def __init__(self, count: int) -> None:
+        self.count = count
+        super().__init__(f"child input carries {count} queries")
+
 KAGI_TOKEN_ENV = "KAGI_API_TOKEN"
 TAVILY_KEY_ENV = "WEB_SEARCH_API_KEY"
 
@@ -92,6 +105,8 @@ def _extract_query(payload: dict[str, Any]) -> str:
     if isinstance(input_data, str):
         return _query_from_text(input_data)
     if isinstance(input_data, list) and input_data:
+        if len(input_data) > 1:
+            raise MultipleQueriesError(len(input_data))
         return _query_from_item(input_data[0])
     if isinstance(input_data, dict):
         return _extract_query(input_data)
@@ -115,6 +130,8 @@ def _query_from_text(text: str) -> str:
     if isinstance(parsed, list):
         if not parsed:
             return ""
+        if len(parsed) > 1:
+            raise MultipleQueriesError(len(parsed))
         return _query_from_item(parsed[0])
     if isinstance(parsed, dict):
         return _extract_query(parsed)
@@ -158,13 +175,9 @@ def _search_kagi(query: str, api_key: str) -> dict[str, Any]:
     )
 
     with urllib.request.urlopen(request, timeout=DEFAULT_TIMEOUT_SECONDS) as response:
-        try:
-            response_data: dict[str, Any] = json.loads(response.read())
-        except json.JSONDecodeError:
-            # Propagates to _dispatch_adapter, which maps it to
-            # backend_invalid_response. Propagate unchanged — the caller
-            # owns the error mapping.
-            raise
+        # json.JSONDecodeError propagates to _dispatch_adapter, which maps
+        # it to backend_invalid_response — the caller owns the mapping.
+        response_data: dict[str, Any] = json.loads(response.read())
 
     raw_results = response_data.get("data") or []
     results: list[dict[str, str]] = []
@@ -215,13 +228,9 @@ def _search_tavily(query: str, api_key: str) -> dict[str, Any]:
     )
 
     with urllib.request.urlopen(request, timeout=DEFAULT_TIMEOUT_SECONDS) as response:
-        try:
-            response_data: dict[str, Any] = json.loads(response.read())
-        except json.JSONDecodeError:
-            # Propagates to _dispatch_adapter, which maps it to
-            # backend_invalid_response. Propagate unchanged — the caller
-            # owns the error mapping.
-            raise
+        # json.JSONDecodeError propagates to _dispatch_adapter, which maps
+        # it to backend_invalid_response — the caller owns the mapping.
+        response_data: dict[str, Any] = json.loads(response.read())
 
     raw_results = response_data.get("results") or []
     results: list[dict[str, str]] = []
@@ -376,7 +385,19 @@ def main() -> int:
     if api_key is None:
         return 0
 
-    query = _extract_query(_read_input()).strip()
+    try:
+        query = _extract_query(_read_input()).strip()
+    except MultipleQueriesError as exc:
+        _emit_error(
+            error="multiple_queries",
+            backend=backend,
+            detail=(
+                f"Child input carries {exc.count} queries; one search runs "
+                "per invocation. Compose N searches with fan_out: true "
+                "(ADR-014), one child execution per query."
+            ),
+        )
+        return 0
     if not query:
         _emit_error(
             error="missing_query",
