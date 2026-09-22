@@ -105,6 +105,23 @@ class LlmAgentRunner:
             return None, None
         return agent_config.model_profile, agent_config.fallback_model_profile
 
+    def _generation_params(self, agent_config: AgentConfig) -> dict[str, Any]:
+        """The agent-level generation params (SF2) carried into whichever
+        fallback profile loads, the same way they reach a primary load."""
+        if not isinstance(agent_config, LlmAgentConfig):
+            return {
+                "temperature": None,
+                "max_tokens": None,
+                "agent_options": None,
+                "response_format": None,
+            }
+        return {
+            "temperature": agent_config.temperature,
+            "max_tokens": agent_config.max_tokens,
+            "agent_options": agent_config.options,
+            "response_format": agent_config.response_format,
+        }
+
     async def _handle_model_loading_fallback(
         self,
         agent_config: AgentConfig,
@@ -123,6 +140,7 @@ class LlmAgentRunner:
                 context=f"agent_{agent_config.name}",
                 original_profile=model_profile,
                 agent_fallback_profile=agent_fallback_profile,
+                **self._generation_params(agent_config),
             )
         except Exception as fallback_unavailable:
             raise model_loading_error from fallback_unavailable
