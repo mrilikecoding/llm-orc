@@ -704,6 +704,7 @@ class TestLoadModelHelperMethods:
             temperature=None,
             max_tokens=None,
             base_url=None,
+            execution_id=None,
         )
 
     def test_create_authenticated_model_no_api_key(
@@ -761,6 +762,61 @@ class TestMergeOptions:
     def test_merge_distinct_keys(self) -> None:
         result = _merge_options({"num_ctx": 8192}, {"top_k": 20})
         assert result == {"num_ctx": 8192, "top_k": 20}
+
+
+class TestModelFactoryExecutionId:
+    """Scenario: ModelFactory.execution_id identifies one top-level
+    ensemble execution, for the OpenCode Go session header (#90 plan §C).
+    Two agents sharing a ModelFactory instance must see the SAME id;
+    two ModelFactory instances (two executions) must see DIFFERENT ones
+    (Doctrine 11)."""
+
+    def test_generates_an_id_when_omitted(self) -> None:
+        config_manager = Mock(spec=ConfigurationManager)
+        credential_storage = Mock(spec=CredentialStorage)
+
+        factory = ModelFactory(config_manager, credential_storage)
+
+        assert isinstance(factory.execution_id, str)
+        assert factory.execution_id
+
+    def test_honors_a_provided_id(self) -> None:
+        config_manager = Mock(spec=ConfigurationManager)
+        credential_storage = Mock(spec=CredentialStorage)
+
+        factory = ModelFactory(
+            config_manager, credential_storage, execution_id="exec-fixed"
+        )
+
+        assert factory.execution_id == "exec-fixed"
+
+    def test_two_factories_get_different_ids(self) -> None:
+        config_manager = Mock(spec=ConfigurationManager)
+        credential_storage = Mock(spec=CredentialStorage)
+
+        first = ModelFactory(config_manager, credential_storage)
+        second = ModelFactory(config_manager, credential_storage)
+
+        assert first.execution_id != second.execution_id
+
+    async def test_two_agents_from_one_factory_get_the_same_id_on_the_model(
+        self,
+    ) -> None:
+        """Two ``load_model`` calls from the same factory (two agents in
+        one execution) both hand the same execution_id to their model
+        instances."""
+        config_manager = Mock(spec=ConfigurationManager)
+        credential_storage = Mock(spec=CredentialStorage)
+        credential_storage.get_auth_method.return_value = None
+        factory = ModelFactory(config_manager, credential_storage)
+
+        first = await factory.load_model("qwen3-8b", "llama-server")
+        second = await factory.load_model("qwen3-14b", "llama-server")
+
+        assert isinstance(first, OpenAICompatibleModel)
+        assert isinstance(second, OpenAICompatibleModel)
+        assert first._execution_id == factory.execution_id
+        assert second._execution_id == factory.execution_id
 
 
 class TestOptionsPassThrough:
@@ -871,6 +927,85 @@ class TestOptionsPassThrough:
         )
 
         assert isinstance(model, ClaudeModel)
+
+
+class TestThinkOptionProviderGuard:
+    """Scenario: `think` only has a home in llama-server's chat-template
+    convention (OpenAICompatibleModel._apply_options folds it into
+    ``chat_template_kwargs``). Every other OpenAI-compatible provider —
+    OpenCode Zen/Go included — rejects an unrecognized
+    ``chat_template_kwargs`` field with an opaque request-time 400
+    (measured 2026-09-22 against
+    ``https://opencode.ai/zen/go/v1/chat/completions``). The guard fails
+    at load time instead, naming the provider and the option.
+    """
+
+    @pytest.fixture
+    def factory(self) -> ModelFactory:
+        config_manager = Mock(spec=ConfigurationManager)
+        credential_storage = Mock(spec=CredentialStorage)
+        credential_storage.get_auth_method.return_value = None
+        return ModelFactory(config_manager, credential_storage)
+
+    async def test_think_on_llama_server_loads(self, factory: ModelFactory) -> None:
+        model = await factory.load_model(
+            "qwen3-8b", "llama-server", options={"think": False}
+        )
+
+        assert isinstance(model, OpenAICompatibleModel)
+
+    async def test_think_on_zen_provider_raises_at_load(
+        self, factory: ModelFactory
+    ) -> None:
+        with pytest.raises(ValueError, match="think"):
+            await factory.load_model(
+                "minimax-m2.5",
+                "openai-compatible/zen",
+                options={"think": False},
+            )
+
+    async def test_think_on_zen_provider_error_names_the_provider(
+        self, factory: ModelFactory
+    ) -> None:
+        with pytest.raises(ValueError, match="openai-compatible/zen"):
+            await factory.load_model(
+                "minimax-m2.5",
+                "openai-compatible/zen",
+                options={"think": False},
+            )
+
+    async def test_think_on_authenticated_provider_raises_at_load(
+        self, factory: ModelFactory
+    ) -> None:
+        """The guard also covers the authenticated (API-key) load path —
+        a real Zen/Go profile carries an API key, so this is the path it
+        actually takes."""
+        storage_mock = cast(Mock, factory._credential_storage)
+        storage_mock.get_auth_method.return_value = "api_key"
+        storage_mock.get_api_key.return_value = "test-key"
+
+        with pytest.raises(ValueError, match="think"):
+            await factory.load_model(
+                "minimax-m2.5",
+                "openai-compatible/zen",
+                options={"think": False},
+            )
+
+    async def test_think_true_also_guarded(self, factory: ModelFactory) -> None:
+        """Presence of the key triggers the guard, not its truthiness."""
+        with pytest.raises(ValueError, match="think"):
+            await factory.load_model(
+                "minimax-m2.5", "openai-compatible/zen", options={"think": True}
+            )
+
+    async def test_think_absent_does_not_raise_for_other_providers(
+        self, factory: ModelFactory
+    ) -> None:
+        model = await factory.load_model(
+            "gpt-4o", "openai-compatible", options={"seed": 11}
+        )
+
+        assert isinstance(model, OpenAICompatibleModel)
 
 
 class TestResponseFormatPassThrough:
