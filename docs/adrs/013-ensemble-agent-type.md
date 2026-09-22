@@ -61,6 +61,8 @@ A child ensemble failure is an agent failure, not an orchestration failure, per 
 
 *Amendment, 2026-09-22 (fail-closed-composition, Invariant 13):* a dependent whose *every* dependency failed or was skipped is itself skipped rather than executing on an effectively-empty input — this "continues executing agents that do not depend on the failed agent" line was accurate but did not say what happens to agents that *do* depend on it, which used to be "runs anyway, regardless of dependency outcome." A dependent with at least one successful dependency still runs, same as before; its input now names every failed/skipped dependency instead of silently omitting them.
 
+*Amendment, 2026-09-22 (fail-closed-composition B1):* "a child ensemble failure is an agent failure" was aspirational, not actual, until this change — `EnsembleAgentRunner` always returned the child's full result dict as a `success` response, regardless of what ran inside it, so a child whose only agent crashed still reported the parent's ensemble agent as succeeded. The ensemble agent now fails (raising, caught by the same exception path `AgentDispatcher` already uses for any agent) when *none* of the child's terminal agents succeeded, naming each terminal's status/error. An intermediate agent's own failure does not fail the ensemble agent as long as a terminal still succeeded on its other dependencies (Invariant 13) — the child's full result, including the failed terminal's error, still reaches the response for arc D's per-terminal rendering.
+
 ---
 
 ## Consequences
