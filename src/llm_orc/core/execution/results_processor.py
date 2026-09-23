@@ -121,8 +121,16 @@ def caller_status(raw_status: str | None) -> tuple[str, bool]:
 
 def _successful_response(agent_result: Any) -> str | None:
     """An agent's response when it succeeded (SF2: ``status`` in
-    ``SUCCEEDED_STATUSES`` — partial counts) with non-empty text, else
-    None.
+    ``SUCCEEDED_STATUSES``) with non-empty text, else None.
+
+    ``SUCCEEDED_STATUSES`` includes ``"partial"`` (addendum 2026-09-23
+    NIT: the membership check alone is inert for it in practice — a
+    gathered fan-out's ``response`` is a list, never a string, so
+    ``_non_empty_text``'s ``isinstance(response, str)`` guard excludes
+    it regardless of status. A partial fan-out terminal never becomes
+    the deliverable through this path; only a plain (non-fan-out)
+    ``succeeded`` terminal, or a fan-out where every instance succeeded
+    (its own ``status`` reads ``"success"``, not ``"partial"``), does.
 
     Deliberately does NOT exclude ``handled_failure`` (X1, unlike
     ``result_succeeded``): a node that ran only via
@@ -142,7 +150,10 @@ def _successful_response(agent_result: Any) -> str | None:
 
 
 def _non_empty_text(response: Any, status: Any) -> str | None:
-    """Narrow a succeeded agent's response to non-empty text."""
+    """Narrow a succeeded agent's response to non-empty text — ``str``
+    only, so a gathered fan-out's list ``response`` never qualifies even
+    when its ``status`` is in ``SUCCEEDED_STATUSES`` (see
+    ``_successful_response``)."""
     if status not in SUCCEEDED_STATUSES:
         return None
     if isinstance(response, str) and response:
