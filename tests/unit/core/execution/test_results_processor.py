@@ -543,6 +543,26 @@ class TestResolveDeliverable:
 
         assert resolve_deliverable(results, agents) is None
 
+    def test_partial_fan_out_terminal_never_becomes_the_deliverable(self) -> None:
+        """NIT (addendum 2026-09-23): "partial" is in SUCCEEDED_STATUSES,
+        but a gathered fan-out's response is a list, never a string —
+        _non_empty_text's isinstance(response, str) guard excludes it
+        regardless of status, so a partial terminal is never a
+        deliverable through this path (documented, not changed: no
+        caller relies on it, and rendering a list as deliverable text
+        would be a separate, unrequested behavior change)."""
+        agents = [_agent("a"), _agent("s", depends_on=["a"])]
+        results = {
+            "a": {"status": "success", "response": "ok"},
+            "s": {
+                "status": "partial",
+                "response": ["inst-ok", None],
+                "fan_out": True,
+            },
+        }
+
+        assert resolve_deliverable(results, agents) is None
+
     def test_multiple_terminals_take_last_by_declaration_order(self) -> None:
         """Multi-terminal DAG edge: the last declared terminal wins."""
         agents = [

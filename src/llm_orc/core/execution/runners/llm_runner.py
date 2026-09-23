@@ -211,6 +211,14 @@ class LlmAgentRunner:
                 f"No fallback_model_profile configured for agent_"
                 f"{agent_config.name}; fallback chain exhausted"
             )
+        if isinstance(last_error, ModelConfigurationError):
+            # A config error on a fallback hop (addendum 2026-09-23 NIT)
+            # is an author mistake, not a routine "this candidate didn't
+            # work" — it must be the recorded error (AgentDispatcher
+            # records str(the raised exception)), not buried in
+            # __cause__ behind the original runtime failure that
+            # triggered the fallback walk in the first place.
+            raise last_error from error
         raise error from last_error
 
     async def _try_fallback_hop(

@@ -283,3 +283,47 @@ class TestRuntimeFallbackWiring:
 
         assert exc_info.value.__cause__ is not None
         assert "fallback chain exhausted" in str(exc_info.value.__cause__)
+
+    @pytest.mark.asyncio
+    async def test_config_error_on_a_fallback_hop_is_the_recorded_error(self) -> None:
+        """NIT (addendum 2026-09-23): a ModelConfigurationError raised
+        while walking the chain (a fallback-only hop with a think/
+        provider mismatch) must be the exception the agent fails with —
+        AgentDispatcher records str(the raised exception), so a config
+        error buried only in __cause__ behind the original runtime
+        failure would never reach the agent's own error text."""
+        events: list[tuple[str, dict[str, object]]] = []
+        model_factory = Mock()
+
+        primary_model = AsyncMock()
+        primary_model.model_name = "primary-model"
+        primary_error = RuntimeError("primary blew up")
+        primary_model.generate_response = AsyncMock(side_effect=primary_error)
+        model_factory.load_model_from_agent_config = AsyncMock(
+            return_value=primary_model
+        )
+
+        config_error = ModelConfigurationError(
+            "options.think is only supported for provider 'llama-server'"
+        )
+
+        async def fake_chain(
+            **_kwargs: object,
+        ) -> AsyncIterator[tuple[object, str]]:
+            raise config_error
+            yield  # pragma: no cover - makes this an async generator
+
+        model_factory.iter_fallback_chain = fake_chain
+
+        runner = _make_runner(model_factory, events)
+        agent = LlmAgentConfig(
+            name="worker",
+            model_profile="primary",
+            fallback_model_profile="hop1-profile",
+        )
+
+        with pytest.raises(ModelConfigurationError) as exc_info:
+            await runner.execute(agent, "input")
+
+        assert exc_info.value is config_error
+        assert exc_info.value.__cause__ is primary_error
