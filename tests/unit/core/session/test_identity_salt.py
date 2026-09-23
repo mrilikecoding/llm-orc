@@ -58,6 +58,30 @@ class TestHashIdentityForWire:
         salt_file = isolated_config_dir / "session_id_salt"
         assert oct(salt_file.stat().st_mode)[-3:] == "600"
 
+    def test_concurrent_creation_race_reads_the_winners_salt(
+        self, isolated_config_dir: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """SF6/NIT: a second caller losing the O_CREAT|O_EXCL race (its
+        own existence check ran before the winner's write landed) must
+        read back the winner's salt, not overwrite it -- overwriting
+        would desynchronize the hash two racing processes compute for
+        the same identity."""
+        isolated_config_dir.mkdir(parents=True, exist_ok=True)
+        salt_file = isolated_config_dir / "session_id_salt"
+        winner_salt = bytes(range(32))
+        salt_file.write_bytes(winner_salt)
+        salt_file.chmod(0o600)
+
+        # The file genuinely exists (written above); only the existence
+        # CHECK is faked to simulate losing the race, so the real
+        # os.open(..., O_EXCL) below legitimately raises FileExistsError.
+        monkeypatch.setattr(Path, "exists", lambda self: False)
+
+        salt = identity_salt._get_or_create_salt()
+
+        assert salt == winner_salt
+        assert salt_file.read_bytes() == winner_salt
+
     def test_salt_is_reused_across_calls_not_regenerated(
         self, isolated_config_dir: Path
     ) -> None:

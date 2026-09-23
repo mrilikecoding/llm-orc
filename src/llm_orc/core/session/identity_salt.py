@@ -28,7 +28,17 @@ _SALT_FILENAME = "session_id_salt"
 
 def _get_or_create_salt() -> bytes:
     """Read the install's session-id salt, generating and persisting a
-    fresh random one on first use."""
+    fresh random one on first use.
+
+    Created with ``O_CREAT | O_EXCL`` at mode ``0o600`` from the first
+    byte written, not ``write_bytes`` followed by a separate ``chmod``
+    — the write-then-chmod sequence left a window where the salt file
+    existed at the umask-default permissions (typically world-readable)
+    before the narrower mode landed. A concurrent creator losing the
+    ``O_EXCL`` race is not an error: this process re-reads whatever the
+    winner wrote instead of overwriting it, which would desynchronize
+    the hash two racing processes compute for the same identity.
+    """
     config_dir = resolve_global_config_dir()
     salt_file = config_dir / _SALT_FILENAME
 
@@ -37,8 +47,12 @@ def _get_or_create_salt() -> bytes:
 
     config_dir.mkdir(parents=True, exist_ok=True)
     salt = os.urandom(32)
-    salt_file.write_bytes(salt)
-    os.chmod(salt_file, 0o600)
+    try:
+        fd = os.open(salt_file, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+    except FileExistsError:
+        return salt_file.read_bytes()
+    with os.fdopen(fd, "wb") as salt_handle:
+        salt_handle.write(salt)
     return salt
 
 
