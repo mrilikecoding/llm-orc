@@ -64,6 +64,30 @@ def _response(dep: object) -> str:
     return (dep.get("response") or "") if isinstance(dep, dict) else ""
 
 
+def _dep_failed(dep: object) -> bool:
+    """True when ``dep``'s own execution was a plain failure.
+
+    Reads the explicit ``outcome`` field (fail-closed-composition
+    addendum 2026-09-23) when present — the live engine stamps it on
+    every node it produces, so this is what a real dependency record
+    actually carries. Falls back to the legacy ``status == "failed"``
+    check only when ``outcome`` is absent:
+    ``tests/unit/serving/test_serving_shape.py`` hand-builds dependency
+    dicts with ``status`` but no ``outcome``, and is the one caller left
+    that still does. The two checks agree on every record the engine
+    produces (a node's ``outcome`` reads ``"failed"`` exactly when its
+    ``status`` does — ``handled_failure`` never coincides with a
+    ``status`` of ``"failed"``), so this is a read-order preference, not
+    a behavior change.
+    """
+    if not isinstance(dep, dict):
+        return False
+    outcome = dep.get("outcome")
+    if outcome is not None:
+        return bool(outcome == "failed")
+    return dep.get("status") == "failed"
+
+
 def _dep_failure_text(dep: object) -> str:
     """A dependency's own failure text, or "".
 
@@ -78,7 +102,7 @@ def _dep_failure_text(dep: object) -> str:
     for an embedded ``error`` key. The status-first check wins when both
     could apply, since it is the one the live engine actually produces.
     """
-    if isinstance(dep, dict) and dep.get("status") == "failed":
+    if _dep_failed(dep) and isinstance(dep, dict):
         error = dep.get("error")
         if isinstance(error, str) and error:
             return error
@@ -178,12 +202,14 @@ def _dead_seat_reason(seat_dep: object, seat_terminal: str) -> str:
 
     Two ways a seat can be dead, checked in order:
 
-    1. The seat (a ``dispatch:`` agent) failed closed on its OWN status
-       (fail-closed-composition B1, extended to dynamic dispatch): none
-       of the dispatched ensemble's terminal agents succeeded, so the
-       seat's own dependency record is ``status: "failed"`` with the
-       reason in ``error`` — ``response`` is ``None``, nothing to peel.
-       This is the live engine's actual shape today.
+    1. The seat (a ``dispatch:`` agent) failed closed on its OWN outcome
+       (fail-closed-composition B1, extended to dynamic dispatch; ``_dep_
+       failed`` reads the addendum's ``outcome`` field, falling back to
+       ``status`` for the unit harness): none of the dispatched
+       ensemble's terminal agents succeeded, so the seat's own
+       dependency record is ``status: "failed"`` with the reason in
+       ``error`` — ``response`` is ``None``, nothing to peel. This is
+       the live engine's actual shape today.
     2. Positive recognition over ``seat_terminal``, not a denylist: a
        seat terminal that parses as a JSON dict WITHOUT ``status`` is not
        a healthy seat output whatever else it may be — a raw-prose seat
@@ -206,7 +232,7 @@ def _dead_seat_reason(seat_dep: object, seat_terminal: str) -> str:
     the failure's ``error`` text — never ``stderr``, argv, or any other
     dict value; ``turn_trace.py`` keeps the whole thing server-side.
     """
-    if isinstance(seat_dep, dict) and seat_dep.get("status") == "failed":
+    if _dep_failed(seat_dep) and isinstance(seat_dep, dict):
         error = seat_dep.get("error")
         if isinstance(error, str) and error:
             return _engine_failure_summary(error)
