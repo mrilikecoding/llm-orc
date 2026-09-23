@@ -3,7 +3,7 @@
 import logging
 import os
 import uuid
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncIterator, Iterator, Sequence
 from typing import Any
 
 from llm_orc.core.auth.authentication import CredentialStorage
@@ -304,6 +304,14 @@ class ModelFactory:
                 response_format=response_format,
             )
             return model, profile_name
+        except ModelConfigurationError:
+            # A config error (X2) is never "this hop is unavailable, try
+            # the next one" — it is an author mistake on a profile the
+            # chain reaches, and letting the walk continue past it would
+            # substitute a DIFFERENT, uninvolved profile and report
+            # success, exactly the quiet-substitution failure mode
+            # ModelConfigurationError exists to prevent on a primary load.
+            raise
         except (ValueError, KeyError):
             return None
 
@@ -379,6 +387,10 @@ class ModelFactory:
                     response_format=response_format,
                 )
                 yield model, fallback_profile_name
+            except ModelConfigurationError:
+                # See _try_single_fallback: a config error on a chain hop
+                # must not be treated as "unavailable, try the next one".
+                raise
             except (ValueError, KeyError):
                 pass
 
@@ -476,36 +488,70 @@ def validate_think_options_for_ensemble(
     runtime fallback chain, which would silently substitute a working
     model and report success).
 
-    Resolves each LLM agent's provider and effective options the same
-    way ``ModelFactory.load_model_from_agent_config`` resolves them for
-    a primary load: through ``model_profile`` (profile options merged
-    with agent options, agent wins) when set, else the agent's inline
-    ``model``/``provider``. Non-LLM agents (script, ensemble, loop,
-    dispatch) are skipped. ``_validate_think_option`` on the direct
-    ``ModelFactory.load_model`` path stays in place as defense in depth.
+    Validates not only the agent's primary load (``model_profile``, or
+    inline ``model``/``provider``) but every profile reachable through
+    its fallback chain — agent-level ``fallback_model_profile``, then
+    each hop's own profile-level ``fallback_model_profile``,
+    transitively (fail-closed-composition X2): the agent's ``think``
+    option travels into whichever profile actually ends up serving the
+    request (``_merge_options`` always lets the agent's own options
+    win), so a mismatch on a fallback-only hop is just as much a
+    load-time config error as one on the primary — reachable but never
+    exercised is still reachable, and finding out at 2am via a silent
+    substitution defeats the point of validating up front. Non-LLM
+    agents (script, ensemble, loop, dispatch) are skipped.
+    ``_validate_think_option`` on the direct ``ModelFactory.load_model``
+    path stays in place as defense in depth.
     """
     for agent in agents:
         if not isinstance(agent, LlmAgentConfig):
             continue
+        for provider, options in _reachable_provider_options(agent, config_manager):
+            _validate_think_option(provider, options)
 
-        provider: str | None
-        options: dict[str, Any] | None
 
-        if agent.model_profile:
-            try:
-                _, provider = config_manager.resolve_model_profile(agent.model_profile)
-            except (ValueError, KeyError):
-                # An unresolvable profile is a different structural
-                # error, surfaced elsewhere — nothing to validate here.
-                continue
-            profile = config_manager.get_model_profile(agent.model_profile)
-            profile_options = (profile or {}).get("options")
-            options = _merge_options(profile_options, agent.options)
-        else:
-            provider = agent.provider
-            options = agent.options
+def _reachable_provider_options(
+    agent: LlmAgentConfig, config_manager: ConfigurationManager
+) -> Iterator[tuple[str | None, dict[str, Any] | None]]:
+    """``(provider, merged options)`` for ``agent``'s primary load and
+    every profile reachable through its fallback chain (X2)."""
+    if agent.model_profile:
+        yield from _profile_chain_provider_options(
+            agent.model_profile, agent.options, config_manager
+        )
+    else:
+        yield agent.provider, agent.options
 
-        _validate_think_option(provider, options)
+    if agent.fallback_model_profile:
+        yield from _profile_chain_provider_options(
+            agent.fallback_model_profile, agent.options, config_manager
+        )
+
+
+def _profile_chain_provider_options(
+    start_profile: str,
+    agent_options: dict[str, Any] | None,
+    config_manager: ConfigurationManager,
+) -> Iterator[tuple[str | None, dict[str, Any] | None]]:
+    """``(provider, merged options)`` for ``start_profile`` and every
+    profile in ITS OWN ``fallback_model_profile`` chain, transitively —
+    the same chain ``ModelFactory._iter_configurable_fallback_chain``
+    walks at runtime. Cycle-guarded; an unresolvable profile ends the
+    walk without raising (a different structural error, surfaced
+    elsewhere) rather than hiding the profiles already yielded.
+    """
+    visited: set[str] = set()
+    current: str | None = start_profile
+    while current and current not in visited:
+        visited.add(current)
+        try:
+            _, provider = config_manager.resolve_model_profile(current)
+        except (ValueError, KeyError):
+            return
+        profile = config_manager.get_model_profile(current)
+        profile_options = (profile or {}).get("options")
+        yield provider, _merge_options(profile_options, agent_options)
+        current = (profile or {}).get("fallback_model_profile")
 
 
 def _is_openai_compatible(provider: str | None) -> bool:
