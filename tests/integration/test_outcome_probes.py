@@ -196,6 +196,10 @@ async def test_partfan_partial_gather_and_call_count() -> None:
     s = node(result, "s")
     assert s["status"] == "partial"
     assert s["outcome"] == "partial"
+    # addendum: a partial gathered node's own has_errors is true, stamped
+    # from its instances — not just inferable from the ensemble-level
+    # has_errors below.
+    assert s["has_errors"] is True
     assert len(s["instances"]) == 2  # exactly 2 fan-out instances ran
     assert result["has_errors"] is True  # one instance genuinely failed
 
