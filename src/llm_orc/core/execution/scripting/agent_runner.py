@@ -35,6 +35,15 @@ logger = logging.getLogger(__name__)
 def reports_failure(response: Any) -> bool:
     """Whether a script's own response says it did not succeed (#159).
 
+    Two readers now, not one. Originally gated caching alone (a failure
+    is never cached, below); fail-closed-composition B2 additionally
+    made it decide the agent's own STATUS — ``AgentDispatcher`` calls it
+    to turn a script's failure-shaped response into ``status: "failed"``
+    instead of a ``"success"`` wrapping an error string a downstream
+    consumer has to notice on its own. Both readers share this one
+    predicate rather than keeping two independently-drifting notions of
+    "did this script fail".
+
     Two clauses, because one does not cover the corpus:
 
     - ``success`` read for TRUTHINESS with a ``True`` default, so
