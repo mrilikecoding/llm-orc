@@ -1,0 +1,13 @@
+name: hchain
+description: p
+agents:
+  - name: a
+    script: scripts/fail.py
+  - name: h1
+    script: scripts/echo.py
+    depends_on: [a]
+    on_dependency_failure: run
+  - name: h2
+    script: scripts/echo.py
+    depends_on: [h1]
+    on_dependency_failure: run

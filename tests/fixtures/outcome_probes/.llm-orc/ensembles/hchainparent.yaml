@@ -1,0 +1,5 @@
+name: hchainparent
+description: p
+agents:
+  - name: k
+    ensemble: hchain
