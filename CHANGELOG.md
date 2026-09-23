@@ -51,6 +51,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   error instead of a silently ignored request field.
 - OpenCode Go requests now send `User-Agent: llm-orc/<version>` and a
   stable `x-opencode-session` per top-level execution.
+- A node that runs only because `on_dependency_failure: run` overrode the
+  cascade (none of its dependencies succeeded) is marked `handled_failure`
+  on its own result: its output still flows as the deliverable, but it no
+  longer counts as a succeeded terminal for a wrapping `ensemble:`/
+  `dispatch:`/`loop:` node's own success rule or a sibling's cascade check
+  — a total-crash round now fails its wrapper, naming the real failure,
+  instead of reading as success because the handler ran without incident.
+- `validate_think_options_for_ensemble` now validates every profile
+  reachable through an agent's fallback chain (agent-level
+  `fallback_model_profile` and the profile-level chain, transitively), not
+  just the primary profile; a `think`/provider mismatch on a fallback-only
+  hop is now a load-time error instead of a silent runtime substitution.
+- A `partial` gathered fan-out and a plain `when:`-false skip (no cascade
+  reason) are now handled consistently everywhere "did this terminal
+  succeed" is asked, instead of only in some of the readers.
+- A failed script agent's structured JSON payload (`stderr`, and
+  producer-specific fields like `web_searcher`'s `backend`) survives on
+  the failed record, not just its `error` text.
 
 ## [0.20.6] - 2026-09-22
 
