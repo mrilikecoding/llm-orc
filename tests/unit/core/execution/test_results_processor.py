@@ -462,9 +462,11 @@ def _agent(name: str, depends_on: list[str | dict[str, Any]] | None = None) -> A
 class TestResolveDeliverable:
     """Deliverable resolution from the dependency DAG (ADR-035 D1, FC-56).
 
-    The ensemble abstraction presents a single output: the unique
-    terminal node's response when it succeeded, else the last
-    successful agent's — never the raw result dict shape.
+    The ensemble abstraction presents a single output: a terminal
+    node's response when it succeeded, else ``None`` — never the raw
+    result dict shape, and never an intermediate (non-terminal) agent's
+    output standing in for a missing deliverable (fail-closed-
+    composition, caller contract).
     """
 
     def test_terminal_node_output_is_the_deliverable(self) -> None:
@@ -482,8 +484,12 @@ class TestResolveDeliverable:
 
         assert resolve_deliverable(results, agents) == "final code"
 
-    def test_failed_terminal_falls_back_to_last_successful(self) -> None:
-        """Terminal failed (Spike χ-P1 timeout): last successful agent wins."""
+    def test_sole_terminal_failed_yields_none(self) -> None:
+        """Terminal failed (Spike χ-P1 timeout): no other terminal exists,
+        so there is no deliverable — an upstream intermediate agent's
+        output (coder's "draft code") never stands in for it (caller
+        contract: a skipped/failed terminal must not surface someone
+        else's work as the result)."""
         agents = [
             _agent("coder"),
             _agent("critic"),
@@ -495,7 +501,7 @@ class TestResolveDeliverable:
             "synthesizer": {"status": "failed", "response": None},
         }
 
-        assert resolve_deliverable(results, agents) == "draft code"
+        assert resolve_deliverable(results, agents) is None
 
     def test_all_agents_failed_yields_none(self) -> None:
         """No successful agent: no deliverable (caller decides the fallback)."""
@@ -524,15 +530,17 @@ class TestResolveDeliverable:
 
         assert resolve_deliverable(results, agents) == "terminal"
 
-    def test_terminal_with_empty_response_falls_back(self) -> None:
-        """A successful terminal with an empty response is not a deliverable."""
+    def test_terminal_with_empty_response_yields_none(self) -> None:
+        """A successful terminal with an empty response is not a
+        deliverable — the upstream intermediate agent's real content
+        never stands in for it."""
         agents = [_agent("a"), _agent("b", depends_on=["a"])]
         results = {
             "a": {"status": "success", "response": "real content"},
             "b": {"status": "success", "response": ""},
         }
 
-        assert resolve_deliverable(results, agents) == "real content"
+        assert resolve_deliverable(results, agents) is None
 
     def test_multiple_terminals_take_last_by_declaration_order(self) -> None:
         """Multi-terminal DAG edge: the last declared terminal wins."""
