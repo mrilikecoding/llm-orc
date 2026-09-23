@@ -7,6 +7,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Breaking:** every invocation surface — REST (`POST /api/ensembles/{name}/execute`),
+  the MCP `invoke` tool, and the CLI's `llm-orc invoke --output-format json` —
+  now reports the same `status`/`has_errors`/`deliverable` contract.
+  `status` is only ever `"success"` or `"error"` (MCP's `invoke` previously
+  handed back the raw internal `"completed_with_errors"` string unmapped;
+  the CLI's JSON output previously had no `status` field at all). `deliverable`
+  is `null` unless a terminal agent actually succeeded — it no longer falls
+  back to an intermediate (non-terminal) agent's output, which could surface
+  a decomposer's raw query list as if it were the finished result. `llm-orc
+  invoke` now exits non-zero when `status` is `"error"`, in every output
+  format (rich/text/json), so a failed run is visible to `&&` and `$?` and
+  not just the JSON payload. A caller reading the old CLI JSON shape
+  (no `status`/`has_errors`/`deliverable`, always exit 0) or the raw MCP
+  status string needs to update.
+
+### Fixed
+- A model load or runtime failure now honors only the explicit
+  `fallback_model_profile` chain (agent-level, then profile-level); the
+  implicit legacy `project.default_models.test`/`DEFAULT_LOCAL_MODEL`
+  fallback is removed. No chain, or an exhausted chain, fails the agent
+  with its original error instead of silently substituting a default model.
+- The dependency-skip cascade now skips a node when *none* of its
+  dependencies succeeded (failed or skipped, in any mix), not only when
+  *all* of them were skipped — a single failed sole dependency previously
+  let a consumer run anyway. A new `on_dependency_failure: run` field
+  overrides the cascade for a node that must run even when its
+  dependencies failed (a refusal composer, a turn-tracing input); `run`
+  on a node with no `depends_on` is a load-time validation error.
+- `script:`, `ensemble:`, `dispatch:`, and `loop:` nodes all fail closed on
+  their own terminal outcome instead of unconditionally reporting success:
+  a script agent's own failure-shaped response (non-zero exit, timeout, or
+  `{"error": ...}`) makes it `failed`; an `ensemble:`/`dispatch:`/`loop:`
+  node fails when none of its child's terminal agents succeeded on the
+  child's own run (or, for `loop:`, on the final iteration), naming the
+  terminal failure(s) rather than handing the crash upward as a quiet
+  success.
+- An LLM agent depending on an `ensemble:`/`loop:`/`dispatch:` node now
+  reads its child's terminal agent responses, not the JSON-serialized
+  execution record — script and child-execution consumers are unaffected.
+- `think: false`/`true` on a non-`llama-server` provider is a load-time
+  error instead of a silently ignored request field.
+- OpenCode Go requests now send `User-Agent: llm-orc/<version>` and a
+  stable `x-opencode-session` per top-level execution.
+
 ## [0.20.6] - 2026-09-22
 
 ### Fixed
