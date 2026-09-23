@@ -108,3 +108,70 @@ blocking = `failed | skipped_by_failure | handled_failure`; neutral =
 - Engine-owned keys are reserved. A script's structured payload is stored
   under `payload` and never merged over the record (`turn_trace` reads
   `payload.stderr`).
+
+## Round 4 (2026-09-23, adversarial review round 4)
+
+Five reviewer mutants (M1–M5), each pinned through the real executor
+(doctrine 11) with a probe ensemble under `tests/fixtures/outcome_probes`,
+demonstrated red under the mutant and green after revert:
+
+- **M1** — `BLOCKING_OUTCOMES` excluding `handled_failure` (probes `hchain`,
+  `hchainparent`): a run-marked node chained after another run-marked node
+  must read its blocking (`handled_failure`) upstream as blocking, not ok.
+  Already correct on this branch; the gap was the missing pin.
+- **M3** — `loop_runner.py` dropping the `has_errors` key from its JSON
+  response (probe `lhe`). Already correct; gap was the missing pin.
+- **M4** — `turn_trace._engine_failure_fields` ignoring the nested `payload`
+  key added by the outcome addendum. Already correct; the EXISTING pin
+  hand-built a flat (pre-addendum) dict and stayed green under this exact
+  mutant — the new pin drives a real executor record instead.
+- **M5** — `_propagate_child_execution_errors`'s fan-out LIST branch
+  (probe `efan`, new: an `ensemble:` fan-out over the existing `stderr`
+  child, both instances succeeding outright but each with a failed
+  non-terminal). Already correct; gap was the missing pin.
+- Not a mutant, a genuine gap found while writing these pins: a **`partial`
+  gathered fan-out's own `has_errors`** read `false` (`stamp_outcome`'s
+  generic outcome-in-`BLOCKING_OUTCOMES` rule doesn't cover `partial`, an
+  OK outcome). Fixed: `FanOutGatherer.gather_results` now stamps
+  `has_errors: true` directly from the instance fail count whenever >=1
+  instance failed. Pinned on probe `partfan`.
+
+**Loop `has_errors`/`iteration_failures` (lead decision).** `has_errors` on
+a loop agent's JSON response reflects the FINAL iteration only — earlier
+iterations are retry attempts the loop exists to absorb, so a serving turn
+that succeeds on retry must not report error. This was already the
+behavior (row 6/8 of `docs/domain-model.md`'s Invariant 13 history). What
+was missing: every OTHER iteration's blocking outcome was silently
+dropped, recorded nowhere. `LoopAgentRunner.execute` now collects an
+`iteration_failures` list (`{iteration, error}`) for every non-final
+iteration whose terminal failed, added to the loop's JSON response when
+non-empty. Pinned on new probe `lf2`/`lf2body` (flaky2.py fails iteration
+1, passes iteration 2): loop succeeds, `has_errors` false,
+`iteration_failures` names iteration 1.
+
+**Deviation (a) — documentation only, no behavior change.**
+`GuardEvaluator.should_run`'s cascade GATE (`cascades = agent_config.
+on_dependency_failure != "run"`) is, and always was, unconditional for a
+run-marked node: it short-circuits the "no dependency succeeded" check
+entirely, so a run-marked node always executes regardless of whether its
+dependencies are blocking, neutral, or ok. The addendum table above (and
+domain-model row 8) only describe what OUTCOME gets stamped once the gate
+lets the node through — `succeeded` when the cascade would not have been
+`skipped_by_failure` (including the all-neutral case: probe
+`runwhenskipped`), `handled_failure` otherwise. Neither previously stated
+the gate/outcome distinction explicitly, which read as ambiguous on
+re-read; `docs/domain-model.md`'s Invariant 13 history (row 9) now states
+it.
+
+**`ikdrop` — known pre-existing issue, deliberately not fixed this round.**
+Probe `ikdrop`: `a` (succeeds, produces `{"q": ...}`), `b` (fails,
+unrelated), `k` (`ensemble: child`, `depends_on: [a, b]`, `input_key: q`).
+`k` runs and succeeds on `a`'s output alone — `b`'s failure is silently
+never surfaced anywhere on `k`'s own result. Cause:
+`GuardEvaluator.should_run`'s cascade rule only requires ONE dependency to
+be ok (`a` is), and `_partition_by_input_key_contract` only checks the
+`input_key` SOURCE (`depends_on[0]`, also `a`) — neither step consults
+`b` at all. This is a real gap (an `input_key` child with extra
+`depends_on` entries beyond its selection source can lose a co-dependency's
+failure entirely) but is out of round-4 scope; left alone per lead
+decision, recorded here so it isn't rediscovered as new.

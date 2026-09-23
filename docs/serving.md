@@ -54,6 +54,16 @@ failure, not one causing the other. See `docs/domain-model.md` Invariant 13
 and the `on_dependency_failure` glossary entry for the general contract;
 this is serving's own instance of it.
 
+A `loop:` node's `has_errors` (round-4 amendment, 2026-09-23) reflects only
+its FINAL iteration: earlier iterations are retry attempts the loop exists
+to absorb, so a build-gated round that fails once and passes on retry must
+not report `error` — the loop's own outcome is `succeeded`, has_errors is
+`false`. Earlier iterations' blocking outcomes are never dropped, though:
+each one lands in the loop's JSON response as `iteration_failures`, a list
+of `{iteration, error}` entries naming which terminal failed and why. An
+operator reading `turns.jsonl` sees both facts — the turn succeeded, and it
+took more than one try.
+
 Build turns route to the **gated build shape** (`build-gated.yaml`): test-writer
 → code-writer → deterministic executor (runs code + tests, sandboxed
 subprocess) → isolated adequacy judge → accept gate (`accept = tests_pass AND

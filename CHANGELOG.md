@@ -84,6 +84,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   record's real `status`/`response` with its own fields; engine-owned
   keys (`status`, `response`, `error`, `outcome`, `has_errors`) are
   reserved and can never be shadowed by a script's own JSON now.
+- A `partial` gathered fan-out's own `has_errors` is now stamped `true`
+  directly from its instance fail count — it previously read `false`
+  even though >=1 instance genuinely failed, since `partial` counts as
+  an OK outcome for cascade purposes and the generic outcome-based
+  `has_errors` rule doesn't cover it.
+- `loop:` nodes now record `iteration_failures` (`{iteration, error}`)
+  on their JSON response for every non-final iteration whose terminal
+  failed. `has_errors` already reflected only the final iteration (a
+  loop that succeeds on retry must not report error), but every earlier
+  iteration's failure was silently dropped instead of recorded anywhere.
 
 ## [0.20.6] - 2026-09-22
 
