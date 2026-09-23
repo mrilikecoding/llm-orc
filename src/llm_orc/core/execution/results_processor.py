@@ -92,6 +92,32 @@ def resolve_deliverable(
     return None
 
 
+def caller_status(raw_status: str | None) -> tuple[str, bool]:
+    """The caller-facing ``(status, has_errors)`` pair every invocation
+    surface reports (fail-closed-composition, caller contract): REST
+    (``ExecutionHandler.invoke``), MCP ``invoke`` (streamed through
+    ``execute_streaming``), and the CLI's ``--output-format json``.
+
+    One vocabulary, ``"success"`` or ``"error"``, derived from the
+    executor's own ``completed``/``completed_with_errors`` distinction
+    (Invariant 13's ``has_errors``) rather than a second, independently
+    maintained notion of failure: ``"completed"`` is the only value that
+    reads as success. ``"completed_with_errors"`` (an agent failed, or a
+    dependent was skipped because none of its dependencies succeeded —
+    that skip is always downstream of an already-recorded failure, so
+    it never adds new information here) and ``"failed"`` (the whole
+    execution task raised, e.g. streaming's ``execution_failed`` event)
+    both read as error, and so does a missing/unrecognized raw status —
+    a caller never sees anything outside ``{"success", "error"}``.
+
+    A plain ``when:``-false skip is not folded in here: it carries no
+    ``reason`` and never sets ``has_errors`` upstream, so it is not an
+    error by construction — nothing to special-case.
+    """
+    has_errors = raw_status != "completed"
+    return ("error" if has_errors else "success", has_errors)
+
+
 def _successful_response(agent_result: Any) -> str | None:
     """An agent's response when it succeeded with non-empty text, else None.
 

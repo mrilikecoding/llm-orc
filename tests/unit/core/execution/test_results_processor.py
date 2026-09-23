@@ -12,6 +12,7 @@ from llm_orc.core.execution.result_types import (
 from llm_orc.core.execution.results_processor import (
     add_fan_out_metadata,
     calculate_usage_summary,
+    caller_status,
     count_failed_agents,
     count_fan_out_instances,
     count_successful_agents,
@@ -566,3 +567,30 @@ class TestResolveDeliverable:
         }
 
         assert resolve_deliverable(results, agents) == "terminal"
+
+
+class TestCallerStatus:
+    """The single status/has_errors vocabulary every caller surface (REST,
+    MCP invoke, MCP streaming, CLI JSON) reports (fail-closed-composition,
+    caller contract): "success"/"error" plus a has_errors bool, derived
+    from the executor's own completed/completed_with_errors distinction
+    so every surface agrees with the executor's own resilience accounting
+    (Invariant 13) rather than reinventing it.
+    """
+
+    def test_completed_is_success(self) -> None:
+        assert caller_status("completed") == ("success", False)
+
+    def test_completed_with_errors_is_error(self) -> None:
+        assert caller_status("completed_with_errors") == ("error", True)
+
+    def test_a_hard_execution_crash_is_error(self) -> None:
+        """execute_streaming's top-level "failed" status (the whole
+        execution task raised) is caller-facing "error" too — the same
+        vocabulary as a partial in-band failure, not a third value."""
+        assert caller_status("failed") == ("error", True)
+
+    def test_missing_status_is_error(self) -> None:
+        """A defensive default: an absent/unknown raw status never reads
+        as a quiet success."""
+        assert caller_status(None) == ("error", True)

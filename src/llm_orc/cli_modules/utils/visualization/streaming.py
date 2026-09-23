@@ -6,6 +6,8 @@ from typing import Any
 import click
 from rich.console import Console
 
+from llm_orc.core.execution.results_processor import caller_status
+
 from .dependency import create_dependency_tree
 from .results_display import (
     _display_simple_results,
@@ -20,13 +22,18 @@ async def run_streaming_execution(
     input_data: str,
     output_format: str = "rich",
     detailed: bool = True,
-) -> None:
-    """Run execution with streaming progress visualization."""
+) -> bool:
+    """Run execution with streaming progress visualization.
+
+    Returns:
+        Whether the run's caller-facing status is "error" (fail-closed-
+        composition, caller contract), for the caller's exit code.
+    """
     # agents = ensemble_config.agents  # Unused in this conditional path
 
     if output_format in ["json", "text"]:
         # Direct processing without Rich status for JSON/text output
-        await _run_text_json_execution(
+        return await _run_text_json_execution(
             executor, ensemble_config, input_data, output_format, detailed
         )
     else:
@@ -41,6 +48,7 @@ async def run_streaming_execution(
             highlight=False,
         )
         agent_statuses: dict[str, str] = {}
+        outcome: dict[str, Any] = {}
 
         # Initialize with dependency tree in status display
         initial_tree = create_dependency_tree(ensemble_config.agents, agent_statuses)
@@ -72,10 +80,13 @@ async def run_streaming_execution(
                     console,
                     output_format,
                     detailed,
+                    outcome,
                 )
 
                 if not should_continue:
                     break
+
+        return bool(outcome.get("has_errors", False))
 
 
 async def run_standard_execution(
@@ -84,10 +95,16 @@ async def run_standard_execution(
     input_data: str,
     output_format: str = "rich",
     detailed: bool = True,
-) -> None:
-    """Run standard execution without streaming."""
+) -> bool:
+    """Run standard execution without streaming.
+
+    Returns:
+        Whether the run's caller-facing status is "error" (fail-closed-
+        composition, caller contract), for the caller's exit code.
+    """
     # Execute and get the result dict with "results" and "metadata"
     result = await executor.execute(ensemble_config, input_data)
+    _, has_errors = caller_status(result.get("status"))
 
     if output_format == "json":
         # Display JSON results
@@ -104,6 +121,8 @@ async def run_standard_execution(
             result["results"], result["metadata"], agents, detailed=detailed
         )
 
+    return has_errors
+
 
 async def _run_text_json_execution(
     executor: Any,
@@ -111,25 +130,40 @@ async def _run_text_json_execution(
     input_data: str,
     output_format: str,
     detailed: bool,
-) -> None:
-    """Run execution and output results as JSON/text in non-Rich mode."""
+) -> bool:
+    """Run execution and output results as JSON/text in non-Rich mode.
+
+    Returns:
+        Whether the run's caller-facing status is "error", for the
+        caller's exit code — an execution exception counts as an error
+        too, in either output format.
+    """
+    has_errors = False
     try:
         if output_format == "json":
             # For JSON output, stream events as they happen
             async for event in executor.execute_streaming(ensemble_config, input_data):
                 click.echo(json.dumps(event))
+                if event.get("type") == "execution_completed":
+                    raw_status = event.get("data", {}).get("status")
+                    _, has_errors = caller_status(raw_status)
+                elif event.get("type") == "execution_failed":
+                    has_errors = True
         else:
             # For text output, execute and display results in plain text
             result = await executor.execute(ensemble_config, input_data)
+            _, has_errors = caller_status(result.get("status"))
             display_plain_text_results(
                 result["results"], result["metadata"], detailed, ensemble_config.agents
             )
     except Exception as e:
+        has_errors = True
         if output_format == "json":
             error_event = {"type": "error", "error": str(e), "timestamp": "now"}
             click.echo(json.dumps(error_event))
         else:
             click.echo(f"Error: {e}")
+    return has_errors
 
 
 def _handle_streaming_event_with_status(
@@ -141,8 +175,14 @@ def _handle_streaming_event_with_status(
     console: Any,
     output_format: str = "rich",
     detailed: bool = False,
+    outcome: dict[str, Any] | None = None,
 ) -> bool:
     """Handle a single streaming event and update status display.
+
+    ``outcome`` is a mutable out-param the caller reads after the loop
+    ends: ``execution_completed`` sets ``outcome["has_errors"]`` to the
+    run's caller-facing status (fail-closed-composition, caller
+    contract), for the caller's exit code.
 
     Returns True if execution should continue, False if it should break.
     """
@@ -160,7 +200,7 @@ def _handle_streaming_event_with_status(
         status_changed = _handle_agent_failed_event(event, agent_statuses)
     elif event_type == "execution_completed":
         return _handle_execution_completed_event(
-            event, ensemble_config, status, console, detailed
+            event, ensemble_config, status, console, detailed, outcome
         )
     elif event_type == "user_input_required":
         status_changed = _handle_user_input_required_event(
@@ -241,11 +281,15 @@ def _handle_execution_completed_event(
     status: Any,
     console: Any,
     detailed: bool,
+    outcome: dict[str, Any] | None = None,
 ) -> bool:
     """Handle execution completed event and return False to break event loop."""
     event_data = event.get("data", {})
     results = event_data.get("results", {})
     metadata = event_data.get("metadata", {})
+
+    if outcome is not None:
+        _, outcome["has_errors"] = caller_status(event_data.get("status"))
 
     # Force exit status context and clear before showing results
     status.stop()
@@ -327,7 +371,13 @@ def _update_agent_status_by_names_from_lists(
 
 
 def _display_json_results(result: dict[str, Any], ensemble_config: Any) -> None:
-    """Display results in JSON format."""
+    """Display results in JSON format.
+
+    Includes the caller contract fields (fail-closed-composition):
+    ``status`` ("success"/"error"), ``has_errors``, and ``deliverable``
+    — the same vocabulary REST and MCP invoke report, so a script
+    parsing this output doesn't need a fourth, CLI-only shape.
+    """
     try:
         # Safely get config dict, handling mocks/objects that aren't serializable
         try:
@@ -335,10 +385,14 @@ def _display_json_results(result: dict[str, Any], ensemble_config: Any) -> None:
         except (AttributeError, TypeError):
             config_dict = {"type": "mock_config"}
 
+        status, has_errors = caller_status(result.get("status"))
         output = {
             "results": result.get("results", {}),
             "metadata": result.get("metadata", {}),
             "config": config_dict,
+            "status": status,
+            "has_errors": has_errors,
+            "deliverable": result.get("deliverable"),
         }
 
         click.echo(json.dumps(output, indent=2, default=str))

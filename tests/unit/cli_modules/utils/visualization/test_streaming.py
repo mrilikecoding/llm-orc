@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, Mock, patch
 import pytest
 
 from llm_orc.cli_modules.utils.visualization.streaming import (
+    _display_json_results,
     _run_text_json_execution,
     run_standard_execution,
     run_streaming_execution,
@@ -119,15 +120,43 @@ class TestRunStandardExecution:
         result = {
             "results": {"agent_a": {"status": "success"}},
             "metadata": {"duration": "5s"},
+            "status": "completed",
         }
         executor.execute = AsyncMock(return_value=result)
         ensemble_config = Mock()
         input_data = "Test input"
 
-        await run_standard_execution(executor, ensemble_config, input_data, "json")
+        has_errors = await run_standard_execution(
+            executor, ensemble_config, input_data, "json"
+        )
 
         executor.execute.assert_called_once_with(ensemble_config, input_data)
         mock_json_display.assert_called_once_with(result, ensemble_config)
+        assert has_errors is False
+
+    @pytest.mark.asyncio
+    @patch("llm_orc.cli_modules.utils.visualization.streaming._display_json_results")
+    async def test_run_standard_execution_reports_errors(
+        self, mock_json_display: Mock
+    ) -> None:
+        """A completed_with_errors run's has_errors return value drives
+        the caller's exit code (fail-closed-composition, caller
+        contract)."""
+        executor = AsyncMock()
+        result = {
+            "results": {"agent_a": {"status": "failed"}},
+            "metadata": {},
+            "status": "completed_with_errors",
+        }
+        executor.execute = AsyncMock(return_value=result)
+        ensemble_config = Mock()
+        input_data = "Test input"
+
+        has_errors = await run_standard_execution(
+            executor, ensemble_config, input_data, "json"
+        )
+
+        assert has_errors is True
 
     @pytest.mark.asyncio
     @patch("llm_orc.cli_modules.utils.visualization.streaming.display_results")
@@ -137,13 +166,16 @@ class TestRunStandardExecution:
         result = {
             "results": {"agent_a": {"status": "success"}},
             "metadata": {"duration": "5s"},
+            "status": "completed",
         }
         executor.execute = AsyncMock(return_value=result)
         ensemble_config = Mock()
         ensemble_config.agents = [LlmAgentConfig(name="agent_a", model_profile="test")]
         input_data = "Test input"
 
-        await run_standard_execution(executor, ensemble_config, input_data, "rich")
+        has_errors = await run_standard_execution(
+            executor, ensemble_config, input_data, "rich"
+        )
 
         executor.execute.assert_called_once_with(ensemble_config, input_data)
         mock_display.assert_called_once_with(
@@ -152,6 +184,51 @@ class TestRunStandardExecution:
             [LlmAgentConfig(name="agent_a", model_profile="test")],
             detailed=True,
         )
+        assert has_errors is False
+
+
+class TestDisplayJsonResults:
+    """--output-format json includes the caller contract fields
+    (fail-closed-composition): status, has_errors, deliverable — the
+    same vocabulary REST and MCP invoke report."""
+
+    @patch("llm_orc.cli_modules.utils.visualization.streaming.click.echo")
+    def test_clean_run_reports_success(self, mock_echo: Mock) -> None:
+        result = {
+            "results": {"agent_a": {"status": "success", "response": "ok"}},
+            "metadata": {},
+            "status": "completed",
+            "deliverable": "ok",
+        }
+        ensemble_config = Mock()
+        ensemble_config.to_dict.return_value = {"name": "test"}
+
+        _display_json_results(result, ensemble_config)
+
+        output = json.loads(mock_echo.call_args[0][0])
+        assert output["status"] == "success"
+        assert output["has_errors"] is False
+        assert output["deliverable"] == "ok"
+
+    @patch("llm_orc.cli_modules.utils.visualization.streaming.click.echo")
+    def test_failed_run_reports_error_and_null_deliverable(
+        self, mock_echo: Mock
+    ) -> None:
+        result = {
+            "results": {"agent_a": {"status": "failed", "error": "boom"}},
+            "metadata": {},
+            "status": "completed_with_errors",
+            "deliverable": None,
+        }
+        ensemble_config = Mock()
+        ensemble_config.to_dict.return_value = {"name": "test"}
+
+        _display_json_results(result, ensemble_config)
+
+        output = json.loads(mock_echo.call_args[0][0])
+        assert output["status"] == "error"
+        assert output["has_errors"] is True
+        assert output["deliverable"] is None
 
 
 class TestRunTextJsonExecution:
@@ -173,7 +250,7 @@ class TestRunTextJsonExecution:
 
         executor.execute_streaming = mock_execute_streaming
 
-        await _run_text_json_execution(
+        has_errors = await _run_text_json_execution(
             executor, ensemble_config, input_data, "json", True
         )
 
@@ -185,6 +262,35 @@ class TestRunTextJsonExecution:
         first_event = json.loads(first_call_args)
         assert first_event["type"] == "agent_started"
         assert first_event["agent_name"] == "agent_a"
+        # No execution_completed event seen: no basis to claim success
+        assert has_errors is False
+
+    @pytest.mark.asyncio
+    @patch("llm_orc.cli_modules.utils.visualization.streaming.click.echo")
+    async def test_run_text_json_execution_reports_completed_with_errors(
+        self, mock_echo: Mock
+    ) -> None:
+        """The streamed execution_completed event's status drives the
+        return value the same way the standard path does (fail-closed-
+        composition, caller contract)."""
+        executor = AsyncMock()
+        ensemble_config = Mock()
+        ensemble_config.agents = [LlmAgentConfig(name="agent_a", model_profile="test")]
+        input_data = "Test input"
+
+        async def mock_execute_streaming(config: Any, data: str) -> Any:
+            yield {
+                "type": "execution_completed",
+                "data": {"status": "completed_with_errors"},
+            }
+
+        executor.execute_streaming = mock_execute_streaming
+
+        has_errors = await _run_text_json_execution(
+            executor, ensemble_config, input_data, "json", True
+        )
+
+        assert has_errors is True
 
     @pytest.mark.asyncio
     @patch("llm_orc.cli_modules.utils.visualization.streaming.click.echo")
@@ -202,7 +308,7 @@ class TestRunTextJsonExecution:
 
         executor.execute_streaming = mock_execute_streaming
 
-        await _run_text_json_execution(
+        has_errors = await _run_text_json_execution(
             executor, ensemble_config, input_data, "json", True
         )
 
@@ -213,6 +319,7 @@ class TestRunTextJsonExecution:
         output_data = json.loads(call_args)
         assert "error" in output_data
         assert output_data["error"] == "Test error"
+        assert has_errors is True
 
 
 class TestComplexStreamingScenarios:
