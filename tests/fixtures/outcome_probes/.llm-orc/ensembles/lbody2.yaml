@@ -1,0 +1,7 @@
+name: lbody2
+description: p
+agents:
+  - name: x
+    script: scripts/fail.py
+  - name: y
+    script: scripts/ok.py

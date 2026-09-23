@@ -22,6 +22,7 @@ import pytest
 from llm_orc.core.config.config_manager import ConfigurationManager
 from llm_orc.core.config.ensemble_config import EnsembleLoader
 from llm_orc.core.execution.executor_factory import ExecutorFactory
+from llm_orc.core.execution.results_processor import caller_status
 
 FIXTURE_ROOT = Path(__file__).resolve().parent.parent / "fixtures" / "outcome_probes"
 ENSEMBLES_DIR = FIXTURE_ROOT / ".llm-orc" / "ensembles"
@@ -367,3 +368,57 @@ async def test_whenparent_agrees_with_direct_invocation() -> None:
 
     assert outcome_of(result, "k") == "succeeded"
     assert has_errors_of(result, "k") is False
+
+
+# ---------------------------------------------------------------------------
+# hchain(parent): M1 — BLOCKING_OUTCOMES must include handled_failure, or a
+# run-marked node chained after another run-marked node reads its blocking
+# upstream as ok and reports a plain success instead of handled_failure.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_hchain_each_link_in_a_handled_failure_chain_stays_marked() -> None:
+    """a fails; h1 (on_dependency_failure: run) handles it and is itself
+    handled_failure; h2 (also run-marked) depends on h1 alone. h1 being
+    handled_failure must still read as blocking to h2's own cascade check
+    — h2 is handling the SAME upstream failure, not reporting a fresh
+    success."""
+    result = await invoke("hchain")
+
+    assert outcome_of(result, "a") == "failed"
+    assert outcome_of(result, "h1") == "handled_failure"
+    assert outcome_of(result, "h2") == "handled_failure"
+    assert result["has_errors"] is True
+
+
+@pytest.mark.asyncio
+async def test_hchainparent_fails_over_the_handled_failure_chain() -> None:
+    """h2 is hchain's sole terminal and is handled_failure (X1: does not
+    count as a succeeded terminal), so the wrapping ensemble: node fails,
+    naming the real upstream crash."""
+    result = await invoke("hchainparent")
+
+    assert outcome_of(result, "k") == "failed"
+    assert has_errors_of(result, "k") is True
+
+
+# ---------------------------------------------------------------------------
+# lhe: M3 — loop_runner.py must carry the final iteration's own has_errors
+# onto the loop's JSON response, even when the body's OTHER terminal
+# survives and the loop itself does not raise.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_lhe_final_iteration_has_errors_survives_sibling_terminal() -> None:
+    """lbody2's x fails and y succeeds; both are terminals, so y's success
+    alone keeps the loop from raising — but x's failure must still surface
+    as the loop's own has_errors, and from there into the caller-facing
+    status/exit code every surface derives from it."""
+    result = await invoke("lhe")
+
+    loop_node = node(result, "L")
+    assert loop_node["outcome"] == "succeeded"
+    assert loop_node["has_errors"] is True
+    assert caller_status(result["status"]) == ("error", True)
