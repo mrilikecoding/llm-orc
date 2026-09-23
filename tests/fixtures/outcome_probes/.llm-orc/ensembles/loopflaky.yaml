@@ -1,8 +1,0 @@
-name: loopflaky
-description: p
-agents:
-  - name: L
-    loop:
-      body: loopbody_flaky
-      until: "${ok}"
-      max_iterations: 2
