@@ -67,6 +67,26 @@ class TestHelpersResponseNeverStringifiesNoneToNull:
 
         assert _terminal(_response(dep)) == ""
 
+    def test_terminal_of_a_null_last_results_node_is_empty_not_none(self) -> None:
+        """SF3: terminal peels a results envelope whose LAST node's own
+        response is present-but-None (a failed dependency INSIDE that
+        envelope, e.g. a crashed sub-ensemble terminal) — must return
+        "", not None. extract_code(None) used to raise TypeError in
+        every caller (build_gated_envelope.py, accept_gather.py,
+        emit_envelope.py, refix_select.py, seat_contract.py)."""
+        import json
+
+        envelope = json.dumps(
+            {"results": {"last": {"response": None, "status": "failed"}}}
+        )
+
+        result = _terminal(envelope)
+
+        assert result == ""
+        assert isinstance(result, str)
+        # the actual failure mode: extract_code must not raise TypeError
+        assert _extract_code(result) == ""
+
 
 class TestAcceptGateDepResponseNeverStringifiesNoneToNull:
     def test_none_response_is_the_empty_string(self) -> None:

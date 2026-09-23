@@ -416,7 +416,16 @@ def response(dep: Any) -> str:
 
 def terminal(text: str) -> str:
     """Peel sub-ensemble envelope layers (deliverable / output / results) to
-    the terminal node's raw output."""
+    the terminal node's raw output.
+
+    The last results node's own ``response`` is PRESENT but ``None`` for a
+    failed/skipped terminal (SF7's honest-absence contract, extended here):
+    ``node.get("response", "")`` only supplies the default when the key is
+    ABSENT, so a present-but-null value used to flow through as ``None`` and
+    make this function return it — violating its own ``-> str`` contract and
+    crashing ``extract_code(terminal(...))`` with a ``TypeError`` (``re``
+    against ``None``). Treated identically to an absent response: "".
+    """
     current = text
     for _ in range(6):
         try:
@@ -434,7 +443,11 @@ def terminal(text: str) -> str:
         results = obj.get("results")
         if isinstance(results, dict) and results:
             node = results[list(results.keys())[-1]]
-            current = node.get("response", "") if isinstance(node, dict) else str(node)
+            if isinstance(node, dict):
+                node_response = node.get("response")
+                current = node_response if isinstance(node_response, str) else ""
+            else:
+                current = str(node)
             continue
         return current
     return current
