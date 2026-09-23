@@ -2,6 +2,7 @@
 
 from typing import Any
 
+from llm_orc.core.execution.outcome import is_neutral, is_ok
 from llm_orc.schemas.agent_config import AgentConfig
 
 # A gathered fan-out dependency where some instances succeeded and some
@@ -15,8 +16,10 @@ SUCCEEDED_STATUSES = ("success", "partial")
 
 def result_succeeded(result: Any) -> bool:
     """One predicate for "this result counts as a succeeded terminal"
-    (fail-closed-composition SF2/X1): ``status`` in ``SUCCEEDED_STATUSES``
-    and not ``handled_failure``.
+    (fail-closed-composition SF2/X1; superseded by the explicit
+    ``outcome`` field — addendum 2026-09-23): true for ``Outcome.
+    SUCCEEDED``/``Outcome.PARTIAL``, false for anything else, including
+    ``Outcome.HANDLED_FAILURE`` (X1).
 
     ``handled_failure`` (X1) marks a node that executed ONLY because
     ``on_dependency_failure: run`` waived rule 1's cascade — none of its
@@ -37,21 +40,10 @@ def result_succeeded(result: Any) -> bool:
     even though it does not count as a succeeded terminal here.
 
     Tolerates both a plain dict result and an object exposing ``status``/
-    ``handled_failure`` attributes (``GuardEvaluator`` sees both forms).
+    ``handled_failure`` attributes (``GuardEvaluator`` sees both forms) —
+    ``outcome.is_ok`` does the same.
     """
-    status = (
-        result.get("status")
-        if isinstance(result, dict)
-        else (getattr(result, "status", None))
-    )
-    if status not in SUCCEEDED_STATUSES:
-        return False
-    handled_failure = (
-        result.get("handled_failure")
-        if isinstance(result, dict)
-        else getattr(result, "handled_failure", False)
-    )
-    return not handled_failure
+    return is_ok(result)
 
 
 def dep_name(dep: str | dict[str, Any]) -> str:
@@ -118,21 +110,10 @@ def terminal_failure_summary(
     entries = [(name, results.get(name)) for name in terminals]
     if any(result_succeeded(result) for _name, result in entries):
         return None
-    failures = [(name, result) for name, result in entries if not _is_when_skip(result)]
+    failures = [(name, result) for name, result in entries if not is_neutral(result)]
     if not failures:
         return None
     return "; ".join(_terminal_status_text(name, result) for name, result in failures)
-
-
-def _is_when_skip(result: Any) -> bool:
-    """A plain ``when:``-false skip: ``status == "skipped"`` with no
-    ``reason`` — ``GuardEvaluator`` only sets ``reason`` for a rule-1
-    dependency-cascade skip, never for a ``when:`` guard (SF2)."""
-    return (
-        isinstance(result, dict)
-        and result.get("status") == "skipped"
-        and result.get("reason") is None
-    )
 
 
 def _terminal_status_text(name: str, result: Any) -> str:
