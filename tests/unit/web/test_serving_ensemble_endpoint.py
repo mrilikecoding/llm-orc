@@ -2593,6 +2593,62 @@ def test_a_crashed_marshal_node_refuses_a_build_and_never_writes(
     assert content.strip() != "Refused: serving pipeline error"
 
 
+_EMIT_BLOCK_WITH_MARKER = (
+    "  - name: emit\n"
+    "    script: scripts/agentic_serving/emit.py\n"
+    "    depends_on: [form_gate]\n"
+    "    # emit is the terminal: its _readable_gate/_seam_outcome compose the\n"
+    '    # client-facing "Refused: serving pipeline error: ..." message when\n'
+    "    # form_gate itself is unreadable -- it must run even when form_gate\n"
+    "    # failed, or the client gets nothing at all instead of a refusal.\n"
+    "    on_dependency_failure: run\n"
+)
+_EMIT_BLOCK_WITHOUT_MARKER = (
+    "  - name: emit\n"
+    "    script: scripts/agentic_serving/emit.py\n"
+    "    depends_on: [form_gate]\n"
+)
+
+
+def test_deleting_emits_marker_breaks_the_refusal_on_a_crashed_form_gate(
+    serving_project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """SF4: demonstrates the ``emit`` ``on_dependency_failure: run``
+    marker's necessity directly, by actually deleting it from the
+    ensemble's own YAML (not just describing what it does) — the same
+    crashed-form_gate scenario
+    ``test_a_crashed_marshal_node_refuses_a_build_and_never_writes``
+    proves refuses honestly no longer does once the marker is gone:
+    ``emit`` cascade-skips along with its sole (now-failed) dependency
+    ``form_gate`` instead of running to compose the refusal, and the
+    client no longer gets "Refused: serving pipeline error: ...".
+    """
+    ensemble_path = serving_project / "ensembles" / "serving.yaml"
+    text = ensemble_path.read_text()
+    assert _EMIT_BLOCK_WITH_MARKER in text, (
+        "serving.yaml's emit node shape changed; update this test's block text"
+    )
+    ensemble_path.write_text(
+        text.replace(_EMIT_BLOCK_WITH_MARKER, _EMIT_BLOCK_WITHOUT_MARKER)
+    )
+
+    client = _crashed_script_client(serving_project, monkeypatch, "form_gate.py")
+    resp = client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "ensemble-agent",
+            "messages": [
+                {"role": "user", "content": "write an add function in add.py"}
+            ],
+            "tools": [_WRITE_TOOL],
+        },
+    )
+
+    assert resp.status_code == 200
+    content = resp.json()["choices"][0]["message"].get("content") or ""
+    assert "Refused: serving pipeline error" not in content
+
+
 def test_a_crashed_seat_contract_refuses_a_build_with_the_minting_prefix(
     serving_project: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
