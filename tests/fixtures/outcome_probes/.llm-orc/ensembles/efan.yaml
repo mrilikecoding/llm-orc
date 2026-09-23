@@ -1,0 +1,16 @@
+name: efan
+description: >
+  M5 pin fixture: an ensemble: fan-out over the existing "stderr" child.
+  Both instances succeed (stderr's "n" terminal always survives), but each
+  instance's own subtree has_errors is true (stderr's "a" fails). Exercises
+  _propagate_child_execution_errors's fan-out list branch: the gathered
+  node's own outcome is "succeeded" (no instance failed), but its
+  has_errors must still fold in each instance's subtree error.
+agents:
+  - name: d
+    script: scripts/twolist.py
+  - name: s
+    ensemble: stderr
+    depends_on: [d]
+    input_key: queries
+    fan_out: true
