@@ -33,6 +33,21 @@ Defined in `.llm-orc/ensembles/agentic-serving/serving.yaml`; scripts in
 | `form_gate` | script | Deterministic destination-validity check: refuses a deliverable that does not parse as its path claims (a `.py` must parse, a `.json` must load). |
 | `emit` | script | Shapes the client-seam outcome: a `write` tool_call (`finish_reason: tool_calls`) for a valid build, a prose finish otherwise. |
 
+`resolve`, `shape`, `form_gate`, and `emit` are each marked
+`on_dependency_failure: run` (Invariant 13/14): a crashed `classify`, `seat`,
+or any node earlier in this chain would otherwise cascade-skip everything
+downstream, and the turn would lose its refusal along with the failure it
+exists to report. Each reads its own crashed dependency defensively and
+composes an honest `"Refused: serving pipeline error: ..."` instead of
+vanishing. That composed refusal still does not count as a *succeeded*
+terminal for the serving ensemble's own caller-facing status: a node that ran
+only because of the override is marked `handled_failure` on its result, so
+the top-level `status`/`has_errors` a client or operator reads still say
+`error`, even though the client's HTTP response body carries real refusal
+content rather than an empty one. See `docs/domain-model.md` Invariant 13 and
+the `on_dependency_failure` glossary entry for the general contract; this is
+serving's own instance of it.
+
 Build turns route to the **gated build shape** (`build-gated.yaml`): test-writer
 → code-writer → deterministic executor (runs code + tests, sandboxed
 subprocess) → isolated adequacy judge → accept gate (`accept = tests_pass AND
