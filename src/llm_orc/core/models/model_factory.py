@@ -514,7 +514,23 @@ def _reachable_provider_options(
     agent: LlmAgentConfig, config_manager: ConfigurationManager
 ) -> Iterator[tuple[str | None, dict[str, Any] | None]]:
     """``(provider, merged options)`` for ``agent``'s primary load and
-    every profile reachable through its fallback chain (X2)."""
+    every profile reachable through its fallback chain (X2).
+
+    The agent-level ``fallback_model_profile`` override is checked as a
+    SINGLE hop, not walked as its own further chain (addendum 2026-09-23
+    NIT): ``ModelFactory.get_fallback_model``/``iter_fallback_chain``
+    try it via ``_try_single_fallback`` alone — if it doesn't load, they
+    fall through to ``original_profile``'s OWN chain (a separate branch,
+    already covered by the ``agent.model_profile`` case below), never to
+    ``agent.fallback_model_profile``'s own ``fallback_model_profile``
+    field. Validating a hop runtime can never reach would reject configs
+    that would run fine. ``agent.model_profile``'s chain, by contrast,
+    IS walked transitively at runtime (``_iter_configurable_fallback_
+    chain`` starting at ``original_profile``), so it is walked the same
+    way here — both sides read the one profile-resolution step
+    (``_single_profile_provider_options``) the same number of times
+    runtime would call it.
+    """
     if agent.model_profile:
         yield from _profile_chain_provider_options(
             agent.model_profile, agent.options, config_manager
@@ -523,9 +539,31 @@ def _reachable_provider_options(
         yield agent.provider, agent.options
 
     if agent.fallback_model_profile:
-        yield from _profile_chain_provider_options(
+        single = _single_profile_provider_options(
             agent.fallback_model_profile, agent.options, config_manager
         )
+        if single is not None:
+            yield single
+
+
+def _single_profile_provider_options(
+    profile_name: str,
+    agent_options: dict[str, Any] | None,
+    config_manager: ConfigurationManager,
+) -> tuple[str | None, dict[str, Any] | None] | None:
+    """``(provider, merged options)`` for ONE named profile, or ``None``
+    when it doesn't resolve — the one profile-resolution step both
+    ``_profile_chain_provider_options`` (called once per hop while
+    walking a chain) and the agent-level single-hop check in
+    ``_reachable_provider_options`` share, so the two read a profile's
+    provider/options the same way."""
+    try:
+        _, provider = config_manager.resolve_model_profile(profile_name)
+    except (ValueError, KeyError):
+        return None
+    profile = config_manager.get_model_profile(profile_name)
+    profile_options = (profile or {}).get("options")
+    return provider, _merge_options(profile_options, agent_options)
 
 
 def _profile_chain_provider_options(
@@ -544,13 +582,13 @@ def _profile_chain_provider_options(
     current: str | None = start_profile
     while current and current not in visited:
         visited.add(current)
-        try:
-            _, provider = config_manager.resolve_model_profile(current)
-        except (ValueError, KeyError):
+        single = _single_profile_provider_options(
+            current, agent_options, config_manager
+        )
+        if single is None:
             return
+        yield single
         profile = config_manager.get_model_profile(current)
-        profile_options = (profile or {}).get("options")
-        yield provider, _merge_options(profile_options, agent_options)
         current = (profile or {}).get("fallback_model_profile")
 
 

@@ -1296,6 +1296,46 @@ class TestValidateThinkOptionsForEnsemble:
 
         validate_think_options_for_ensemble(agents, config_manager)
 
+    def test_agent_level_fallback_own_further_chain_is_not_validated(
+        self, config_manager: Mock
+    ) -> None:
+        """X2 NIT: the agent-level fallback_model_profile is checked as
+        a single hop, matching ModelFactory.get_fallback_model's own
+        _try_single_fallback — it never walks THAT profile's own
+        fallback_model_profile field at runtime (a fallback chain only
+        exists at the profile level, reached via original_profile's own
+        chain, a separate branch). A mismatch two hops down the
+        agent-level override's own chain is unreachable at runtime, so
+        it must not raise here either."""
+        profiles = {
+            "primary": ("model-a", "llama-server"),
+            "agent-fallback": ("model-b", "llama-server"),
+            "unreachable-hop": ("model-c", "openai-compatible"),
+        }
+        profile_configs: dict[str, dict[str, Any]] = {
+            "primary": {"model": "model-a", "provider": "llama-server"},
+            "agent-fallback": {
+                "model": "model-b",
+                "provider": "llama-server",
+                "fallback_model_profile": "unreachable-hop",
+            },
+            "unreachable-hop": {"model": "model-c", "provider": "openai-compatible"},
+        }
+        config_manager.resolve_model_profile.side_effect = lambda name: profiles[name]
+        config_manager.get_model_profile.side_effect = lambda name: profile_configs[
+            name
+        ]
+        agents = [
+            LlmAgentConfig(
+                name="a",
+                model_profile="primary",
+                fallback_model_profile="agent-fallback",
+                options={"think": False},
+            ),
+        ]
+
+        validate_think_options_for_ensemble(agents, config_manager)
+
     def test_unresolvable_fallback_profile_is_skipped_not_raised(
         self, config_manager: Mock
     ) -> None:
