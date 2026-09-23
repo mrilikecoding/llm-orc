@@ -69,26 +69,24 @@ def resolve_deliverable(
     """Resolve the ensemble's single deliverable from its dependency DAG.
 
     The ensemble abstraction presents one output regardless of internal
-    multi-agent structure (ADR-035 D1, FC-56): the terminal node's
-    response — the agent no other agent depends on — when it succeeded
-    with content, else the last successful agent's response walking the
-    declaration order backward. Returns ``None`` when no agent produced
-    content (the caller decides the degraded fallback).
+    multi-agent structure (ADR-035 D1, FC-56): a terminal node's
+    response — an agent no other agent depends on — when it succeeded
+    with content. Multi-terminal DAGs take the last successful terminal
+    by declaration order. Returns ``None`` when no terminal succeeded
+    with content (the caller decides the degraded fallback) — an
+    intermediate (non-terminal) agent's output never stands in for a
+    missing deliverable (fail-closed-composition, caller contract: a
+    skipped/failed terminal must not surface someone else's work, e.g.
+    a decomposer's raw query list, as if it were the real result).
 
     Computed here, where ``depends_on`` is known, rather than
     reconstructed downstream from the results dict (the dispatch layer
     receives a projection that has already dropped the config).
-    Multi-terminal DAGs take the last terminal by declaration order.
     """
     terminals = terminal_agent_names(agents)
 
     for name in reversed(terminals):
         response = _successful_response(results.get(name))
-        if response is not None:
-            return response
-
-    for agent in reversed(agents):
-        response = _successful_response(results.get(agent.name))
         if response is not None:
             return response
     return None
