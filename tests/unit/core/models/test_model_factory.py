@@ -648,6 +648,72 @@ class TestModelFactory:
                     original_profile="profile-a",
                 )
 
+    async def test_agent_level_hop_config_error_does_not_fall_through(
+        self,
+        model_factory: ModelFactory,
+        mock_config_manager: Mock,
+    ) -> None:
+        """X2: a ModelConfigurationError raised loading the agent-level
+        fallback_model_profile hop must propagate, not be swallowed as
+        "this profile is unavailable, try the next one" — a config
+        error is an author mistake on that specific profile, not an
+        availability failure, and treating it as one would let the
+        chain fall through to original_profile's own chain and silently
+        substitute a different, uninvolved profile."""
+        mock_config_manager.get_model_profile.return_value = {
+            "model": "glm",
+            "provider": "openai-compatible",
+        }
+        mock_config_manager.resolve_model_profile.return_value = (
+            "glm",
+            "openai-compatible",
+        )
+
+        with patch.object(
+            model_factory,
+            "load_model",
+            side_effect=ModelConfigurationError("options.think mismatch"),
+        ) as mock_load:
+            with pytest.raises(ModelConfigurationError, match="think"):
+                await model_factory.get_fallback_model(
+                    context="agent_test",
+                    original_profile="dead2",
+                    agent_fallback_profile="gohost2",
+                )
+
+            # Never falls through to try original_profile's own chain.
+            mock_load.assert_called_once()
+
+    async def test_configurable_chain_hop_config_error_does_not_fall_through(
+        self,
+        model_factory: ModelFactory,
+        mock_config_manager: Mock,
+    ) -> None:
+        """X2: the same swallow bug, reached via original_profile's OWN
+        fallback_model_profile chain (no agent-level override)."""
+        mock_config_manager.get_model_profile.return_value = {
+            "model": "glm",
+            "provider": "openai-compatible",
+            "fallback_model_profile": "broken-hop",
+        }
+        mock_config_manager.resolve_model_profile.return_value = (
+            "glm",
+            "openai-compatible",
+        )
+
+        with patch.object(
+            model_factory,
+            "load_model",
+            side_effect=ModelConfigurationError("options.think mismatch"),
+        ) as mock_load:
+            with pytest.raises(ModelConfigurationError, match="think"):
+                await model_factory.get_fallback_model(
+                    context="agent_test",
+                    original_profile="dead2",
+                )
+
+            mock_load.assert_called_once()
+
 
 class TestLoadModelHelperMethods:
     """Test helper methods extracted from load_model."""
@@ -1134,6 +1200,126 @@ class TestValidateThinkOptionsForEnsemble:
 
     def test_non_llm_agents_are_skipped(self, config_manager: Mock) -> None:
         agents = [ScriptAgentConfig(name="setup", script="echo hi")]
+
+        validate_think_options_for_ensemble(agents, config_manager)
+
+    def test_agent_level_fallback_profile_with_mismatch_raises(
+        self, config_manager: Mock
+    ) -> None:
+        """X2: the primary profile is fine (llama-server), but the
+        agent-level fallback_model_profile is openai-compatible — the
+        agent's own think:false option travels into whichever profile
+        actually serves the request, so this must fail before any agent
+        executes (thinkhop probe shape)."""
+        profiles = {
+            "dead2": ("nothing", "llama-server"),
+            "gohost2": ("glm", "openai-compatible"),
+        }
+        profile_configs: dict[str, dict[str, Any]] = {
+            "dead2": {"model": "nothing", "provider": "llama-server"},
+            "gohost2": {"model": "glm", "provider": "openai-compatible"},
+        }
+        config_manager.resolve_model_profile.side_effect = lambda name: profiles[name]
+        config_manager.get_model_profile.side_effect = lambda name: profile_configs[
+            name
+        ]
+        agents = [
+            LlmAgentConfig(
+                name="a",
+                model_profile="dead2",
+                fallback_model_profile="gohost2",
+                options={"think": False},
+            ),
+        ]
+
+        with pytest.raises(ModelConfigurationError, match="think"):
+            validate_think_options_for_ensemble(agents, config_manager)
+
+    def test_profile_level_fallback_chain_with_mismatch_raises(
+        self, config_manager: Mock
+    ) -> None:
+        """X2: no agent-level override — the mismatch is two hops deep
+        in the primary profile's OWN fallback_model_profile chain, and
+        the walk is transitive."""
+        profiles = {
+            "primary": ("model-a", "llama-server"),
+            "mid": ("model-b", "llama-server"),
+            "hosted": ("model-c", "openai-compatible"),
+        }
+        profile_configs: dict[str, dict[str, Any]] = {
+            "primary": {
+                "model": "model-a",
+                "provider": "llama-server",
+                "fallback_model_profile": "mid",
+            },
+            "mid": {
+                "model": "model-b",
+                "provider": "llama-server",
+                "fallback_model_profile": "hosted",
+            },
+            "hosted": {"model": "model-c", "provider": "openai-compatible"},
+        }
+        config_manager.resolve_model_profile.side_effect = lambda name: profiles[name]
+        config_manager.get_model_profile.side_effect = lambda name: profile_configs[
+            name
+        ]
+        agents = [
+            LlmAgentConfig(name="a", model_profile="primary", options={"think": False}),
+        ]
+
+        with pytest.raises(ModelConfigurationError, match="think"):
+            validate_think_options_for_ensemble(agents, config_manager)
+
+    def test_healthy_fallback_chain_does_not_raise(self, config_manager: Mock) -> None:
+        """A fallback chain entirely on llama-server never raises,
+        regression coverage for the new chain walk."""
+        profiles = {
+            "primary": ("model-a", "llama-server"),
+            "backup": ("model-b", "llama-server"),
+        }
+        profile_configs: dict[str, dict[str, Any]] = {
+            "primary": {"model": "model-a", "provider": "llama-server"},
+            "backup": {"model": "model-b", "provider": "llama-server"},
+        }
+        config_manager.resolve_model_profile.side_effect = lambda name: profiles[name]
+        config_manager.get_model_profile.side_effect = lambda name: profile_configs[
+            name
+        ]
+        agents = [
+            LlmAgentConfig(
+                name="a",
+                model_profile="primary",
+                fallback_model_profile="backup",
+                options={"think": False},
+            ),
+        ]
+
+        validate_think_options_for_ensemble(agents, config_manager)
+
+    def test_unresolvable_fallback_profile_is_skipped_not_raised(
+        self, config_manager: Mock
+    ) -> None:
+        """An agent-level fallback_model_profile that does not resolve
+        is a different structural error, surfaced elsewhere — the walk
+        stops there without raising here, same as an unresolvable
+        primary profile."""
+        config_manager.resolve_model_profile.side_effect = lambda name: (
+            ("model-a", "llama-server")
+            if name == "primary"
+            else (_ for _ in ()).throw(ValueError(f"{name} not found"))
+        )
+        config_manager.get_model_profile.return_value = {
+            "model": "model-a",
+            "provider": "llama-server",
+        }
+        agents = [
+            LlmAgentConfig(
+                name="a",
+                model_profile="primary",
+                fallback_model_profile="ghost-fallback",
+                options={"think": False},
+            ),
+        ]
 
         validate_think_options_for_ensemble(agents, config_manager)
 
