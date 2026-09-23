@@ -3,6 +3,7 @@
 from typing import Any
 
 from llm_orc.core.execution.fan_out.expander import FanOutExpander
+from llm_orc.core.execution.outcome import stamp_outcome
 
 
 class FanOutGatherer:
@@ -76,12 +77,14 @@ class FanOutGatherer:
             - instances: Per-instance status info
         """
         if original_agent_name not in self._results:
-            return {
-                "response": [],
-                "status": "success",
-                "fan_out": True,
-                "instances": [],
-            }
+            return stamp_outcome(
+                {
+                    "response": [],
+                    "status": "success",
+                    "fan_out": True,
+                    "instances": [],
+                }
+            )
 
         instance_data = self._results[original_agent_name]
 
@@ -138,7 +141,7 @@ class FanOutGatherer:
                 for item in instances
                 if item["status"] == "failed"
             )
-        return gathered
+        return stamp_outcome(gathered)
 
     def get_error_summary(self, original_agent_name: str) -> dict[str, Any]:
         """Get error details for failed instances.

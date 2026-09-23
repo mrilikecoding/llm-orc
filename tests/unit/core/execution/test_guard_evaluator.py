@@ -282,6 +282,26 @@ class TestDependencySkipReason:
         results: dict[str, Any] = {"upstream": {"status": "success", "response": "ok"}}
         assert evaluator.handled_failure(agent, results) is False
 
+    def test_handled_failure_false_when_sole_dependency_is_neutral(self) -> None:
+        """runwhenskipped decision (addendum 2026-09-23): a run-marked
+        node whose sole dependency is itself skipped_by_guard (a plain
+        when:-false skip, nothing genuinely failed) is a normal run, not
+        a failure handler — before this fix, "no dependency succeeded"
+        alone (regardless of whether anything was blocking) was enough
+        to mark handled_failure, so a total non-event (an intentional
+        upstream guard skip) made a wrapping ensemble:/dispatch:/loop:
+        node fail, naming "handled failure: b (skipped)" though nothing
+        failed."""
+        evaluator = GuardEvaluator()
+        agent = LlmAgentConfig(
+            name="t",
+            model_profile="gpt4",
+            depends_on=["b"],
+            on_dependency_failure="run",
+        )
+        results: dict[str, Any] = {"b": {"status": "skipped", "response": None}}
+        assert evaluator.handled_failure(agent, results) is False
+
     def test_handled_failure_false_when_flag_not_set(self) -> None:
         evaluator = GuardEvaluator()
         agent = LlmAgentConfig(
@@ -292,18 +312,45 @@ class TestDependencySkipReason:
         }
         assert evaluator.handled_failure(agent, results) is False
 
-    def test_reason_none_for_a_run_marked_node(self) -> None:
-        """A run-marked node is never skipped by rule 1 (should_run
-        already returns True for it), so it carries no cascade reason —
-        even though none of its dependencies succeeded."""
+    def test_reason_set_for_a_run_marked_node_skipped_by_its_own_when(self) -> None:
+        """S1 fix (addendum 2026-09-23): a run-marked node is never
+        skipped by rule 1's cascade GATE (should_run bypasses it), but
+        if its OWN `when:` evaluates false and none of its dependencies
+        succeeded, that skip is just as much a lost failure signal as a
+        plain node's cascade skip — dependency_skip_reason no longer
+        special-cases on_dependency_failure. Before this fix, this
+        skip carried no reason and read as a neutral when-skip, so a
+        wrapping ensemble:/dispatch:/loop: node reported success over a
+        total upstream crash."""
         evaluator = GuardEvaluator()
         agent = LlmAgentConfig(
             name="shape",
             model_profile="gpt4",
             depends_on=["upstream"],
             on_dependency_failure="run",
+            when="${upstream.ok}",
         )
         results: dict[str, Any] = {
             "upstream": {"status": "failed", "error": "boom", "response": None},
         }
+        assert evaluator.should_run(agent, results) is False
+        reason = evaluator.dependency_skip_reason(agent, results)
+        assert reason == "no dependency succeeded: upstream (failed: boom)"
+
+    def test_reason_none_when_every_dependency_is_itself_neutral(self) -> None:
+        """The whenchain decision: a node whose sole dependency was
+        itself skipped_by_guard (a plain `when:`-false skip, nothing
+        genuinely failed) is cascade-skipped by rule 1 (no dependency is
+        ok), but the skip is neutral, not a failure — no dependency is
+        blocking either. Before this fix, cascade skips always carried
+        a reason (looked like skipped_by_failure) whenever "no dependency
+        ok" held, regardless of whether anything was actually blocking,
+        so a whole chain of intentional when-skips read as a failure at
+        the wrapping ensemble: node."""
+        evaluator = GuardEvaluator()
+        agent = LlmAgentConfig(name="t", model_profile="gpt4", depends_on=["b"])
+        results: dict[str, Any] = {
+            "b": {"status": "skipped", "response": None},
+        }
+        assert evaluator.should_run(agent, results) is False
         assert evaluator.dependency_skip_reason(agent, results) is None

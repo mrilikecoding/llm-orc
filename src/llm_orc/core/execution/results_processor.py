@@ -26,6 +26,7 @@ def finalize_result(
     # Finalize result
     end_time = time.time()
     result.status = "completed_with_errors" if has_errors else "completed"
+    result.has_errors = has_errors
     result.metadata.duration = f"{(end_time - start_time):.2f}s"
     result.metadata.completed_at = end_time
     result.metadata.usage = usage_summary

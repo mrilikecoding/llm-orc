@@ -230,14 +230,16 @@ def _engine_failure_fields(node: Any) -> dict[str, str]:
     failure text.
 
     Two producers of the same fact, both read here (fail-closed-
-    composition). The current contract (AgentDispatcher's B2, amended):
-    a script's own crash is recorded as ``status: "failed"`` with
-    ``error`` on the node, and every OTHER field from the script's own
-    failure JSON (``stderr``, and producer-specific fields like
-    web_searcher's ``backend``) flattened onto the node alongside it —
-    ``response`` is ``None``, so there is nothing to parse there any
-    more. Checked first, since it is what the live engine actually
-    produces today.
+    composition). The current contract (AgentDispatcher's B2, nested
+    under ``payload`` by the addendum 2026-09-23): a script's own crash
+    is recorded as ``status: "failed"`` with ``error`` on the node, and
+    every OTHER field from the script's own failure JSON (``stderr``,
+    and producer-specific fields like web_searcher's ``backend``) nested
+    under the node's own ``payload`` key — ``response`` is ``None``, so
+    there is nothing to parse there any more. Checked first, since it is
+    what the live engine actually produces today; a flat (pre-addendum,
+    or hand-built) shape with these fields directly on the node is still
+    read as a fallback.
 
     Older callers (and the unit harness) that hand a node straight
     through with the engine's wrapped-JSON ``response`` and no top-level
@@ -255,11 +257,16 @@ def _engine_failure_fields(node: Any) -> dict[str, str]:
     """
     fields: dict[str, str] = {}
     if isinstance(node, dict) and node.get("status") == "failed":
-        # B2: AgentDispatcher now flattens a failed script's structured
-        # payload (stderr, and producer-specific fields) directly onto
-        # the node alongside error/status, so it survives here without
-        # needing response (which the current contract leaves None).
-        fields.update(_failure_text_fields(node))
+        # addendum 2026-09-23: AgentDispatcher nests a failed script's
+        # structured payload (stderr, producer-specific fields) under
+        # its own "payload" key rather than merging it onto the node —
+        # engine-owned keys are reserved, so a script's own "status" or
+        # "error" can never shadow the record's real ones. Read the
+        # nested shape first; a flat shape (pre-addendum record, or a
+        # hand-built fixture) is still read as a fallback.
+        payload = node.get("payload")
+        source = {**node, **payload} if isinstance(payload, dict) else node
+        fields.update(_failure_text_fields(source))
     response = node.get("response") if isinstance(node, dict) else node
     parsed = _parsed_dict(response)
     if parsed is None:

@@ -50,11 +50,17 @@ def _script_failure_error(response: str) -> str:
 def _script_failure_payload(response: str) -> dict[str, Any] | None:
     """Every field alongside a failed script's own ``error``/``success``
     keys (fail-closed-composition B2) — ``stderr`` (turn_trace's
-    ``_engine_failure_fields`` reads it) and producer-specific fields
-    like web_searcher's ``backend`` — so they survive on the failed
-    record instead of being dropped when only ``error`` was kept.
-    ``None`` when the response doesn't parse to a dict, or nothing is
-    left once ``error``/``success`` are excluded.
+    ``_engine_failure_fields`` reads ``payload.stderr``) and producer-
+    specific fields like web_searcher's ``backend``. ``AgentResult.
+    to_dict`` nests this under its own ``payload`` key rather than
+    merging it onto the record (addendum 2026-09-23): the fields
+    returned here come straight from the script's own JSON and may
+    include keys that collide with engine-owned ones (a script printing
+    ``"status": "success"`` alongside a genuine failure), so they must
+    never land in the same namespace as the record's real
+    ``status``/``response``/``error``. ``None`` when the response
+    doesn't parse to a dict, or nothing is left once ``error``/
+    ``success`` are excluded.
     """
     try:
         parsed = json.loads(response)
@@ -223,7 +229,7 @@ class AgentDispatcher:
             return agent_name, AgentResult(
                 status="failed",
                 error=_script_failure_error(response),
-                error_payload=_script_failure_payload(response),
+                payload=_script_failure_payload(response),
             )
 
         return agent_name, AgentResult(

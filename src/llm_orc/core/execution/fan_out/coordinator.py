@@ -5,6 +5,7 @@ from typing import Any
 
 from llm_orc.core.execution.fan_out.expander import FanOutExpander
 from llm_orc.core.execution.fan_out.gatherer import FanOutGatherer
+from llm_orc.core.execution.outcome import is_ok
 from llm_orc.core.execution.utils import dep_name
 from llm_orc.schemas.agent_config import AgentConfig
 
@@ -55,9 +56,14 @@ class FanOutCoordinator:
 
             upstream_name = dep_name(agent_config.depends_on[0])
             upstream_result = results_dict.get(upstream_name, {})
-            upstream_status = upstream_result.get("status")
 
-            if upstream_status != "success":
+            # S2: outcome.is_ok, not a literal status == "success" check
+            # — a handled_failure upstream's own status reads "success"
+            # (it ran without incident), but its output is a composed
+            # refusal over a real failure, not a JSON array to fan out
+            # over.
+            if not is_ok(upstream_result):
+                upstream_status = upstream_result.get("status")
                 failed.append(
                     (
                         agent_config,

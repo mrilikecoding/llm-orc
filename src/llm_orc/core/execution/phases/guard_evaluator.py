@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from llm_orc.core.execution.outcome import is_blocking
 from llm_orc.core.execution.phases import predicate
 from llm_orc.core.execution.phases.reference import resolve_reference
 from llm_orc.core.execution.utils import dep_name, result_succeeded
@@ -34,20 +35,24 @@ class GuardEvaluator:
     def dependency_skip_reason(
         self, agent_config: AgentConfig, results_dict: dict[str, Any]
     ) -> str | None:
-        """Why the agent is skipped by dependency cascading (fail-closed-
-        composition rule 1): every dependency is failed or skipped, in any
-        mix — none succeeded. Names each upstream agent and its status,
-        with error text for failed ones. None when the agent is not
-        skipped by this rule — in particular, a `when:`-false skip has no
-        reason here (rule 1 is evaluated before `when:`, so the two never
-        both apply to the same skip). A node marked
-        `on_dependency_failure: run` is never skipped by rule 1
-        (`should_run` already returns True for it regardless of its
-        dependencies' statuses), so it carries no reason here either.
+        """Why a skipped agent's skip should be classified
+        ``skipped_by_failure`` rather than ``skipped_by_guard`` (addendum
+        2026-09-23): no dependency is ok AND at least one is blocking.
+        Names each upstream agent and its status, with error text for a
+        failed one. ``None`` when the skip should read as a plain guard
+        skip instead — some dependency is ok, or every dependency is
+        itself neutral (``skipped_by_guard``, e.g. a chain of `when:`-
+        false guards with nothing genuinely failed anywhere in it).
+
+        Deliberately does NOT special-case ``on_dependency_failure: run``
+        (S1 fix): a run-marked node that is skipped anyway (its OWN
+        `when:` evaluated false) is just as much a lost failure signal
+        when its dependencies include a real failure as a plain node's
+        rule-1 cascade skip is — the flag only waives the cascade GATE
+        (whether the node runs at all via `should_run`), not how a skip
+        that happens anyway should be attributed once it does.
         """
-        if agent_config.on_dependency_failure == "run":
-            return None
-        if not self._no_dependency_succeeded(agent_config, results_dict):
+        if not self._skip_would_be_by_failure(agent_config, results_dict):
             return None
         named = self.dependency_failure_text(agent_config, results_dict)
         return f"no dependency succeeded: {named}"
@@ -56,18 +61,39 @@ class GuardEvaluator:
         self, agent_config: AgentConfig, results_dict: dict[str, Any]
     ) -> bool:
         """True when the node is about to execute ONLY because
-        ``on_dependency_failure: run`` overrode rule 1's cascade (X1):
-        none of its dependencies succeeded, yet ``should_run`` returns
-        True for it. The caller (``EnsembleExecutor._partition_by_guard``)
-        records this on the node's own result once it has one, so
-        ``result_succeeded`` (``terminal_failure_summary``, this class's
-        own dependency-succeeded check, further downstream) does not
-        count its output as a succeeded terminal even though it ran and
-        its output is the refusal/deliverable.
+        ``on_dependency_failure: run`` overrode rule 1's cascade (X1) AND
+        the cascade it overrode would have been a genuine
+        ``skipped_by_failure`` (no dependency ok, at least one blocking)
+        — not merely an all-neutral upstream (addendum 2026-09-23: a
+        run-marked node whose sole dependency is itself a plain
+        `when:`-false guard skip has nothing to "handle"; it is a normal
+        run, not a failure handler). The caller
+        (``EnsembleExecutor._partition_by_guard``) records this on the
+        node's own result once it has one, so ``result_succeeded``
+        (``terminal_failure_summary``, this class's own dependency-
+        succeeded check, further downstream) does not count its output
+        as a succeeded terminal even though it ran and its output is the
+        refusal/deliverable.
         """
         if agent_config.on_dependency_failure != "run":
             return False
-        return self._no_dependency_succeeded(agent_config, results_dict)
+        return self._skip_would_be_by_failure(agent_config, results_dict)
+
+    def _skip_would_be_by_failure(
+        self, agent_config: AgentConfig, results_dict: dict[str, Any]
+    ) -> bool:
+        """No dependency is ok AND at least one is blocking — the
+        addendum's ``skipped_by_failure`` condition, checked independent
+        of ``on_dependency_failure`` and of whether the skip (if any)
+        came from rule 1's cascade gate or from `when:` evaluating
+        false. ``False`` (not by-failure) when every dependency is
+        merely neutral, or when there are no dependencies at all."""
+        deps = [dep_name(d) for d in agent_config.depends_on]
+        if not deps:
+            return False
+        if self._no_dependency_succeeded(agent_config, results_dict):
+            return any(is_blocking(results_dict.get(d)) for d in deps)
+        return False
 
     def dependency_failure_text(
         self, agent_config: AgentConfig, results_dict: dict[str, Any]

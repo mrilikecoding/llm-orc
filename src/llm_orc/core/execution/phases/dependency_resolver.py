@@ -4,7 +4,8 @@ import json
 from collections.abc import Callable
 from typing import Any
 
-from llm_orc.core.execution.utils import SUCCEEDED_STATUSES, dep_name
+from llm_orc.core.execution.outcome import is_ok
+from llm_orc.core.execution.utils import dep_name
 from llm_orc.schemas.agent_config import (
     AgentConfig,
     DynamicDispatchAgentConfig,
@@ -174,7 +175,7 @@ class DependencyResolver:
             return None
         first_dep = dep_name(agent_config.depends_on[0])
         dep_result = effective_results.get(first_dep, {})
-        if dep_result.get("status") == "success":
+        if is_ok(dep_result):
             return str(dep_result.get("response", ""))
         return None
 
@@ -208,9 +209,9 @@ class DependencyResolver:
             return None
         first_dep = dep_name(agent_config.depends_on[0])
         dep_result = results_dict.get(first_dep, {})
-        status = dep_result.get("status") if isinstance(dep_result, dict) else None
-        if status == "success":
+        if is_ok(dep_result):
             return None
+        status = dep_result.get("status") if isinstance(dep_result, dict) else None
         return (
             f"Agent '{agent_config.name}' cannot run: input_key "
             f"'{agent_config.input_key}' selects from upstream agent "
@@ -263,7 +264,7 @@ class DependencyResolver:
         first_dep = dep_name(agent_config.depends_on[0])
         dep_result = results_dict.get(first_dep, {})
 
-        if dep_result.get("status") != "success":
+        if not is_ok(dep_result):
             return results_dict, None
 
         response = dep_result.get("response", "")
@@ -340,7 +341,13 @@ class DependencyResolver:
             dep_role = self._get_agent_role_description(agent_dep_name)
             role_text = f" ({dep_role})" if dep_role else ""
 
-            if result.get("status") in SUCCEEDED_STATUSES:
+            # S2: outcome.is_ok, not a literal status membership check —
+            # a handled_failure dependency's status is in
+            # SUCCEEDED_STATUSES (it ran without incident), but its
+            # output is a composed refusal over a real failure, not
+            # forward progress a consumer should read as unqualified
+            # success (rule 2).
+            if is_ok(result):
                 response = result["response"]
                 if (
                     isinstance(consumer_config, LlmAgentConfig)
@@ -365,11 +372,22 @@ class DependencyResolver:
     def _render_non_success_dependency_block(
         agent_dep_name: str, role_text: str, result: dict[str, Any]
     ) -> str:
-        """A named block for a dependency that did not succeed (failed or
-        skipped) — fail-closed-composition rule 2: the consumer sees
-        which upstream agent failed and why, in the same shape the
-        engine already uses for a failed ensemble terminal
-        (``_render_terminal_block``)."""
+        """A named block for a dependency that does not count as ok
+        (failed, skipped, or handled_failure) — fail-closed-composition
+        rule 2: the consumer sees which upstream agent failed and why,
+        in the same shape the engine already uses for a failed ensemble
+        terminal (``_render_terminal_block``).
+
+        A ``handled_failure`` dependency's own ``status`` reads
+        ``"success"`` (it ran without incident), so it is named by its
+        ``handled_failure_reason`` — the real upstream failure it
+        composed a refusal over — instead of a misleading
+        ``(success): <refusal text>``.
+        """
+        if result.get("handled_failure"):
+            reason = result.get("handled_failure_reason")
+            reason_suffix = f": {reason}" if reason else ""
+            return f"Agent {agent_dep_name}{role_text} (handled failure{reason_suffix})"
         status = result.get("status", "failed")
         detail = result.get("error") or result.get("reason") or result.get("response")
         detail_text = detail or "no response"
@@ -540,12 +558,25 @@ class DependencyResolver:
 
     @staticmethod
     def _render_terminal_block(name: str, agent_result: Any, index: int | None) -> str:
-        """One labeled block for a single terminal agent's result."""
+        """One labeled block for a single terminal agent's result.
+
+        Uses ``outcome.is_ok`` (succeeded or partial), not a literal
+        ``status == "success"`` check (S2): a ``handled_failure``
+        terminal's own ``status`` is literally ``"success"`` (it ran
+        without incident), but its output is the refusal it composed
+        over a real upstream failure, not proof the nested branch
+        worked — it renders like any other blocking terminal, naming
+        the real failure it handled.
+        """
         label = f"{name}[{index}]" if index is not None else name
         if not isinstance(agent_result, dict):
             return f"{label}: (no result)"
-        if agent_result.get("status") == "success":
+        if is_ok(agent_result):
             return f"{label}:\n{agent_result.get('response')}"
+        if agent_result.get("handled_failure"):
+            reason = agent_result.get("handled_failure_reason")
+            reason_suffix = f": {reason}" if reason else ""
+            return f"{label} (handled failure{reason_suffix})"
         status = agent_result.get("status", "failed")
         detail = agent_result.get("error") or agent_result.get("response")
         return f"{label} ({status}): {detail or 'no response'}"
