@@ -269,6 +269,33 @@ class TestDependencySkipReason:
             "upstream (failed: boom)"
         )
 
+    def test_dependency_failure_text_names_a_handled_failure_dep_by_outcome(
+        self,
+    ) -> None:
+        """A handled_failure dependency's OWN execution status reads
+        "success" (it ran without incident), but it is not a success —
+        naming it that way in a wrapping node's failure text ("h1
+        (success)") misreports what actually happened. The text must
+        read it by outcome, not raw status."""
+        evaluator = GuardEvaluator()
+        agent = LlmAgentConfig(
+            name="h2",
+            model_profile="gpt4",
+            depends_on=["h1"],
+            on_dependency_failure="run",
+        )
+        results: dict[str, Any] = {
+            "h1": {
+                "status": "success",
+                "response": "ok",
+                "handled_failure": True,
+                "handled_failure_reason": "a (failed: boom)",
+            },
+        }
+        assert evaluator.dependency_failure_text(agent, results) == (
+            "h1 (handled failure)"
+        )
+
     def test_handled_failure_false_when_a_dependency_succeeded(self) -> None:
         """A run-marked node whose dependency actually succeeded is a
         normal run, not a handled failure — nothing to mark."""
