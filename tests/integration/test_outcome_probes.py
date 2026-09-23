@@ -422,3 +422,27 @@ async def test_lhe_final_iteration_has_errors_survives_sibling_terminal() -> Non
     assert loop_node["outcome"] == "succeeded"
     assert loop_node["has_errors"] is True
     assert caller_status(result["status"]) == ("error", True)
+
+
+# ---------------------------------------------------------------------------
+# efan: M5 — _propagate_child_execution_errors's fan-out LIST branch must
+# walk every instance's own subtree has_errors, not just the gathered
+# node's top-level status.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_efan_subtree_errors_propagate_when_every_instance_succeeds() -> None:
+    """Both fan-out instances run the "stderr" child ensemble in full and
+    each one SUCCEEDS outright (stderr's "n" terminal always survives) —
+    no instance is partial or failed, so only the fan-out list branch
+    (walking child_has_errors over every item in the gathered response
+    list) can surface that each instance's own subtree had a real
+    failure (stderr's "a")."""
+    result = await invoke("efan")
+
+    s = node(result, "s")
+    assert s["outcome"] == "succeeded"
+    assert len(s["instances"]) == 2
+    assert all(inst["status"] == "success" for inst in s["instances"])
+    assert has_errors_of(result, "s") is True
