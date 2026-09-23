@@ -414,18 +414,37 @@ class DependencyResolver:
         self, dep_agent_name: str, result: dict[str, Any]
     ) -> Any:
         """An ``ensemble:`` dependency's response for an LLM consumer
-        (fail-closed-composition D). Falls through to the raw response
-        unchanged when the dependency isn't an ensemble agent (SF6: the
+        (fail-closed-composition D). A plain (non-ensemble) fan-out
+        dependency's gathered instance list renders per-instance (SF1)
+        instead. Falls through to the raw response unchanged when the
+        dependency isn't an ensemble agent AND isn't a fan-out (SF6: the
         lookups themselves are always wired — a caller with nothing
         meaningful to look up passes an explicit stub).
         """
         response = result.get("response")
         dep_config = self._get_dependency_config(dep_agent_name)
         if not isinstance(dep_config, EnsembleAgentConfig):
+            if result.get("fan_out") and isinstance(response, list):
+                return self._render_plain_fan_out(response, result)
             return response
         terminals = self._ensemble_terminal_agents(dep_config.ensemble)
         instance_errors = self._fan_out_instance_errors(result)
         return self._render_ensemble_response(response, terminals, instance_errors)
+
+    def _render_plain_fan_out(self, response: list[Any], result: dict[str, Any]) -> str:
+        """A plain (non-ensemble: script or LLM) fan-out dependency's
+        gathered instance list for an LLM consumer (SF1): each
+        successful instance's own text, each failed one named by its
+        error — the same shape a failed ensemble fan-out instance gets
+        (``_render_raw_fallback``), instead of the raw Python list a
+        consumer used to see (``['inst-ok ...', None]``).
+        """
+        errors = self._fan_out_instance_errors(result)
+        blocks = [
+            self._render_raw_fallback(item, index=idx, error=errors.get(idx))
+            for idx, item in enumerate(response)
+        ]
+        return "\n\n".join(blocks)
 
     @staticmethod
     def _fan_out_instance_errors(result: dict[str, Any]) -> dict[int, str]:
