@@ -1,0 +1,14 @@
+name: ikey
+description: p
+agents:
+  - name: d
+    model_profile: dead
+  - name: x
+    script: scripts/ok.py
+  - name: ch
+    ensemble: child
+    depends_on: [d, x]
+    input_key: queries
+  - name: after
+    script: scripts/echo.py
+    depends_on: [ch, x]

@@ -1,0 +1,9 @@
+name: whenskip
+description: p
+agents:
+  - name: a
+    script: scripts/okfalse.py
+  - name: t
+    script: scripts/echo.py
+    depends_on: [a]
+    when: ${a.ok}

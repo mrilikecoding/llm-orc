@@ -1,0 +1,5 @@
+name: paystat1
+description: p
+agents:
+  - name: a
+    script: scripts/errstatus.py
