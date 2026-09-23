@@ -11,7 +11,7 @@ from typing import Any
 
 from llm_orc.core.execution.phases import predicate
 from llm_orc.core.execution.phases.reference import resolve_reference
-from llm_orc.core.execution.utils import SUCCEEDED_STATUSES, dep_name
+from llm_orc.core.execution.utils import dep_name, result_succeeded
 from llm_orc.schemas.agent_config import AgentConfig
 
 
@@ -49,18 +49,47 @@ class GuardEvaluator:
             return None
         if not self._no_dependency_succeeded(agent_config, results_dict):
             return None
+        named = self.dependency_failure_text(agent_config, results_dict)
+        return f"no dependency succeeded: {named}"
+
+    def handled_failure(
+        self, agent_config: AgentConfig, results_dict: dict[str, Any]
+    ) -> bool:
+        """True when the node is about to execute ONLY because
+        ``on_dependency_failure: run`` overrode rule 1's cascade (X1):
+        none of its dependencies succeeded, yet ``should_run`` returns
+        True for it. The caller (``EnsembleExecutor._partition_by_guard``)
+        records this on the node's own result once it has one, so
+        ``result_succeeded`` (``terminal_failure_summary``, this class's
+        own dependency-succeeded check, further downstream) does not
+        count its output as a succeeded terminal even though it ran and
+        its output is the refusal/deliverable.
+        """
+        if agent_config.on_dependency_failure != "run":
+            return False
+        return self._no_dependency_succeeded(agent_config, results_dict)
+
+    def dependency_failure_text(
+        self, agent_config: AgentConfig, results_dict: dict[str, Any]
+    ) -> str:
+        """Every dependency's name and status, error text included for a
+        failed one — the naming half of ``dependency_skip_reason``,
+        factored out so a ``handled_failure`` node (X1: ran anyway via
+        ``on_dependency_failure: run``) can carry the SAME text naming
+        which real upstream failure it handled, not just its own
+        (unremarkable) execution status.
+        """
         deps = [dep_name(d) for d in agent_config.depends_on]
-        named = ", ".join(
+        return ", ".join(
             self._dep_status_text(dep, results_dict.get(dep)) for dep in deps
         )
-        return f"no dependency succeeded: {named}"
 
     def _no_dependency_succeeded(
         self, agent_config: AgentConfig, results_dict: dict[str, Any]
     ) -> bool:
         deps = [dep_name(d) for d in agent_config.depends_on]
         return bool(deps) and not any(
-            self._status_of(results_dict.get(d)) in SUCCEEDED_STATUSES for d in deps
+            result_succeeded(results_dict.get(d)) for d in deps
         )
 
     @staticmethod

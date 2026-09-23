@@ -9,7 +9,7 @@ from llm_orc.core.execution.result_types import (
     ExecutionMetadata,
     ExecutionResult,
 )
-from llm_orc.core.execution.utils import terminal_agent_names
+from llm_orc.core.execution.utils import SUCCEEDED_STATUSES, terminal_agent_names
 from llm_orc.schemas.agent_config import AgentConfig
 
 
@@ -119,7 +119,16 @@ def caller_status(raw_status: str | None) -> tuple[str, bool]:
 
 
 def _successful_response(agent_result: Any) -> str | None:
-    """An agent's response when it succeeded with non-empty text, else None.
+    """An agent's response when it succeeded (SF2: ``status`` in
+    ``SUCCEEDED_STATUSES`` — partial counts) with non-empty text, else
+    None.
+
+    Deliberately does NOT exclude ``handled_failure`` (X1, unlike
+    ``result_succeeded``): a node that ran only via
+    ``on_dependency_failure: run`` still produced the right thing to
+    show the caller (the fail-closed-composition caller contract:
+    "deliverable = handler output") even though it does not count as a
+    succeeded terminal for parent-status purposes.
 
     Tolerates both ``AgentResult`` objects and their serialized dict
     form, matching ``ExecutionResult.to_dict``'s posture.
@@ -132,8 +141,8 @@ def _successful_response(agent_result: Any) -> str | None:
 
 
 def _non_empty_text(response: Any, status: Any) -> str | None:
-    """Narrow a successful agent's response to non-empty text."""
-    if status != "success":
+    """Narrow a succeeded agent's response to non-empty text."""
+    if status not in SUCCEEDED_STATUSES:
         return None
     if isinstance(response, str) and response:
         return response

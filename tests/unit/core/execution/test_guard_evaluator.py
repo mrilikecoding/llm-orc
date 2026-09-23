@@ -156,6 +156,24 @@ class TestSkipPropagation:
         }
         assert evaluator.should_run(agent, results) is False
 
+    def test_skips_when_sole_dependency_is_a_handled_failure(self) -> None:
+        """X1: a dependency that ran only via on_dependency_failure: run
+        — status success, handled_failure True — does not count as a
+        succeeded dependency for the cascade rule: it is the refusal/
+        deliverable, not proof the pipeline worked."""
+        evaluator = GuardEvaluator()
+        agent = LlmAgentConfig(
+            name="downstream", model_profile="gpt4", depends_on=["shape"]
+        )
+        results: dict[str, Any] = {
+            "shape": {
+                "status": "success",
+                "response": "refusal",
+                "handled_failure": True,
+            },
+        }
+        assert evaluator.should_run(agent, results) is False
+
     def test_runs_when_sole_dependency_is_a_partial_fan_out(self) -> None:
         """A gathered fan-out dependency whose status is "partial" (some
         instances succeeded, some failed) counts as a successful
@@ -232,6 +250,47 @@ class TestDependencySkipReason:
         }
         reason = evaluator.dependency_skip_reason(agent, results)
         assert reason == "no dependency succeeded: a (failed: boom), b (skipped)"
+
+    def test_handled_failure_true_for_a_run_marked_node_with_no_success(self) -> None:
+        """X1: GuardEvaluator.handled_failure is the flag EnsembleExecutor
+        stamps on the node's own result once it runs."""
+        evaluator = GuardEvaluator()
+        agent = LlmAgentConfig(
+            name="shape",
+            model_profile="gpt4",
+            depends_on=["upstream"],
+            on_dependency_failure="run",
+        )
+        results: dict[str, Any] = {
+            "upstream": {"status": "failed", "error": "boom", "response": None},
+        }
+        assert evaluator.handled_failure(agent, results) is True
+        assert evaluator.dependency_failure_text(agent, results) == (
+            "upstream (failed: boom)"
+        )
+
+    def test_handled_failure_false_when_a_dependency_succeeded(self) -> None:
+        """A run-marked node whose dependency actually succeeded is a
+        normal run, not a handled failure — nothing to mark."""
+        evaluator = GuardEvaluator()
+        agent = LlmAgentConfig(
+            name="shape",
+            model_profile="gpt4",
+            depends_on=["upstream"],
+            on_dependency_failure="run",
+        )
+        results: dict[str, Any] = {"upstream": {"status": "success", "response": "ok"}}
+        assert evaluator.handled_failure(agent, results) is False
+
+    def test_handled_failure_false_when_flag_not_set(self) -> None:
+        evaluator = GuardEvaluator()
+        agent = LlmAgentConfig(
+            name="downstream", model_profile="gpt4", depends_on=["upstream"]
+        )
+        results: dict[str, Any] = {
+            "upstream": {"status": "failed", "error": "boom", "response": None},
+        }
+        assert evaluator.handled_failure(agent, results) is False
 
     def test_reason_none_for_a_run_marked_node(self) -> None:
         """A run-marked node is never skipped by rule 1 (should_run

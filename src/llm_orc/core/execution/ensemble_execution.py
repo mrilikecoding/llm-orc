@@ -594,7 +594,7 @@ class EnsembleExecutor:
         self,
         phase_agents: list[AgentConfig],
         results_dict: dict[str, Any],
-    ) -> list[AgentConfig]:
+    ) -> tuple[list[AgentConfig], list[tuple[str, str]]]:
         """Drop nodes whose guard fails, recording each as skipped.
 
         Guards are evaluated against accumulated upstream results, which are
@@ -604,11 +604,29 @@ class EnsembleExecutor:
         1 — no dependency succeeded) carries a ``reason`` naming each
         upstream agent and its status; a plain ``when:``-false skip does
         not (there is nothing to name).
+
+        Returns ``(active, handled_failures)``: the second element pairs
+        the name of every active agent that is about to run ONLY because
+        ``on_dependency_failure: run`` overrode rule 1 (X1) with the same
+        upstream-naming text ``dependency_skip_reason`` would have given
+        it had it been skipped instead. The caller marks
+        ``handled_failure: True`` and ``handled_failure_reason`` on its
+        result once the agent has one, so it does not count as a
+        succeeded terminal even though it ran and produced the refusal/
+        deliverable, and a parent that fails over it names the real
+        upstream failure, not just the handler's own (unremarkable)
+        status.
         """
         active: list[AgentConfig] = []
+        handled_failures: list[tuple[str, str]] = []
         for agent_config in phase_agents:
             if self._guard_evaluator.should_run(agent_config, results_dict):
                 active.append(agent_config)
+                if self._guard_evaluator.handled_failure(agent_config, results_dict):
+                    failure_text = self._guard_evaluator.dependency_failure_text(
+                        agent_config, results_dict
+                    )
+                    handled_failures.append((agent_config.name, failure_text))
                 continue
             skip_record: dict[str, Any] = {
                 "response": None,
@@ -621,7 +639,7 @@ class EnsembleExecutor:
             if reason is not None:
                 skip_record["reason"] = reason
             results_dict[agent_config.name] = skip_record
-        return active
+        return active, handled_failures
 
     def _partition_by_input_key_contract(
         self,
@@ -686,7 +704,9 @@ class EnsembleExecutor:
         Returns:
             Tuple of (has_errors, user_inputs_collected)
         """
-        phase_agents = self._partition_by_guard(phase_agents, results_dict)
+        phase_agents, handled_failures = self._partition_by_guard(
+            phase_agents, results_dict
+        )
         phase_agents, input_key_contract_failed = self._partition_by_input_key_contract(
             phase_agents, results_dict
         )
@@ -770,6 +790,19 @@ class EnsembleExecutor:
                     original_name, results_dict
                 )
                 results_dict[original_name] = gathered
+
+            # X1: a node that ran only because on_dependency_failure: run
+            # overrode rule 1 (no dependency succeeded) is marked on its
+            # own result — its status stays as reported for its own
+            # execution, but it does not count as a succeeded terminal
+            # for parent-status/cascade purposes (result_succeeded), and
+            # the reason it ran names the real upstream failure it
+            # handled.
+            for name, reason in handled_failures:
+                record = results_dict.get(name)
+                if isinstance(record, dict):
+                    record["handled_failure"] = True
+                    record["handled_failure_reason"] = reason
 
         finally:
             # Stop per-phase monitoring and collect metrics
