@@ -39,14 +39,20 @@ or any node earlier in this chain would otherwise cascade-skip everything
 downstream, and the turn would lose its refusal along with the failure it
 exists to report. Each reads its own crashed dependency defensively and
 composes an honest `"Refused: serving pipeline error: ..."` instead of
-vanishing. That composed refusal still does not count as a *succeeded*
-terminal for the serving ensemble's own caller-facing status: a node that ran
-only because of the override is marked `handled_failure` on its result, so
-the top-level `status`/`has_errors` a client or operator reads still say
-`error`, even though the client's HTTP response body carries real refusal
-content rather than an empty one. See `docs/domain-model.md` Invariant 13 and
-the `on_dependency_failure` glossary entry for the general contract; this is
-serving's own instance of it.
+vanishing. The top-level `status`/`has_errors` a client or operator reads
+still say `error` — the CAUSE is `has_errors` (the crashed `classify`/`seat`
+node is genuinely `failed`, and that alone makes `has_errors` true regardless
+of what runs after it), not the `handled_failure` marking on the node that
+ran to compose the refusal. `handled_failure` is a separate fact about that
+node's own `outcome` (addendum 2026-09-23): it keeps the composed refusal
+from being misread as a *succeeded* terminal by anything that consults it —
+without it, a wrapping node could report success just because the handler
+ran without incident, masking the real upstream failure. So the client's
+HTTP response body carries real refusal content, while the top-level status
+still honestly says `error`: two separate reads of the same underlying
+failure, not one causing the other. See `docs/domain-model.md` Invariant 13
+and the `on_dependency_failure` glossary entry for the general contract;
+this is serving's own instance of it.
 
 Build turns route to the **gated build shape** (`build-gated.yaml`): test-writer
 → code-writer → deterministic executor (runs code + tests, sandboxed

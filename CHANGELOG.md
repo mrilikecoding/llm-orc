@@ -63,12 +63,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `fallback_model_profile` and the profile-level chain, transitively), not
   just the primary profile; a `think`/provider mismatch on a fallback-only
   hop is now a load-time error instead of a silent runtime substitution.
-- A `partial` gathered fan-out and a plain `when:`-false skip (no cascade
-  reason) are now handled consistently everywhere "did this terminal
-  succeed" is asked, instead of only in some of the readers.
+- Every node result now carries an explicit `outcome` field
+  (`succeeded`/`partial`/`failed`/`skipped_by_failure`/`skipped_by_guard`/
+  `handled_failure`) and a `has_errors` field — the authoritative answer
+  to "did this node succeed", read through one shared module instead of
+  each caller re-deriving it from `status`/`reason`/`handled_failure`
+  independently. `status` stays for compatibility, derived from
+  `outcome`. A `succeeded` `ensemble:`/`dispatch:`/`loop:` node's
+  `has_errors` now also reflects a non-terminal failure inside its own
+  subtree, not only its own outcome. Closes a blocker: a `run`-marked
+  node with a false `when:` whose dependencies had genuinely failed used
+  to read as a neutral skip (its parent reported success over a real
+  crash); a chain of purely neutral `when:`-false skips, or a `run`-marked
+  node's sole neutral dependency, used to read as a failure instead.
 - A failed script agent's structured JSON payload (`stderr`, and
-  producer-specific fields like `web_searcher`'s `backend`) survives on
-  the failed record, not just its `error` text.
+  producer-specific fields like `web_searcher`'s `backend`) now survives
+  on the failed record nested under its own `payload` key, not merged
+  onto the record — a script printing `{"success": false, "error": "x",
+  "status": "success", "response": "FABRICATED"}` used to overwrite the
+  record's real `status`/`response` with its own fields; engine-owned
+  keys (`status`, `response`, `error`, `outcome`, `has_errors`) are
+  reserved and can never be shadowed by a script's own JSON now.
 
 ## [0.20.6] - 2026-09-22
 
