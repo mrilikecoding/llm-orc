@@ -27,10 +27,17 @@ def _mock_ensemble_execution() -> Generator[None, None, None]:
         patch(
             "llm_orc.cli_commands.run_streaming_execution",
             new_callable=AsyncMock,
+            # has_errors: False -- these tests exercise discovery/routing, so
+            # a mocked execution counts as a clean run for exit-code purposes
+            # (fail-closed-composition, caller contract); an unconfigured
+            # AsyncMock's return value is a truthy Mock, which would
+            # otherwise trip the new nonzero-exit-on-error behavior.
+            return_value=False,
         ),
         patch(
             "llm_orc.cli_commands.run_standard_execution",
             new_callable=AsyncMock,
+            return_value=False,
         ),
     ):
         yield
