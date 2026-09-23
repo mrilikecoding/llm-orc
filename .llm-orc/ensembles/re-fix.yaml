@@ -42,6 +42,17 @@ agents:
   - name: envelope
     script: scripts/agentic_serving/refix_envelope.py
     depends_on: [select, executor]
+    # NOT marked on_dependency_failure: run, deliberately (audited
+    # alongside code-seat.yaml's envelope). refix_envelope.py DOES
+    # compute an explicit diagnostics.accept boolean even on an empty
+    # candidate (accept = tests_pass and candidate_present and ...,
+    # short-circuiting to False), so running it here would stay SAFE --
+    # unlike code-seat's envelope, this one would not ship a masked
+    # empty write. But leaving it to skip is still the more INFORMATIVE
+    # choice: re-fix's dispatch agent (seat) then reports "failed" (B1,
+    # no terminal succeeded) and shape's _dead_seat_reason names the
+    # actual crash, instead of emit's generic "Another round needed: "
+    # (accept_reason empty) a masked-success run would produce.
 
 # Seat-owned admission contract (ADR-046 §2; WP-E8), mirrors build-gated's —
 # a well-formed envelope is a different granularity from the accept verdict
