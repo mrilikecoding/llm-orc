@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from llm_orc.core.execution.outcome import is_blocking
+from llm_orc.core.execution.outcome import Outcome, is_blocking, outcome_of
 from llm_orc.core.execution.phases import predicate
 from llm_orc.core.execution.phases.reference import resolve_reference
 from llm_orc.core.execution.utils import dep_name, result_succeeded
@@ -136,6 +136,13 @@ class GuardEvaluator:
 
     @classmethod
     def _dep_status_text(cls, dep: str, result: Any) -> str:
+        # A handled_failure dependency's own execution status reads
+        # "success" (it ran without incident) — naming it that way here
+        # would misreport what actually happened, so it is described by
+        # outcome instead, matching utils._terminal_status_text's same
+        # "(handled failure)" wording for the same concept.
+        if outcome_of(result) is Outcome.HANDLED_FAILURE:
+            return f"{dep} (handled failure)"
         status = cls._status_of(result) or "missing"
         error = cls._error_of(result) if status == "failed" else None
         return f"{dep} ({status}: {error})" if error else f"{dep} ({status})"
