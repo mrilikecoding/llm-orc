@@ -73,3 +73,38 @@ consumers keep the full record, unchanged. This retires ADR-013's deferred
   injection for A (unreachable profile, no chain → agent fails, compiler does
   not run) and B (decomposer forced to emit non-JSON → fan-out fails).
 - Independent adversarial review before merge.
+
+## Addendum 2026-09-23: explicit node outcome (after review round 3)
+
+Three review rounds each found a call site inferring success from overlapping
+fields (`status`, presence of `reason`, `handled_failure`, `partial`, a merged
+script payload). Doctrine 4: state the invariant once.
+
+**One engine-owned field, `outcome`, stamped in one place per node:**
+
+| outcome | when |
+|---|---|
+| `succeeded` | ran and succeeded |
+| `partial` | fan-out gather with >=1 instance ok and >=1 instance blocking |
+| `failed` | ran and failed: exception, script failure, input_key / fan-out contract failure, child/dispatch/loop with no ok terminal and >=1 blocking terminal |
+| `skipped_by_failure` | no dependency ok, >=1 dependency blocking, node not `on_dependency_failure: run`; also a `when:`-false node whose dependencies include no ok one and >=1 blocking one |
+| `skipped_by_guard` | `when:` false with >=1 ok dependency (or none), or every dependency `skipped_by_guard` |
+| `handled_failure` | an `on_dependency_failure: run` node that executed where the cascade would have given `skipped_by_failure`, and its own execution succeeded |
+
+Predicates (one module, the only readers): ok = `succeeded | partial`;
+blocking = `failed | skipped_by_failure | handled_failure`; neutral =
+`skipped_by_guard`.
+
+- Nested (`ensemble:`/`dispatch:`/`loop:` final iteration): the agent is
+  `failed` iff no terminal is ok and >=1 terminal is blocking; all-neutral
+  terminals give `succeeded` with empty output.
+- `has_errors` on every node result and every execution = any blocking
+  outcome in its subtree (child executions included). Caller `status` is
+  `error` iff the execution's `has_errors`. So a nested child with a failed
+  intermediate is `succeeded` + `has_errors: true`, and the top level
+  reports `error`: same facts, the thresholds the practitioner chose.
+- `status` stays for compatibility, derived from `outcome`; `outcome` is
+  authoritative and documented as such.
+- Engine-owned keys are reserved. A script's structured payload is stored
+  under `payload` and never merged over the record (`turn_trace` reads
+  `payload.stderr`).
