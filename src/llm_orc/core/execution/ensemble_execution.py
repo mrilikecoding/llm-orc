@@ -21,7 +21,12 @@ from llm_orc.core.execution.monitoring.phase_monitor import PhaseMonitor
 from llm_orc.core.execution.monitoring.streaming_progress_tracker import (
     StreamingProgressTracker,
 )
-from llm_orc.core.execution.outcome import child_has_errors, stamp_outcome
+from llm_orc.core.execution.outcome import (
+    Outcome,
+    child_has_errors,
+    outcome_of,
+    stamp_outcome,
+)
 from llm_orc.core.execution.phases.agent_dispatcher import AgentDispatcher
 from llm_orc.core.execution.phases.agent_execution_coordinator import (
     AgentExecutionCoordinator,
@@ -855,7 +860,7 @@ class EnsembleExecutor:
             # than setting the raw handled_failure key directly.
             for name, reason in handled_failures:
                 record = results_dict.get(name)
-                if isinstance(record, dict) and record.get("status") == "success":
+                if isinstance(record, dict) and outcome_of(record) is Outcome.SUCCEEDED:
                     record["handled_failure"] = True
                     record["handled_failure_reason"] = reason
                     stamp_outcome(record)
