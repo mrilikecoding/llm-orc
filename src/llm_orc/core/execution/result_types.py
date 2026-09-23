@@ -17,6 +17,13 @@ class AgentResult:
 
     Constructed by AgentDispatcher, consumed by PhaseResultProcessor.
     The model_instance field is stripped before serialization.
+
+    ``error_payload`` (fail-closed-composition B2) carries every field
+    alongside a failed script agent's own ``error``/``success`` keys —
+    ``stderr`` (turn_trace's ``_engine_failure_fields`` reads it) and
+    producer-specific fields like web_searcher's ``backend`` — onto the
+    failed record, merged in by ``to_dict``/``PhaseResultProcessor``
+    instead of being dropped when only ``error`` was kept.
     """
 
     status: Literal["success", "failed"]
@@ -24,6 +31,7 @@ class AgentResult:
     error: str | None = None
     model_substituted: bool = False
     model_instance: Any = field(default=None, repr=False)
+    error_payload: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize to dict, excluding model_instance."""
@@ -34,6 +42,8 @@ class AgentResult:
         }
         if self.status == "failed" and self.error is not None:
             result["error"] = self.error
+        if self.status == "failed" and self.error_payload:
+            result.update(self.error_payload)
         return result
 
 

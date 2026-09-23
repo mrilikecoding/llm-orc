@@ -230,11 +230,14 @@ def _engine_failure_fields(node: Any) -> dict[str, str]:
     failure text.
 
     Two producers of the same fact, both read here (fail-closed-
-    composition). The current contract (AgentDispatcher's B2): a script's
-    own crash is recorded as ``status: "failed"`` with the text in
-    ``error`` directly on the node — ``response`` is ``None``, so there is
-    nothing to parse there any more. Checked first, since it is what the
-    live engine actually produces today.
+    composition). The current contract (AgentDispatcher's B2, amended):
+    a script's own crash is recorded as ``status: "failed"`` with
+    ``error`` on the node, and every OTHER field from the script's own
+    failure JSON (``stderr``, and producer-specific fields like
+    web_searcher's ``backend``) flattened onto the node alongside it —
+    ``response`` is ``None``, so there is nothing to parse there any
+    more. Checked first, since it is what the live engine actually
+    produces today.
 
     Older callers (and the unit harness) that hand a node straight
     through with the engine's wrapped-JSON ``response`` and no top-level
@@ -252,23 +255,41 @@ def _engine_failure_fields(node: Any) -> dict[str, str]:
     """
     fields: dict[str, str] = {}
     if isinstance(node, dict) and node.get("status") == "failed":
-        error = node.get("error")
-        if isinstance(error, str) and error:
-            fields["error"] = error
+        # B2: AgentDispatcher now flattens a failed script's structured
+        # payload (stderr, and producer-specific fields) directly onto
+        # the node alongside error/status, so it survives here without
+        # needing response (which the current contract leaves None).
+        fields.update(_failure_text_fields(node))
     response = node.get("response") if isinstance(node, dict) else node
-    if not isinstance(response, str):
+    parsed = _parsed_dict(response)
+    if parsed is None:
         return fields
+    for key, value in _failure_text_fields(parsed).items():
+        fields.setdefault(key, value)
+    return fields
+
+
+def _parsed_dict(response: Any) -> dict[str, Any] | None:
+    """``response`` parsed to a dict, or ``None`` when it isn't a string
+    or doesn't parse to one."""
+    if not isinstance(response, str):
+        return None
     try:
         parsed = json.loads(response)
     except (json.JSONDecodeError, TypeError):
-        return fields
-    if not isinstance(parsed, dict):
-        return fields
-    if "error" not in fields:
-        error = parsed.get("error")
-        if isinstance(error, str) and error:
-            fields["error"] = error
-    stderr = parsed.get("stderr")
+        return None
+    return parsed if isinstance(parsed, dict) else None
+
+
+def _failure_text_fields(source: dict[str, Any]) -> dict[str, str]:
+    """``error``/``stderr`` from ``source``, keyed only when present as
+    non-empty strings — the two failure-text keys both the node itself
+    (B2) and a parsed ``response`` wrap may carry, ``stderr`` capped."""
+    fields: dict[str, str] = {}
+    error = source.get("error")
+    if isinstance(error, str) and error:
+        fields["error"] = error
+    stderr = source.get("stderr")
     if isinstance(stderr, str) and stderr:
         fields["stderr"] = _capped_stderr(stderr)
     return fields
