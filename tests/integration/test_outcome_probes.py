@@ -23,6 +23,7 @@ from llm_orc.core.config.config_manager import ConfigurationManager
 from llm_orc.core.config.ensemble_config import EnsembleLoader
 from llm_orc.core.execution.executor_factory import ExecutorFactory
 from llm_orc.core.execution.results_processor import caller_status
+from llm_orc.web.serving.turn_trace import build_turn_trace
 
 FIXTURE_ROOT = Path(__file__).resolve().parent.parent / "fixtures" / "outcome_probes"
 ENSEMBLES_DIR = FIXTURE_ROOT / ".llm-orc" / "ensembles"
@@ -446,3 +447,23 @@ async def test_efan_subtree_errors_propagate_when_every_instance_succeeds() -> N
     assert len(s["instances"]) == 2
     assert all(inst["status"] == "success" for inst in s["instances"])
     assert has_errors_of(result, "s") is True
+
+
+# ---------------------------------------------------------------------------
+# M4 — turn_trace's _engine_failure_fields must read a failed node's stderr
+# through its nested payload (addendum 2026-09-23), driven on a REAL
+# executor-produced record rather than a hand-built flat dict (the flat
+# shape is the pre-addendum one and would pass even if the payload-reading
+# branch broke — doctrine 11).
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_turn_trace_reads_stderr_through_the_nested_payload() -> None:
+    result = await invoke("stderr")
+
+    trace = build_turn_trace("stderr", result)
+
+    failed_node = next(n for n in trace["nodes"] if n["node"] == "a")
+    assert failed_node["status"] == "failed"
+    assert failed_node["stderr"] == "boom\n"
