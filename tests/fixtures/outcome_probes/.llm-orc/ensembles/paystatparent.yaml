@@ -1,0 +1,8 @@
+name: paystatparent
+description: p
+agents:
+  - name: k
+    ensemble: paystat1
+  - name: after
+    script: scripts/echo.py
+    depends_on: [k]

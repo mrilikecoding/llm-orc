@@ -1,0 +1,10 @@
+name: partfan
+description: p
+agents:
+  - name: d
+    script: scripts/twolist.py
+  - name: s
+    script: scripts/failinst.py
+    depends_on: [d]
+    input_key: queries
+    fan_out: true

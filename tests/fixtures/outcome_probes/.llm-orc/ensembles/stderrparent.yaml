@@ -1,0 +1,11 @@
+name: stderrparent
+description: >
+  Not part of the copied review2/review3 probe corpus — added for the
+  fail-closed-composition addendum's has_errors subtree-aggregation pin
+  (none of the copied probes wrap a multi-terminal child where one
+  terminal fails and another survives). "n" is the sole surviving
+  terminal of stderr's three independent nodes (a, s both fail), so this
+  node itself is outcome "succeeded" with has_errors true.
+agents:
+  - name: k
+    ensemble: stderr

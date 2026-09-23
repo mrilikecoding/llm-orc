@@ -1,0 +1,5 @@
+name: child
+description: p
+agents:
+  - name: only
+    script: scripts/echo.py

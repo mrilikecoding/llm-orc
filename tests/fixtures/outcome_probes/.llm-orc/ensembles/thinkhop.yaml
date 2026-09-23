@@ -1,0 +1,10 @@
+name: thinkhop
+description: p
+agents:
+  - name: a
+    model_profile: dead2
+    fallback_model_profile: gohost2
+    options:
+      think: false
+    max_tokens: 8
+    system_prompt: "Reply OK."

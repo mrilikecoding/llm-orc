@@ -1,0 +1,16 @@
+name: cascade
+description: p
+agents:
+  - name: a
+    script: scripts/fail.py
+  - name: x
+    script: scripts/ok.py
+  - name: b
+    script: scripts/echo.py
+    depends_on: [a]
+  - name: c
+    script: scripts/echo.py
+    depends_on: [a, x]
+  - name: d
+    script: scripts/echo.py
+    depends_on: [b]

@@ -1,0 +1,5 @@
+name: whenparent
+description: p
+agents:
+  - name: k
+    ensemble: whenskip

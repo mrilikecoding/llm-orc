@@ -1,0 +1,14 @@
+name: thinkprobe
+description: p
+agents:
+  - name: gowithchain
+    model_profile: gohost
+    fallback_model_profile: local
+    max_tokens: 5
+    system_prompt: "Reply with OK."
+  - name: gonochain
+    model_profile: gohost
+    max_tokens: 5
+  - name: consumer
+    script: scripts/echo.py
+    depends_on: [gowithchain]

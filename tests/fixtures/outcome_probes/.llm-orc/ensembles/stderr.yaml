@@ -1,0 +1,10 @@
+name: stderr
+description: p
+agents:
+  - name: a
+    script: scripts/fail.py
+  - name: s
+    script: scripts/sleep.py
+    timeout_seconds: 1
+  - name: n
+    script: scripts/stdoutnull.py

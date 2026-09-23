@@ -1,0 +1,12 @@
+name: whenchain
+description: p
+agents:
+  - name: a
+    script: scripts/okfalse.py
+  - name: b
+    script: scripts/echo.py
+    depends_on: [a]
+    when: ${a.ok}
+  - name: t
+    script: scripts/echo.py
+    depends_on: [b]

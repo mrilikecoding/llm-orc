@@ -1,0 +1,13 @@
+name: fanemptychild
+description: p
+agents:
+  - name: d
+    script: scripts/emptylist.py
+  - name: s
+    ensemble: child
+    depends_on: [d]
+    input_key: queries
+    fan_out: true
+  - name: comp
+    script: scripts/echo.py
+    depends_on: [s]

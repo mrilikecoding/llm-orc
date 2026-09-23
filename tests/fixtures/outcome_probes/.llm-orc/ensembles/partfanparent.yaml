@@ -1,0 +1,8 @@
+name: partfanparent
+description: p
+agents:
+  - name: k
+    ensemble: partfan
+  - name: after
+    script: scripts/echo.py
+    depends_on: [k]

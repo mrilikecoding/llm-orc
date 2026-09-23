@@ -70,7 +70,10 @@ line-length = 88
 target-version = "py311"
 # docs/plans holds design docs + reference capture/spike scripts (documentation
 # artifacts, not shipped code) — not held to project lint, like .claude/.llm-orc.
-extend-exclude = ["docs/plans"]
+# tests/fixtures/outcome_probes/.llm-orc/scripts are subprocess probe scripts
+# copied verbatim from a captured review session (fail-closed-composition
+# addendum) — fixture data the executor pin test runs, not maintained source.
+extend-exclude = ["docs/plans", "tests/fixtures/outcome_probes/.llm-orc/scripts"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "N", "UP", "B", "A", "C4", "PT", "C90"]

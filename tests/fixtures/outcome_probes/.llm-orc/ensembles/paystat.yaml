@@ -1,0 +1,8 @@
+name: paystat
+description: p
+agents:
+  - name: a
+    script: scripts/payloadstatus.py
+  - name: t
+    script: scripts/echo.py
+    depends_on: [a]
