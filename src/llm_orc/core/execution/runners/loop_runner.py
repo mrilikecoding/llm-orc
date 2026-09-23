@@ -102,6 +102,12 @@ class LoopAgentRunner:
                     "output": outcome.output,
                     "iterations": outcome.iterations,
                     "terminated": outcome.terminated,
+                    # addendum 2026-09-23: the FINAL iteration's own
+                    # has_errors, so a parent's has_errors aggregation
+                    # (outcome.child_has_errors) sees a subtree failure
+                    # inside the loop body even when the body's
+                    # terminal itself succeeded on that iteration.
+                    "has_errors": bool(last_child_result.get("has_errors")),
                 }
             ),
             None,

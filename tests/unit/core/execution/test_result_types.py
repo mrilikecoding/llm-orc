@@ -65,6 +65,32 @@ class TestAgentResult:
         assert d["status"] == "failed"
         assert d["error"] == "oops"
 
+    def test_to_dict_nests_payload_never_merges_it(self) -> None:
+        """fail-closed-composition addendum 2026-09-23 BLOCKER: a script
+        printing {"success": false, "error": "x", "status": "success",
+        "response": "FABRICATED"} used to have "status"/"response"
+        merged straight onto the record, overwriting the real failed
+        status with the script's own fabricated "success". The payload
+        is nested under its own key instead, so it can never shadow an
+        engine-owned field."""
+        result = AgentResult(
+            status="failed",
+            error="search backend down",
+            payload={"status": "success", "response": "FABRICATED dossier"},
+        )
+
+        d = result.to_dict()
+
+        assert d["status"] == "failed"
+        assert d["error"] == "search backend down"
+        assert d["response"] is None
+        assert d["payload"] == {"status": "success", "response": "FABRICATED dossier"}
+
+    def test_to_dict_omits_payload_key_when_none(self) -> None:
+        result = AgentResult(status="failed", error="boom")
+
+        assert "payload" not in result.to_dict()
+
     def test_to_dict_excludes_model_instance(self) -> None:
         """to_dict never includes model_instance."""
         result = AgentResult(

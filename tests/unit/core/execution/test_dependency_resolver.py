@@ -1042,6 +1042,135 @@ class TestChildInputKeyContractError:
         assert error is not None
         assert "skipped" in error
 
+    def test_error_when_input_key_source_is_a_handled_failure(self) -> None:
+        """S2 (addendum 2026-09-23): a handled_failure dependency's own
+        status is literally "success" (it ran without incident), but it
+        is not a succeeded terminal — input_key's verbatim promise
+        cannot be honored from a composed refusal any more than from a
+        plain failure."""
+        resolver = self.setup_resolver()
+        agent = EnsembleAgentConfig(
+            name="consumer",
+            ensemble="worker",
+            depends_on=["producer"],
+            input_key="queries",
+        )
+        results_dict = {
+            "producer": {
+                "status": "success",
+                "response": "refusal",
+                "handled_failure": True,
+            }
+        }
+
+        error = resolver.child_input_key_contract_error(agent, results_dict)
+
+        assert error is not None
+        assert "producer" in error
+
+
+class TestInputKeySelectionExcludesHandledFailure:
+    """S2: ``_selected_child_value``/``_apply_input_key_selection`` read
+    ``outcome.is_ok``, not a literal ``status == "success"`` check — a
+    handled_failure dependency's own status reads "success", but its
+    response is a composed refusal, not the honest verbatim value
+    input_key promises."""
+
+    def setup_resolver(self) -> DependencyResolver:
+        return DependencyResolver(
+            role_resolver=Mock(return_value=None),
+            dependency_config_lookup=lambda _name: None,
+            ensemble_terminal_agents=lambda _ref: [],
+        )
+
+    def test_child_execution_consumer_does_not_select_a_handled_failure(self) -> None:
+        resolver = self.setup_resolver()
+        agent = EnsembleAgentConfig(
+            name="consumer",
+            ensemble="worker",
+            depends_on=["producer"],
+            input_key="queries",
+        )
+        results_dict = {
+            "producer": {
+                "status": "success",
+                "response": "refusal text",
+                "handled_failure": True,
+            }
+        }
+
+        # _compute_agent_input falls through past the input_key
+        # short-circuit and composes a normal dependency envelope
+        # instead of handing "refusal text" through verbatim.
+        computed = resolver.enhance_input_with_dependencies(
+            "base input", [agent], results_dict
+        )
+        assert "refusal text" not in computed["consumer"]
+        assert "handled failure" in computed["consumer"]
+
+    def test_script_consumer_input_key_selection_skips_handled_failure(self) -> None:
+        """_apply_input_key_selection leaves a handled_failure
+        dependency's response un-selected, so a script agent's
+        composed input falls back to the full dependencies dict
+        instead of a key plucked from a refusal."""
+        resolver = self.setup_resolver()
+        agent = ScriptAgentConfig(
+            name="consumer",
+            script="run.py",
+            depends_on=["producer"],
+            input_key="queries",
+        )
+        results_dict = {
+            "producer": {
+                "status": "success",
+                "response": json.dumps({"queries": ["should-not-appear"]}),
+                "handled_failure": True,
+            }
+        }
+
+        computed = resolver.enhance_input_with_dependencies(
+            "base input", [agent], results_dict
+        )
+        parsed = json.loads(computed["consumer"])
+        assert parsed["dependencies"]["producer"]["handled_failure"] is True
+
+
+class TestNonSuccessDependencyBlockNamesHandledFailure:
+    """S2: a handled_failure dependency renders as a named blocking
+    block for an LLM/script consumer, not as unqualified success text —
+    ``_render_non_success_dependency_block`` names the real upstream
+    failure it handled instead of a misleading "(success): <refusal>"."""
+
+    def setup_resolver(self) -> DependencyResolver:
+        return DependencyResolver(
+            role_resolver=Mock(return_value=None),
+            dependency_config_lookup=lambda _name: None,
+            ensemble_terminal_agents=lambda _ref: [],
+        )
+
+    def test_llm_consumer_sees_handled_failure_named_not_its_text(self) -> None:
+        resolver = self.setup_resolver()
+        agent = LlmAgentConfig(
+            name="consumer", model_profile="test-profile", depends_on=["shape"]
+        )
+        results_dict = {
+            "shape": {
+                "status": "success",
+                "response": "Refused: serving pipeline error",
+                "handled_failure": True,
+                "handled_failure_reason": (
+                    "no dependency succeeded: seat (failed: boom)"
+                ),
+            }
+        }
+
+        computed = resolver.enhance_input_with_dependencies(
+            "base input", [agent], results_dict
+        )
+
+        assert "handled failure" in computed["consumer"]
+        assert "seat (failed: boom)" in computed["consumer"]
+
 
 class TestLlmConsumerOfEnsembleDependency:
     """An LLM consumer of an ``ensemble:`` dependency gets the child's
@@ -1381,6 +1510,47 @@ class TestLlmConsumerOfEnsembleDependency:
         )
 
         assert "timeout contacting search API" in enhanced["compiler"]
+
+    def test_handled_failure_terminal_names_real_failure_not_its_text(self) -> None:
+        """S2 (addendum 2026-09-23): a nested terminal that is itself a
+        handled_failure node has status "success" (it ran without
+        incident), but _render_terminal_block must not read that as a
+        succeeded terminal — it names the real upstream failure the
+        terminal handled instead of rendering its composed refusal as
+        unqualified success content."""
+        dep_config = EnsembleAgentConfig(
+            name="searcher", ensemble="agentic-serving/web-searcher"
+        )
+        resolver = self._resolver(dep_config, ["searcher"])
+
+        agents: list[AgentConfig] = [
+            LlmAgentConfig(
+                name="compiler",
+                model_profile="test-profile",
+                depends_on=["searcher"],
+            ),
+        ]
+        child_result = self._child_result(
+            {
+                "searcher": {
+                    "status": "success",
+                    "response": "Refused: no upstream data",
+                    "handled_failure": True,
+                    "handled_failure_reason": "no dependency succeeded: fetch (failed)",
+                }
+            }
+        )
+        results_dict = {
+            "searcher": {"status": "success", "response": child_result},
+        }
+
+        enhanced = resolver.enhance_input_with_dependencies(
+            "base input", agents, results_dict
+        )
+
+        assert "Refused: no upstream data" not in enhanced["compiler"]
+        assert "handled failure" in enhanced["compiler"]
+        assert "fetch (failed)" in enhanced["compiler"]
 
     def test_unparseable_child_result_renders_raw_text(self) -> None:
         """A response that isn't a child-result dict at all (the child

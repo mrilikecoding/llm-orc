@@ -232,3 +232,33 @@ class TestDetectInPhaseUpstreamFailed:
         failed_agent, message = failed[0]
         assert failed_agent.name == "searcher"
         assert "decomposer" in message
+
+    def test_upstream_handled_failure_also_fails_the_fan_out_agent(
+        self, coordinator: FanOutCoordinator
+    ) -> None:
+        """S2 (addendum 2026-09-23): upstream_status literally reads
+        "success" for a handled_failure node (it ran without incident),
+        but its response is a composed refusal, not a JSON array to fan
+        out over — outcome.is_ok excludes it the same as a plain
+        failure."""
+        agent = LlmAgentConfig(
+            name="searcher",
+            model_profile="test",
+            depends_on=["decomposer"],
+            fan_out=True,
+            input_key="queries",
+        )
+        results_dict: dict[str, Any] = {
+            "decomposer": {
+                "status": "success",
+                "response": "refusal",
+                "handled_failure": True,
+            }
+        }
+
+        ready, failed = coordinator.detect_in_phase([agent], results_dict)
+
+        assert ready == []
+        assert len(failed) == 1
+        failed_agent, _message = failed[0]
+        assert failed_agent.name == "searcher"

@@ -292,7 +292,7 @@ class TestScriptAgentFailureShape:
         result = results["a"]
         assert result.status == "failed"
         assert result.error == "Script failed with exit code 3"
-        assert result.error_payload == {"stderr": "boom\n"}
+        assert result.payload == {"stderr": "boom\n"}
 
     @pytest.mark.asyncio
     async def test_backend_field_preserved_on_failure(self) -> None:
@@ -312,7 +312,7 @@ class TestScriptAgentFailureShape:
         results = await dispatcher.execute_agents_in_phase([agent], "test input")
 
         result = results["searcher"]
-        assert result.error_payload == {"backend": "tavily"}
+        assert result.payload == {"backend": "tavily"}
 
     @pytest.mark.asyncio
     async def test_no_error_payload_when_nothing_beyond_error_and_success(
@@ -327,7 +327,7 @@ class TestScriptAgentFailureShape:
 
         results = await dispatcher.execute_agents_in_phase([agent], "test input")
 
-        assert results["worker"].error_payload is None
+        assert results["worker"].payload is None
 
     @pytest.mark.asyncio
     async def test_llm_agent_response_is_never_inspected_for_failure_shape(

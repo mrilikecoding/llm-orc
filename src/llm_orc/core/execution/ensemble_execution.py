@@ -21,6 +21,7 @@ from llm_orc.core.execution.monitoring.phase_monitor import PhaseMonitor
 from llm_orc.core.execution.monitoring.streaming_progress_tracker import (
     StreamingProgressTracker,
 )
+from llm_orc.core.execution.outcome import child_has_errors, stamp_outcome
 from llm_orc.core.execution.phases.agent_dispatcher import AgentDispatcher
 from llm_orc.core.execution.phases.agent_execution_coordinator import (
     AgentExecutionCoordinator,
@@ -638,6 +639,7 @@ class EnsembleExecutor:
             )
             if reason is not None:
                 skip_record["reason"] = reason
+            stamp_outcome(skip_record)
             results_dict[agent_config.name] = skip_record
         return active, handled_failures
 
@@ -672,13 +674,55 @@ class EnsembleExecutor:
                 active.append(agent_config)
                 continue
             any_failed = True
-            results_dict[agent_config.name] = {
-                "response": None,
-                "status": "failed",
-                "model_substituted": False,
-                "error": error,
-            }
+            results_dict[agent_config.name] = stamp_outcome(
+                {
+                    "response": None,
+                    "status": "failed",
+                    "model_substituted": False,
+                    "error": error,
+                }
+            )
         return active, any_failed
+
+    def _propagate_child_execution_errors(
+        self, agents: list[AgentConfig], results_dict: dict[str, Any]
+    ) -> bool:
+        """Fold a child execution's OWN subtree errors into its node's
+        ``has_errors`` (addendum 2026-09-23): a ``succeeded``
+        ``ensemble:``/``dispatch:``/``loop:`` node (a terminal succeeded,
+        so ``terminal_failure_summary`` did not raise) can still wrap a
+        subtree where some OTHER, non-terminal agent failed — that fact
+        must not vanish just because the node's own outcome reads ok.
+        Mutates each such node's stored record in place and returns
+        whether any of them actually had a subtree error, for the
+        caller to fold into the ensemble-level ``has_errors``.
+
+        Checked for every ``ChildExecutionConfig`` agent declared in the
+        ensemble, fan-out original or not: a plain node's response is
+        the child's own result (str or dict); a gathered fan-out
+        original's response is a list, one child result per instance.
+        Fan-out INSTANCES themselves are not in ``agents`` (only their
+        original declaration is) so are not visited a second time.
+        """
+        any_new_error = False
+        for agent_config in agents:
+            if not isinstance(
+                agent_config,
+                EnsembleAgentConfig | LoopAgentConfig | DynamicDispatchAgentConfig,
+            ):
+                continue
+            record = results_dict.get(agent_config.name)
+            if not isinstance(record, dict):
+                continue
+            response = record.get("response")
+            if record.get("fan_out") and isinstance(response, list):
+                subtree_errors = any(child_has_errors(item) for item in response)
+            else:
+                subtree_errors = child_has_errors(response)
+            if subtree_errors and not record.get("has_errors"):
+                record["has_errors"] = True
+                any_new_error = True
+        return any_new_error
 
     async def _execute_phase_with_monitoring(
         self,
@@ -736,12 +780,14 @@ class EnsembleExecutor:
             expanded_agents = [
                 a for a in expanded_agents if a.name != agent_config.name
             ]
-            results_dict[agent_config.name] = {
-                "response": None,
-                "status": "failed",
-                "model_substituted": False,
-                "error": error_message,
-            }
+            results_dict[agent_config.name] = stamp_outcome(
+                {
+                    "response": None,
+                    "status": "failed",
+                    "model_substituted": False,
+                    "error": error_message,
+                }
+            )
 
         if fan_out_original_names and base_input is not None:
             if isinstance(input_data, dict):
@@ -795,14 +841,24 @@ class EnsembleExecutor:
             # overrode rule 1 (no dependency succeeded) is marked on its
             # own result — its status stays as reported for its own
             # execution, but it does not count as a succeeded terminal
-            # for parent-status/cascade purposes (result_succeeded), and
+            # for parent-status/cascade purposes (outcome.is_ok), and
             # the reason it ran names the real upstream failure it
-            # handled.
+            # handled. Only when the node's OWN execution succeeded
+            # (addendum 2026-09-23, the table's "and its own execution
+            # succeeded" clause): a handled-failure node that itself
+            # crashed, or one a later partition step (the input_key
+            # contract check) rejected before it ever ran, is a plain
+            # failure — stamping handled_failure over that record would
+            # misreport a node that never ran as "ran to cover a
+            # failure". Re-stamped through stamp_outcome so outcome
+            # becomes handled_failure and has_errors follows, rather
+            # than setting the raw handled_failure key directly.
             for name, reason in handled_failures:
                 record = results_dict.get(name)
-                if isinstance(record, dict):
+                if isinstance(record, dict) and record.get("status") == "success":
                     record["handled_failure"] = True
                     record["handled_failure_reason"] = reason
+                    stamp_outcome(record)
 
         finally:
             # Stop per-phase monitoring and collect metrics
@@ -888,6 +944,11 @@ class EnsembleExecutor:
             has_errors = has_errors or phase_has_errors
             if track_user_inputs:
                 user_inputs_collected += user_inputs_from_phase
+
+        has_errors = (
+            self._propagate_child_execution_errors(config.agents, results_dict)
+            or has_errors
+        )
 
         final_result = await self._finalize_execution_results(
             config, result, has_errors, start_time
