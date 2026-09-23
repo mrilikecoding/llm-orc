@@ -47,6 +47,25 @@ def _script_failure_error(response: str) -> str:
     return response
 
 
+def _script_failure_payload(response: str) -> dict[str, Any] | None:
+    """Every field alongside a failed script's own ``error``/``success``
+    keys (fail-closed-composition B2) — ``stderr`` (turn_trace's
+    ``_engine_failure_fields`` reads it) and producer-specific fields
+    like web_searcher's ``backend`` — so they survive on the failed
+    record instead of being dropped when only ``error`` was kept.
+    ``None`` when the response doesn't parse to a dict, or nothing is
+    left once ``error``/``success`` are excluded.
+    """
+    try:
+        parsed = json.loads(response)
+    except (json.JSONDecodeError, TypeError):
+        return None
+    if not isinstance(parsed, dict):
+        return None
+    payload = {k: v for k, v in parsed.items() if k not in ("error", "success")}
+    return payload or None
+
+
 # Type alias for the resolve profile callback
 ResolveProfileFn = Callable[[AgentConfig], Awaitable[dict[str, Any]]]
 
@@ -204,6 +223,7 @@ class AgentDispatcher:
             return agent_name, AgentResult(
                 status="failed",
                 error=_script_failure_error(response),
+                error_payload=_script_failure_payload(response),
             )
 
         return agent_name, AgentResult(

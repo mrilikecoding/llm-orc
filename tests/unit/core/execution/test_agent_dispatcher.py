@@ -266,6 +266,70 @@ class TestScriptAgentFailureShape:
         assert result.response == json.dumps({"results": ["a"]})
 
     @pytest.mark.asyncio
+    async def test_stderr_preserved_on_failure(self) -> None:
+        """B2: fields alongside a failed script's own error/success keys
+        survive on the failed record — stderr (#174's turn_trace reads
+        it), not just error."""
+        dispatcher = _make_dispatcher()
+        coordinator = cast(AsyncMock, dispatcher._execution_coordinator)
+        coordinator.execute_agent_with_timeout = AsyncMock(
+            return_value=(
+                json.dumps(
+                    {
+                        "success": False,
+                        "error": "Script failed with exit code 3",
+                        "stderr": "boom\n",
+                    }
+                ),
+                None,
+                False,
+            )
+        )
+        agent = ScriptAgentConfig(name="a", script="fail.py")
+
+        results = await dispatcher.execute_agents_in_phase([agent], "test input")
+
+        result = results["a"]
+        assert result.status == "failed"
+        assert result.error == "Script failed with exit code 3"
+        assert result.error_payload == {"stderr": "boom\n"}
+
+    @pytest.mark.asyncio
+    async def test_backend_field_preserved_on_failure(self) -> None:
+        """B2: web_searcher's own producer-specific field survives too,
+        not just stderr."""
+        dispatcher = _make_dispatcher()
+        coordinator = cast(AsyncMock, dispatcher._execution_coordinator)
+        coordinator.execute_agent_with_timeout = AsyncMock(
+            return_value=(
+                json.dumps({"error": "authentication_failed", "backend": "tavily"}),
+                None,
+                False,
+            )
+        )
+        agent = ScriptAgentConfig(name="searcher", script="web_searcher.py")
+
+        results = await dispatcher.execute_agents_in_phase([agent], "test input")
+
+        result = results["searcher"]
+        assert result.error_payload == {"backend": "tavily"}
+
+    @pytest.mark.asyncio
+    async def test_no_error_payload_when_nothing_beyond_error_and_success(
+        self,
+    ) -> None:
+        dispatcher = _make_dispatcher()
+        coordinator = cast(AsyncMock, dispatcher._execution_coordinator)
+        coordinator.execute_agent_with_timeout = AsyncMock(
+            return_value=(json.dumps({"success": False}), None, False)
+        )
+        agent = ScriptAgentConfig(name="worker", script="worker.py")
+
+        results = await dispatcher.execute_agents_in_phase([agent], "test input")
+
+        assert results["worker"].error_payload is None
+
+    @pytest.mark.asyncio
     async def test_llm_agent_response_is_never_inspected_for_failure_shape(
         self,
     ) -> None:

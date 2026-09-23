@@ -287,6 +287,39 @@ def test_a_status_failed_seat_child_records_its_error_field() -> None:
     assert seat_nodes[0]["error"] == "Script failed with exit code 1"
 
 
+def test_a_status_failed_seat_child_records_its_stderr_field() -> None:
+    """B2 amended: AgentDispatcher now flattens a failed script's
+    structured payload (stderr, and producer-specific fields like
+    web_searcher's backend) directly onto the node alongside
+    status/error, not just error alone — the same live-engine shape as
+    test_a_status_failed_seat_child_records_its_error_field, with the
+    stderr branch this once again exercises (#174 must be reachable
+    through the CURRENT contract, not only the older response-wrapped
+    shape the tests above cover)."""
+    import json
+
+    child_result = {
+        "results": {
+            "verdict": {
+                "response": None,
+                "status": "failed",
+                "error": "Script failed with exit code 1",
+                "stderr": "boom\n",
+                "backend": "tavily",
+            }
+        }
+    }
+    result = {
+        "results": {"seat": {"status": "success", "response": json.dumps(child_result)}}
+    }
+
+    trace = build_turn_trace("serving", result)
+
+    seat_nodes = trace["nodes"][0]["seat"]
+    assert seat_nodes[0]["error"] == "Script failed with exit code 1"
+    assert seat_nodes[0]["stderr"] == "boom\n"
+
+
 def test_a_healthy_seat_child_carries_no_error_or_stderr_fields() -> None:
     """The over-refusal direction: a healthy nested response is untouched."""
     import json
@@ -409,6 +442,27 @@ def test_a_status_failed_node_records_its_error_field() -> None:
     assert node["error"] == (
         "Schema JSON execution failed: Command '[...]' returned non-zero exit status 1."
     )
+
+
+def test_a_status_failed_node_records_its_stderr_field() -> None:
+    """B2 amended companion: a top-level failed node's stderr survives
+    through the CURRENT (response: None) shape, not only the older
+    response-wrapped one."""
+    result = {
+        "results": {
+            "resolve": {
+                "response": None,
+                "status": "failed",
+                "error": "Schema JSON execution failed",
+                "stderr": "Traceback (most recent call last):\nboom\n",
+            }
+        }
+    }
+
+    trace = build_turn_trace("serving", result)
+
+    node = trace["nodes"][0]
+    assert node["stderr"] == "Traceback (most recent call last):\nboom\n"
 
 
 def test_a_status_success_node_is_unaffected_by_the_status_check() -> None:

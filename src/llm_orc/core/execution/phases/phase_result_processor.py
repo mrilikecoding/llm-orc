@@ -114,6 +114,8 @@ class PhaseResultProcessor:
             }
             if agent_result.status == "failed":
                 results_dict[agent_name]["error"] = agent_result.error
+                if agent_result.error_payload:
+                    results_dict[agent_name].update(agent_result.error_payload)
         else:
             results_dict[agent_name] = {
                 "response": agent_result.get("response"),
@@ -122,6 +124,9 @@ class PhaseResultProcessor:
             }
             if agent_result["status"] == "failed":
                 results_dict[agent_name]["error"] = agent_result["error"]
+                payload = agent_result.get("error_payload")
+                if payload:
+                    results_dict[agent_name].update(payload)
 
     async def _process_successful_agent_result(
         self,
