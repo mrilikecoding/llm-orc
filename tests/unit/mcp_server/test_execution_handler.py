@@ -43,7 +43,10 @@ def _fake_ensemble(name: str = "test") -> Any:
 
 
 class TestInvokeStatusNormalization:
-    """invoke translates internal status values to the API contract."""
+    """invoke translates internal status values to the caller contract's
+    "success"/"error" vocabulary plus has_errors (fail-closed-
+    composition, caller contract) — the same mapping every surface
+    (REST, MCP invoke, CLI JSON) uses, via caller_status."""
 
     @pytest.mark.asyncio
     async def test_completed_maps_to_success(self) -> None:
@@ -59,6 +62,7 @@ class TestInvokeStatusNormalization:
         result = await handler.invoke({"ensemble_name": "test", "input": "hello"})
 
         assert result["status"] == "success"
+        assert result["has_errors"] is False
 
     @pytest.mark.asyncio
     async def test_completed_with_errors_maps_to_error(self) -> None:
@@ -74,9 +78,12 @@ class TestInvokeStatusNormalization:
         result = await handler.invoke({"ensemble_name": "test", "input": "hello"})
 
         assert result["status"] == "error"
+        assert result["has_errors"] is True
 
     @pytest.mark.asyncio
-    async def test_unknown_status_passes_through(self) -> None:
+    async def test_unrecognized_status_is_error_not_passed_through(self) -> None:
+        """No caller ever sees a raw internal status string — only
+        "success" or "error"."""
         handler = _make_handler(
             _fake_ensemble(),
             executor_execute_return={
@@ -88,7 +95,8 @@ class TestInvokeStatusNormalization:
 
         result = await handler.invoke({"ensemble_name": "test", "input": "hello"})
 
-        assert result["status"] == "running"
+        assert result["status"] == "error"
+        assert result["has_errors"] is True
 
 
 class TestInvokeDeliverablePassthrough:

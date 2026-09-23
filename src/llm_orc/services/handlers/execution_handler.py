@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any
 from llm_orc.core.config.config_manager import ConfigurationManager
 from llm_orc.core.config.ensemble_config import EnsembleLoader
 from llm_orc.core.execution.artifact_manager import ArtifactManager
+from llm_orc.core.execution.results_processor import caller_status
 from llm_orc.mcp.project_context import ProjectContext
 
 if TYPE_CHECKING:
@@ -87,17 +88,13 @@ class ExecutionHandler:
         executor = self._get_executor()
         result = await executor.execute(config, input_data)
 
-        raw_status: str | None = result.get("status")
-        # Normalize internal status values to the API contract expected by clients.
-        # "completed"             → "success"  (all agents succeeded)
-        # "completed_with_errors" → "error"    (some agents failed)
-        status_map = {"completed": "success", "completed_with_errors": "error"}
-        status = status_map.get(raw_status, raw_status) if raw_status else raw_status
+        status, has_errors = caller_status(result.get("status"))
 
         return {
             "results": result.get("results", {}),
             "deliverable": result.get("deliverable"),
             "status": status,
+            "has_errors": has_errors,
             "raw_output": config.raw_output,
         }
 
@@ -178,26 +175,33 @@ class ExecutionHandler:
         elif event_type == "execution_completed":
             results = event_data.get("results", {})
             deliverable = event_data.get("deliverable")
-            status = event_data.get("status", "completed")
+            raw_status = event_data.get("status", "completed")
+            status, has_errors = caller_status(raw_status)
             state["result"] = {
                 "results": results,
                 "deliverable": deliverable,
                 "status": status,
+                "has_errors": has_errors,
             }
             ensemble_name = state.get("ensemble_name", "unknown")
             input_data = state.get("input_data", "")
+            # The artifact keeps the raw internal status (completed /
+            # completed_with_errors) — its own consumers read that value,
+            # unrelated to the caller-facing success/error vocabulary above.
             self.save_execution_artifact(
-                ensemble_name, input_data, results, deliverable, status
+                ensemble_name, input_data, results, deliverable, raw_status
             )
             await reporter.report_progress(progress=total_agents, total=total_agents)
 
         elif event_type == "execution_failed":
             error_msg = event_data.get("error", "Unknown error")
             await reporter.error(f"Execution failed: {error_msg}")
+            status, has_errors = caller_status("failed")
             state["result"] = {
                 "results": {},
                 "deliverable": None,
-                "status": "failed",
+                "status": status,
+                "has_errors": has_errors,
                 "error": error_msg,
             }
 
