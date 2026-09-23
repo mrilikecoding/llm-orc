@@ -71,11 +71,21 @@ class LoopAgentRunner:
         parent = self._parent
 
         last_child_result: dict[str, Any] = {}
+        iteration_failures: list[dict[str, Any]] = []
+        iteration_count = 0
 
         async def body_executor(inp: str) -> dict[str, Any]:
-            nonlocal last_child_result
+            nonlocal last_child_result, iteration_count
+            iteration_count += 1
             child = parent.create_child_executor(depth=child_depth)
             child_result = await child.execute(body_config, inp)
+            iteration_failure = terminal_failure_summary(
+                body_config.agents, child_result.get("results", {})
+            )
+            if iteration_failure is not None:
+                iteration_failures.append(
+                    {"iteration": iteration_count, "error": iteration_failure}
+                )
             last_child_result = child_result
             return self._terminal_output(child_result)
 
@@ -96,23 +106,34 @@ class LoopAgentRunner:
                 f"agent on its final iteration ({failure})"
             )
 
-        return (
-            json.dumps(
-                {
-                    "output": outcome.output,
-                    "iterations": outcome.iterations,
-                    "terminated": outcome.terminated,
-                    # addendum 2026-09-23: the FINAL iteration's own
-                    # has_errors, so a parent's has_errors aggregation
-                    # (outcome.child_has_errors) sees a subtree failure
-                    # inside the loop body even when the body's
-                    # terminal itself succeeded on that iteration.
-                    "has_errors": bool(last_child_result.get("has_errors")),
-                }
-            ),
-            None,
-            False,
-        )
+        # Round-4 lead decision: has_errors reflects the FINAL iteration
+        # only — earlier iterations are retry attempts the loop exists to
+        # absorb, so a turn that succeeds on retry must not report error.
+        # Their blocking outcomes are never dropped, though: anything
+        # recorded above for an iteration before this last one survives
+        # on the result as iteration_failures (the final iteration's own
+        # failure, if any, already raised above instead of landing here).
+        prior_failures = [
+            entry
+            for entry in iteration_failures
+            if entry["iteration"] != outcome.iterations
+        ]
+
+        response: dict[str, Any] = {
+            "output": outcome.output,
+            "iterations": outcome.iterations,
+            "terminated": outcome.terminated,
+            # addendum 2026-09-23: the FINAL iteration's own has_errors,
+            # so a parent's has_errors aggregation (outcome.
+            # child_has_errors) sees a subtree failure inside the loop
+            # body even when the body's terminal itself succeeded on
+            # that iteration.
+            "has_errors": bool(last_child_result.get("has_errors")),
+        }
+        if prior_failures:
+            response["iteration_failures"] = prior_failures
+
+        return (json.dumps(response), None, False)
 
     @staticmethod
     def _terminal_output(child_result: dict[str, Any]) -> dict[str, Any]:

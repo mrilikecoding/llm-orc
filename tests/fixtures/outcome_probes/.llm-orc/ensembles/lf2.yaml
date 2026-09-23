@@ -1,0 +1,8 @@
+name: lf2
+description: p
+agents:
+  - name: L
+    loop:
+      body: lf2body
+      until: "${ok}"
+      max_iterations: 3
