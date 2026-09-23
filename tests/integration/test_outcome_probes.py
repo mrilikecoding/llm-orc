@@ -14,6 +14,7 @@ is a second, more direct instance of the same mutant).
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -467,3 +468,38 @@ async def test_turn_trace_reads_stderr_through_the_nested_payload() -> None:
     failed_node = next(n for n in trace["nodes"] if n["node"] == "a")
     assert failed_node["status"] == "failed"
     assert failed_node["stderr"] == "boom\n"
+
+
+# ---------------------------------------------------------------------------
+# lf2: loop has_errors semantics (round-4 lead decision) — has_errors
+# reflects the FINAL iteration only, since earlier iterations are retry
+# attempts the loop exists to absorb. Earlier iterations' blocking outcomes
+# are never dropped: they land in iteration_failures instead.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_lf2_final_iteration_drives_has_errors_earlier_ones_recorded(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """lf2body's "only" agent (flaky2.py) fails on iteration 1 and passes
+    on iteration 2. A serving turn that succeeds on retry must not report
+    error: has_errors is false. But iteration 1's failure must not vanish
+    either — it lands in iteration_failures, naming the iteration and the
+    terminal that failed."""
+    monkeypatch.setenv("LLM_ORC_FLAKY2_COUNTER", str(tmp_path / "flaky2.count"))
+
+    result = await invoke("lf2")
+
+    loop_node = node(result, "L")
+    assert loop_node["outcome"] == "succeeded"
+    assert loop_node["has_errors"] is False
+    assert result["has_errors"] is False
+
+    response = json.loads(loop_node["response"])
+    assert response["has_errors"] is False
+    assert response["iterations"] == 2
+    failures = response["iteration_failures"]
+    assert len(failures) == 1
+    assert failures[0]["iteration"] == 1
+    assert "only" in failures[0]["error"]
