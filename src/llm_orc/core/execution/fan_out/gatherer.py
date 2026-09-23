@@ -141,7 +141,17 @@ class FanOutGatherer:
                 for item in instances
                 if item["status"] == "failed"
             )
-        return stamp_outcome(gathered)
+        stamp_outcome(gathered)
+        # addendum 2026-09-23: `partial` is an OK outcome for cascade
+        # purposes (>=1 instance ok), so stamp_outcome's generic
+        # outcome-in-BLOCKING_OUTCOMES rule reads has_errors false for it
+        # — but a partial gather always has >=1 instance that genuinely
+        # failed, and that fact must not vanish just because the node
+        # still counts as ok. Stamped explicitly from the instance count,
+        # not inferred from outcome alone.
+        if fail_count > 0:
+            gathered["has_errors"] = True
+        return gathered
 
     def get_error_summary(self, original_agent_name: str) -> dict[str, Any]:
         """Get error details for failed instances.
