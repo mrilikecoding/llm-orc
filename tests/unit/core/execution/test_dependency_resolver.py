@@ -1228,6 +1228,52 @@ class TestLlmConsumerOfEnsembleDependency:
         # in for the failed instance
         assert "None" not in compiler_input
 
+    def test_plain_fan_out_renders_successes_and_names_failed_errors(self) -> None:
+        """SF1: a plain (non-ensemble) fan-out dependency — a script or
+        LLM fanned out over a decomposer's query list, not an
+        ``ensemble:`` reference — renders each successful instance's own
+        text and names each failed one with its error, the same shape a
+        gathered ensemble fan-out already gets. The resolver used to
+        fall through to the raw response list unchanged for a
+        non-ensemble dependency (``['inst-ok ...', None]``, a bare
+        Python list repr including the literal word "None")."""
+        dep_config = ScriptAgentConfig(
+            name="searcher", script="scripts/search.py", fan_out=True
+        )
+        resolver = self._resolver(dep_config, [])
+
+        agents: list[AgentConfig] = [
+            LlmAgentConfig(
+                name="compiler",
+                model_profile="test-profile",
+                depends_on=["searcher"],
+            ),
+        ]
+        results_dict = {
+            "searcher": {
+                "status": "partial",
+                "fan_out": True,
+                "response": ["inst-ok result-a", None],
+                "instances": [
+                    {"index": 0, "status": "success"},
+                    {
+                        "index": 1,
+                        "status": "failed",
+                        "error": "search backend timed out",
+                    },
+                ],
+            },
+        }
+
+        enhanced = resolver.enhance_input_with_dependencies(
+            "Compile a dossier", agents, results_dict
+        )
+
+        compiler_input = enhanced["compiler"]
+        assert "inst-ok result-a" in compiler_input
+        assert "search backend timed out" in compiler_input
+        assert "None" not in compiler_input
+
     def test_empty_fan_out_dependency_is_named_explicitly(self) -> None:
         """A genuinely empty fan-out (upstream array was []) must reach
         an LLM consumer as an explicit statement, not an empty block
