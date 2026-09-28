@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+import yaml
 from fastapi.testclient import TestClient
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
@@ -81,6 +82,27 @@ def _initialize(client: TestClient) -> tuple[dict[str, Any], str]:
     assert initialized.status_code == 202
 
     return _parse_rpc_body(response), session_id
+
+
+def _call_tool(
+    client: TestClient,
+    session_id: str,
+    name: str,
+    arguments: dict[str, Any],
+    rpc_id: int = 9,
+) -> dict[str, Any]:
+    """Call one MCP tool and return the parsed JSON-RPC body."""
+    response = client.post(
+        "/mcp",
+        headers={**_ACCEPT_HEADERS, "mcp-session-id": session_id},
+        json={
+            "jsonrpc": "2.0",
+            "id": rpc_id,
+            "method": "tools/call",
+            "params": {"name": name, "arguments": arguments},
+        },
+    )
+    return _parse_rpc_body(response)
 
 
 class TestMcpMount:
@@ -251,3 +273,292 @@ class TestCreateAppSessionManagerLifecycle:
 
         with TestClient(create_app()) as client:
             assert client.get("/health").status_code == 200
+
+
+class TestMcpCrudScope:
+    """scope reaches the handler through the FastMCP tool signature."""
+
+    def test_create_profile_global_over_mcp_lands_in_global_dir(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from llm_orc.core.config.config_manager import resolve_global_config_dir
+
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / ".llm-orc" / "profiles").mkdir(parents=True)
+
+        with TestClient(create_app()) as client:
+            _, session_id = _initialize(client)
+            response = client.post(
+                "/mcp",
+                headers={**_ACCEPT_HEADERS, "mcp-session-id": session_id},
+                json={
+                    "jsonrpc": "2.0",
+                    "id": 4,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "create_profile",
+                        "arguments": {
+                            "name": "remote-prof",
+                            "provider": "llama-server",
+                            "model": "qwen3-8b",
+                            "scope": "global",
+                        },
+                    },
+                },
+            )
+            listed = client.get("/api/profiles")
+
+        body = _parse_rpc_body(response)
+        assert "error" not in body, body
+        written = Path(body["result"]["structuredContent"]["path"])
+        assert written == resolve_global_config_dir() / "profiles" / "remote-prof.yaml"
+        assert written.exists()
+        assert not (tmp_path / ".llm-orc" / "profiles" / "remote-prof.yaml").exists()
+        assert "remote-prof" in {p["name"] for p in listed.json()}
+
+    def test_every_crud_tool_advertises_scope(self) -> None:
+        registered = asyncio.run(MCPServer()._mcp.list_tools())  # noqa: SLF001
+        by_name = {tool.name: tool for tool in registered}
+        for name in (
+            "create_ensemble",
+            "update_ensemble",
+            "delete_ensemble",
+            "create_profile",
+            "update_profile",
+            "delete_profile",
+            "create_script",
+            "delete_script",
+        ):
+            scope_schema = by_name[name].inputSchema["properties"]["scope"]
+            assert scope_schema.get("enum") == ["project", "global"], (
+                name,
+                scope_schema,
+            )
+
+    def test_create_ensemble_global_over_mcp_lands_in_global_dir_and_lists_as_global(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from llm_orc.core.config.config_manager import resolve_global_config_dir
+
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / ".llm-orc" / "ensembles").mkdir(parents=True)
+
+        with TestClient(create_app()) as client:
+            _, session_id = _initialize(client)
+            body = _call_tool(
+                client,
+                session_id,
+                "create_ensemble",
+                {
+                    "name": "remote-made",
+                    "agents": [{"name": "writer", "model_profile": "local-qwen3-8b"}],
+                    "scope": "global",
+                },
+            )
+            listed = client.get("/api/ensembles")
+
+        assert "error" not in body, body
+        written = Path(body["result"]["structuredContent"]["path"])
+        assert written == resolve_global_config_dir() / "ensembles" / "remote-made.yaml"
+        assert written.exists()
+        assert not (tmp_path / ".llm-orc" / "ensembles" / "remote-made.yaml").exists()
+        entry = next(e for e in listed.json() if e["name"] == "remote-made")
+        assert entry["source"] == "global"
+
+
+def _setup_delete_ensemble(global_dir: Path) -> dict[str, Any]:
+    target = global_dir / "ensembles" / "only-global.yaml"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text("name: only-global\nagents: []\n")
+    return {"ensemble_name": "only-global", "confirm": True, "scope": "global"}
+
+
+def _check_delete_ensemble(
+    global_dir: Path,
+    client: TestClient,
+    session_id: str,
+    body: dict[str, Any],
+) -> None:
+    assert "error" not in body, body
+    assert body["result"].get("isError") is not True, body
+    assert not (global_dir / "ensembles" / "only-global.yaml").exists()
+
+
+def _setup_update_ensemble(global_dir: Path) -> dict[str, Any]:
+    target = global_dir / "ensembles" / "only-global.yaml"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text("name: only-global\nagents: []\n")
+    return {
+        "ensemble_name": "only-global",
+        "changes": {"add_agents": []},
+        "dry_run": False,
+        "scope": "global",
+    }
+
+
+def _check_update_ensemble(
+    global_dir: Path,
+    client: TestClient,
+    session_id: str,
+    body: dict[str, Any],
+) -> None:
+    assert "error" not in body, body
+    assert body["result"].get("isError") is not True, body
+    assert body["result"]["structuredContent"]["modified"] is True
+
+    unscoped = _call_tool(
+        client,
+        session_id,
+        "update_ensemble",
+        {
+            "ensemble_name": "only-global",
+            "changes": {"add_agents": []},
+            "dry_run": False,
+        },
+        rpc_id=10,
+    )
+    assert unscoped["result"]["isError"] is True
+    assert "global tier" in unscoped["result"]["content"][0]["text"]
+
+
+def _setup_delete_profile(global_dir: Path) -> dict[str, Any]:
+    target = global_dir / "profiles" / "only-global.yaml"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text("name: only-global\nprovider: llama-server\nmodel: m\n")
+    return {"name": "only-global", "confirm": True, "scope": "global"}
+
+
+def _check_delete_profile(
+    global_dir: Path,
+    client: TestClient,
+    session_id: str,
+    body: dict[str, Any],
+) -> None:
+    assert "error" not in body, body
+    assert body["result"].get("isError") is not True, body
+    assert not (global_dir / "profiles" / "only-global.yaml").exists()
+
+
+def _setup_update_profile(global_dir: Path) -> dict[str, Any]:
+    target = global_dir / "profiles" / "only-global.yaml"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text("name: only-global\nprovider: llama-server\nmodel: original\n")
+    return {
+        "name": "only-global",
+        "changes": {"model": "changed"},
+        "scope": "global",
+    }
+
+
+def _check_update_profile(
+    global_dir: Path,
+    client: TestClient,
+    session_id: str,
+    body: dict[str, Any],
+) -> None:
+    assert "error" not in body, body
+    assert body["result"].get("isError") is not True, body
+    target = global_dir / "profiles" / "only-global.yaml"
+    assert yaml.safe_load(target.read_text())["model"] == "changed"
+
+
+def _setup_create_script(global_dir: Path) -> dict[str, Any]:
+    return {"name": "remote-made", "category": "util", "scope": "global"}
+
+
+def _check_create_script(
+    global_dir: Path,
+    client: TestClient,
+    session_id: str,
+    body: dict[str, Any],
+) -> None:
+    assert "error" not in body, body
+    assert body["result"].get("isError") is not True, body
+    assert (global_dir / "scripts" / "util" / "remote-made.py").exists()
+
+
+def _setup_delete_script(global_dir: Path) -> dict[str, Any]:
+    target = global_dir / "scripts" / "util" / "only-global.py"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text('"""Only in global."""\n')
+    return {
+        "name": "only-global",
+        "category": "util",
+        "confirm": True,
+        "scope": "global",
+    }
+
+
+def _check_delete_script(
+    global_dir: Path,
+    client: TestClient,
+    session_id: str,
+    body: dict[str, Any],
+) -> None:
+    assert "error" not in body, body
+    assert body["result"].get("isError") is not True, body
+    assert not (global_dir / "scripts" / "util" / "only-global.py").exists()
+
+
+class TestMcpCrudScopeForwarding:
+    """Every scope-taking tool forwards `scope` to its handler, not just two."""
+
+    @pytest.mark.parametrize(
+        ("tool", "setup", "check"),
+        [
+            pytest.param(
+                "delete_ensemble",
+                _setup_delete_ensemble,
+                _check_delete_ensemble,
+                id="delete_ensemble",
+            ),
+            pytest.param(
+                "update_ensemble",
+                _setup_update_ensemble,
+                _check_update_ensemble,
+                id="update_ensemble",
+            ),
+            pytest.param(
+                "delete_profile",
+                _setup_delete_profile,
+                _check_delete_profile,
+                id="delete_profile",
+            ),
+            pytest.param(
+                "update_profile",
+                _setup_update_profile,
+                _check_update_profile,
+                id="update_profile",
+            ),
+            pytest.param(
+                "create_script",
+                _setup_create_script,
+                _check_create_script,
+                id="create_script",
+            ),
+            pytest.param(
+                "delete_script",
+                _setup_delete_script,
+                _check_delete_script,
+                id="delete_script",
+            ),
+        ],
+    )
+    def test_tool_forwards_scope_to_the_global_tier(
+        self,
+        tool: str,
+        setup: Any,
+        check: Any,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from llm_orc.core.config.config_manager import resolve_global_config_dir
+
+        monkeypatch.chdir(tmp_path)
+        global_dir = resolve_global_config_dir()
+        arguments = setup(global_dir)
+
+        with TestClient(create_app()) as client:
+            _, session_id = _initialize(client)
+            body = _call_tool(client, session_id, tool, arguments)
+            check(global_dir, client, session_id, body)

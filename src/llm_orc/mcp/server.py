@@ -21,6 +21,7 @@ from starlette.applications import Starlette
 from llm_orc.core.config.config_manager import ConfigurationManager
 from llm_orc.core.config.ensemble_config import EnsembleLoader
 from llm_orc.core.execution.artifact_manager import ArtifactManager
+from llm_orc.services.handlers.scope import Scope
 from llm_orc.services.orchestra_service import OrchestraService
 
 if TYPE_CHECKING:
@@ -276,6 +277,7 @@ class MCPServer:
             changes: dict[str, Any],
             dry_run: bool = True,
             backup: bool = True,
+            scope: Scope = "project",
         ) -> dict[str, Any]:
             """Modify ensemble configuration.
 
@@ -284,6 +286,7 @@ class MCPServer:
                 changes: Changes to apply (add_agents, remove_agents, etc.)
                 dry_run: If True, only preview changes without applying
                 backup: If True, create backup before modifying
+                scope: Which scope holds the item: "project" (default) or "global"
             """
             result = await self._service.update_ensemble(
                 {
@@ -291,6 +294,7 @@ class MCPServer:
                     "changes": changes,
                     "dry_run": dry_run,
                     "backup": backup,
+                    "scope": scope,
                 }
             )
             return result
@@ -324,6 +328,7 @@ class MCPServer:
             description: str = "",
             agents: list[dict[str, Any]] | None = None,
             from_template: str | None = None,
+            scope: Scope = "project",
         ) -> dict[str, Any]:
             """Create a new ensemble from scratch or template.
 
@@ -332,6 +337,7 @@ class MCPServer:
                 description: Optional description
                 agents: List of agent configurations
                 from_template: Optional template ensemble to copy from
+                scope: Where to write: "project" (default) or "global"
             """
             result = await self._service.create_ensemble(
                 {
@@ -339,24 +345,29 @@ class MCPServer:
                     "description": description,
                     "agents": agents or [],
                     "from_template": from_template,
+                    "scope": scope,
                 }
             )
             return result
 
         @self._mcp.tool()
         async def delete_ensemble(
-            ensemble_name: str, confirm: bool = False
+            ensemble_name: str,
+            confirm: bool = False,
+            scope: Scope = "project",
         ) -> dict[str, Any]:
             """Delete an ensemble.
 
             Args:
                 ensemble_name: Name of the ensemble to delete
                 confirm: Must be True to actually delete
+                scope: Which scope holds the item: "project" (default) or "global"
             """
             result = await self._service.delete_ensemble(
                 {
                     "ensemble_name": ensemble_name,
                     "confirm": confirm,
+                    "scope": scope,
                 }
             )
             return result
@@ -430,6 +441,7 @@ class MCPServer:
             timeout_seconds: int | None = None,
             temperature: float | None = None,
             max_tokens: int | None = None,
+            scope: Scope = "project",
         ) -> dict[str, Any]:
             """Create a new model profile.
 
@@ -441,6 +453,7 @@ class MCPServer:
                 timeout_seconds: Optional timeout
                 temperature: Optional temperature (0.0-1.0)
                 max_tokens: Optional max tokens for generation
+                scope: Where to write: "project" (default) or "global"
             """
             result = await self._service.create_profile(
                 {
@@ -451,33 +464,40 @@ class MCPServer:
                     "timeout_seconds": timeout_seconds,
                     "temperature": temperature,
                     "max_tokens": max_tokens,
+                    "scope": scope,
                 }
             )
             return result
 
         @self._mcp.tool()
-        async def update_profile(name: str, changes: dict[str, Any]) -> dict[str, Any]:
+        async def update_profile(
+            name: str, changes: dict[str, Any], scope: Scope = "project"
+        ) -> dict[str, Any]:
             """Update an existing profile.
 
             Args:
                 name: Profile name to update
                 changes: Changes to apply
+                scope: Which scope holds the item: "project" (default) or "global"
             """
             result = await self._service.update_profile(
-                {"name": name, "changes": changes}
+                {"name": name, "changes": changes, "scope": scope}
             )
             return result
 
         @self._mcp.tool()
-        async def delete_profile(name: str, confirm: bool = False) -> dict[str, Any]:
+        async def delete_profile(
+            name: str, confirm: bool = False, scope: Scope = "project"
+        ) -> dict[str, Any]:
             """Delete a model profile.
 
             Args:
                 name: Profile name to delete
                 confirm: Must be True to actually delete
+                scope: Which scope holds the item: "project" (default) or "global"
             """
             result = await self._service.delete_profile(
-                {"name": name, "confirm": confirm}
+                {"name": name, "confirm": confirm, "scope": scope}
             )
             return result
 
@@ -560,7 +580,10 @@ class MCPServer:
 
         @self._mcp.tool()
         async def create_script(
-            name: str, category: str, template: str = "basic"
+            name: str,
+            category: str,
+            template: str = "basic",
+            scope: Scope = "project",
         ) -> dict[str, Any]:
             """Create a new primitive script.
 
@@ -568,15 +591,24 @@ class MCPServer:
                 name: Script name
                 category: Script category
                 template: Template to use (basic, extraction, etc.)
+                scope: Where to write: "project" (default) or "global"
             """
             result = await self._service.create_script(
-                {"name": name, "category": category, "template": template}
+                {
+                    "name": name,
+                    "category": category,
+                    "template": template,
+                    "scope": scope,
+                }
             )
             return result
 
         @self._mcp.tool()
         async def delete_script(
-            name: str, category: str, confirm: bool = False
+            name: str,
+            category: str,
+            confirm: bool = False,
+            scope: Scope = "project",
         ) -> dict[str, Any]:
             """Delete a script.
 
@@ -584,9 +616,15 @@ class MCPServer:
                 name: Script name
                 category: Script category
                 confirm: Must be True to actually delete
+                scope: Which scope holds the item: "project" (default) or "global"
             """
             result = await self._service.delete_script(
-                {"name": name, "category": category, "confirm": confirm}
+                {
+                    "name": name,
+                    "category": category,
+                    "confirm": confirm,
+                    "scope": scope,
+                }
             )
             return result
 
@@ -865,6 +903,11 @@ class MCPServer:
                         "backup": {
                             "type": "boolean",
                             "default": True,
+                        },
+                        "scope": {
+                            "type": "string",
+                            "enum": ["project", "global"],
+                            "default": "project",
                         },
                     },
                     "required": ["ensemble_name", "changes"],

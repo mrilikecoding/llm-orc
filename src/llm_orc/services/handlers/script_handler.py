@@ -5,42 +5,99 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from llm_orc.core.config.config_manager import ConfigurationManager
 from llm_orc.mcp.project_context import ProjectContext
+from llm_orc.services.handlers.scope import Scope, find_in_scope, parse_scope
 
 
 class ScriptHandler:
     """Manages primitive script operations."""
 
-    def __init__(self, project_path: Path | None = None) -> None:
-        """Initialize with optional project path."""
+    def __init__(
+        self,
+        project_path: Path | None = None,
+        config_manager: ConfigurationManager | None = None,
+    ) -> None:
+        """Initialize with optional project path and configuration manager."""
         self._project_path = project_path
+        self._config_manager = config_manager
 
     def set_project_context(self, ctx: ProjectContext) -> None:
         """Update handler to use new project context."""
         self._project_path = ctx.project_path
+        self._config_manager = ctx.config_manager
 
     def _get_scripts_dir(self) -> Path:
-        """Get scripts directory path."""
+        """Project scripts directory path.
+
+        The single source of truth for the project tier, for both reads
+        and writes. A configuration manager's ``local_config_dir`` is
+        authoritative when present -- it walks up from cwd to find
+        ``.llm-orc``, so it still resolves correctly from a project
+        subdirectory. Falls back to ``project_path`` or cwd otherwise
+        (legacy construction with no configuration manager).
+        """
+        if self._config_manager is not None:
+            local_config_dir = self._config_manager.local_config_dir
+            if local_config_dir is not None:
+                return local_config_dir / "scripts"
         if self._project_path is not None:
             return self._project_path / ".llm-orc" / "scripts"
         return Path.cwd() / ".llm-orc" / "scripts"
 
+    def _global_scripts_dir(self) -> Path:
+        if self._config_manager is None:
+            raise ValueError("scope 'global' needs a configuration manager")
+        return self._config_manager.global_config_dir / "scripts"
+
+    def _dir_for_scope(self, scope: Scope) -> Path | None:
+        """Write directory for one scope; None when the project has none."""
+        if scope == "global":
+            return self._global_scripts_dir()
+        if (
+            self._config_manager is not None
+            and self._config_manager.local_config_dir is None
+        ):
+            return None
+        return self._get_scripts_dir()
+
+    def _scope_dirs(self) -> list[tuple[str, Path]]:
+        """Read order: project shadows global."""
+        dirs: list[tuple[str, Path]] = [("project", self._get_scripts_dir())]
+        if self._config_manager is not None:
+            dirs.append(("global", self._global_scripts_dir()))
+        return dirs
+
+    def _tier_of(self, path: Path) -> str:
+        for scope, directory in self._scope_dirs():
+            if path.is_relative_to(directory):
+                return scope
+        return "unknown"
+
+    def _find_script(self, category: str, name: str) -> Path:
+        for _scope, scripts_dir in self._scope_dirs():
+            candidate = scripts_dir / category / f"{name}.py"
+            if candidate.exists():
+                return candidate
+        raise ValueError(f"Script '{category}/{name}' not found")
+
     async def list_scripts(self, arguments: dict[str, Any]) -> dict[str, Any]:
         """List available scripts."""
         category = arguments.get("category")
-        scripts_dir = self._get_scripts_dir()
-
-        if not scripts_dir.exists():
-            return {"scripts": []}
-
         scripts: list[dict[str, Any]] = []
-        if not category:
-            scripts.extend(self._collect_root_scripts(scripts_dir))
-        scripts.extend(self._collect_category_scripts(scripts_dir, category))
+
+        for scope, scripts_dir in self._scope_dirs():
+            if not scripts_dir.exists():
+                continue
+            if not category:
+                scripts.extend(self._collect_root_scripts(scripts_dir, scope))
+            scripts.extend(self._collect_category_scripts(scripts_dir, category, scope))
 
         return {"scripts": scripts}
 
-    def _collect_root_scripts(self, scripts_dir: Path) -> list[dict[str, Any]]:
+    def _collect_root_scripts(
+        self, scripts_dir: Path, scope: str
+    ) -> list[dict[str, Any]]:
         """Collect scripts at the root level (no category)."""
         scripts: list[dict[str, Any]] = []
         for script_file in scripts_dir.glob("*.py"):
@@ -50,6 +107,7 @@ class ScriptHandler:
                         "name": script_file.stem,
                         "category": "",
                         "path": str(script_file),
+                        "scope": scope,
                     }
                 )
         return scripts
@@ -58,6 +116,7 @@ class ScriptHandler:
         self,
         scripts_dir: Path,
         category_filter: str | None,
+        scope: str,
     ) -> list[dict[str, Any]]:
         """Collect scripts from category subdirectories."""
         scripts: list[dict[str, Any]] = []
@@ -73,6 +132,7 @@ class ScriptHandler:
                         "name": script_file.stem,
                         "category": cat_name,
                         "path": str(script_file),
+                        "scope": scope,
                     }
                 )
         return scripts
@@ -87,11 +147,7 @@ class ScriptHandler:
         if not category:
             raise ValueError("category is required")
 
-        scripts_dir = self._get_scripts_dir()
-        script_file = scripts_dir / category / f"{name}.py"
-
-        if not script_file.exists():
-            raise ValueError(f"Script '{category}/{name}' not found")
+        script_file = self._find_script(category, name)
 
         content = script_file.read_text()
         description = self._extract_docstring(content)
@@ -144,11 +200,7 @@ class ScriptHandler:
         if not category:
             raise ValueError("category is required")
 
-        scripts_dir = self._get_scripts_dir()
-        script_file = scripts_dir / category / f"{name}.py"
-
-        if not script_file.exists():
-            raise ValueError(f"Script '{category}/{name}' not found")
+        script_file = self._find_script(category, name)
 
         try:
             result = subprocess.run(
@@ -186,7 +238,14 @@ class ScriptHandler:
         if not category:
             raise ValueError("category is required")
 
-        scripts_dir = self._get_scripts_dir()
+        scope = parse_scope(arguments)
+        scripts_dir = self._dir_for_scope(scope)
+        if scripts_dir is None:
+            global_scripts = self._global_scripts_dir()
+            raise ValueError(
+                "No project directory (.llm-orc) here; pass scope: global to "
+                f"write under {global_scripts}, or run llm-orc config init"
+            )
         category_dir = scripts_dir / category
         script_file = category_dir / f"{name}.py"
 
@@ -242,6 +301,7 @@ if __name__ == "__main__":
             "created": True,
             "path": str(script_file),
             "template": template,
+            "scope": scope,
         }
 
     async def delete_script(self, arguments: dict[str, Any]) -> dict[str, Any]:
@@ -257,12 +317,16 @@ if __name__ == "__main__":
         if not confirm:
             raise ValueError("Confirmation required to delete script")
 
-        scripts_dir = self._get_scripts_dir()
-        script_file = scripts_dir / category / f"{name}.py"
-
-        if not script_file.exists():
-            raise ValueError(f"Script '{category}/{name}' not found")
-
+        scope = parse_scope(arguments)
+        script_file = find_in_scope(
+            name=f"{category}/{name}",
+            filename=f"{category}/{name}.py",
+            scope=scope,
+            scope_dir=self._dir_for_scope(scope),
+            search_dirs=[d for _s, d in self._scope_dirs()],
+            classify=self._tier_of,
+            label="Script",
+        )
         script_file.unlink()
 
         return {

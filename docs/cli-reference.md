@@ -162,7 +162,7 @@ mcp__llm-orc__list_ensembles        # See available ensembles
 | `invoke` | Execute ensemble with streaming progress, saves artifacts automatically. Returns `status` ("success"/"error"), `has_errors`, `results`, and `deliverable` (`null` unless a terminal agent succeeded) — the same caller contract REST and `--output-format json` report. |
 | `list_ensembles` | List all ensembles from local/library/global sources |
 | `validate_ensemble` | Check config validity, profile availability, and dependencies |
-| `update_ensemble` | Modify ensemble config (supports dry-run and backup) |
+| `update_ensemble` | Modify ensemble config (supports dry-run and backup; `scope` selects which copy) |
 | `analyze_execution` | Analyze execution artifact data |
 
 **Provider Discovery** - Check what's available before running
@@ -174,16 +174,16 @@ mcp__llm-orc__list_ensembles        # See available ensembles
 **Ensemble Management**
 | Tool | Description |
 |------|-------------|
-| `create_ensemble` | Create new ensemble from scratch or template |
-| `delete_ensemble` | Delete ensemble (requires confirmation) |
+| `create_ensemble` | Create new ensemble from scratch or template (`scope`: `project` default, or `global` to write under `~/.config/llm-orc`) |
+| `delete_ensemble` | Delete ensemble (requires confirmation) (`scope` selects which copy) |
 
 **Profile Management**
 | Tool | Description |
 |------|-------------|
 | `list_profiles` | List profiles with optional provider filter |
-| `create_profile` | Create new model profile |
-| `update_profile` | Update existing profile |
-| `delete_profile` | Delete profile (requires confirmation) |
+| `create_profile` | Create new model profile (`scope`: `project` default, or `global` to write under `~/.config/llm-orc`) |
+| `update_profile` | Update existing profile (`scope` selects which copy) |
+| `delete_profile` | Delete profile (requires confirmation) (`scope` selects which copy) |
 
 **Script Management**
 | Tool | Description |
@@ -191,8 +191,10 @@ mcp__llm-orc__list_ensembles        # See available ensembles
 | `list_scripts` | List primitive scripts by category |
 | `get_script` | Get script source and metadata |
 | `test_script` | Test script with sample input |
-| `create_script` | Create new primitive script |
-| `delete_script` | Delete script (requires confirmation) |
+| `create_script` | Create new primitive script (`scope`: `project` default, or `global` to write under `~/.config/llm-orc`) |
+| `delete_script` | Delete script (requires confirmation) (`scope` selects which copy) |
+
+Reads merge project, library and global; writes go to exactly one scope. A name that exists only in another scope is an error naming where it lives.
 
 **Library Operations**
 | Tool | Description |

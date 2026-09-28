@@ -8,6 +8,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
+from llm_orc.services.handlers.scope import Scope
 from llm_orc.web.api import get_orchestra_service
 
 router = APIRouter(prefix="/api/ensembles", tags=["ensembles"])
@@ -26,6 +27,7 @@ class CreateEnsembleRequest(BaseModel):
     description: str = ""
     agents: list[dict[str, Any]] = Field(default_factory=list)
     from_template: str | None = None
+    scope: Scope = "project"
 
 
 class UpdateEnsembleRequest(BaseModel):
@@ -34,6 +36,7 @@ class UpdateEnsembleRequest(BaseModel):
     changes: dict[str, Any] = Field(default_factory=dict)
     dry_run: bool = True
     backup: bool = True
+    scope: Scope = "project"
 
 
 @router.get("")
@@ -94,10 +97,12 @@ async def check_ensemble_runnable(name: str) -> dict[str, Any]:
 
 @router.post("")
 async def create_ensemble(request: CreateEnsembleRequest) -> dict[str, Any]:
-    """Create a new ensemble in the local project.
+    """Create a new ensemble.
 
     Args:
-        request: Ensemble definition including name, description, agents.
+        request: Ensemble definition including name, description, agents,
+            and scope ("project" default, or "global" to write under
+            the XDG global config dir).
 
     Returns:
         Creation result with path and agents copied.
@@ -109,6 +114,7 @@ async def create_ensemble(request: CreateEnsembleRequest) -> dict[str, Any]:
             "description": request.description,
             "agents": request.agents,
             "from_template": request.from_template,
+            "scope": request.scope,
         }
     )
     return result
@@ -120,7 +126,8 @@ async def update_ensemble(name: str, request: UpdateEnsembleRequest) -> dict[str
 
     Args:
         name: Name of the ensemble to update.
-        request: Update parameters including changes, dry_run, backup.
+        request: Update parameters including changes, dry_run, backup,
+            and scope (which tier holds the ensemble).
 
     Returns:
         Update result with preview or applied changes.
@@ -132,21 +139,25 @@ async def update_ensemble(name: str, request: UpdateEnsembleRequest) -> dict[str
             "changes": request.changes,
             "dry_run": request.dry_run,
             "backup": request.backup,
+            "scope": request.scope,
         }
     )
     return result
 
 
 @router.delete("/{name}")
-async def delete_ensemble(name: str) -> dict[str, Any]:
+async def delete_ensemble(name: str, scope: Scope = "project") -> dict[str, Any]:
     """Delete an ensemble.
 
     Args:
         name: Name of the ensemble to delete.
+        scope: Tier to delete from, "project" or "global".
 
     Returns:
         Deletion result.
     """
     service = get_orchestra_service()
-    result = await service.delete_ensemble({"ensemble_name": name, "confirm": True})
+    result = await service.delete_ensemble(
+        {"ensemble_name": name, "confirm": True, "scope": scope}
+    )
     return result

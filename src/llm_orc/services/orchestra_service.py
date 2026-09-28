@@ -73,7 +73,7 @@ class OrchestraService:
         )
         self._profile_handler = ProfileHandler(self.config_manager)
         self._artifact_handler = ArtifactHandler()
-        self._script_handler = ScriptHandler()
+        self._script_handler = ScriptHandler(config_manager=self.config_manager)
         self._library_handler = LibraryHandler(
             self.config_manager, self.ensemble_loader
         )

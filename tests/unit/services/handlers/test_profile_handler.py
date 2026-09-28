@@ -9,6 +9,10 @@ from unittest.mock import MagicMock
 import pytest
 import yaml
 
+from llm_orc.core.config.config_manager import (
+    ConfigurationManager,
+    resolve_global_config_dir,
+)
 from llm_orc.services.handlers.profile_handler import ProfileHandler
 
 
@@ -17,6 +21,7 @@ def mock_config() -> Any:
     config = MagicMock()
     config.get_profiles_dirs.return_value = []
     config.get_model_profiles.return_value = {}
+    config.local_config_dir = None
     return config
 
 
@@ -133,6 +138,7 @@ class TestCreateProfile:
         """All optional fields are written to YAML (lines 99, 101, 103, 105)."""
         local_dir = tmp_path / ".llm-orc" / "profiles"
         mock_config.get_profiles_dirs.return_value = [str(local_dir)]
+        mock_config.local_config_dir = tmp_path / ".llm-orc"
         handler = _handler(mock_config)
 
         result = await handler.create_profile(
@@ -160,6 +166,7 @@ class TestCreateProfile:
         """temperature=0.0 is written (not skipped) because `is not None` is used."""
         local_dir = tmp_path / ".llm-orc" / "profiles"
         mock_config.get_profiles_dirs.return_value = [str(local_dir)]
+        mock_config.local_config_dir = tmp_path / ".llm-orc"
         handler = _handler(mock_config)
 
         result = await handler.create_profile(
@@ -180,6 +187,7 @@ class TestCreateProfile:
         """max_tokens=0 is written (not skipped) because `is not None` is used."""
         local_dir = tmp_path / ".llm-orc" / "profiles"
         mock_config.get_profiles_dirs.return_value = [str(local_dir)]
+        mock_config.local_config_dir = tmp_path / ".llm-orc"
         handler = _handler(mock_config)
 
         result = await handler.create_profile(
@@ -340,3 +348,124 @@ class TestSetProjectContext:
         handler.set_project_context(ctx)
 
         assert handler._config_manager is new_config
+
+
+# ---------------------------------------------------------------------------
+# scope
+# ---------------------------------------------------------------------------
+
+
+def _real_profile_handler(project: Path) -> ProfileHandler:
+    return ProfileHandler(ConfigurationManager(project_dir=project, provision=False))
+
+
+class TestProfileScope:
+    async def test_global_scope_creates_under_global_dir(self, tmp_path: Path) -> None:
+        (tmp_path / ".llm-orc" / "profiles").mkdir(parents=True)
+        handler = _real_profile_handler(tmp_path)
+        global_profiles = resolve_global_config_dir() / "profiles"
+        assert not global_profiles.exists()
+
+        result = await handler.create_profile(
+            {
+                "name": "remote-prof",
+                "provider": "llama-server",
+                "model": "qwen3-8b",
+                "scope": "global",
+            }
+        )
+
+        assert result["scope"] == "global"
+        assert Path(result["path"]) == global_profiles / "remote-prof.yaml"
+        assert not (tmp_path / ".llm-orc" / "profiles" / "remote-prof.yaml").exists()
+
+    async def test_default_scope_writes_project(self, tmp_path: Path) -> None:
+        (tmp_path / ".llm-orc" / "profiles").mkdir(parents=True)
+        handler = _real_profile_handler(tmp_path)
+
+        result = await handler.create_profile(
+            {"name": "mine", "provider": "llama-server", "model": "qwen3-8b"}
+        )
+
+        assert result["scope"] == "project"
+        assert Path(result["path"]) == tmp_path / ".llm-orc" / "profiles" / "mine.yaml"
+
+    async def test_delete_with_wrong_scope_touches_nothing(
+        self, tmp_path: Path
+    ) -> None:
+        project_file = tmp_path / ".llm-orc" / "profiles" / "keep.yaml"
+        project_file.parent.mkdir(parents=True)
+        project_file.write_text("name: keep\nprovider: llama-server\nmodel: m\n")
+        handler = _real_profile_handler(tmp_path)
+
+        with pytest.raises(ValueError, match=r"not in scope 'global'.*local tier"):
+            await handler.delete_profile(
+                {"name": "keep", "confirm": True, "scope": "global"}
+            )
+
+        assert project_file.exists()
+
+    async def test_update_global_scope_edits_global_file_only(
+        self, tmp_path: Path
+    ) -> None:
+        project_file = tmp_path / ".llm-orc" / "profiles" / "twin.yaml"
+        project_file.parent.mkdir(parents=True)
+        project_file.write_text("name: twin\nprovider: llama-server\nmodel: project\n")
+        global_file = resolve_global_config_dir() / "profiles" / "twin.yaml"
+        global_file.parent.mkdir(parents=True)
+        global_file.write_text("name: twin\nprovider: llama-server\nmodel: global\n")
+        handler = _real_profile_handler(tmp_path)
+
+        await handler.update_profile(
+            {"name": "twin", "changes": {"model": "edited"}, "scope": "global"}
+        )
+
+        assert yaml.safe_load(global_file.read_text())["model"] == "edited"
+        assert yaml.safe_load(project_file.read_text())["model"] == "project"
+
+    async def test_omitted_scope_never_deletes_a_global_only_profile(
+        self, tmp_path: Path
+    ) -> None:
+        (tmp_path / ".llm-orc" / "profiles").mkdir(parents=True)
+        global_file = resolve_global_config_dir() / "profiles" / "only-global.yaml"
+        global_file.parent.mkdir(parents=True)
+        global_file.write_text("name: only-global\nprovider: llama-server\nmodel: m\n")
+        handler = _real_profile_handler(tmp_path)
+
+        with pytest.raises(ValueError, match=r"not in scope 'project'.*global tier"):
+            await handler.delete_profile({"name": "only-global", "confirm": True})
+
+        assert global_file.exists()
+
+    async def test_project_scope_without_project_dir_errors_and_writes_nothing(
+        self, tmp_path: Path
+    ) -> None:
+        # A global profiles dir with unrelated content already exists, so
+        # a fallback to "first search dir when nothing matches .llm-orc"
+        # would otherwise find it and silently write the new profile there.
+        global_profiles = resolve_global_config_dir() / "profiles"
+        global_profiles.mkdir(parents=True)
+        (global_profiles / "unrelated.yaml").write_text(
+            "name: unrelated\nprovider: llama-server\nmodel: m\n"
+        )
+        handler = _real_profile_handler(tmp_path)  # no .llm-orc created
+
+        with pytest.raises(ValueError, match=r"No project directory.*scope: global"):
+            await handler.create_profile(
+                {"name": "orphan", "provider": "llama-server", "model": "qwen3-8b"}
+            )
+
+        assert not (global_profiles / "orphan.yaml").exists()
+
+    async def test_omitted_scope_without_project_dir_never_deletes_global(
+        self, tmp_path: Path
+    ) -> None:
+        global_file = resolve_global_config_dir() / "profiles" / "only-global.yaml"
+        global_file.parent.mkdir(parents=True)
+        global_file.write_text("name: only-global\nprovider: llama-server\nmodel: m\n")
+        handler = _real_profile_handler(tmp_path)  # no .llm-orc created
+
+        with pytest.raises(ValueError, match=r"not in scope 'project'.*global tier"):
+            await handler.delete_profile({"name": "only-global", "confirm": True})
+
+        assert global_file.exists()

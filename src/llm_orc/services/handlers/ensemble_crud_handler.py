@@ -13,6 +13,7 @@ from llm_orc.core.config.ensemble_config import EnsembleLoader
 from llm_orc.mcp.project_context import ProjectContext
 from llm_orc.mcp.utils import get_agent_attr as _get_agent_attr
 from llm_orc.schemas.agent_config import parse_agent_config
+from llm_orc.services.handlers.scope import Scope, find_in_scope, parse_scope
 
 _PRESERVED_FIELDS = (
     "name",
@@ -100,7 +101,14 @@ class EnsembleCrudHandler:
         if not name:
             raise ValueError("name is required")
 
-        local_dir = self.get_local_ensembles_dir()
+        scope = parse_scope(arguments)
+        local_dir = self._dir_for_scope(scope)
+        if local_dir is None:
+            global_ensembles = self._config_manager.global_config_dir / "ensembles"
+            raise ValueError(
+                "No project directory (.llm-orc) here; pass scope: global to "
+                f"write under {global_ensembles}, or run llm-orc config init"
+            )
         target_file = local_dir / f"{name}.yaml"
         if target_file.exists():
             raise ValueError(f"Ensemble already exists: {name}")
@@ -136,6 +144,7 @@ class EnsembleCrudHandler:
             "created": True,
             "path": str(target_file),
             "agents_copied": agents_copied,
+            "scope": scope,
         }
 
     async def delete_ensemble(self, arguments: dict[str, Any]) -> dict[str, Any]:
@@ -156,17 +165,8 @@ class EnsembleCrudHandler:
         if not confirm:
             raise ValueError("Confirmation required to delete ensemble")
 
-        ensemble_dirs = self._config_manager.get_ensembles_dirs()
-        ensemble_file: Path | None = None
-
-        for dir_path in ensemble_dirs:
-            potential_file = Path(dir_path) / f"{ensemble_name}.yaml"
-            if potential_file.exists():
-                ensemble_file = potential_file
-                break
-
-        if not ensemble_file:
-            raise ValueError(f"Ensemble not found: {ensemble_name}")
+        scope = parse_scope(arguments)
+        ensemble_file = self._find_in_scope(ensemble_name, scope)
 
         ensemble_file.unlink()
 
@@ -192,17 +192,8 @@ class EnsembleCrudHandler:
         if not ensemble_name:
             raise ValueError("ensemble_name is required")
 
-        ensemble_dirs = self._config_manager.get_ensembles_dirs()
-        ensemble_path: Path | None = None
-
-        for ensemble_dir in ensemble_dirs:
-            potential_path = Path(ensemble_dir) / f"{ensemble_name}.yaml"
-            if potential_path.exists():
-                ensemble_path = potential_path
-                break
-
-        if not ensemble_path:
-            raise ValueError(f"Ensemble not found: {ensemble_name}")
+        scope = parse_scope(arguments)
+        ensemble_path = self._find_in_scope(ensemble_name, scope)
 
         if dry_run:
             return {
@@ -282,6 +273,26 @@ class EnsembleCrudHandler:
             return Path(ensemble_dirs[0])
 
         raise ValueError("No ensemble directory available")
+
+    def _dir_for_scope(self, scope: Scope) -> Path | None:
+        """Write directory for one scope; None when the project has none."""
+        if scope == "global":
+            return self._config_manager.global_config_dir / "ensembles"
+        local_config_dir = self._config_manager.local_config_dir
+        if local_config_dir is None:
+            return None
+        return local_config_dir / "ensembles"
+
+    def _find_in_scope(self, ensemble_name: str, scope: Scope) -> Path:
+        return find_in_scope(
+            name=ensemble_name,
+            filename=f"{ensemble_name}.yaml",
+            scope=scope,
+            scope_dir=self._dir_for_scope(scope),
+            search_dirs=[Path(d) for d in self._config_manager.get_ensembles_dirs()],
+            classify=self._config_manager.classify_tier,
+            label="Ensemble",
+        )
 
     def _copy_from_template(
         self, template_name: str, description: str
