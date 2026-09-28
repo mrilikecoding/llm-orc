@@ -28,7 +28,19 @@ class ScriptHandler:
         self._config_manager = ctx.config_manager
 
     def _get_scripts_dir(self) -> Path:
-        """Project scripts directory path."""
+        """Project scripts directory path.
+
+        The single source of truth for the project tier, for both reads
+        and writes. A configuration manager's ``local_config_dir`` is
+        authoritative when present -- it walks up from cwd to find
+        ``.llm-orc``, so it still resolves correctly from a project
+        subdirectory. Falls back to ``project_path`` or cwd otherwise
+        (legacy construction with no configuration manager).
+        """
+        if self._config_manager is not None:
+            local_config_dir = self._config_manager.local_config_dir
+            if local_config_dir is not None:
+                return local_config_dir / "scripts"
         if self._project_path is not None:
             return self._project_path / ".llm-orc" / "scripts"
         return Path.cwd() / ".llm-orc" / "scripts"
@@ -39,20 +51,15 @@ class ScriptHandler:
         return self._config_manager.global_config_dir / "scripts"
 
     def _dir_for_scope(self, scope: Scope) -> Path | None:
-        """Write directory for one scope; None when the project has none.
-
-        With no configuration manager (legacy construction), ``project``
-        keeps resolving through ``_get_scripts_dir`` -- there is no
-        ``local_config_dir`` to consult.
-        """
+        """Write directory for one scope; None when the project has none."""
         if scope == "global":
             return self._global_scripts_dir()
-        if self._config_manager is None:
-            return self._get_scripts_dir()
-        local_config_dir = self._config_manager.local_config_dir
-        if local_config_dir is None:
+        if (
+            self._config_manager is not None
+            and self._config_manager.local_config_dir is None
+        ):
             return None
-        return local_config_dir / "scripts"
+        return self._get_scripts_dir()
 
     def _scope_dirs(self) -> list[tuple[str, Path]]:
         """Read order: project shadows global."""
