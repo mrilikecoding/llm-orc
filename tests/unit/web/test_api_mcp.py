@@ -251,3 +251,60 @@ class TestCreateAppSessionManagerLifecycle:
 
         with TestClient(create_app()) as client:
             assert client.get("/health").status_code == 200
+
+
+class TestMcpCrudScope:
+    """scope reaches the handler through the FastMCP tool signature."""
+
+    def test_create_profile_global_over_mcp_lands_in_global_dir(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from llm_orc.core.config.config_manager import resolve_global_config_dir
+
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / ".llm-orc" / "profiles").mkdir(parents=True)
+
+        with TestClient(create_app()) as client:
+            _, session_id = _initialize(client)
+            response = client.post(
+                "/mcp",
+                headers={**_ACCEPT_HEADERS, "mcp-session-id": session_id},
+                json={
+                    "jsonrpc": "2.0",
+                    "id": 4,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "create_profile",
+                        "arguments": {
+                            "name": "remote-prof",
+                            "provider": "llama-server",
+                            "model": "qwen3-8b",
+                            "scope": "global",
+                        },
+                    },
+                },
+            )
+            listed = client.get("/api/profiles")
+
+        body = _parse_rpc_body(response)
+        assert "error" not in body, body
+        written = Path(body["result"]["structuredContent"]["path"])
+        assert written == resolve_global_config_dir() / "profiles" / "remote-prof.yaml"
+        assert written.exists()
+        assert not (tmp_path / ".llm-orc" / "profiles" / "remote-prof.yaml").exists()
+        assert "remote-prof" in {p["name"] for p in listed.json()}
+
+    def test_every_crud_tool_advertises_scope(self) -> None:
+        registered = asyncio.run(MCPServer()._mcp.list_tools())  # noqa: SLF001
+        by_name = {tool.name: tool for tool in registered}
+        for name in (
+            "create_ensemble",
+            "update_ensemble",
+            "delete_ensemble",
+            "create_profile",
+            "update_profile",
+            "delete_profile",
+            "create_script",
+            "delete_script",
+        ):
+            assert "scope" in by_name[name].inputSchema["properties"], name
