@@ -8,6 +8,7 @@ from typing import Any
 from fastapi import APIRouter
 from pydantic import BaseModel
 
+from llm_orc.services.handlers.scope import Scope
 from llm_orc.web.api import get_orchestra_service
 
 router = APIRouter(prefix="/api/profiles", tags=["profiles"])
@@ -21,6 +22,7 @@ class CreateProfileRequest(BaseModel):
     model: str
     system_prompt: str | None = None
     timeout_seconds: int | None = None
+    scope: Scope = "project"
 
 
 @router.get("")
@@ -41,6 +43,7 @@ async def create_profile(request: CreateProfileRequest) -> dict[str, Any]:
             "model": request.model,
             "system_prompt": request.system_prompt,
             "timeout_seconds": request.timeout_seconds,
+            "scope": request.scope,
         }
     )
     return result
@@ -53,20 +56,26 @@ class UpdateProfileRequest(BaseModel):
     model: str | None = None
     system_prompt: str | None = None
     timeout_seconds: int | None = None
+    scope: Scope = "project"
 
 
 @router.put("/{name}")
 async def update_profile(name: str, request: UpdateProfileRequest) -> dict[str, Any]:
     """Update an existing model profile."""
     service = get_orchestra_service()
-    changes = {k: v for k, v in request.model_dump().items() if v is not None}
-    result = await service.update_profile({"name": name, "changes": changes})
+    body = request.model_dump(exclude={"scope"})
+    changes = {k: v for k, v in body.items() if v is not None}
+    result = await service.update_profile(
+        {"name": name, "changes": changes, "scope": request.scope}
+    )
     return result
 
 
 @router.delete("/{name}")
-async def delete_profile(name: str) -> dict[str, Any]:
+async def delete_profile(name: str, scope: Scope = "project") -> dict[str, Any]:
     """Delete a model profile."""
     service = get_orchestra_service()
-    result = await service.delete_profile({"name": name, "confirm": True})
+    result = await service.delete_profile(
+        {"name": name, "confirm": True, "scope": scope}
+    )
     return result
