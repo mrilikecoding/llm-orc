@@ -148,11 +148,15 @@ class TestProfileScopeOverRest:
             updated = client.put(
                 "/api/profiles/p", json={"model": "b", "scope": "global"}
             )
+            global_file = resolve_global_config_dir() / "profiles" / "p.yaml"
+            updated_yaml = yaml.safe_load(global_file.read_text())
+
             wrong = client.delete("/api/profiles/p", params={"scope": "project"})
             right = client.delete("/api/profiles/p", params={"scope": "global"})
 
-        global_file = resolve_global_config_dir() / "profiles" / "p.yaml"
         assert updated.status_code == 200
+        assert updated_yaml["model"] == "b"
+        assert "scope" not in updated_yaml
         assert wrong.status_code != 200
         assert "global tier" in wrong.text
         assert right.status_code == 200
