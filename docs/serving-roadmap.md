@@ -159,6 +159,14 @@ the llama-server backend yet — that is the regression gate below.
 
 ### Next up (in order)
 
+**First (practitioner, 2026-09-28): remote delegation.** Plan with task
+cards: `docs/plans/2026-09-28-remote-delegation.md` (#196, #191). Ship the
+serving project in the wheel, `scope: global` for CRUD, transitive
+preflight, one-run injection of ensembles/profiles/scripts with explicit
+`bind`/`pull`, and `llm-orc invoke --remote`. Start with the two spikes
+(Arc 0) and Arc 1; revise Arcs 2-4 from the spike findings. v0.21.0 is
+deployed on remote-host (practitioner, 2026-09-28).
+
 1. **Serve is up on remote-host (2026-09-16 afternoon).** launchd agent,
    v0.20.0 from origin main, llama.cpp b10964 x64 binary (no Intel brew
    bottles; see `deploy/remote-host/README.md`). http://llm-orc.remote.example
