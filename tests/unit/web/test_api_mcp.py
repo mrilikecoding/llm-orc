@@ -329,7 +329,11 @@ class TestMcpCrudScope:
             "create_script",
             "delete_script",
         ):
-            assert "scope" in by_name[name].inputSchema["properties"], name
+            scope_schema = by_name[name].inputSchema["properties"]["scope"]
+            assert scope_schema.get("enum") == ["project", "global"], (
+                name,
+                scope_schema,
+            )
 
     def test_create_ensemble_global_over_mcp_lands_in_global_dir_and_lists_as_global(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

@@ -21,6 +21,7 @@ from starlette.applications import Starlette
 from llm_orc.core.config.config_manager import ConfigurationManager
 from llm_orc.core.config.ensemble_config import EnsembleLoader
 from llm_orc.core.execution.artifact_manager import ArtifactManager
+from llm_orc.services.handlers.scope import Scope
 from llm_orc.services.orchestra_service import OrchestraService
 
 if TYPE_CHECKING:
@@ -276,7 +277,7 @@ class MCPServer:
             changes: dict[str, Any],
             dry_run: bool = True,
             backup: bool = True,
-            scope: str = "project",
+            scope: Scope = "project",
         ) -> dict[str, Any]:
             """Modify ensemble configuration.
 
@@ -327,7 +328,7 @@ class MCPServer:
             description: str = "",
             agents: list[dict[str, Any]] | None = None,
             from_template: str | None = None,
-            scope: str = "project",
+            scope: Scope = "project",
         ) -> dict[str, Any]:
             """Create a new ensemble from scratch or template.
 
@@ -353,7 +354,7 @@ class MCPServer:
         async def delete_ensemble(
             ensemble_name: str,
             confirm: bool = False,
-            scope: str = "project",
+            scope: Scope = "project",
         ) -> dict[str, Any]:
             """Delete an ensemble.
 
@@ -440,7 +441,7 @@ class MCPServer:
             timeout_seconds: int | None = None,
             temperature: float | None = None,
             max_tokens: int | None = None,
-            scope: str = "project",
+            scope: Scope = "project",
         ) -> dict[str, Any]:
             """Create a new model profile.
 
@@ -470,7 +471,7 @@ class MCPServer:
 
         @self._mcp.tool()
         async def update_profile(
-            name: str, changes: dict[str, Any], scope: str = "project"
+            name: str, changes: dict[str, Any], scope: Scope = "project"
         ) -> dict[str, Any]:
             """Update an existing profile.
 
@@ -486,7 +487,7 @@ class MCPServer:
 
         @self._mcp.tool()
         async def delete_profile(
-            name: str, confirm: bool = False, scope: str = "project"
+            name: str, confirm: bool = False, scope: Scope = "project"
         ) -> dict[str, Any]:
             """Delete a model profile.
 
@@ -582,7 +583,7 @@ class MCPServer:
             name: str,
             category: str,
             template: str = "basic",
-            scope: str = "project",
+            scope: Scope = "project",
         ) -> dict[str, Any]:
             """Create a new primitive script.
 
@@ -607,7 +608,7 @@ class MCPServer:
             name: str,
             category: str,
             confirm: bool = False,
-            scope: str = "project",
+            scope: Scope = "project",
         ) -> dict[str, Any]:
             """Delete a script.
 
