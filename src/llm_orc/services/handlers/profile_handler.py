@@ -7,6 +7,7 @@ import yaml
 
 from llm_orc.core.config.config_manager import ConfigurationManager
 from llm_orc.mcp.project_context import ProjectContext
+from llm_orc.services.handlers.scope import Scope, find_in_scope, parse_scope
 
 
 class ProfileHandler:
@@ -72,6 +73,15 @@ class ProfileHandler:
             return Path(profiles_dirs[0])
         raise ValueError("No profiles directory configured")
 
+    def _dir_for_scope(self, scope: Scope) -> Path | None:
+        """Write directory for one scope; None when the project has none."""
+        if scope == "global":
+            return self._config_manager.global_config_dir / "profiles"
+        try:
+            return self.get_local_profiles_dir()
+        except ValueError:
+            return None
+
     async def create_profile(self, arguments: dict[str, Any]) -> dict[str, Any]:
         """Create a new profile."""
         name = arguments.get("name")
@@ -85,7 +95,10 @@ class ProfileHandler:
         if not model:
             raise ValueError("model is required")
 
-        local_dir = self.get_local_profiles_dir()
+        scope = parse_scope(arguments)
+        local_dir = self._dir_for_scope(scope)
+        if local_dir is None:
+            raise ValueError("No profiles directory configured")
         target_file = local_dir / f"{name}.yaml"
         if target_file.exists():
             raise ValueError(f"Profile '{name}' already exists")
@@ -108,7 +121,7 @@ class ProfileHandler:
         yaml_content = yaml.safe_dump(profile_data, default_flow_style=False)
         target_file.write_text(yaml_content)
 
-        return {"created": True, "path": str(target_file)}
+        return {"created": True, "path": str(target_file), "scope": scope}
 
     async def update_profile(self, arguments: dict[str, Any]) -> dict[str, Any]:
         """Update an existing profile."""
@@ -118,7 +131,7 @@ class ProfileHandler:
         if not name:
             raise ValueError("name is required")
 
-        profile_file = self._find_profile_file(name)
+        profile_file = self._find_profile_file(name, parse_scope(arguments))
 
         content = profile_file.read_text()
         data = yaml.safe_load(content) or {}
@@ -139,22 +152,22 @@ class ProfileHandler:
         if not confirm:
             raise ValueError("Confirmation required to delete profile")
 
-        profile_file = self._find_profile_file(name)
+        profile_file = self._find_profile_file(name, parse_scope(arguments))
         profile_file.unlink()
 
         return {"deleted": True, "name": name}
 
-    def _find_profile_file(self, name: str) -> Path:
-        """Find profile YAML file by name across all profile directories.
-
-        Raises:
-            ValueError: If profile is not found.
-        """
-        for dir_path in self._config_manager.get_profiles_dirs():
-            path = Path(dir_path) / f"{name}.yaml"
-            if path.exists():
-                return path
-        raise ValueError(f"Profile '{name}' not found")
+    def _find_profile_file(self, name: str, scope: Scope) -> Path:
+        """Find the profile YAML in one scope; name the tier if elsewhere."""
+        return find_in_scope(
+            name=name,
+            filename=f"{name}.yaml",
+            scope=scope,
+            scope_dir=self._dir_for_scope(scope),
+            search_dirs=[Path(d) for d in self._config_manager.get_profiles_dirs()],
+            classify=self._config_manager.classify_tier,
+            label="Profile",
+        )
 
     def get_profiles_from_dir(self, directory: Path) -> dict[str, dict[str, Any]]:
         """Get profiles available in a specific directory.
