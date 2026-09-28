@@ -1,0 +1,8 @@
+name: disprunkid
+description: p
+agents:
+  - name: d
+    script: scripts/target2.py
+  - name: seat
+    dispatch: "${d.t}"
+    depends_on: [d]

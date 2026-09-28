@@ -27,7 +27,11 @@ class TestDependencyResolver:
         mock_role_resolver = Mock()
         mock_role_resolver.return_value = "Test Role"
 
-        resolver = DependencyResolver(role_resolver=mock_role_resolver)
+        resolver = DependencyResolver(
+            role_resolver=mock_role_resolver,
+            dependency_config_lookup=lambda _name: None,
+            ensemble_terminal_agents=lambda _ref: [],
+        )
 
         return resolver, mock_role_resolver
 
@@ -84,7 +88,10 @@ class TestDependencyResolver:
         assert "Second result" in enhanced["agent3"]
 
     def test_enhance_input_with_dependencies_with_failed_deps(self) -> None:
-        """Test enhancement when some dependencies failed."""
+        """A failed dependency alongside a successful one is named in the
+        envelope, not silently dropped (fail-closed-composition rule 2 —
+        a failed step never reaches a downstream consumer as if it
+        vanished)."""
         resolver, mock_role_resolver = self.setup_resolver()
         mock_role_resolver.return_value = "Test Role"
 
@@ -104,14 +111,21 @@ class TestDependencyResolver:
             "base input", agents, results_dict
         )
 
-        # Should only include successful dependency
         assert "Agent agent1 (Test Role):" in enhanced["agent2"]
         assert "Success result" in enhanced["agent2"]
-        assert "failed_agent" not in enhanced["agent2"]
+        assert (
+            "Agent failed_agent (Test Role) (failed): Agent failed"
+            in (enhanced["agent2"])
+        )
 
     def test_enhance_input_with_dependencies_no_successful_deps(self) -> None:
-        """Test enhancement when no dependencies are successful."""
-        resolver, _ = self.setup_resolver()
+        """When the sole dependency failed, the envelope names the
+        failure instead of silently falling back to bare base input — in
+        the full executor this agent is skipped before this input is
+        ever used (GuardEvaluator, rule 1); this pins what the resolver
+        alone produces."""
+        resolver, mock_role_resolver = self.setup_resolver()
+        mock_role_resolver.return_value = "Test Role"
 
         agents: list[AgentConfig] = [
             LlmAgentConfig(
@@ -128,8 +142,11 @@ class TestDependencyResolver:
             "base input", agents, results_dict
         )
 
-        # Should fall back to base input
-        assert enhanced["agent2"] == "base input"
+        assert "base input" in enhanced["agent2"]
+        assert (
+            "Agent failed_agent (Test Role) (failed): Agent failed"
+            in (enhanced["agent2"])
+        )
 
     def test_enhance_input_with_dependencies_missing_deps(self) -> None:
         """Test enhancement when dependencies are missing from results."""
@@ -325,7 +342,11 @@ class TestDependencyResolver:
         assert result == []
 
     def test_enhance_input_with_mixed_dependency_statuses(self) -> None:
-        """Test enhancement with mix of successful, failed, and missing deps."""
+        """A failed dependency present in results_dict is named; one
+        entirely absent from results_dict (never should happen given
+        topological ordering, but defensive) stays omitted — there is
+        nothing honest to say about a dependency the engine never
+        recorded at all."""
         resolver, mock_role_resolver = self.setup_resolver()
         mock_role_resolver.side_effect = lambda name: f"{name.title()} Role"
 
@@ -346,10 +367,9 @@ class TestDependencyResolver:
             "base input", agents, results_dict
         )
 
-        # Should only include successful dependency
         assert "Agent success (Success Role):" in enhanced["agent4"]
         assert "Good result" in enhanced["agent4"]
-        assert "failed" not in enhanced["agent4"]
+        assert "Agent failed (Failed Role) (failed): Failed" in enhanced["agent4"]
         assert "missing" not in enhanced["agent4"]
 
     def test_enhance_input_empty_dependencies_list(self) -> None:
@@ -413,13 +433,17 @@ class TestDependencyResolver:
         assert "First success" in enhanced["multi_deps"]
         assert "Second success" in enhanced["multi_deps"]
 
-        # Partial successful dependencies agent
+        # Partial successful dependencies agent: the failed one is named,
+        # not dropped (fail-closed-composition rule 2)
         assert "Agent success1 (Success1 Role):" in enhanced["partial_deps"]
         assert "First success" in enhanced["partial_deps"]
-        assert "failed1" not in enhanced["partial_deps"]
+        assert (
+            "Agent failed1 (Failed1 Role) (failed): Failed"
+            in (enhanced["partial_deps"])
+        )
 
     def test_extract_successful_dependency_results_helper(self) -> None:
-        """Test the extracted helper method for getting successful results."""
+        """Test the extracted helper method for getting dependency results."""
         resolver, mock_role_resolver = self.setup_resolver()
         mock_role_resolver.side_effect = lambda name: f"{name.title()} Role"
 
@@ -439,8 +463,9 @@ class TestDependencyResolver:
             dependencies, results_dict
         )
 
-        assert len(dependency_results) == 1
+        assert len(dependency_results) == 2
         assert "Agent success (Success Role):\nGood result" in dependency_results
+        assert "Agent failed (Failed Role) (failed): Failed" in dependency_results
 
     def test_build_enhanced_input_with_dependencies_helper(self) -> None:
         """Test the extracted helper method for building enhanced input."""
@@ -506,6 +531,47 @@ class TestDependencyResolver:
         assert "dependencies" in parsed
         assert "extractor" in parsed["dependencies"]
         assert parsed["dependencies"]["extractor"]["response"] == "Extracted data here"
+
+    def test_enhance_input_script_agent_dependencies_dict_names_failures(self) -> None:
+        """A script consumer sees every present dependency, including a
+        failed or skipped one, with its own status/error intact — the
+        ScriptAgentInput shape (``dependencies: dict[str, Any]``) already
+        carries this honestly (fail-closed-composition rule 2); it is no
+        longer filtered down to successes only."""
+        import json
+
+        resolver, _ = self.setup_resolver()
+
+        agents: list[AgentConfig] = [
+            ScriptAgentConfig(
+                name="aggregator",
+                script="aggregator.py",
+                depends_on=["extractor", "skipped_step"],
+            ),
+        ]
+        results_dict = {
+            "extractor": {
+                "status": "failed",
+                "response": None,
+                "error": "timeout",
+            },
+            "skipped_step": {
+                "status": "skipped",
+                "response": None,
+                "reason": "no dependency succeeded: upstream (failed: x)",
+            },
+        }
+
+        enhanced = resolver.enhance_input_with_dependencies(
+            "Process this data", agents, results_dict
+        )
+
+        parsed = json.loads(enhanced["aggregator"])
+        deps = parsed["dependencies"]
+        assert deps["extractor"]["status"] == "failed"
+        assert deps["extractor"]["error"] == "timeout"
+        assert deps["skipped_step"]["status"] == "skipped"
+        assert "reason" in deps["skipped_step"]
 
     def test_enhance_input_script_agent_without_dependencies(self) -> None:
         """Test script agent without dependencies still gets JSON format."""
@@ -671,7 +737,11 @@ class TestChildExecutionInputContract:
         """Set up resolver with mocked role description function."""
         mock_role_resolver = Mock()
         mock_role_resolver.return_value = "Test Role"
-        return DependencyResolver(role_resolver=mock_role_resolver)
+        return DependencyResolver(
+            role_resolver=mock_role_resolver,
+            dependency_config_lookup=lambda _name: None,
+            ensemble_terminal_agents=lambda _ref: [],
+        )
 
     def test_ensemble_with_input_key_gets_selected_value(self) -> None:
         """Issue #202 repro: ensemble + input_key passes the selected
@@ -792,10 +862,20 @@ class TestChildExecutionInputContract:
             resolver.enhance_input_with_dependencies("base", agents, {})
 
     def test_child_input_key_with_failed_upstream_gets_composed(self) -> None:
-        """input_key set but the first dependency failed: the child gets
-        base input plus the other successful deps' data (failed-dep-omitted
-        semantics, matching the LLM path), never the selection error text
-        (PR 203 review note)."""
+        """input_key set but the first dependency failed: in ISOLATION,
+        the resolver composes base input plus every present dependency's
+        data, now including the failed one's status and detail — never
+        the input_key selection error text (PR 203 review note), and
+        never silently dropping the failure either (fail-closed-
+        composition rule 2).
+
+        This composed input is a fallback the resolver can always
+        produce, but it is not what actually runs: in the full executor,
+        ``DependencyResolver.child_input_key_contract_error`` fails this
+        agent before dispatch, exactly because ``depends_on[0]`` (the
+        input_key source) did not succeed — see
+        ``TestChildInputKeyContractError`` below for that decision.
+        """
         resolver = self.setup_resolver()
 
         agents: list[AgentConfig] = [
@@ -819,7 +899,7 @@ class TestChildExecutionInputContract:
         assert child_input.startswith("the original turn")
         assert "Agent other (Test Role):" in child_input
         assert "other data" in child_input
-        assert "boom" not in child_input
+        assert "Agent failed (Test Role) (error): boom" in child_input
 
     def test_unknown_consumer_type_raises(self) -> None:
         """No fall-through default: an unrecognized consumer type raises
@@ -837,6 +917,698 @@ class TestChildExecutionInputContract:
             resolver.enhance_input_with_dependencies("base", agents, results_dict)
 
 
+class TestChildInputKeyContractError:
+    """A non-fan-out child-execution node's input_key selects
+    depends_on[0] verbatim (ADR-014) — its ENTIRE input. If depends_on[0]
+    did not succeed, that promise can't be honored even when another
+    dependency did (fail-closed-composition, the input_key/depends_on[0]
+    decision): ``child_input_key_contract_error`` names that as an error
+    so the executor can fail the agent closed instead of composing a
+    different, unrequested input shape.
+    """
+
+    def setup_resolver(self) -> DependencyResolver:
+        return DependencyResolver(
+            role_resolver=Mock(return_value="Role"),
+            dependency_config_lookup=lambda _name: None,
+            ensemble_terminal_agents=lambda _ref: [],
+        )
+
+    def test_none_when_input_key_source_succeeded(self) -> None:
+        resolver = self.setup_resolver()
+        agent = EnsembleAgentConfig(
+            name="consumer",
+            ensemble="worker",
+            depends_on=["producer"],
+            input_key="queries",
+        )
+        results_dict = {"producer": {"status": "success", "response": "[]"}}
+
+        assert resolver.child_input_key_contract_error(agent, results_dict) is None
+
+    def test_none_when_no_input_key(self) -> None:
+        resolver = self.setup_resolver()
+        agent = EnsembleAgentConfig(
+            name="consumer", ensemble="worker", depends_on=["producer"]
+        )
+        results_dict = {"producer": {"status": "failed", "error": "boom"}}
+
+        assert resolver.child_input_key_contract_error(agent, results_dict) is None
+
+    def test_none_for_fan_out_agent(self) -> None:
+        """Fan-out's own input_key contract check (FanOutCoordinator)
+        owns this case; this method stays out of its way."""
+        resolver = self.setup_resolver()
+        agent = EnsembleAgentConfig(
+            name="consumer",
+            ensemble="worker",
+            depends_on=["producer"],
+            input_key="queries",
+            fan_out=True,
+        )
+        results_dict = {"producer": {"status": "failed", "error": "boom"}}
+
+        assert resolver.child_input_key_contract_error(agent, results_dict) is None
+
+    def test_none_for_llm_consumer(self) -> None:
+        """Only child-execution nodes (ensemble:/loop:/dispatch:) are in
+        scope — an LLM consumer's partial-failure envelope already names
+        the failure (rule 2)."""
+        resolver = self.setup_resolver()
+        agent = LlmAgentConfig(
+            name="consumer",
+            model_profile="test-profile",
+            depends_on=["producer"],
+            input_key="queries",
+        )
+        results_dict = {"producer": {"status": "failed", "error": "boom"}}
+
+        assert resolver.child_input_key_contract_error(agent, results_dict) is None
+
+    def test_error_when_sole_input_key_source_failed(self) -> None:
+        resolver = self.setup_resolver()
+        agent = EnsembleAgentConfig(
+            name="consumer",
+            ensemble="worker",
+            depends_on=["producer"],
+            input_key="queries",
+        )
+        results_dict = {"producer": {"status": "failed", "error": "boom"}}
+
+        error = resolver.child_input_key_contract_error(agent, results_dict)
+
+        assert error is not None
+        assert "consumer" in error
+        assert "queries" in error
+        assert "producer" in error
+
+    def test_error_when_input_key_source_failed_but_another_dep_succeeded(
+        self,
+    ) -> None:
+        """The multi-dependency case the decided contract calls out:
+        depends_on[0] (the input_key source) failed even though another
+        dependency succeeded — still a contract failure, not a partial
+        success (rule 1's 'at least one succeeded' threshold does not
+        apply to input_key's verbatim promise)."""
+        resolver = self.setup_resolver()
+        agent = EnsembleAgentConfig(
+            name="consumer",
+            ensemble="worker",
+            depends_on=["producer", "other"],
+            input_key="queries",
+        )
+        results_dict = {
+            "producer": {"status": "failed", "error": "boom"},
+            "other": {"status": "success", "response": "fine"},
+        }
+
+        error = resolver.child_input_key_contract_error(agent, results_dict)
+
+        assert error is not None
+        assert "producer" in error
+
+    def test_error_when_input_key_source_skipped(self) -> None:
+        resolver = self.setup_resolver()
+        agent = DynamicDispatchAgentConfig(
+            name="seat",
+            dispatch="${route.target}",
+            depends_on=["route"],
+            input_key="dispatch_input",
+        )
+        results_dict = {"route": {"status": "skipped", "response": None}}
+
+        error = resolver.child_input_key_contract_error(agent, results_dict)
+
+        assert error is not None
+        assert "skipped" in error
+
+    def test_error_when_input_key_source_is_a_handled_failure(self) -> None:
+        """S2 (addendum 2026-09-23): a handled_failure dependency's own
+        status is literally "success" (it ran without incident), but it
+        is not a succeeded terminal — input_key's verbatim promise
+        cannot be honored from a composed refusal any more than from a
+        plain failure."""
+        resolver = self.setup_resolver()
+        agent = EnsembleAgentConfig(
+            name="consumer",
+            ensemble="worker",
+            depends_on=["producer"],
+            input_key="queries",
+        )
+        results_dict = {
+            "producer": {
+                "status": "success",
+                "response": "refusal",
+                "handled_failure": True,
+            }
+        }
+
+        error = resolver.child_input_key_contract_error(agent, results_dict)
+
+        assert error is not None
+        assert "producer" in error
+
+
+class TestInputKeySelectionExcludesHandledFailure:
+    """S2: ``_selected_child_value``/``_apply_input_key_selection`` read
+    ``outcome.is_ok``, not a literal ``status == "success"`` check — a
+    handled_failure dependency's own status reads "success", but its
+    response is a composed refusal, not the honest verbatim value
+    input_key promises."""
+
+    def setup_resolver(self) -> DependencyResolver:
+        return DependencyResolver(
+            role_resolver=Mock(return_value=None),
+            dependency_config_lookup=lambda _name: None,
+            ensemble_terminal_agents=lambda _ref: [],
+        )
+
+    def test_child_execution_consumer_does_not_select_a_handled_failure(self) -> None:
+        resolver = self.setup_resolver()
+        agent = EnsembleAgentConfig(
+            name="consumer",
+            ensemble="worker",
+            depends_on=["producer"],
+            input_key="queries",
+        )
+        results_dict = {
+            "producer": {
+                "status": "success",
+                "response": "refusal text",
+                "handled_failure": True,
+            }
+        }
+
+        # _compute_agent_input falls through past the input_key
+        # short-circuit and composes a normal dependency envelope
+        # instead of handing "refusal text" through verbatim.
+        computed = resolver.enhance_input_with_dependencies(
+            "base input", [agent], results_dict
+        )
+        assert "refusal text" not in computed["consumer"]
+        assert "handled failure" in computed["consumer"]
+
+    def test_script_consumer_input_key_selection_skips_handled_failure(self) -> None:
+        """_apply_input_key_selection leaves a handled_failure
+        dependency's response un-selected, so a script agent's
+        composed input falls back to the full dependencies dict
+        instead of a key plucked from a refusal."""
+        resolver = self.setup_resolver()
+        agent = ScriptAgentConfig(
+            name="consumer",
+            script="run.py",
+            depends_on=["producer"],
+            input_key="queries",
+        )
+        results_dict = {
+            "producer": {
+                "status": "success",
+                "response": json.dumps({"queries": ["should-not-appear"]}),
+                "handled_failure": True,
+            }
+        }
+
+        computed = resolver.enhance_input_with_dependencies(
+            "base input", [agent], results_dict
+        )
+        parsed = json.loads(computed["consumer"])
+        assert parsed["dependencies"]["producer"]["handled_failure"] is True
+
+
+class TestNonSuccessDependencyBlockNamesHandledFailure:
+    """S2: a handled_failure dependency renders as a named blocking
+    block for an LLM/script consumer, not as unqualified success text —
+    ``_render_non_success_dependency_block`` names the real upstream
+    failure it handled instead of a misleading "(success): <refusal>"."""
+
+    def setup_resolver(self) -> DependencyResolver:
+        return DependencyResolver(
+            role_resolver=Mock(return_value=None),
+            dependency_config_lookup=lambda _name: None,
+            ensemble_terminal_agents=lambda _ref: [],
+        )
+
+    def test_llm_consumer_sees_handled_failure_named_not_its_text(self) -> None:
+        resolver = self.setup_resolver()
+        agent = LlmAgentConfig(
+            name="consumer", model_profile="test-profile", depends_on=["shape"]
+        )
+        results_dict = {
+            "shape": {
+                "status": "success",
+                "response": "Refused: serving pipeline error",
+                "handled_failure": True,
+                "handled_failure_reason": (
+                    "no dependency succeeded: seat (failed: boom)"
+                ),
+            }
+        }
+
+        computed = resolver.enhance_input_with_dependencies(
+            "base input", [agent], results_dict
+        )
+
+        assert "handled failure" in computed["consumer"]
+        assert "seat (failed: boom)" in computed["consumer"]
+
+
+class TestLlmConsumerOfEnsembleDependency:
+    """An LLM consumer of an ``ensemble:`` dependency gets the child's
+    terminal agent responses, not the JSON-serialized execution record
+    (fail-closed-composition D). The record's status/input/metadata/usage
+    fields — the overhead measured on research-dossier — never reach the
+    consumer; a failed or unparseable child renders honestly instead of
+    going silently empty.
+    """
+
+    @staticmethod
+    def _child_result(results: dict[str, Any], **extra: Any) -> str:
+        """A serialized child result (ExecutionResult.to_dict() shape)."""
+        payload: dict[str, Any] = {
+            "ensemble": "web-searcher",
+            "status": "completed",
+            "input": {"searcher": "orphanages mississippi"},
+            "results": results,
+            "metadata": {
+                "agents_used": len(results),
+                "started_at": 0.0,
+                "usage": {"totals": {"total_tokens": 555}},
+            },
+        }
+        payload.update(extra)
+        return json.dumps(payload)
+
+    def _resolver(
+        self,
+        dep_config: AgentConfig | None,
+        terminals: list[str],
+    ) -> DependencyResolver:
+        return DependencyResolver(
+            role_resolver=Mock(return_value="Web Searcher"),
+            dependency_config_lookup=lambda name: (
+                dep_config if name == "searcher" else None
+            ),
+            ensemble_terminal_agents=lambda ref: terminals,
+        )
+
+    def test_renders_terminal_response_not_execution_record(self) -> None:
+        """Outcome pin: the compiler's input contains the terminal's
+        response and does not contain the record's metadata/usage keys."""
+        dep_config = EnsembleAgentConfig(
+            name="searcher", ensemble="agentic-serving/web-searcher"
+        )
+        resolver = self._resolver(dep_config, ["searcher"])
+
+        agents: list[AgentConfig] = [
+            LlmAgentConfig(
+                name="compiler",
+                model_profile="test-profile",
+                depends_on=["searcher"],
+            ),
+        ]
+        child_result = self._child_result(
+            {
+                "searcher": {
+                    "status": "success",
+                    "response": json.dumps(
+                        {"results": [{"url": "http://x", "title": "T"}]}
+                    ),
+                }
+            }
+        )
+        results_dict = {
+            "searcher": {"status": "success", "response": child_result},
+        }
+
+        enhanced = resolver.enhance_input_with_dependencies(
+            "Compile a dossier", agents, results_dict
+        )
+
+        compiler_input = enhanced["compiler"]
+        assert "http://x" in compiler_input
+        assert "searcher:" in compiler_input
+        assert "total_tokens" not in compiler_input
+        assert "started_at" not in compiler_input
+        assert "agents_used" not in compiler_input
+
+    def test_renders_each_fan_out_gathered_terminal(self) -> None:
+        """A gathered fan-out dependency (list of child results) renders
+        one labeled block per instance's terminal."""
+        dep_config = EnsembleAgentConfig(
+            name="searcher",
+            ensemble="agentic-serving/web-searcher",
+            fan_out=True,
+        )
+        resolver = self._resolver(dep_config, ["searcher"])
+
+        agents: list[AgentConfig] = [
+            LlmAgentConfig(
+                name="compiler",
+                model_profile="test-profile",
+                depends_on=["searcher"],
+            ),
+        ]
+        response_list = [
+            self._child_result(
+                {
+                    "searcher": {
+                        "status": "success",
+                        "response": json.dumps({"results": ["resultA"]}),
+                    }
+                }
+            ),
+            self._child_result(
+                {
+                    "searcher": {
+                        "status": "success",
+                        "response": json.dumps({"results": ["resultB"]}),
+                    }
+                }
+            ),
+        ]
+        results_dict = {
+            "searcher": {"status": "success", "response": response_list},
+        }
+
+        enhanced = resolver.enhance_input_with_dependencies(
+            "Compile a dossier", agents, results_dict
+        )
+
+        compiler_input = enhanced["compiler"]
+        assert "searcher[0]:" in compiler_input
+        assert "searcher[1]:" in compiler_input
+        assert "resultA" in compiler_input
+        assert "resultB" in compiler_input
+        assert "total_tokens" not in compiler_input
+
+    def test_partial_fan_out_renders_successes_and_names_failed_errors(self) -> None:
+        """A "partial" gathered fan-out (some instances failed, some
+        succeeded) counts as a successful dependency: the compiler still
+        gets the successful instances' terminal renders, and each failed
+        instance is named with its own error — never a Python list
+        repr, never the bare word "None" (fail-closed-composition,
+        partial fan-out decision)."""
+        dep_config = EnsembleAgentConfig(
+            name="searcher",
+            ensemble="agentic-serving/web-searcher",
+            fan_out=True,
+        )
+        resolver = self._resolver(dep_config, ["searcher"])
+
+        agents: list[AgentConfig] = [
+            LlmAgentConfig(
+                name="compiler",
+                model_profile="test-profile",
+                depends_on=["searcher"],
+            ),
+        ]
+        succeeded_child = self._child_result(
+            {
+                "searcher": {
+                    "status": "success",
+                    "response": json.dumps({"results": ["resultA"]}),
+                }
+            }
+        )
+        results_dict = {
+            "searcher": {
+                "status": "partial",
+                "fan_out": True,
+                "response": [succeeded_child, None],
+                "instances": [
+                    {"index": 0, "status": "success"},
+                    {
+                        "index": 1,
+                        "status": "failed",
+                        "error": "search backend timed out",
+                    },
+                ],
+            },
+        }
+
+        enhanced = resolver.enhance_input_with_dependencies(
+            "Compile a dossier", agents, results_dict
+        )
+
+        compiler_input = enhanced["compiler"]
+        assert "resultA" in compiler_input
+        assert "search backend timed out" in compiler_input
+        # never a bare Python list repr or the literal word None standing
+        # in for the failed instance
+        assert "None" not in compiler_input
+
+    def test_plain_fan_out_renders_successes_and_names_failed_errors(self) -> None:
+        """SF1: a plain (non-ensemble) fan-out dependency — a script or
+        LLM fanned out over a decomposer's query list, not an
+        ``ensemble:`` reference — renders each successful instance's own
+        text and names each failed one with its error, the same shape a
+        gathered ensemble fan-out already gets. The resolver used to
+        fall through to the raw response list unchanged for a
+        non-ensemble dependency (``['inst-ok ...', None]``, a bare
+        Python list repr including the literal word "None")."""
+        dep_config = ScriptAgentConfig(
+            name="searcher", script="scripts/search.py", fan_out=True
+        )
+        resolver = self._resolver(dep_config, [])
+
+        agents: list[AgentConfig] = [
+            LlmAgentConfig(
+                name="compiler",
+                model_profile="test-profile",
+                depends_on=["searcher"],
+            ),
+        ]
+        results_dict = {
+            "searcher": {
+                "status": "partial",
+                "fan_out": True,
+                "response": ["inst-ok result-a", None],
+                "instances": [
+                    {"index": 0, "status": "success"},
+                    {
+                        "index": 1,
+                        "status": "failed",
+                        "error": "search backend timed out",
+                    },
+                ],
+            },
+        }
+
+        enhanced = resolver.enhance_input_with_dependencies(
+            "Compile a dossier", agents, results_dict
+        )
+
+        compiler_input = enhanced["compiler"]
+        assert "inst-ok result-a" in compiler_input
+        assert "search backend timed out" in compiler_input
+        assert "None" not in compiler_input
+
+    def test_empty_fan_out_dependency_is_named_explicitly(self) -> None:
+        """A genuinely empty fan-out (upstream array was []) must reach
+        an LLM consumer as an explicit statement, not an empty block
+        (SF4)."""
+        dep_config = EnsembleAgentConfig(
+            name="searcher",
+            ensemble="agentic-serving/web-searcher",
+            fan_out=True,
+        )
+        resolver = self._resolver(dep_config, ["searcher"])
+
+        agents: list[AgentConfig] = [
+            LlmAgentConfig(
+                name="compiler",
+                model_profile="test-profile",
+                depends_on=["searcher"],
+            ),
+        ]
+        results_dict = {
+            "searcher": {
+                "status": "success",
+                "fan_out": True,
+                "response": [],
+                "instances": [],
+            },
+        }
+
+        enhanced = resolver.enhance_input_with_dependencies(
+            "Compile a dossier", agents, results_dict
+        )
+
+        compiler_input = enhanced["compiler"]
+        assert "searcher" in compiler_input
+        assert "zero instances" in compiler_input
+        assert "upstream list was empty" in compiler_input
+
+    def test_input_key_on_ensemble_dependency_bypasses_terminal_render(self) -> None:
+        """input_key selection wins outright: the resolver never
+        re-parses the already-selected value as an execution record.
+
+        Unlike a child-execution consumer (ADR-014's verbatim
+        short-circuit), an LLM consumer's input_key selection still
+        flows through the normal dependency-block envelope — only the
+        ensemble-terminal-render step is skipped for that dependency.
+        """
+        dep_config = EnsembleAgentConfig(
+            name="searcher", ensemble="agentic-serving/web-searcher"
+        )
+        resolver = self._resolver(dep_config, ["searcher"])
+
+        agents: list[AgentConfig] = [
+            LlmAgentConfig(
+                name="compiler",
+                model_profile="test-profile",
+                depends_on=["searcher"],
+                input_key="deliverable",
+            ),
+        ]
+        child_result = self._child_result(
+            {"searcher": {"status": "success", "response": "x"}},
+            deliverable="already selected text",
+        )
+        results_dict = {
+            "searcher": {"status": "success", "response": child_result},
+        }
+
+        enhanced = resolver.enhance_input_with_dependencies(
+            "base input", agents, results_dict
+        )
+
+        assert (
+            "Agent searcher (Web Searcher):\nalready selected text"
+            in enhanced["compiler"]
+        )
+
+    def test_failed_terminal_renders_error_not_silently_empty(self) -> None:
+        """A terminal that failed inside a successfully-returned child
+        result renders its error, never an empty block."""
+        dep_config = EnsembleAgentConfig(
+            name="searcher", ensemble="agentic-serving/web-searcher"
+        )
+        resolver = self._resolver(dep_config, ["searcher"])
+
+        agents: list[AgentConfig] = [
+            LlmAgentConfig(
+                name="compiler",
+                model_profile="test-profile",
+                depends_on=["searcher"],
+            ),
+        ]
+        child_result = self._child_result(
+            {
+                "searcher": {
+                    "status": "failed",
+                    "error": "timeout contacting search API",
+                }
+            }
+        )
+        results_dict = {
+            "searcher": {"status": "success", "response": child_result},
+        }
+
+        enhanced = resolver.enhance_input_with_dependencies(
+            "base input", agents, results_dict
+        )
+
+        assert "timeout contacting search API" in enhanced["compiler"]
+
+    def test_handled_failure_terminal_names_real_failure_not_its_text(self) -> None:
+        """S2 (addendum 2026-09-23): a nested terminal that is itself a
+        handled_failure node has status "success" (it ran without
+        incident), but _render_terminal_block must not read that as a
+        succeeded terminal — it names the real upstream failure the
+        terminal handled instead of rendering its composed refusal as
+        unqualified success content."""
+        dep_config = EnsembleAgentConfig(
+            name="searcher", ensemble="agentic-serving/web-searcher"
+        )
+        resolver = self._resolver(dep_config, ["searcher"])
+
+        agents: list[AgentConfig] = [
+            LlmAgentConfig(
+                name="compiler",
+                model_profile="test-profile",
+                depends_on=["searcher"],
+            ),
+        ]
+        child_result = self._child_result(
+            {
+                "searcher": {
+                    "status": "success",
+                    "response": "Refused: no upstream data",
+                    "handled_failure": True,
+                    "handled_failure_reason": "no dependency succeeded: fetch (failed)",
+                }
+            }
+        )
+        results_dict = {
+            "searcher": {"status": "success", "response": child_result},
+        }
+
+        enhanced = resolver.enhance_input_with_dependencies(
+            "base input", agents, results_dict
+        )
+
+        assert "Refused: no upstream data" not in enhanced["compiler"]
+        assert "handled failure" in enhanced["compiler"]
+        assert "fetch (failed)" in enhanced["compiler"]
+
+    def test_unparseable_child_result_renders_raw_text(self) -> None:
+        """A response that isn't a child-result dict at all (the child
+        crashed before producing one) renders honestly, not empty."""
+        dep_config = EnsembleAgentConfig(
+            name="searcher", ensemble="agentic-serving/web-searcher"
+        )
+        resolver = self._resolver(dep_config, ["searcher"])
+
+        agents: list[AgentConfig] = [
+            LlmAgentConfig(
+                name="compiler",
+                model_profile="test-profile",
+                depends_on=["searcher"],
+            ),
+        ]
+        results_dict = {
+            "searcher": {"status": "success", "response": "not json at all"},
+        }
+
+        enhanced = resolver.enhance_input_with_dependencies(
+            "base input", agents, results_dict
+        )
+
+        assert "not json at all" in enhanced["compiler"]
+
+    def test_unresolvable_dependency_falls_back_to_raw_response(self) -> None:
+        """dependency_config_lookup returns None for this dependency
+        (SF6: the lookups are always wired, but a lookup miss is still
+        possible): an LLM consumer of it keeps the raw JSON-serialized
+        response rather than crashing."""
+        resolver = DependencyResolver(
+            role_resolver=Mock(return_value="Role"),
+            dependency_config_lookup=lambda _name: None,
+            ensemble_terminal_agents=lambda _ref: [],
+        )
+
+        agents: list[AgentConfig] = [
+            LlmAgentConfig(
+                name="compiler",
+                model_profile="test-profile",
+                depends_on=["searcher"],
+            ),
+        ]
+        child_result = self._child_result(
+            {"searcher": {"status": "success", "response": "raw content"}}
+        )
+        results_dict = {
+            "searcher": {"status": "success", "response": child_result},
+        }
+
+        enhanced = resolver.enhance_input_with_dependencies(
+            "base input", agents, results_dict
+        )
+
+        assert child_result in enhanced["compiler"]
+
+
 class TestFanOutInputPreparation:
     """Test fan-out instance input preparation (issue #73)."""
 
@@ -844,7 +1616,11 @@ class TestFanOutInputPreparation:
         """Set up resolver for testing."""
         mock_role_resolver = Mock()
         mock_role_resolver.return_value = "Test Role"
-        return DependencyResolver(role_resolver=mock_role_resolver)
+        return DependencyResolver(
+            role_resolver=mock_role_resolver,
+            dependency_config_lookup=lambda _name: None,
+            ensemble_terminal_agents=lambda _ref: [],
+        )
 
     def test_prepare_fan_out_instance_input_scalar_chunk_json(self) -> None:
         """Scalar chunks serialize with json (true/null/3), not str() —

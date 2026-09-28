@@ -3,6 +3,7 @@
 from typing import Any
 
 from llm_orc.core.execution.fan_out.expander import FanOutExpander
+from llm_orc.core.execution.outcome import stamp_outcome
 
 
 class FanOutGatherer:
@@ -76,12 +77,14 @@ class FanOutGatherer:
             - instances: Per-instance status info
         """
         if original_agent_name not in self._results:
-            return {
-                "response": [],
-                "status": "success",
-                "fan_out": True,
-                "instances": [],
-            }
+            return stamp_outcome(
+                {
+                    "response": [],
+                    "status": "success",
+                    "fan_out": True,
+                    "instances": [],
+                }
+            )
 
         instance_data = self._results[original_agent_name]
 
@@ -119,12 +122,36 @@ class FanOutGatherer:
         else:
             status = "partial"
 
-        return {
+        gathered: dict[str, Any] = {
             "response": response,
             "status": status,
             "fan_out": True,
             "instances": instances,
         }
+        if status == "failed":
+            # Every instance failed and there is nothing else to read a
+            # reason from: GuardEvaluator's skip-cascade record reads
+            # this "error" key the same way it reads any other failed
+            # dependency's (today it read nothing, and the skip reason
+            # printed "s (failed)" with no detail). A "partial" result's
+            # failures are already named per-instance in "instances", so
+            # this key is "failed"-only.
+            gathered["error"] = "; ".join(
+                f"[{item['index']}] {item['error']}"
+                for item in instances
+                if item["status"] == "failed"
+            )
+        stamp_outcome(gathered)
+        # addendum 2026-09-23: `partial` is an OK outcome for cascade
+        # purposes (>=1 instance ok), so stamp_outcome's generic
+        # outcome-in-BLOCKING_OUTCOMES rule reads has_errors false for it
+        # — but a partial gather always has >=1 instance that genuinely
+        # failed, and that fact must not vanish just because the node
+        # still counts as ok. Stamped explicitly from the instance count,
+        # not inferred from outcome alone.
+        if fail_count > 0:
+            gathered["has_errors"] = True
+        return gathered
 
     def get_error_summary(self, original_agent_name: str) -> dict[str, Any]:
         """Get error details for failed instances.

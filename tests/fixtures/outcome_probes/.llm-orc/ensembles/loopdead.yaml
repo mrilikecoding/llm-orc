@@ -1,0 +1,8 @@
+name: loopdead
+description: p
+agents:
+  - name: L
+    loop:
+      body: childdead
+      until: "${ok}"
+      max_iterations: 2

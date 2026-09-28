@@ -71,3 +71,9 @@ agents:
   - name: envelope
     script: scripts/agentic_serving/build_gated_envelope.py
     depends_on: [code_writer, executor, accept_gate]
+    # build_gated_envelope.py reads each dep defensively (an unreadable
+    # response degrades to {}) and always emits an ADR-024 envelope with
+    # an accept verdict -- it is this round's own refusal composer, and
+    # must run even when test_writer/code_writer/executor/accept_gate
+    # all failed, or the loop's until/carry predicate sees nothing.
+    on_dependency_failure: run

@@ -201,7 +201,7 @@ def _seat_entry(name: str, node: Any, usage: Any = None) -> dict[str, Any]:
     diagnostics = _diagnostics(response)
     if diagnostics is not None:
         entry["diagnostics"] = diagnostics
-    entry.update(_engine_failure_fields(response))
+    entry.update(_engine_failure_fields(node))
     entry.update(_usage_counts(usage))
     return entry
 
@@ -224,35 +224,79 @@ def _top_level_usage(result_dict: dict[str, Any]) -> dict[str, Any]:
     return agents if isinstance(agents, dict) else {}
 
 
-def _engine_failure_fields(response: Any) -> dict[str, str]:
+def _engine_failure_fields(node: Any) -> dict[str, str]:
     """The engine wrap's whole ``error`` and (#174) ``stderr`` strings, keyed
-    only when present as non-empty strings; ``{}`` when the response is not
-    a failure wrap.
+    only when present as non-empty strings; ``{}`` when ``node`` carries no
+    failure text.
 
-    Recognised positively by the wrap's own keys, not by matching text — the
-    ``execute_with_schema_json`` dispatch-level wrap carries ``error`` alone;
-    the sub-ensemble ``ScriptAgent.execute`` failure family
-    (``{success, error, stderr}``) carries both, and its real payload — the
-    traceback — is in ``stderr``, which used to survive only as a 280-char
-    snippet (#168 kept ``error`` whole; #174 does the same for ``stderr``,
-    up to ``_STDERR_CAP`` — review round 1 NB-1: unlike ``error``, which is
-    producer-authored and short, ``stderr`` is arbitrary subprocess output
-    with no bound of its own). Every other response shape keeps the snippet
-    and nothing else.
+    Two producers of the same fact, both read here (fail-closed-
+    composition). The current contract (AgentDispatcher's B2, nested
+    under ``payload`` by the addendum 2026-09-23): a script's own crash
+    is recorded as ``status: "failed"`` with ``error`` on the node, and
+    every OTHER field from the script's own failure JSON (``stderr``,
+    and producer-specific fields like web_searcher's ``backend``) nested
+    under the node's own ``payload`` key — ``response`` is ``None``, so
+    there is nothing to parse there any more. Checked first, since it is
+    what the live engine actually produces today; a flat (pre-addendum,
+    or hand-built) shape with these fields directly on the node is still
+    read as a fallback.
+
+    Older callers (and the unit harness) that hand a node straight
+    through with the engine's wrapped-JSON ``response`` and no top-level
+    ``status``/``error`` are still read the old way, as a fallback:
+    recognised positively by the wrap's own keys, not by matching text —
+    the ``execute_with_schema_json`` dispatch-level wrap carries ``error``
+    alone; the sub-ensemble ``ScriptAgent.execute`` failure family
+    (``{success, error, stderr}``) carries both, and its real payload —
+    the traceback — is in ``stderr``, which used to survive only as a
+    280-char snippet (#168 kept ``error`` whole; #174 does the same for
+    ``stderr``, up to ``_STDERR_CAP`` — review round 1 NB-1: unlike
+    ``error``, which is producer-authored and short, ``stderr`` is
+    arbitrary subprocess output with no bound of its own). Every other
+    shape keeps the snippet and nothing else.
     """
+    fields: dict[str, str] = {}
+    if isinstance(node, dict) and node.get("status") == "failed":
+        # addendum 2026-09-23: AgentDispatcher nests a failed script's
+        # structured payload (stderr, producer-specific fields) under
+        # its own "payload" key rather than merging it onto the node —
+        # engine-owned keys are reserved, so a script's own "status" or
+        # "error" can never shadow the record's real ones. Read the
+        # nested shape first; a flat shape (pre-addendum record, or a
+        # hand-built fixture) is still read as a fallback.
+        payload = node.get("payload")
+        source = {**node, **payload} if isinstance(payload, dict) else node
+        fields.update(_failure_text_fields(source))
+    response = node.get("response") if isinstance(node, dict) else node
+    parsed = _parsed_dict(response)
+    if parsed is None:
+        return fields
+    for key, value in _failure_text_fields(parsed).items():
+        fields.setdefault(key, value)
+    return fields
+
+
+def _parsed_dict(response: Any) -> dict[str, Any] | None:
+    """``response`` parsed to a dict, or ``None`` when it isn't a string
+    or doesn't parse to one."""
     if not isinstance(response, str):
-        return {}
+        return None
     try:
         parsed = json.loads(response)
     except (json.JSONDecodeError, TypeError):
-        return {}
-    if not isinstance(parsed, dict):
-        return {}
+        return None
+    return parsed if isinstance(parsed, dict) else None
+
+
+def _failure_text_fields(source: dict[str, Any]) -> dict[str, str]:
+    """``error``/``stderr`` from ``source``, keyed only when present as
+    non-empty strings — the two failure-text keys both the node itself
+    (B2) and a parsed ``response`` wrap may carry, ``stderr`` capped."""
     fields: dict[str, str] = {}
-    error = parsed.get("error")
+    error = source.get("error")
     if isinstance(error, str) and error:
         fields["error"] = error
-    stderr = parsed.get("stderr")
+    stderr = source.get("stderr")
     if isinstance(stderr, str) and stderr:
         fields["stderr"] = _capped_stderr(stderr)
     return fields
@@ -276,7 +320,7 @@ def _node_entry(name: str, node: Any, top_usage: dict[str, Any]) -> dict[str, An
     # leaving the operator with less than the client used to get. The error
     # (and #174: stderr) fields are recorded whole; the snippet still governs
     # everything else.
-    entry.update(_engine_failure_fields(response))
+    entry.update(_engine_failure_fields(node))
     entry.update(_usage_counts(top_usage.get(name)))
     child = _child_results(response)
     if child is not None:

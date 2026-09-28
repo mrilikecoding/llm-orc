@@ -1,0 +1,13 @@
+name: partfancons
+description: p
+agents:
+  - name: d
+    script: scripts/twolist.py
+  - name: s
+    script: scripts/failinst.py
+    depends_on: [d]
+    input_key: queries
+    fan_out: true
+  - name: comp
+    script: scripts/echo.py
+    depends_on: [s]

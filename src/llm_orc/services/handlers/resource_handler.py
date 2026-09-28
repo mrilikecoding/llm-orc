@@ -15,8 +15,9 @@ def _serialize_agent(agent: Any) -> dict[str, Any]:
     """Serialize an AgentConfig (or dict) to a JSON-safe dict.
 
     Preserves all agent type properties: model_profile, ensemble, script,
-    parameters, depends_on, input_key, fan_out, when, system_prompt,
-    output_format, timeout_seconds, input_scope, and others.
+    parameters, depends_on, input_key, fan_out, when,
+    on_dependency_failure, system_prompt, output_format, timeout_seconds,
+    input_scope, and others.
     """
     if isinstance(agent, dict):
         return dict(agent)
@@ -32,6 +33,7 @@ def _serialize_agent(agent: Any) -> dict[str, Any]:
         "input_key",
         "fan_out",
         "when",
+        "on_dependency_failure",
         "system_prompt",
         "output_format",
         "timeout_seconds",

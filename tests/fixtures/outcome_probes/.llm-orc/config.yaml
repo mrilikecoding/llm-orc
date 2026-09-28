@@ -1,0 +1,26 @@
+project:
+  name: probe
+model_profiles:
+  local:
+    model: qwen3-8b
+    provider: llama-server
+  gohost:
+    model: glm
+    provider: openai-compatible
+    base_url: http://127.0.0.1:9/v1
+    options:
+      think: false
+  dead:
+    model: nothing
+    provider: llama-server
+    base_url: http://127.0.0.1:9/v1
+  gohost2:
+    model: glm
+    provider: openai-compatible
+    base_url: http://127.0.0.1:9/v1
+    fallback_model_profile: local
+  dead2:
+    model: nothing
+    provider: llama-server
+    base_url: http://127.0.0.1:9/v1
+    fallback_model_profile: local

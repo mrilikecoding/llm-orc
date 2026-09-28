@@ -1,15 +1,13 @@
 """Fan-out coordination for ensemble execution."""
 
 import json
-import logging
 from typing import Any
 
 from llm_orc.core.execution.fan_out.expander import FanOutExpander
 from llm_orc.core.execution.fan_out.gatherer import FanOutGatherer
+from llm_orc.core.execution.outcome import is_ok
 from llm_orc.core.execution.utils import dep_name
 from llm_orc.schemas.agent_config import AgentConfig
-
-logger = logging.getLogger(__name__)
 
 
 class FanOutCoordinator:
@@ -27,9 +25,27 @@ class FanOutCoordinator:
         self,
         phase_agents: list[AgentConfig],
         results_dict: dict[str, Any],
-    ) -> list[tuple[AgentConfig, list[Any]]]:
-        """Detect fan-out agents in phase with array upstream results."""
-        fan_out_agents: list[tuple[AgentConfig, list[Any]]] = []
+    ) -> tuple[list[tuple[AgentConfig, list[Any]]], list[tuple[AgentConfig, str]]]:
+        """Detect fan-out agents in phase, partitioned by contract outcome.
+
+        A fan-out agent's contract is: the upstream must have succeeded,
+        and its response must yield a JSON array (whole, or at
+        ``input_key``). A genuinely empty array is a legitimate
+        zero-instance success. Anything else — unparseable response,
+        non-object response with ``input_key``, missing or non-list
+        key, or an upstream that didn't succeed — fails the agent
+        closed rather than letting it silently run un-expanded on
+        garbage input (no lenient parsing, no fence stripping).
+
+        Returns:
+            (ready, failed):
+            - ready: agents paired with their (possibly empty) upstream
+              array, for expansion.
+            - failed: agents paired with an error message naming the
+              upstream agent and what went wrong.
+        """
+        ready: list[tuple[AgentConfig, list[Any]]] = []
+        failed: list[tuple[AgentConfig, str]] = []
 
         for agent_config in phase_agents:
             if not agent_config.fan_out:
@@ -41,7 +57,21 @@ class FanOutCoordinator:
             upstream_name = dep_name(agent_config.depends_on[0])
             upstream_result = results_dict.get(upstream_name, {})
 
-            if upstream_result.get("status") != "success":
+            # S2: outcome.is_ok, not a literal status == "success" check
+            # — a handled_failure upstream's own status reads "success"
+            # (it ran without incident), but its output is a composed
+            # refusal over a real failure, not a JSON array to fan out
+            # over.
+            if not is_ok(upstream_result):
+                upstream_status = upstream_result.get("status")
+                failed.append(
+                    (
+                        agent_config,
+                        f"Fan-out agent '{agent_config.name}' cannot run: "
+                        f"upstream agent '{upstream_name}' did not succeed "
+                        f"(status: {upstream_status!r})",
+                    )
+                )
                 continue
 
             response = upstream_result.get("response", "")
@@ -49,20 +79,25 @@ class FanOutCoordinator:
             # Apply input_key selection (ADR-014)
             if agent_config.input_key:
                 array_result = self._select_key_array(response, agent_config.input_key)
+                contract = f"a list at key '{agent_config.input_key}'"
             else:
                 array_result = self._expander.parse_array_from_result(response)
+                contract = "a JSON array"
 
-            if array_result is not None and len(array_result) > 0:
-                fan_out_agents.append((agent_config, array_result))
-            else:
-                logger.warning(
-                    "Fan-out agent '%s' produced zero instances from upstream"
-                    " '%s' — skipping",
-                    agent_config.name,
-                    upstream_name,
+            if array_result is None:
+                failed.append(
+                    (
+                        agent_config,
+                        f"Fan-out agent '{agent_config.name}' cannot run: "
+                        f"upstream agent '{upstream_name}'s response did not "
+                        f"contain {contract}",
+                    )
                 )
+                continue
 
-        return fan_out_agents
+            ready.append((agent_config, array_result))
+
+        return ready, failed
 
     @staticmethod
     def _select_key_array(response: str, input_key: str) -> list[Any] | None:

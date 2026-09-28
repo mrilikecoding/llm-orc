@@ -13,6 +13,21 @@ from llm_orc.core.config.template_provider import TemplateProvider
 logger = logging.getLogger(__name__)
 
 
+def resolve_global_config_dir() -> Path:
+    """The global configuration directory following XDG spec.
+
+    Module-level so callers that need this one path (e.g. a local-only
+    secret store) don't have to construct a full ConfigurationManager
+    just to read it. ConfigurationManager._get_global_config_dir
+    delegates here.
+    """
+    xdg_config_home = os.environ.get("XDG_CONFIG_HOME")
+    if xdg_config_home:
+        return Path(xdg_config_home) / "llm-orc"
+
+    return Path.home() / ".config" / "llm-orc"
+
+
 class ConfigurationManager:
     """Manages configuration directories and file locations."""
 
@@ -63,13 +78,7 @@ class ConfigurationManager:
 
     def _get_global_config_dir(self) -> Path:
         """Get the global configuration directory following XDG spec."""
-        # Check for XDG_CONFIG_HOME environment variable
-        xdg_config_home = os.environ.get("XDG_CONFIG_HOME")
-        if xdg_config_home:
-            return Path(xdg_config_home) / "llm-orc"
-
-        # Default to ~/.config/llm-orc
-        return Path.home() / ".config" / "llm-orc"
+        return resolve_global_config_dir()
 
     def _discover_local_config(self) -> Path | None:
         """Discover local .llm-orc directory walking up from cwd."""

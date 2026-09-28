@@ -21,6 +21,12 @@ from llm_orc.core.execution.monitoring.phase_monitor import PhaseMonitor
 from llm_orc.core.execution.monitoring.streaming_progress_tracker import (
     StreamingProgressTracker,
 )
+from llm_orc.core.execution.outcome import (
+    Outcome,
+    child_has_errors,
+    outcome_of,
+    stamp_outcome,
+)
 from llm_orc.core.execution.phases.agent_dispatcher import AgentDispatcher
 from llm_orc.core.execution.phases.agent_execution_coordinator import (
     AgentExecutionCoordinator,
@@ -52,7 +58,11 @@ from llm_orc.core.execution.scripting.user_input_handler import (
     ScriptUserInputHandler,
 )
 from llm_orc.core.execution.usage_collector import UsageCollector
-from llm_orc.core.models.model_factory import ModelFactory
+from llm_orc.core.execution.utils import terminal_agent_names
+from llm_orc.core.models.model_factory import (
+    ModelFactory,
+    validate_think_options_for_ensemble,
+)
 from llm_orc.core.validation import (
     EnsembleExecutionResult,
     ValidationConfig,
@@ -239,7 +249,11 @@ class EnsembleExecutor:
             raise ValueError(msg)
         self._model_factory = _model_factory
         self._dependency_analyzer = DependencyAnalyzer()
-        self._dependency_resolver = DependencyResolver(self._get_agent_role_description)
+        self._dependency_resolver = DependencyResolver(
+            self._get_agent_role_description,
+            self._get_agent_config,
+            self._terminal_agents_for_ensemble,
+        )
         self._guard_evaluator = GuardEvaluator()
         self._usage_collector = UsageCollector()
 
@@ -586,24 +600,134 @@ class EnsembleExecutor:
         self,
         phase_agents: list[AgentConfig],
         results_dict: dict[str, Any],
-    ) -> list[AgentConfig]:
+    ) -> tuple[list[AgentConfig], list[tuple[str, str]]]:
         """Drop nodes whose guard fails, recording each as skipped.
 
         Guards are evaluated against accumulated upstream results, which are
         complete for this phase's dependencies by topological ordering. A
         skipped node is recorded so downstream guards and joins can see it.
+        A skip caused by dependency cascading (fail-closed-composition rule
+        1 — no dependency succeeded) carries a ``reason`` naming each
+        upstream agent and its status; a plain ``when:``-false skip does
+        not (there is nothing to name).
+
+        Returns ``(active, handled_failures)``: the second element pairs
+        the name of every active agent that is about to run ONLY because
+        ``on_dependency_failure: run`` overrode rule 1 (X1) with the same
+        upstream-naming text ``dependency_skip_reason`` would have given
+        it had it been skipped instead. The caller marks
+        ``handled_failure: True`` and ``handled_failure_reason`` on its
+        result once the agent has one, so it does not count as a
+        succeeded terminal even though it ran and produced the refusal/
+        deliverable, and a parent that fails over it names the real
+        upstream failure, not just the handler's own (unremarkable)
+        status.
         """
         active: list[AgentConfig] = []
+        handled_failures: list[tuple[str, str]] = []
         for agent_config in phase_agents:
             if self._guard_evaluator.should_run(agent_config, results_dict):
                 active.append(agent_config)
-            else:
-                results_dict[agent_config.name] = {
+                if self._guard_evaluator.handled_failure(agent_config, results_dict):
+                    failure_text = self._guard_evaluator.dependency_failure_text(
+                        agent_config, results_dict
+                    )
+                    handled_failures.append((agent_config.name, failure_text))
+                continue
+            skip_record: dict[str, Any] = {
+                "response": None,
+                "status": "skipped",
+                "model_substituted": False,
+            }
+            reason = self._guard_evaluator.dependency_skip_reason(
+                agent_config, results_dict
+            )
+            if reason is not None:
+                skip_record["reason"] = reason
+            stamp_outcome(skip_record)
+            results_dict[agent_config.name] = skip_record
+        return active, handled_failures
+
+    def _partition_by_input_key_contract(
+        self,
+        phase_agents: list[AgentConfig],
+        results_dict: dict[str, Any],
+    ) -> tuple[list[AgentConfig], bool]:
+        """Drop non-fan-out child-execution nodes whose ``input_key``
+        contract can't be honored, recording each as failed.
+
+        Runs after ``_partition_by_guard`` so it only sees agents rule 1
+        already let through (a node with no successful dependency at all
+        is already skipped by then). This catches the narrower case: the
+        node's ``input_key`` source (``depends_on[0]``) specifically did
+        not succeed, even though some other dependency did (fail-closed-
+        composition, the input_key/depends_on[0] decision).
+
+        Returns ``(active, any_failed)``. A failure here never reaches
+        the agent dispatcher, so it never appears in a dispatched phase's
+        own results — the caller must fold ``any_failed`` into
+        ``phase_has_errors`` itself, the same way fan-out contract
+        failures are folded in.
+        """
+        active: list[AgentConfig] = []
+        any_failed = False
+        for agent_config in phase_agents:
+            error = self._dependency_resolver.child_input_key_contract_error(
+                agent_config, results_dict
+            )
+            if error is None:
+                active.append(agent_config)
+                continue
+            any_failed = True
+            results_dict[agent_config.name] = stamp_outcome(
+                {
                     "response": None,
-                    "status": "skipped",
+                    "status": "failed",
                     "model_substituted": False,
+                    "error": error,
                 }
-        return active
+            )
+        return active, any_failed
+
+    def _propagate_child_execution_errors(
+        self, agents: list[AgentConfig], results_dict: dict[str, Any]
+    ) -> bool:
+        """Fold a child execution's OWN subtree errors into its node's
+        ``has_errors`` (addendum 2026-09-23): a ``succeeded``
+        ``ensemble:``/``dispatch:``/``loop:`` node (a terminal succeeded,
+        so ``terminal_failure_summary`` did not raise) can still wrap a
+        subtree where some OTHER, non-terminal agent failed — that fact
+        must not vanish just because the node's own outcome reads ok.
+        Mutates each such node's stored record in place and returns
+        whether any of them actually had a subtree error, for the
+        caller to fold into the ensemble-level ``has_errors``.
+
+        Checked for every ``ChildExecutionConfig`` agent declared in the
+        ensemble, fan-out original or not: a plain node's response is
+        the child's own result (str or dict); a gathered fan-out
+        original's response is a list, one child result per instance.
+        Fan-out INSTANCES themselves are not in ``agents`` (only their
+        original declaration is) so are not visited a second time.
+        """
+        any_new_error = False
+        for agent_config in agents:
+            if not isinstance(
+                agent_config,
+                EnsembleAgentConfig | LoopAgentConfig | DynamicDispatchAgentConfig,
+            ):
+                continue
+            record = results_dict.get(agent_config.name)
+            if not isinstance(record, dict):
+                continue
+            response = record.get("response")
+            if record.get("fan_out") and isinstance(response, list):
+                subtree_errors = any(child_has_errors(item) for item in response)
+            else:
+                subtree_errors = child_has_errors(response)
+            if subtree_errors and not record.get("has_errors"):
+                record["has_errors"] = True
+                any_new_error = True
+        return any_new_error
 
     async def _execute_phase_with_monitoring(
         self,
@@ -629,18 +753,23 @@ class EnsembleExecutor:
         Returns:
             Tuple of (has_errors, user_inputs_collected)
         """
-        phase_agents = self._partition_by_guard(phase_agents, results_dict)
+        phase_agents, handled_failures = self._partition_by_guard(
+            phase_agents, results_dict
+        )
+        phase_agents, input_key_contract_failed = self._partition_by_input_key_contract(
+            phase_agents, results_dict
+        )
         phase_agents = self._dispatch_resolver.resolve_targets(
             phase_agents, results_dict
         )
 
-        fan_out_agents = self._fan_out_coordinator.detect_in_phase(
-            phase_agents, results_dict
+        ready_fan_out_agents, failed_fan_out_agents = (
+            self._fan_out_coordinator.detect_in_phase(phase_agents, results_dict)
         )
         expanded_agents = list(phase_agents)
         fan_out_original_names: list[str] = []
 
-        for agent_config, upstream_array in fan_out_agents:
+        for agent_config, upstream_array in ready_fan_out_agents:
             expanded_agents = [
                 a for a in expanded_agents if a.name != agent_config.name
             ]
@@ -649,6 +778,21 @@ class EnsembleExecutor:
             )
             expanded_agents.extend(instances)
             fan_out_original_names.append(agent_config.name)
+
+        # A fan-out contract failure fails the agent closed: it never
+        # runs un-expanded on a response it can't honor.
+        for agent_config, error_message in failed_fan_out_agents:
+            expanded_agents = [
+                a for a in expanded_agents if a.name != agent_config.name
+            ]
+            results_dict[agent_config.name] = stamp_outcome(
+                {
+                    "response": None,
+                    "status": "failed",
+                    "model_substituted": False,
+                    "error": error_message,
+                }
+            )
 
         if fan_out_original_names and base_input is not None:
             if isinstance(input_data, dict):
@@ -685,6 +829,11 @@ class EnsembleExecutor:
             phase_has_errors = await self._phase_result_processor.process_phase_results(
                 phase_results, results_dict, expanded_agents
             )
+            phase_has_errors = (
+                phase_has_errors
+                or bool(failed_fan_out_agents)
+                or input_key_contract_failed
+            )
 
             # Gather fan-out instance results under original agent names
             for original_name in fan_out_original_names:
@@ -692,6 +841,29 @@ class EnsembleExecutor:
                     original_name, results_dict
                 )
                 results_dict[original_name] = gathered
+
+            # X1: a node that ran only because on_dependency_failure: run
+            # overrode rule 1 (no dependency succeeded) is marked on its
+            # own result — its status stays as reported for its own
+            # execution, but it does not count as a succeeded terminal
+            # for parent-status/cascade purposes (outcome.is_ok), and
+            # the reason it ran names the real upstream failure it
+            # handled. Only when the node's OWN execution succeeded
+            # (addendum 2026-09-23, the table's "and its own execution
+            # succeeded" clause): a handled-failure node that itself
+            # crashed, or one a later partition step (the input_key
+            # contract check) rejected before it ever ran, is a plain
+            # failure — stamping handled_failure over that record would
+            # misreport a node that never ran as "ran to cover a
+            # failure". Re-stamped through stamp_outcome so outcome
+            # becomes handled_failure and has_errors follows, rather
+            # than setting the raw handled_failure key directly.
+            for name, reason in handled_failures:
+                record = results_dict.get(name)
+                if isinstance(record, dict) and outcome_of(record) is Outcome.SUCCEEDED:
+                    record["handled_failure"] = True
+                    record["handled_failure_reason"] = reason
+                    stamp_outcome(record)
 
         finally:
             # Stop per-phase monitoring and collect metrics
@@ -733,6 +905,12 @@ class EnsembleExecutor:
         Returns:
             Tuple of (final_result, user_inputs_collected)
         """
+        # Invariant 14: structural errors caught before any agent runs —
+        # a think/provider mismatch must fail the whole ensemble, never
+        # reach the runtime fallback chain and come out as a quiet
+        # substitution (fail-closed-composition plan §C).
+        validate_think_options_for_ensemble(config.agents, self._config_manager)
+
         start_time = time.time()
 
         # Apply strict_schema_validation from ensemble config to script runner
@@ -771,6 +949,11 @@ class EnsembleExecutor:
             has_errors = has_errors or phase_has_errors
             if track_user_inputs:
                 user_inputs_collected += user_inputs_from_phase
+
+        has_errors = (
+            self._propagate_child_execution_errors(config.agents, results_dict)
+            or has_errors
+        )
 
         final_result = await self._finalize_execution_results(
             config, result, has_errors, start_time
@@ -948,3 +1131,37 @@ class EnsembleExecutor:
                     return agent_name.replace("-", " ").title()
 
         return agent_name.replace("-", " ").title()
+
+    def _get_agent_config(self, agent_name: str) -> AgentConfig | None:
+        """Look up a sibling agent's own config by name.
+
+        Used by DependencyResolver to tell an ``ensemble:`` dependency
+        apart from any other before rendering its terminal responses
+        (fail-closed-composition D).
+        """
+        if self._agent_configs is None:
+            return None
+        for agent_config in self._agent_configs:
+            if agent_config.name == agent_name:
+                return agent_config
+        return None
+
+    def _terminal_agents_for_ensemble(self, ensemble_ref: str) -> list[str]:
+        """Terminal agent names (no dependents) for a referenced ensemble.
+
+        Resolves the same reference EnsembleAgentRunner used to execute
+        the child, so the graph matches what actually ran. Shares
+        ``terminal_agent_names`` with resolve_deliverable's terminal
+        computation (results_processor.py) and the ``ensemble:`` agent's
+        own success rule (fail-closed-composition B1), but this caller
+        returns every terminal, not the single collapsed deliverable: an
+        LLM consumer of an ensemble dependency renders one labeled block
+        per terminal agent (fail-closed-composition D). A resolution
+        failure yields an empty list; the resolver falls back to the
+        child's own results dict.
+        """
+        try:
+            child_config = self._resolve_ensemble_reference(ensemble_ref)
+        except FileNotFoundError:
+            return []
+        return terminal_agent_names(child_config.agents)

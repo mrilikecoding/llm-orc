@@ -1,0 +1,10 @@
+name: runwhen
+description: p
+agents:
+  - name: a
+    script: scripts/fail.py
+  - name: t
+    script: scripts/echo.py
+    depends_on: [a]
+    on_dependency_failure: run
+    when: ${a.ok}

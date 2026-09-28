@@ -1,0 +1,8 @@
+name: runparent
+description: p
+agents:
+  - name: k
+    ensemble: runkid
+  - name: after
+    script: scripts/echo.py
+    depends_on: [k]

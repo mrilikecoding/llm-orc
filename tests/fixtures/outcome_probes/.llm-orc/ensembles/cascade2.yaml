@@ -1,0 +1,24 @@
+name: cascade2
+description: p
+agents:
+  - name: a
+    model_profile: dead
+  - name: x
+    script: scripts/ok.py
+  - name: b
+    script: scripts/echo.py
+    depends_on: [a]
+  - name: c
+    script: scripts/echo.py
+    depends_on: [a, x]
+  - name: d
+    script: scripts/echo.py
+    depends_on: [b]
+  - name: e
+    script: scripts/echo.py
+    depends_on: [b, x]
+  - name: soft
+    script: scripts/softerr.py
+  - name: afterSoft
+    script: scripts/echo.py
+    depends_on: [soft]

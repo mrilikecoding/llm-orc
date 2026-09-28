@@ -26,7 +26,14 @@ def _deps(raw: str) -> dict:
 
 
 def _response(dep: object) -> str:
-    return dep.get("response", "") if isinstance(dep, dict) else ""
+    # A failed or skipped dependency (fail-closed-composition rule 2) is
+    # now present with an explicit "response": None rather than vanishing
+    # from the dependencies dict — dict.get's default only covers an
+    # ABSENT key, so a bare ``.get("response", "")`` still hands `None`
+    # through here on a present-but-null value. _readable_shape already
+    # catches the resulting TypeError, but the accessor should not rely
+    # on that.
+    return (dep.get("response") or "") if isinstance(dep, dict) else ""
 
 
 def _validity(file: str, content: str) -> tuple[bool, str]:

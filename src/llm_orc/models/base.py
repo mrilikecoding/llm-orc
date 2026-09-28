@@ -4,6 +4,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
+from llm_orc import __version__
 from llm_orc.models.structural_errors import LlmOrcStructuralError
 
 _DEFAULT_PERFORMANCE_CONFIG: dict[str, Any] = {
@@ -84,7 +85,7 @@ class HTTPConnectionPool:
                 limits=limits,
                 timeout=timeout,
                 headers={
-                    "User-Agent": "llm-orc/1.0",
+                    "User-Agent": f"llm-orc/{__version__}",
                 },
             )
 

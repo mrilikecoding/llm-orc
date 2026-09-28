@@ -131,6 +131,44 @@ def test_gather_with_test_writer_ignores_a_marker_in_the_turn_text() -> None:
     assert out.get("held", False) is False
 
 
+def test_gather_survives_a_crashed_code_writer_terminal() -> None:
+    """SF3: gather reads code_writer via
+    _extract_code(_terminal(_response(deps["code_writer"]))) even when
+    code_writer's own child ensemble terminal crashed (response: None,
+    present not absent, not simply missing). _helpers.terminal used to
+    return None for that shape, and extract_code(None) raised
+    TypeError, crashing gather instead of assembling an honest empty
+    code contract for the accept gate to reject."""
+    node = {"response": None, "status": "failed", "error": "code_writer crashed"}
+    crashed_sub_ensemble = json.dumps(
+        {
+            "ensemble": "code-generator",
+            "status": "completed_with_errors",
+            "results": {"synthesizer": node},
+        }
+    )
+    payload = json.dumps(
+        {
+            "input_data": "Write is_even(n).",
+            "dependencies": {
+                "test_writer": {"response": _sub_ensemble_response(TESTS)},
+                "code_writer": {"response": crashed_sub_ensemble},
+            },
+        }
+    )
+    out = subprocess.run(
+        [sys.executable, str(GATHER)],
+        input=payload,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    result: dict[str, Any] = json.loads(out)
+
+    assert result["code"] == ""
+    assert result["tests"] == TESTS
+
+
 def test_gather_assembles_requirement_code_tests_from_seats() -> None:
     out = _gather("Write is_even(n).", TESTS, CODE)
     assert out["requirement"] == "Write is_even(n)."

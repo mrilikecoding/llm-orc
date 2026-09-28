@@ -89,6 +89,7 @@ export interface ArtifactDetail {
 
 export interface ExecutionResult {
   status: string
+  has_errors?: boolean
   results: Record<string, { response?: string; error?: string }>
   deliverable?: string
   synthesis?: string

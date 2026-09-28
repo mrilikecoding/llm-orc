@@ -64,6 +64,46 @@ def test_envelope_carries_code_and_accept_verdict() -> None:
     assert diag["tests_adequate"] is True
 
 
+def test_envelope_survives_a_crashed_code_writer_terminal() -> None:
+    """SF3: envelope runs via on_dependency_failure: run precisely when
+    code_writer crashed — its own child ensemble's terminal node then
+    has response: None (present, not absent). _helpers.terminal used to
+    return None for that shape, and extract_code(None) raised
+    TypeError, crashing this round's own refusal composer instead of
+    letting it compose an honest empty-code reject."""
+    node = {"response": None, "status": "failed", "error": "code_writer crashed"}
+    crashed_sub_ensemble = json.dumps(
+        {
+            "ensemble": "code-generator",
+            "status": "completed_with_errors",
+            "results": {"synthesizer": node},
+        }
+    )
+    payload = json.dumps(
+        {
+            "dependencies": {
+                "code_writer": {"response": crashed_sub_ensemble},
+                "accept_gate": {
+                    "response": json.dumps(
+                        {"accept": False, "reason": "no code produced"}
+                    )
+                },
+            }
+        }
+    )
+    out = subprocess.run(
+        [sys.executable, str(ENVELOPE)],
+        input=payload,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    result: dict[str, Any] = json.loads(out)
+
+    assert result["artifacts"][0]["content"] == ""
+    assert result["diagnostics"]["accept"] is False
+
+
 def test_envelope_carries_reject_verdict_and_reason() -> None:
     env = _envelope(
         "def f():\n    return 1",

@@ -31,6 +31,17 @@ class BaseAgentConfig(BaseModel):
     # e.g. "${gate.ok}" or "${gate.ok} == false". None means always run.
     when: str | None = None
 
+    # Dependency-cascade override (fail-closed-composition, the
+    # on_dependency_failure decision): "skip" (default) is today's rule
+    # 1 cascade — the node never runs when none of its dependencies
+    # succeeded. "run" lets a failure-handling node (a refusal composer,
+    # a turn-tracing input) execute anyway, so it can read the failed
+    # dependency's status/error and compose an honest response instead
+    # of vanishing along with the failure it exists to report. The node
+    # is still subject to `when:` (evaluated after) and to normal status
+    # rules for its OWN result.
+    on_dependency_failure: Literal["run", "skip"] = "skip"
+
     timeout_seconds: int | None = None
 
     # Fan-out instance metadata (runtime only, set by FanOutExpander)
@@ -38,6 +49,19 @@ class BaseAgentConfig(BaseModel):
     fan_out_index: int | None = Field(default=None, exclude=True)
     fan_out_total: int | None = Field(default=None, exclude=True)
     fan_out_original: str | None = Field(default=None, exclude=True)
+
+    @model_validator(mode="after")
+    def validate_on_dependency_failure_needs_dependencies(self) -> "BaseAgentConfig":
+        """Invariant 14 (load-time validation): "run" on a node with no
+        depends_on is a validation error — there is nothing for it to
+        run despite the failure of."""
+        if self.on_dependency_failure == "run" and not self.depends_on:
+            msg = (
+                "on_dependency_failure: run requires depends_on — "
+                "a node with no dependencies has nothing to fail"
+            )
+            raise ValueError(msg)
+        return self
 
 
 class LlmAgentConfig(BaseAgentConfig):

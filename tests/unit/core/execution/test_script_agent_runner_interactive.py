@@ -410,7 +410,11 @@ class TestScriptAgentsSkipTheOuterTimeout:
 
         dispatcher = AgentDispatcher(
             AgentExecutionCoordinator(perf, _executor),
-            DependencyResolver(lambda name: ""),
+            DependencyResolver(
+                lambda name: "",
+                dependency_config_lookup=lambda _name: None,
+                ensemble_terminal_agents=lambda _ref: [],
+            ),
             NoOpProgressController(),
             lambda name, data: None,
             _resolve,
@@ -421,12 +425,12 @@ class TestScriptAgentsSkipTheOuterTimeout:
         results = asyncio.run(dispatcher.execute_agents_in_phase([config], "{}"))
         result = results["hangs"]
 
-        assert result.status == "success", result.error
-        assert result.error is None
-        assert result.response is not None
-        parsed = json.loads(result.response)
-        assert parsed["success"] is False
-        assert "timed out" in parsed["error"].lower()
+        # fail-closed-composition B2: a script's own failure-shaped
+        # response (the subprocess timeout JSON ScriptAgent.execute
+        # catches) is now the agent's status, not a "success" wrapping it.
+        assert result.status == "failed"
+        assert result.error is not None
+        assert "timed out" in result.error.lower()
 
 
 class TestFailuresAreNotCached:

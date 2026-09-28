@@ -1,0 +1,17 @@
+name: partfanllm
+description: p
+agents:
+  - name: d
+    script: scripts/twolist.py
+  - name: s
+    script: scripts/failinst.py
+    depends_on: [d]
+    input_key: queries
+    fan_out: true
+  - name: comp
+    model_profile: local
+    options:
+      think: false
+    max_tokens: 400
+    depends_on: [s]
+    system_prompt: "Copy the user's message back verbatim, character for character. Output nothing else."

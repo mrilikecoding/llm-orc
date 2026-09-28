@@ -20,7 +20,11 @@ class TestInputKeySelectsFromUpstream:
             DependencyResolver,
         )
 
-        resolver = DependencyResolver(lambda _: "Test Role")
+        resolver = DependencyResolver(
+            lambda _: "Test Role",
+            dependency_config_lookup=lambda _name: None,
+            ensemble_terminal_agents=lambda _ref: [],
+        )
 
         agents: list[AgentConfig] = [
             LlmAgentConfig(
@@ -88,10 +92,11 @@ class TestInputKeyWithFanOut:
             },
         }
 
-        detected = coordinator.detect_in_phase([agent], results_dict)
+        ready, failed = coordinator.detect_in_phase([agent], results_dict)
 
-        assert len(detected) == 1
-        config, array = detected[0]
+        assert failed == []
+        assert len(ready) == 1
+        config, array = ready[0]
         assert array == ["a.pdf", "b.pdf"]
 
 
@@ -104,7 +109,11 @@ class TestMissingInputKeyIsRuntimeError:
             DependencyResolver,
         )
 
-        resolver = DependencyResolver(lambda _: "Test Role")
+        resolver = DependencyResolver(
+            lambda _: "Test Role",
+            dependency_config_lookup=lambda _name: None,
+            ensemble_terminal_agents=lambda _ref: [],
+        )
 
         agents: list[AgentConfig] = [
             LlmAgentConfig(
@@ -141,7 +150,11 @@ class TestNonDictUpstreamWithInputKey:
             DependencyResolver,
         )
 
-        resolver = DependencyResolver(lambda _: "Test Role")
+        resolver = DependencyResolver(
+            lambda _: "Test Role",
+            dependency_config_lookup=lambda _name: None,
+            ensemble_terminal_agents=lambda _ref: [],
+        )
 
         agents: list[AgentConfig] = [
             LlmAgentConfig(
@@ -176,7 +189,11 @@ class TestNoInputKeyBackwardCompatible:
             DependencyResolver,
         )
 
-        resolver = DependencyResolver(lambda _: "Test Role")
+        resolver = DependencyResolver(
+            lambda _: "Test Role",
+            dependency_config_lookup=lambda _name: None,
+            ensemble_terminal_agents=lambda _ref: [],
+        )
 
         agents: list[AgentConfig] = [
             LlmAgentConfig(
@@ -296,10 +313,11 @@ class TestIntegrationInputKeyRoutingPattern:
         coordinator = FanOutCoordinator(expander, gatherer)
 
         phase_2_agents = result["phases"][1]
-        detected = coordinator.detect_in_phase(phase_2_agents, classifier_output)
+        ready, failed = coordinator.detect_in_phase(phase_2_agents, classifier_output)
 
         # Both extractors should detect their respective arrays
-        detected_map = {cfg.name: arr for cfg, arr in detected}
+        assert failed == []
+        detected_map = {cfg.name: arr for cfg, arr in ready}
         assert detected_map["pdf-extractor"] == ["a.pdf"]
         assert detected_map["audio-extractor"] == ["c.mp3"]
 
@@ -317,7 +335,11 @@ class TestIntegrationInputKeyRoutingPattern:
         }
 
         # DependencyResolver enhances synthesizer input
-        resolver = DependencyResolver(lambda _: "Test Role")
+        resolver = DependencyResolver(
+            lambda _: "Test Role",
+            dependency_config_lookup=lambda _name: None,
+            ensemble_terminal_agents=lambda _ref: [],
+        )
         enhanced = resolver.enhance_input_with_dependencies(
             "Synthesize all results",
             [agents[3]],  # synthesizer

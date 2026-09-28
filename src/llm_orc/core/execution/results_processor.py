@@ -9,6 +9,7 @@ from llm_orc.core.execution.result_types import (
     ExecutionMetadata,
     ExecutionResult,
 )
+from llm_orc.core.execution.utils import SUCCEEDED_STATUSES, terminal_agent_names
 from llm_orc.schemas.agent_config import AgentConfig
 
 
@@ -25,6 +26,7 @@ def finalize_result(
     # Finalize result
     end_time = time.time()
     result.status = "completed_with_errors" if has_errors else "completed"
+    result.has_errors = has_errors
     result.metadata.duration = f"{(end_time - start_time):.2f}s"
     result.metadata.completed_at = end_time
     result.metadata.usage = usage_summary
@@ -68,49 +70,74 @@ def resolve_deliverable(
     """Resolve the ensemble's single deliverable from its dependency DAG.
 
     The ensemble abstraction presents one output regardless of internal
-    multi-agent structure (ADR-035 D1, FC-56): the terminal node's
-    response — the agent no other agent depends on — when it succeeded
-    with content, else the last successful agent's response walking the
-    declaration order backward. Returns ``None`` when no agent produced
-    content (the caller decides the degraded fallback).
+    multi-agent structure (ADR-035 D1, FC-56): a terminal node's
+    response — an agent no other agent depends on — when it succeeded
+    with content. Multi-terminal DAGs take the last successful terminal
+    by declaration order. Returns ``None`` when no terminal succeeded
+    with content (the caller decides the degraded fallback) — an
+    intermediate (non-terminal) agent's output never stands in for a
+    missing deliverable (fail-closed-composition, caller contract: a
+    skipped/failed terminal must not surface someone else's work, e.g.
+    a decomposer's raw query list, as if it were the real result).
 
     Computed here, where ``depends_on`` is known, rather than
     reconstructed downstream from the results dict (the dispatch layer
     receives a projection that has already dropped the config).
-    Multi-terminal DAGs take the last terminal by declaration order.
     """
-    depended_on = _depended_on_names(agents)
-    terminals = [agent.name for agent in agents if agent.name not in depended_on]
+    terminals = terminal_agent_names(agents)
 
     for name in reversed(terminals):
         response = _successful_response(results.get(name))
         if response is not None:
             return response
-
-    for agent in reversed(agents):
-        response = _successful_response(results.get(agent.name))
-        if response is not None:
-            return response
     return None
 
 
-def _depended_on_names(agents: list[AgentConfig]) -> set[str]:
-    """Collect every agent name that appears as a dependency.
+def caller_status(raw_status: str | None) -> tuple[str, bool]:
+    """The caller-facing ``(status, has_errors)`` pair every invocation
+    surface reports (fail-closed-composition, caller contract): REST
+    (``ExecutionHandler.invoke``), MCP ``invoke`` (streamed through
+    ``execute_streaming``), and the CLI's ``--output-format json``.
 
-    Tolerates both string and conditional dict-form ``depends_on``
-    entries, mirroring ``ensemble_config.detect_cycle``'s traversal.
+    One vocabulary, ``"success"`` or ``"error"``, derived from the
+    executor's own ``completed``/``completed_with_errors`` distinction
+    (Invariant 13's ``has_errors``) rather than a second, independently
+    maintained notion of failure: ``"completed"`` is the only value that
+    reads as success. ``"completed_with_errors"`` (an agent failed, or a
+    dependent was skipped because none of its dependencies succeeded —
+    that skip is always downstream of an already-recorded failure, so
+    it never adds new information here) and ``"failed"`` (the whole
+    execution task raised, e.g. streaming's ``execution_failed`` event)
+    both read as error, and so does a missing/unrecognized raw status —
+    a caller never sees anything outside ``{"success", "error"}``.
+
+    A plain ``when:``-false skip is not folded in here: it carries no
+    ``reason`` and never sets ``has_errors`` upstream, so it is not an
+    error by construction — nothing to special-case.
     """
-    names: set[str] = set()
-    for agent in agents:
-        for dep in agent.depends_on:
-            dep_name = dep if isinstance(dep, str) else dep.get("agent_name")
-            if dep_name:
-                names.add(dep_name)
-    return names
+    has_errors = raw_status != "completed"
+    return ("error" if has_errors else "success", has_errors)
 
 
 def _successful_response(agent_result: Any) -> str | None:
-    """An agent's response when it succeeded with non-empty text, else None.
+    """An agent's response when it succeeded (SF2: ``status`` in
+    ``SUCCEEDED_STATUSES``) with non-empty text, else None.
+
+    ``SUCCEEDED_STATUSES`` includes ``"partial"`` (addendum 2026-09-23
+    NIT: the membership check alone is inert for it in practice — a
+    gathered fan-out's ``response`` is a list, never a string, so
+    ``_non_empty_text``'s ``isinstance(response, str)`` guard excludes
+    it regardless of status. A partial fan-out terminal never becomes
+    the deliverable through this path; only a plain (non-fan-out)
+    ``succeeded`` terminal, or a fan-out where every instance succeeded
+    (its own ``status`` reads ``"success"``, not ``"partial"``), does.
+
+    Deliberately does NOT exclude ``handled_failure`` (X1, unlike
+    ``result_succeeded``): a node that ran only via
+    ``on_dependency_failure: run`` still produced the right thing to
+    show the caller (the fail-closed-composition caller contract:
+    "deliverable = handler output") even though it does not count as a
+    succeeded terminal for parent-status purposes.
 
     Tolerates both ``AgentResult`` objects and their serialized dict
     form, matching ``ExecutionResult.to_dict``'s posture.
@@ -123,8 +150,11 @@ def _successful_response(agent_result: Any) -> str | None:
 
 
 def _non_empty_text(response: Any, status: Any) -> str | None:
-    """Narrow a successful agent's response to non-empty text."""
-    if status != "success":
+    """Narrow a succeeded agent's response to non-empty text — ``str``
+    only, so a gathered fan-out's list ``response`` never qualifies even
+    when its ``status`` is in ``SUCCEEDED_STATUSES`` (see
+    ``_successful_response``)."""
+    if status not in SUCCEEDED_STATUSES:
         return None
     if isinstance(response, str) and response:
         return response

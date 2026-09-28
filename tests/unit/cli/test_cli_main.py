@@ -35,6 +35,7 @@ class TestMainCLI:
 
         # Mock the invoke_ensemble function
         with patch("llm_orc.cli.invoke_ensemble") as mock_invoke:
+            mock_invoke.return_value = False  # has_errors: a clean run
             result = runner.invoke(cli, ["invoke", "test_ensemble"])
 
             mock_invoke.assert_called_once_with(
@@ -50,11 +51,27 @@ class TestMainCLI:
             )
             assert result.exit_code == 0
 
+    def test_invoke_command_exits_nonzero_when_invoke_ensemble_reports_errors(
+        self,
+    ) -> None:
+        """The invoke command exits non-zero when invoke_ensemble reports
+        has_errors (fail-closed-composition, caller contract) — a failed
+        run must be visible to shell scripting (``&&``, ``$?``), not just
+        the JSON payload."""
+        runner = CliRunner()
+
+        with patch("llm_orc.cli.invoke_ensemble") as mock_invoke:
+            mock_invoke.return_value = True  # has_errors
+            result = runner.invoke(cli, ["invoke", "test_ensemble"])
+
+            assert result.exit_code != 0
+
     def test_invoke_command_with_all_options(self) -> None:
         """Test invoke command with all options."""
         runner = CliRunner()
 
         with patch("llm_orc.cli.invoke_ensemble") as mock_invoke:
+            mock_invoke.return_value = False  # has_errors: a clean run
             result = runner.invoke(
                 cli,
                 [
@@ -92,6 +109,7 @@ class TestMainCLI:
         runner = CliRunner()
 
         with patch("llm_orc.cli.invoke_ensemble") as mock_invoke:
+            mock_invoke.return_value = False  # has_errors: a clean run
             runner.invoke(
                 cli,
                 [
@@ -121,7 +139,8 @@ class TestMainCLI:
         runner = CliRunner()
 
         # Valid choice
-        with patch("llm_orc.cli.invoke_ensemble"):
+        with patch("llm_orc.cli.invoke_ensemble") as mock_invoke:
+            mock_invoke.return_value = False  # has_errors: a clean run
             result = runner.invoke(cli, ["invoke", "test", "--output-format", "json"])
             assert result.exit_code == 0
 
@@ -464,6 +483,7 @@ class TestMainCLI:
 
         # Test invoke alias
         with patch("llm_orc.cli.invoke_ensemble") as mock_invoke:
+            mock_invoke.return_value = False  # has_errors: a clean run
             result = runner.invoke(cli, ["i", "test_ensemble"])
             assert result.exit_code == 0
             mock_invoke.assert_called_once()

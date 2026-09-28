@@ -17,6 +17,20 @@ class AgentResult:
 
     Constructed by AgentDispatcher, consumed by PhaseResultProcessor.
     The model_instance field is stripped before serialization.
+
+    ``payload`` (fail-closed-composition B2, addendum 2026-09-23) carries
+    every field alongside a failed script agent's own ``error``/
+    ``success`` keys — ``stderr`` (turn_trace's ``_engine_failure_fields``
+    reads ``payload.stderr``) and producer-specific fields like
+    web_searcher's ``backend`` — so they survive on the failed record
+    instead of being dropped when only ``error`` was kept. Nested under
+    its own ``payload`` key by ``to_dict``/``PhaseResultProcessor``, NEVER
+    merged onto the record: engine-owned keys (``status``, ``response``,
+    ``error``, ``outcome``, ``has_errors``, ...) are reserved, so a
+    script's own JSON claiming e.g. ``"status": "success"`` cannot
+    overwrite the record's real status (the blocker this addendum closes
+    — a script printing ``{"success": false, "error": "x", "status":
+    "success", "response": "FABRICATED"}`` used to report success).
     """
 
     status: Literal["success", "failed"]
@@ -24,6 +38,7 @@ class AgentResult:
     error: str | None = None
     model_substituted: bool = False
     model_instance: Any = field(default=None, repr=False)
+    payload: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize to dict, excluding model_instance."""
@@ -34,6 +49,8 @@ class AgentResult:
         }
         if self.status == "failed" and self.error is not None:
             result["error"] = self.error
+        if self.status == "failed" and self.payload:
+            result["payload"] = self.payload
         return result
 
 
@@ -93,12 +110,22 @@ class ExecutionResult:
     deliverable: str | None = None
     execution_order: list[str] = field(default_factory=list)
     validation_result: Any = None
+    has_errors: bool = False
 
     def to_dict(self) -> dict[str, Any]:
-        """Serialize to dict for artifact saving and API responses."""
+        """Serialize to dict for artifact saving and API responses.
+
+        ``has_errors`` (addendum 2026-09-23) is the same bool
+        ``finalize_result`` used to derive ``status``
+        (``completed``/``completed_with_errors``) — surfaced directly so
+        a caller (a parent ``ensemble:``/``dispatch:``/``loop:`` node's
+        ``outcome.child_has_errors``, or an external reader) does not
+        need to re-derive it from the status string.
+        """
         result: dict[str, Any] = {
             "ensemble": self.ensemble,
             "status": self.status,
+            "has_errors": self.has_errors,
             "input": self.input,
             "results": {
                 name: (

@@ -32,8 +32,17 @@ from llm_orc.schemas.agent_config import AgentConfig, ScriptAgentConfig
 logger = logging.getLogger(__name__)
 
 
-def _reports_failure(response: Any) -> bool:
+def reports_failure(response: Any) -> bool:
     """Whether a script's own response says it did not succeed (#159).
+
+    Two readers now, not one. Originally gated caching alone (a failure
+    is never cached, below); fail-closed-composition B2 additionally
+    made it decide the agent's own STATUS — ``AgentDispatcher`` calls it
+    to turn a script's failure-shaped response into ``status: "failed"``
+    instead of a ``"success"`` wrapping an error string a downstream
+    consumer has to notice on its own. Both readers share this one
+    predicate rather than keeping two independently-drifting notions of
+    "did this script fail".
 
     Two clauses, because one does not cover the corpus:
 
@@ -196,7 +205,7 @@ class ScriptAgentRunner:
         if (
             cache_identity is not None
             and not edited_mid_run
-            and not _reports_failure(response)
+            and not reports_failure(response)
         ):
             cache_result = {
                 "output": response,

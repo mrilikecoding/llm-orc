@@ -1,0 +1,5 @@
+name: childdead
+description: p
+agents:
+  - name: only
+    model_profile: dead

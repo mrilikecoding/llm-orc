@@ -192,6 +192,41 @@ class TestBaseAgentConfigFields:
         config = parse_agent_config(data)
         assert config.when is None
 
+    def test_on_dependency_failure_defaults_to_skip(self) -> None:
+        data: dict[str, Any] = {"name": "test", "model_profile": "gpt4"}
+        config = parse_agent_config(data)
+        assert config.on_dependency_failure == "skip"
+
+    def test_on_dependency_failure_run_accepted_with_depends_on(self) -> None:
+        data: dict[str, Any] = {
+            "name": "shape",
+            "script": "shape.py",
+            "depends_on": ["seat"],
+            "on_dependency_failure": "run",
+        }
+        config = parse_agent_config(data)
+        assert config.on_dependency_failure == "run"
+
+    def test_on_dependency_failure_run_without_depends_on_rejected(self) -> None:
+        """Invariant 14 (load-time validation): a node with nothing to
+        fail can't be marked "run when a dependency fails"."""
+        data: dict[str, Any] = {
+            "name": "test",
+            "model_profile": "gpt4",
+            "on_dependency_failure": "run",
+        }
+        with pytest.raises(ValidationError, match="depends_on"):
+            parse_agent_config(data)
+
+    def test_on_dependency_failure_rejects_unknown_value(self) -> None:
+        data: dict[str, Any] = {
+            "name": "test",
+            "model_profile": "gpt4",
+            "on_dependency_failure": "retry",
+        }
+        with pytest.raises(ValidationError):
+            parse_agent_config(data)
+
 
 class TestEnsembleLoaderProducesPydanticConfigs:
     """Scenario 7: EnsembleLoader produces list[AgentConfig]."""

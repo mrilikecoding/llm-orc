@@ -43,7 +43,10 @@ def _fake_ensemble(name: str = "test") -> Any:
 
 
 class TestInvokeStatusNormalization:
-    """invoke translates internal status values to the API contract."""
+    """invoke translates internal status values to the caller contract's
+    "success"/"error" vocabulary plus has_errors (fail-closed-
+    composition, caller contract) — the same mapping every surface
+    (REST, MCP invoke, CLI JSON) uses, via caller_status."""
 
     @pytest.mark.asyncio
     async def test_completed_maps_to_success(self) -> None:
@@ -59,6 +62,7 @@ class TestInvokeStatusNormalization:
         result = await handler.invoke({"ensemble_name": "test", "input": "hello"})
 
         assert result["status"] == "success"
+        assert result["has_errors"] is False
 
     @pytest.mark.asyncio
     async def test_completed_with_errors_maps_to_error(self) -> None:
@@ -74,9 +78,12 @@ class TestInvokeStatusNormalization:
         result = await handler.invoke({"ensemble_name": "test", "input": "hello"})
 
         assert result["status"] == "error"
+        assert result["has_errors"] is True
 
     @pytest.mark.asyncio
-    async def test_unknown_status_passes_through(self) -> None:
+    async def test_unrecognized_status_is_error_not_passed_through(self) -> None:
+        """No caller ever sees a raw internal status string — only
+        "success" or "error"."""
         handler = _make_handler(
             _fake_ensemble(),
             executor_execute_return={
@@ -88,7 +95,8 @@ class TestInvokeStatusNormalization:
 
         result = await handler.invoke({"ensemble_name": "test", "input": "hello"})
 
-        assert result["status"] == "running"
+        assert result["status"] == "error"
+        assert result["has_errors"] is True
 
 
 class TestInvokeDeliverablePassthrough:
@@ -194,3 +202,70 @@ class TestInvokeInputFile:
                     "input_file": "/no/such/file.txt",
                 }
             )
+
+
+class _FakeReporter:
+    """A minimal ProgressReporter, standing in for FastMCP's Context."""
+
+    async def info(self, message: str) -> None:
+        return None
+
+    async def warning(self, message: str) -> None:
+        return None
+
+    async def error(self, message: str) -> None:
+        return None
+
+    async def report_progress(self, progress: int, total: int) -> None:
+        return None
+
+
+def _real_service(tmp_path: Path, agents: list[dict[str, Any]]) -> Any:
+    """A real OrchestraService (real ConfigurationManager, real executor)
+    wired to a temp project with one script-based ensemble — the actual
+    code path the MCP ``invoke`` tool drives via ``_invoke_tool_with_
+    streaming`` -> ``execute_streaming`` (fail-closed-composition,
+    Doctrine 11: no mocked executor)."""
+    import yaml
+
+    from llm_orc.core.config.config_manager import ConfigurationManager
+    from llm_orc.services.orchestra_service import OrchestraService
+
+    ensembles_dir = tmp_path / ".llm-orc" / "ensembles"
+    ensembles_dir.mkdir(parents=True)
+    (ensembles_dir / "mcp-pin.yaml").write_text(
+        yaml.dump(
+            {"name": "mcp-pin", "description": "MCP outcome pin", "agents": agents}
+        )
+    )
+    config_manager = ConfigurationManager(project_dir=tmp_path, provision=False)
+    return OrchestraService(config_manager=config_manager)
+
+
+class TestExecuteStreamingCallerContract:
+    """Outcome pins for the caller contract (fail-closed-composition,
+    Doctrine 11): the MCP ``invoke`` tool's real code path
+    (``execute_streaming``, not the non-streaming ``invoke`` method) —
+    a real executor running real script agents, not a mocked one."""
+
+    @pytest.mark.asyncio
+    async def test_clean_run_reports_success(self, tmp_path: Path) -> None:
+        service = _real_service(
+            tmp_path, [{"name": "answer", "script": "echo '{\"ok\": true}'"}]
+        )
+
+        result = await service.execute_streaming("mcp-pin", "hello", _FakeReporter())
+
+        assert result["status"] == "success"
+        assert result["has_errors"] is False
+        assert result["deliverable"] is not None
+
+    @pytest.mark.asyncio
+    async def test_failed_terminal_reports_error(self, tmp_path: Path) -> None:
+        service = _real_service(tmp_path, [{"name": "answer", "script": "exit 1"}])
+
+        result = await service.execute_streaming("mcp-pin", "hello", _FakeReporter())
+
+        assert result["status"] == "error"
+        assert result["has_errors"] is True
+        assert result["deliverable"] is None

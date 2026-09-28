@@ -12,6 +12,7 @@ from llm_orc.core.execution.result_types import (
 from llm_orc.core.execution.results_processor import (
     add_fan_out_metadata,
     calculate_usage_summary,
+    caller_status,
     count_failed_agents,
     count_fan_out_instances,
     count_successful_agents,
@@ -462,9 +463,11 @@ def _agent(name: str, depends_on: list[str | dict[str, Any]] | None = None) -> A
 class TestResolveDeliverable:
     """Deliverable resolution from the dependency DAG (ADR-035 D1, FC-56).
 
-    The ensemble abstraction presents a single output: the unique
-    terminal node's response when it succeeded, else the last
-    successful agent's — never the raw result dict shape.
+    The ensemble abstraction presents a single output: a terminal
+    node's response when it succeeded, else ``None`` — never the raw
+    result dict shape, and never an intermediate (non-terminal) agent's
+    output standing in for a missing deliverable (fail-closed-
+    composition, caller contract).
     """
 
     def test_terminal_node_output_is_the_deliverable(self) -> None:
@@ -482,8 +485,12 @@ class TestResolveDeliverable:
 
         assert resolve_deliverable(results, agents) == "final code"
 
-    def test_failed_terminal_falls_back_to_last_successful(self) -> None:
-        """Terminal failed (Spike χ-P1 timeout): last successful agent wins."""
+    def test_sole_terminal_failed_yields_none(self) -> None:
+        """Terminal failed (Spike χ-P1 timeout): no other terminal exists,
+        so there is no deliverable — an upstream intermediate agent's
+        output (coder's "draft code") never stands in for it (caller
+        contract: a skipped/failed terminal must not surface someone
+        else's work as the result)."""
         agents = [
             _agent("coder"),
             _agent("critic"),
@@ -495,7 +502,7 @@ class TestResolveDeliverable:
             "synthesizer": {"status": "failed", "response": None},
         }
 
-        assert resolve_deliverable(results, agents) == "draft code"
+        assert resolve_deliverable(results, agents) is None
 
     def test_all_agents_failed_yields_none(self) -> None:
         """No successful agent: no deliverable (caller decides the fallback)."""
@@ -524,15 +531,37 @@ class TestResolveDeliverable:
 
         assert resolve_deliverable(results, agents) == "terminal"
 
-    def test_terminal_with_empty_response_falls_back(self) -> None:
-        """A successful terminal with an empty response is not a deliverable."""
+    def test_terminal_with_empty_response_yields_none(self) -> None:
+        """A successful terminal with an empty response is not a
+        deliverable — the upstream intermediate agent's real content
+        never stands in for it."""
         agents = [_agent("a"), _agent("b", depends_on=["a"])]
         results = {
             "a": {"status": "success", "response": "real content"},
             "b": {"status": "success", "response": ""},
         }
 
-        assert resolve_deliverable(results, agents) == "real content"
+        assert resolve_deliverable(results, agents) is None
+
+    def test_partial_fan_out_terminal_never_becomes_the_deliverable(self) -> None:
+        """NIT (addendum 2026-09-23): "partial" is in SUCCEEDED_STATUSES,
+        but a gathered fan-out's response is a list, never a string —
+        _non_empty_text's isinstance(response, str) guard excludes it
+        regardless of status, so a partial terminal is never a
+        deliverable through this path (documented, not changed: no
+        caller relies on it, and rendering a list as deliverable text
+        would be a separate, unrequested behavior change)."""
+        agents = [_agent("a"), _agent("s", depends_on=["a"])]
+        results = {
+            "a": {"status": "success", "response": "ok"},
+            "s": {
+                "status": "partial",
+                "response": ["inst-ok", None],
+                "fan_out": True,
+            },
+        }
+
+        assert resolve_deliverable(results, agents) is None
 
     def test_multiple_terminals_take_last_by_declaration_order(self) -> None:
         """Multi-terminal DAG edge: the last declared terminal wins."""
@@ -558,3 +587,30 @@ class TestResolveDeliverable:
         }
 
         assert resolve_deliverable(results, agents) == "terminal"
+
+
+class TestCallerStatus:
+    """The single status/has_errors vocabulary every caller surface (REST,
+    MCP invoke, MCP streaming, CLI JSON) reports (fail-closed-composition,
+    caller contract): "success"/"error" plus a has_errors bool, derived
+    from the executor's own completed/completed_with_errors distinction
+    so every surface agrees with the executor's own resilience accounting
+    (Invariant 13) rather than reinventing it.
+    """
+
+    def test_completed_is_success(self) -> None:
+        assert caller_status("completed") == ("success", False)
+
+    def test_completed_with_errors_is_error(self) -> None:
+        assert caller_status("completed_with_errors") == ("error", True)
+
+    def test_a_hard_execution_crash_is_error(self) -> None:
+        """execute_streaming's top-level "failed" status (the whole
+        execution task raised) is caller-facing "error" too — the same
+        vocabulary as a partial in-band failure, not a third value."""
+        assert caller_status("failed") == ("error", True)
+
+    def test_missing_status_is_error(self) -> None:
+        """A defensive default: an absent/unknown raw status never reads
+        as a quiet success."""
+        assert caller_status(None) == ("error", True)

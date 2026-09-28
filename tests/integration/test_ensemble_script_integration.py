@@ -29,6 +29,12 @@ def mock_expensive_dependencies() -> Generator[None, None, None]:
         },
     }
     mock_config_manager.get_model_profiles.return_value = {}
+    # Matches real ConfigurationManager: an unconfigured profile name
+    # (these tests use "claude-analyst", never actually registered)
+    # raises ValueError, not a Mock that can't be unpacked.
+    mock_config_manager.resolve_model_profile.side_effect = ValueError(
+        "Model profile not found"
+    )
 
     with patch(
         "llm_orc.core.execution.executor_factory.ConfigurationManager",
@@ -326,20 +332,20 @@ class TestEnsembleScriptIntegration:
         with patch.object(executor, "_artifact_manager", mock_artifact_manager):
             result = await executor.execute(config, "error test")
 
-        # Ensemble should handle errors gracefully and include both agents
-        assert result["status"] == "completed"
+        # Ensemble records the errors and both agents' status reflects
+        # them (fail-closed-composition B2: a script's own failure-shaped
+        # response is the agent's status, not a "success" wrapping it).
+        assert result["status"] == "completed_with_errors"
         assert "failing_agent" in result["results"]
         assert "success_agent" in result["results"]
 
-        # Check that failing agent properly reports error in response
         failing_result = result["results"]["failing_agent"]
-        assert failing_result["status"] == "success"  # Executor handles gracefully
-        assert "exit code 1" in failing_result["response"]  # Error details in response
+        assert failing_result["status"] == "failed"
+        assert "exit code 1" in failing_result["error"]
 
-        # Success agent should show proper failure message
         success_result = result["results"]["success_agent"]
-        assert success_result["status"] == "success"  # Graceful handling
-        assert "Script not found" in success_result["response"]  # Expected error
+        assert success_result["status"] == "failed"
+        assert "Script not found" in success_result["error"]
 
     @pytest.mark.asyncio
     async def test_script_resolver_ensemble_executor_json_contract_validation(

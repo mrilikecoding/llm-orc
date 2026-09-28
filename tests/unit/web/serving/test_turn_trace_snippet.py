@@ -262,6 +262,64 @@ def test_a_crashed_seat_child_retains_its_whole_error_and_stderr() -> None:
     assert len(seat_nodes[0]["response"]) <= 281
 
 
+def test_a_status_failed_seat_child_records_its_error_field() -> None:
+    """The nested-child sibling of the top-level status-check above: a
+    dispatched seat's OWN internal script agent can carry the same B2
+    shape once it goes through AgentDispatcher live."""
+    import json
+
+    child_result = {
+        "results": {
+            "verdict": {
+                "response": None,
+                "status": "failed",
+                "error": "Script failed with exit code 1",
+            }
+        }
+    }
+    result = {
+        "results": {"seat": {"status": "success", "response": json.dumps(child_result)}}
+    }
+
+    trace = build_turn_trace("serving", result)
+
+    seat_nodes = trace["nodes"][0]["seat"]
+    assert seat_nodes[0]["error"] == "Script failed with exit code 1"
+
+
+def test_a_status_failed_seat_child_records_its_stderr_field() -> None:
+    """B2 amended: AgentDispatcher now flattens a failed script's
+    structured payload (stderr, and producer-specific fields like
+    web_searcher's backend) directly onto the node alongside
+    status/error, not just error alone — the same live-engine shape as
+    test_a_status_failed_seat_child_records_its_error_field, with the
+    stderr branch this once again exercises (#174 must be reachable
+    through the CURRENT contract, not only the older response-wrapped
+    shape the tests above cover)."""
+    import json
+
+    child_result = {
+        "results": {
+            "verdict": {
+                "response": None,
+                "status": "failed",
+                "error": "Script failed with exit code 1",
+                "stderr": "boom\n",
+                "backend": "tavily",
+            }
+        }
+    }
+    result = {
+        "results": {"seat": {"status": "success", "response": json.dumps(child_result)}}
+    }
+
+    trace = build_turn_trace("serving", result)
+
+    seat_nodes = trace["nodes"][0]["seat"]
+    assert seat_nodes[0]["error"] == "Script failed with exit code 1"
+    assert seat_nodes[0]["stderr"] == "boom\n"
+
+
 def test_a_healthy_seat_child_carries_no_error_or_stderr_fields() -> None:
     """The over-refusal direction: a healthy nested response is untouched."""
     import json
@@ -354,6 +412,68 @@ def test_an_oversized_stderr_stays_within_the_named_bounds() -> None:
     stderr = trace["nodes"][0]["seat"][0]["stderr"]
     assert len(stderr) < len(huge_stderr)
     assert len(stderr) < _STDERR_CAP + 100
+
+
+# --- fail-closed-composition: a top-level node's own status: "failed" ------
+#
+# AgentDispatcher's B2 contract records a script's own crash as
+# status: "failed" with the text in `error` -- `response` is `None`, so
+# `_engine_failure_fields` reading only `response` (the pre-B2 shape) no
+# longer sees anything to parse. The operator trace must not lose the
+# residue #168 fought to keep.
+
+
+def test_a_status_failed_node_records_its_error_field() -> None:
+    result = {
+        "results": {
+            "resolve": {
+                "response": None,
+                "status": "failed",
+                "error": "Schema JSON execution failed: Command '[...]' "
+                "returned non-zero exit status 1.",
+            }
+        }
+    }
+
+    trace = build_turn_trace("serving", result)
+
+    node = trace["nodes"][0]
+    assert node["status"] == "failed"
+    assert node["error"] == (
+        "Schema JSON execution failed: Command '[...]' returned non-zero exit status 1."
+    )
+
+
+def test_a_status_failed_node_records_its_stderr_field() -> None:
+    """B2 amended companion: a top-level failed node's stderr survives
+    through the CURRENT (response: None) shape, not only the older
+    response-wrapped one."""
+    result = {
+        "results": {
+            "resolve": {
+                "response": None,
+                "status": "failed",
+                "error": "Schema JSON execution failed",
+                "stderr": "Traceback (most recent call last):\nboom\n",
+            }
+        }
+    }
+
+    trace = build_turn_trace("serving", result)
+
+    node = trace["nodes"][0]
+    assert node["stderr"] == "Traceback (most recent call last):\nboom\n"
+
+
+def test_a_status_success_node_is_unaffected_by_the_status_check() -> None:
+    """The over-refusal direction: a healthy node's response happening to
+    parse as a dict is never mistaken for a failure just because
+    `_engine_failure_fields` now also looks at `status`."""
+    result = {"results": {"classify": {"response": "some prose", "status": "success"}}}
+
+    trace = build_turn_trace("serving", result)
+
+    assert "error" not in trace["nodes"][0]
 
 
 def test_emit_never_propagates_a_trace_build_failure(tmp_path: Path) -> None:

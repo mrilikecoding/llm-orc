@@ -1,5 +1,7 @@
 """Command line interface for llm-orc."""
 
+import sys
+
 import click
 
 from llm_orc.cli_commands import (
@@ -149,7 +151,7 @@ def invoke(
     detailed: bool,
 ) -> None:
     """Invoke an ensemble of agents."""
-    invoke_ensemble(
+    has_errors = invoke_ensemble(
         ensemble_name,
         input_data,
         config_dir,
@@ -160,6 +162,8 @@ def invoke(
         detailed,
         input_file=input_file,
     )
+    if has_errors:
+        sys.exit(1)
 
 
 @cli.command("list-ensembles")
@@ -345,7 +349,6 @@ def _start_server(
     and ``serve`` for "agentic endpoint behind an LLM client".
     """
     import logging
-    import sys
 
     import uvicorn
 
@@ -508,7 +511,6 @@ def mcp_serve(transport: str, port: int) -> None:
     Default transport is stdio for MCP client compatibility.
     """
     import signal
-    import sys
 
     from llm_orc.mcp.server import MCPServer
 
