@@ -38,10 +38,21 @@ class ScriptHandler:
             raise ValueError("scope 'global' needs a configuration manager")
         return self._config_manager.global_config_dir / "scripts"
 
-    def _dir_for_scope(self, scope: Scope) -> Path:
+    def _dir_for_scope(self, scope: Scope) -> Path | None:
+        """Write directory for one scope; None when the project has none.
+
+        With no configuration manager (legacy construction), ``project``
+        keeps resolving through ``_get_scripts_dir`` -- there is no
+        ``local_config_dir`` to consult.
+        """
         if scope == "global":
             return self._global_scripts_dir()
-        return self._get_scripts_dir()
+        if self._config_manager is None:
+            return self._get_scripts_dir()
+        local_config_dir = self._config_manager.local_config_dir
+        if local_config_dir is None:
+            return None
+        return local_config_dir / "scripts"
 
     def _scope_dirs(self) -> list[tuple[str, Path]]:
         """Read order: project shadows global."""
@@ -222,6 +233,12 @@ class ScriptHandler:
 
         scope = parse_scope(arguments)
         scripts_dir = self._dir_for_scope(scope)
+        if scripts_dir is None:
+            global_scripts = self._global_scripts_dir()
+            raise ValueError(
+                "No project directory (.llm-orc) here; pass scope: global to "
+                f"write under {global_scripts}, or run llm-orc config init"
+            )
         category_dir = scripts_dir / category
         script_file = category_dir / f"{name}.py"
 

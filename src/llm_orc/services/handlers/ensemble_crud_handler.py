@@ -104,7 +104,11 @@ class EnsembleCrudHandler:
         scope = parse_scope(arguments)
         local_dir = self._dir_for_scope(scope)
         if local_dir is None:
-            raise ValueError("No ensemble directory available")
+            global_ensembles = self._config_manager.global_config_dir / "ensembles"
+            raise ValueError(
+                "No project directory (.llm-orc) here; pass scope: global to "
+                f"write under {global_ensembles}, or run llm-orc config init"
+            )
         target_file = local_dir / f"{name}.yaml"
         if target_file.exists():
             raise ValueError(f"Ensemble already exists: {name}")
@@ -274,10 +278,10 @@ class EnsembleCrudHandler:
         """Write directory for one scope; None when the project has none."""
         if scope == "global":
             return self._config_manager.global_config_dir / "ensembles"
-        try:
-            return self.get_local_ensembles_dir()
-        except ValueError:
+        local_config_dir = self._config_manager.local_config_dir
+        if local_config_dir is None:
             return None
+        return local_config_dir / "ensembles"
 
     def _find_in_scope(self, ensemble_name: str, scope: Scope) -> Path:
         return find_in_scope(

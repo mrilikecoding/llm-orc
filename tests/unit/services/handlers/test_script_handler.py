@@ -37,6 +37,7 @@ class TestScriptScope:
         assert not (tmp_path / ".llm-orc" / "scripts" / "util" / "shout.py").exists()
 
     async def test_default_scope_writes_project(self, tmp_path: Path) -> None:
+        (tmp_path / ".llm-orc").mkdir()
         handler = _handler(tmp_path)
 
         result = await handler.create_script({"name": "mine", "category": "util"})
@@ -48,6 +49,7 @@ class TestScriptScope:
         )
 
     async def test_list_reports_scope_and_includes_global(self, tmp_path: Path) -> None:
+        (tmp_path / ".llm-orc").mkdir()
         handler = _handler(tmp_path)
         await handler.create_script({"name": "p", "category": "util"})
         await handler.create_script(
@@ -78,6 +80,7 @@ class TestScriptScope:
         assert ran["stdout"].strip() == "ping"
 
     async def test_project_shadows_global_on_read(self, tmp_path: Path) -> None:
+        (tmp_path / ".llm-orc").mkdir()
         handler = _handler(tmp_path)
         await handler.create_script(
             {"name": "twin", "category": "util", "scope": "global"}
@@ -93,6 +96,7 @@ class TestScriptScope:
     async def test_delete_with_wrong_scope_touches_nothing(
         self, tmp_path: Path
     ) -> None:
+        (tmp_path / ".llm-orc").mkdir()
         handler = _handler(tmp_path)
         created = await handler.create_script({"name": "keep", "category": "util"})
 
@@ -132,3 +136,29 @@ class TestScriptScope:
             await handler.create_script(
                 {"name": "x", "category": "util", "scope": "global"}
             )
+
+    async def test_project_scope_without_project_dir_errors_and_writes_nothing(
+        self, tmp_path: Path
+    ) -> None:
+        handler = _handler(tmp_path)  # no .llm-orc created
+
+        with pytest.raises(ValueError, match=r"No project directory.*scope: global"):
+            await handler.create_script({"name": "orphan", "category": "util"})
+
+        expected = resolve_global_config_dir() / "scripts" / "util" / "orphan.py"
+        assert not expected.exists()
+
+    async def test_omitted_scope_without_project_dir_never_deletes_global(
+        self, tmp_path: Path
+    ) -> None:
+        handler = _handler(tmp_path)  # no .llm-orc created
+        created = await handler.create_script(
+            {"name": "only-global", "category": "util", "scope": "global"}
+        )
+
+        with pytest.raises(ValueError, match=r"not in scope 'project'.*global tier"):
+            await handler.delete_script(
+                {"name": "only-global", "category": "util", "confirm": True}
+            )
+
+        assert Path(created["path"]).exists()
