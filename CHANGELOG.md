@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `scope: project | global` on ensemble, profile and script create/update/delete
+  across REST (`POST /api/ensembles`, `PUT`/`DELETE /api/ensembles/{name}?scope=`,
+  same on `/api/profiles`) and the MCP tools. Default `project` is unchanged.
+  `global` writes under the XDG config dir (`~/.config/llm-orc/{ensembles,profiles,scripts}`),
+  so ensembles created on a remote serve survive upgrades (#196). Scripts
+  created with `scope: global` resolve at execution time (the resolver
+  searches the global scripts dir last) and appear in `list_scripts` with
+  their scope.
+
+### Changed
+- `delete_ensemble` / `delete_profile` / `delete_script` and the update
+  tools act on one scope only. A name that lives in another tier (including
+  the library) is an error naming the tier and path; previously delete
+  removed the first match across all tiers, library included.
+
 ## [0.21.0] - 2026-09-27
 
 ### Changed
