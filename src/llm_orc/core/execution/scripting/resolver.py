@@ -8,6 +8,8 @@ import time
 from pathlib import Path
 from typing import Any
 
+from llm_orc.core.config.config_manager import resolve_global_config_dir
+
 
 class ScriptNotFoundError(FileNotFoundError):
     """Custom exception for script resolution errors with helpful guidance."""
@@ -109,6 +111,11 @@ class ScriptResolver:
                     str(library_base),
                 ]
             )
+
+        # Priority 3: global config scripts (written by CRUD with scope: global)
+        global_scripts = resolve_global_config_dir() / self.SCRIPTS_DIR
+        if global_scripts.exists():
+            search_paths.append(str(global_scripts))
 
         return search_paths
 

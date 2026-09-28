@@ -17,11 +17,15 @@ def _mock_config(server: MCPServer) -> Any:
 
 
 @pytest.fixture
-def mock_config_manager() -> Any:
+def mock_config_manager(tmp_path: Path) -> Any:
     """Create mock config manager."""
     config = MagicMock()
     config.get_ensembles_dirs.return_value = []
     config.get_profiles_dirs.return_value = []
+    # A real (nonexistent) path, not a MagicMock: ScriptHandler's read paths
+    # merge project and global unconditionally, so `.exists()` on the global
+    # scripts dir must give a real False rather than a truthy mock.
+    config.global_config_dir = tmp_path / "global-config"
     return config
 
 
