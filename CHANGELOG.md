@@ -9,8 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - `scope: project | global` on ensemble, profile and script create/update/delete
-  across REST (`POST /api/ensembles`, `PUT`/`DELETE /api/ensembles/{name}?scope=`,
-  same on `/api/profiles`) and the MCP tools. Default `project` is unchanged.
+  across REST (`scope` in the JSON body for `POST`/`PUT /api/ensembles`,
+  `?scope=` as a query parameter for `DELETE /api/ensembles/{name}`, same on
+  `/api/profiles`) and the MCP tools. Default `project` is unchanged.
   `global` writes under the XDG config dir (`~/.config/llm-orc/{ensembles,profiles,scripts}`),
   so ensembles created on a remote serve survive upgrades (#196). Scripts
   created with `scope: global` resolve at execution time (the resolver

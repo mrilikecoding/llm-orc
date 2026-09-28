@@ -162,7 +162,7 @@ mcp__llm-orc__list_ensembles        # See available ensembles
 | `invoke` | Execute ensemble with streaming progress, saves artifacts automatically. Returns `status` ("success"/"error"), `has_errors`, `results`, and `deliverable` (`null` unless a terminal agent succeeded) — the same caller contract REST and `--output-format json` report. |
 | `list_ensembles` | List all ensembles from local/library/global sources |
 | `validate_ensemble` | Check config validity, profile availability, and dependencies |
-| `update_ensemble` | Modify ensemble config (supports dry-run and backup) (`scope` selects which copy) |
+| `update_ensemble` | Modify ensemble config (supports dry-run and backup; `scope` selects which copy) |
 | `analyze_execution` | Analyze execution artifact data |
 
 **Provider Discovery** - Check what's available before running
