@@ -22,6 +22,16 @@ def mock_config_manager(tmp_path: Path) -> Any:
     config = MagicMock()
     config.get_ensembles_dirs.return_value = []
     config.get_profiles_dirs.return_value = []
+    # Real (possibly nonexistent) paths, not MagicMocks: the ensemble,
+    # profile, and script handlers' _dir_for_scope("project") reads
+    # local_config_dir directly (#Finding 1, feat/crud-scope), so a
+    # MagicMock here makes `local_config_dir / "ensembles"` another
+    # MagicMock whose `.exists()` is always truthy -- every create looks
+    # like a duplicate, every delete/update "finds" a phantom file, and
+    # yaml.safe_load() on that phantom's `.read_text()` (also a MagicMock)
+    # hangs forever. Tests that set up an ensembles/profiles/scripts dir
+    # use the `.llm-orc` convention below, matching this default.
+    config.local_config_dir = tmp_path / ".llm-orc"
     # A real (nonexistent) path, not a MagicMock: ScriptHandler's read paths
     # merge project and global unconditionally, so `.exists()` on the global
     # scripts dir must give a real False rather than a truthy mock.
@@ -612,8 +622,12 @@ class TestMCPServerProfileTools:
         self, server: MCPServer, tmp_path: Path
     ) -> None:
         """Update profile applies changes to file."""
-        profiles_dir = tmp_path / "profiles"
-        profiles_dir.mkdir()
+        # Nested under .llm-orc to match local_config_dir (Finding 1,
+        # feat/crud-scope): _dir_for_scope("project") no longer follows
+        # get_profiles_dirs() wherever a test points it, so the write
+        # target and the fixture directory must agree.
+        profiles_dir = tmp_path / ".llm-orc" / "profiles"
+        profiles_dir.mkdir(parents=True)
         (profiles_dir / "test.yaml").write_text(
             "name: test\nprovider: llama-server\nmodel: old"
         )
@@ -658,8 +672,10 @@ class TestMCPServerProfileTools:
         self, server: MCPServer, tmp_path: Path
     ) -> None:
         """Delete profile removes the file."""
-        profiles_dir = tmp_path / "profiles"
-        profiles_dir.mkdir()
+        # Nested under .llm-orc to match local_config_dir; see
+        # test_update_profile_applies_changes for why.
+        profiles_dir = tmp_path / ".llm-orc" / "profiles"
+        profiles_dir.mkdir(parents=True)
         profile_file = profiles_dir / "test.yaml"
         profile_file.write_text("name: test")
         _mock_config(server).get_profiles_dirs.return_value = [str(profiles_dir)]
