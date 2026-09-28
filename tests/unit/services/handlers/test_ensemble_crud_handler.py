@@ -626,3 +626,19 @@ class TestEnsembleScope:
             )
 
         assert not list((tmp_path / ".llm-orc" / "ensembles").iterdir())
+
+    async def test_omitted_scope_never_deletes_a_global_only_ensemble(
+        self, tmp_path: Path
+    ) -> None:
+        (tmp_path / ".llm-orc" / "ensembles").mkdir(parents=True)
+        global_file = resolve_global_config_dir() / "ensembles" / "only-global.yaml"
+        global_file.parent.mkdir(parents=True)
+        global_file.write_text("name: only-global\nagents: []\n")
+        handler = _real_handler(tmp_path)
+
+        with pytest.raises(ValueError, match=r"not in scope 'project'.*global tier"):
+            await handler.delete_ensemble(
+                {"ensemble_name": "only-global", "confirm": True}
+            )
+
+        assert global_file.exists()
