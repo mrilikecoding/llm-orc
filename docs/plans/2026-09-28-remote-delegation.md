@@ -198,3 +198,51 @@ input:     "..."
 Hermetic suite green, lint clean, mutant-red pins, a live row, and an
 independent adversarial review with an explicit wrong-accept hunt before
 merging to local main. Pushing and releasing need the practitioner's go.
+
+## Spike findings: S2 (2026-09-28)
+
+Binary: `/opt/homebrew/bin/llama-server`, version 9850 (4f31eedb0), built
+with AppleClang 21.0.0.21000099 for Darwin arm64.
+
+Router-relevant flags from `--help`:
+- `--models-dir PATH`: directory containing models for the router server
+  (default: disabled)
+- `--models-preset PATH`: path to INI file containing model presets for
+  the router server (default: disabled)
+- `--models-max N`: for router server, maximum number of models to load
+  simultaneously (default: 4, 0 = unlimited)
+- `--models-autoload, --no-models-autoload`: for router server, whether to
+  automatically load models (default: enabled)
+
+Setup: started the router with `LlamaServerRouter.command()`'s exact argv
+(`--models-preset <copy>`, `--host 127.0.0.1`, `--port 8790`,
+`--models-max 1`, `--no-webui`) against a scratch copy of the real rendered
+preset (6 sections). `GET /models` answered 200 with 10 entries (the 6
+preset sections, a `default` entry for the bare command line, and 3 raw
+Hugging Face cache entries already on disk), so the preset loaded correctly
+outside the serve.
+
+| Probe | Status | Body excerpt | Conclusion |
+|---|---|---|---|
+| `POST /models/load` naming a model not in the preset | 404 | `{"error":{"message":"File Not Found","type":"not_found_error","code":404}}` | Load endpoint refuses an unknown name; no live add. |
+| Chat completion naming a model not in the preset | 400 | `{"error":{"code":400,"message":"model 'totally-fake-model-xyz' not found","type":"invalid_request_error"}}` | Same refusal on the OpenAI-compatible path. |
+| Append `[qwen3-0.6b-newprofile]` to the on-disk ini, no restart, re-`GET /models` | 200, unchanged | still 10 entries, new section absent | Preset is read once at startup; on-disk edits are inert while the router runs. |
+| `SIGHUP` to the running router, re-`GET /models` | 200, unchanged | still 10 entries; log file gained zero new lines; process stayed alive | `SIGHUP` is not a reload signal in this build: no crash, no reload. |
+| Second router started with `--models-dir <dir with one symlinked gguf>` | 200 | seeded file listed as `qwen3-0.6b` (id from filename) among 4 entries | `--models-dir` directory scan works at startup, same as `--models-preset`. |
+| Second gguf symlink dropped into that dir after start, re-`GET /models` (no restart) | 200, unchanged | still 4 entries, dropped file absent | Directory scan is also startup-only; a `SIGHUP` to this router was the same no-op. |
+| `SIGTERM` the router (model loaded, mid in-flight completion), spawn a fresh process on the same preset plus the added section, poll `GET /models` | first 200 listed 11 entries incl. `qwen3-0.6b-newprofile` | two runs: 1.566s and 2.194s from `SIGTERM` to the first answering `GET /models` | Restart is the only way a new preset section takes effect; wall-clock cost measured at roughly 1.5 to 2.2s. |
+| The in-flight `POST /v1/chat/completions` riding that same `SIGTERM` (non-streaming, 300 to 400 `max_tokens`) | curl exit 18, `HTTP:200`, `SIZE_DOWNLOAD:0` (both runs) | `curl: (18) transfer closed with outstanding read data remaining` | In-flight completions are cut hard: a 200 status line arrives, zero body bytes follow, connection drops. No drain. |
+
+Additional observation: a restarted router does not retain load state. A
+model loaded before the restart came back `unloaded` after, so the first
+post-restart request to it also pays that model's on-demand load latency
+(not separately measured here; router-mode logs confirm "models will be
+automatically loaded on-demand").
+
+**Decision:** Arc 3's `pullable` for a newly shipped profile must be
+`needs_restart`. Neither `/models/load`, an on-disk preset edit, `SIGHUP`,
+nor `--models-dir`'s directory scan pick up a model outside what the router
+scanned at startup, so a supervised restart is the only mechanism that
+works, at a measured cost of roughly 1.5 to 2.2s wall clock (`SIGTERM` to
+first answering `GET /models`) plus a hard cut of any in-flight completion
+(0 body bytes on the killed connection) and loss of prior load state.
