@@ -22,12 +22,12 @@ def mock_config_manager(tmp_path: Path) -> Any:
     config = MagicMock()
     config.get_ensembles_dirs.return_value = []
     config.get_profiles_dirs.return_value = []
-    # Real (possibly nonexistent) paths, not MagicMocks: the ensemble,
-    # profile, and script handlers' _dir_for_scope("project") reads
-    # local_config_dir directly (#Finding 1, feat/crud-scope), so a
-    # MagicMock here makes `local_config_dir / "ensembles"` another
-    # MagicMock whose `.exists()` is always truthy -- every create looks
-    # like a duplicate, every delete/update "finds" a phantom file, and
+    # Real (possibly nonexistent) path, not a MagicMock: the ensemble,
+    # profile, and script handlers resolve the project tier from
+    # local_config_dir directly, so a MagicMock here makes
+    # `local_config_dir / "ensembles"` another MagicMock whose
+    # `.exists()` is always truthy -- every create looks like a
+    # duplicate, every delete/update "finds" a phantom file, and
     # yaml.safe_load() on that phantom's `.read_text()` (also a MagicMock)
     # hangs forever. Tests that set up an ensembles/profiles/scripts dir
     # use the `.llm-orc` convention below, matching this default.
@@ -622,10 +622,10 @@ class TestMCPServerProfileTools:
         self, server: MCPServer, tmp_path: Path
     ) -> None:
         """Update profile applies changes to file."""
-        # Nested under .llm-orc to match local_config_dir (Finding 1,
-        # feat/crud-scope): _dir_for_scope("project") no longer follows
-        # get_profiles_dirs() wherever a test points it, so the write
-        # target and the fixture directory must agree.
+        # Nested under .llm-orc to match local_config_dir: handlers
+        # resolve the project tier from local_config_dir, not from
+        # wherever get_profiles_dirs() points, so the write target and
+        # the fixture directory must agree.
         profiles_dir = tmp_path / ".llm-orc" / "profiles"
         profiles_dir.mkdir(parents=True)
         (profiles_dir / "test.yaml").write_text(
@@ -1188,7 +1188,13 @@ class TestMCPServerHelperMethods:
     def test_get_scripts_dir_with_project_path(
         self, server: MCPServer, tmp_path: Path
     ) -> None:
-        """Get scripts dir uses project path when set."""
+        """Get scripts dir uses project path when set.
+
+        This is the fallback path: local_config_dir takes priority when
+        the configuration manager has found a project tier, so it must
+        be cleared here to isolate the project_path branch under test.
+        """
+        _mock_config(server).local_config_dir = None
         server._script_handler._project_path = tmp_path / "my-project"
 
         result = server._script_handler._get_scripts_dir()
@@ -1199,6 +1205,7 @@ class TestMCPServerHelperMethods:
         self, server: MCPServer, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """Get scripts dir defaults to .llm-orc/scripts when no project path."""
+        _mock_config(server).local_config_dir = None
         monkeypatch.chdir(tmp_path)
         server._script_handler._project_path = None
 

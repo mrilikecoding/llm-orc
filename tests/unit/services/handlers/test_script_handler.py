@@ -162,3 +162,22 @@ class TestScriptScope:
             )
 
         assert Path(created["path"]).exists()
+
+    async def test_reads_and_writes_share_the_project_dir_from_a_subdirectory(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        (tmp_path / ".llm-orc").mkdir()
+        sub = tmp_path / "sub"
+        sub.mkdir()
+        monkeypatch.chdir(sub)
+        handler = ScriptHandler(config_manager=ConfigurationManager(provision=False))
+
+        created = await handler.create_script({"name": "w", "category": "util"})
+        listed = await handler.list_scripts({})
+        got = await handler.get_script({"name": "w", "category": "util"})
+
+        assert (
+            Path(created["path"]) == tmp_path / ".llm-orc" / "scripts" / "util" / "w.py"
+        )
+        assert [s["name"] for s in listed["scripts"]] == ["w"]
+        assert Path(got["path"]) == Path(created["path"])
