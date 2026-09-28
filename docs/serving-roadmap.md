@@ -59,7 +59,7 @@ layer is the insulation that keeps an eventual hardening cheap, and
 "frozen component" status is the trigger, tracked informally the way the
 buy-back ledger tracks hosted seats.
 
-## State (2026-09-27 handoff)
+## State (2026-09-28 handoff)
 
 **Ranked index:** the GitHub project "llm-orc kanban"
 (https://github.com/users/mrilikecoding/projects/2). THIS DOCUMENT
@@ -160,12 +160,29 @@ the llama-server backend yet — that is the regression gate below.
 ### Next up (in order)
 
 **First (practitioner, 2026-09-28): remote delegation.** Plan with task
-cards: `docs/plans/2026-09-28-remote-delegation.md` (#196, #191). Ship the
-serving project in the wheel, `scope: global` for CRUD, transitive
-preflight, one-run injection of ensembles/profiles/scripts with explicit
-`bind`/`pull`, and `llm-orc invoke --remote`. Start with the two spikes
-(Arc 0) and Arc 1; revise Arcs 2-4 from the spike findings. v0.21.0 is
-deployed on remote-host (practitioner, 2026-09-28).
+cards: `docs/plans/2026-09-28-remote-delegation.md` (#196, #191);
+implementation plan for Arc 0 + Arc 1:
+`docs/plans/2026-09-28-remote-delegation-arc0-arc1.md`. **Arc 0 and Arc 1
+merged on local main 2026-09-28 (`ac148dcf`), not pushed.** S1: the
+packaged serving project can be a read-only layer; artifacts,
+agentic-sessions, serve-trace, the rendered preset and the CRUD write
+fallback move to a state dir; `get_model_profiles` has no layer list
+(rewrite, not an insertion); `project_dir` means the checkout root in
+`ConfigurationManager` but the dot-dir in `ServingEnsembleCaller`. S2: a
+newly shipped profile is `needs_restart` (router loads only what it
+scanned at start; supervised restart 1.5 to 2.2 s, hard-cuts in-flight
+completions). Arc 1: `scope: project | global` on ensemble, profile and
+script CRUD over REST, MCP and the handlers; `project` requires a project
+tier (no fallback to library or global); update/delete act on one scope
+and name where the file lives; global scripts resolve at execution time;
+MCP schema advertises the enum. Pins through the real service and files
+on disk, each shown red under a mutant; suite 4735; whole-branch
+adversarial review plus two scoped re-reviews. Live row in the plan doc.
+Owed: practitioner moves `research-dossier` and `test-research-pipeline`
+on the mini into `~/.config/llm-orc/ensembles/`; Arcs 2-4 get re-cut from
+the S1/S2 findings before starting (Arc 2 needs the state dir, the
+`get_model_profiles` rewrite, `classify_tier` with a packaged tier).
+v0.21.0 is deployed on remote-host (practitioner, 2026-09-28).
 
 1. **Serve is up on remote-host (2026-09-16 afternoon).** launchd agent,
    v0.20.0 from origin main, llama.cpp b10964 x64 binary (no Intel brew
