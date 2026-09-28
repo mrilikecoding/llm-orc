@@ -97,10 +97,12 @@ async def check_ensemble_runnable(name: str) -> dict[str, Any]:
 
 @router.post("")
 async def create_ensemble(request: CreateEnsembleRequest) -> dict[str, Any]:
-    """Create a new ensemble in the local project.
+    """Create a new ensemble.
 
     Args:
-        request: Ensemble definition including name, description, agents.
+        request: Ensemble definition including name, description, agents,
+            and scope ("project" default, or "global" to write under
+            the XDG global config dir).
 
     Returns:
         Creation result with path and agents copied.
@@ -124,7 +126,8 @@ async def update_ensemble(name: str, request: UpdateEnsembleRequest) -> dict[str
 
     Args:
         name: Name of the ensemble to update.
-        request: Update parameters including changes, dry_run, backup.
+        request: Update parameters including changes, dry_run, backup,
+            and scope (which tier holds the ensemble).
 
     Returns:
         Update result with preview or applied changes.

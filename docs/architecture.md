@@ -198,7 +198,7 @@ LLM Orchestra implements a Model Context Protocol (MCP) server using the FastMCP
 - `invoke` - Execute ensemble with streaming progress, saves artifacts automatically
 - `list_ensembles` - List all ensembles from local/library/global sources
 - `validate_ensemble` - Validate config, profiles, and dependencies
-- `update_ensemble` - Modify ensemble config (supports dry-run and backup) (`scope` selects which copy)
+- `update_ensemble` - Modify ensemble config (supports dry-run and backup; `scope` selects which copy)
 - `analyze_execution` - Analyze execution artifact data
 
 *Provider Discovery:*
