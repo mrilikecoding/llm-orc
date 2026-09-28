@@ -198,7 +198,7 @@ LLM Orchestra implements a Model Context Protocol (MCP) server using the FastMCP
 - `invoke` - Execute ensemble with streaming progress, saves artifacts automatically
 - `list_ensembles` - List all ensembles from local/library/global sources
 - `validate_ensemble` - Validate config, profiles, and dependencies
-- `update_ensemble` - Modify ensemble config (supports dry-run and backup)
+- `update_ensemble` - Modify ensemble config (supports dry-run and backup) (`scope` selects which copy)
 - `analyze_execution` - Analyze execution artifact data
 
 *Provider Discovery:*
@@ -206,21 +206,21 @@ LLM Orchestra implements a Model Context Protocol (MCP) server using the FastMCP
 - `check_ensemble_runnable` - Check if ensemble can run with current providers, suggest alternatives
 
 *Ensemble CRUD:*
-- `create_ensemble` - Create new ensemble from scratch or template
-- `delete_ensemble` - Delete ensemble (requires confirmation)
+- `create_ensemble` - Create new ensemble from scratch or template (`scope`: `project` default, or `global` to write under `~/.config/llm-orc`)
+- `delete_ensemble` - Delete ensemble (requires confirmation) (`scope` selects which copy)
 
 *Profile CRUD:*
 - `list_profiles` - List profiles with optional provider filter
-- `create_profile` - Create new model profile
-- `update_profile` - Update existing profile
-- `delete_profile` - Delete profile (requires confirmation)
+- `create_profile` - Create new model profile (`scope`: `project` default, or `global` to write under `~/.config/llm-orc`)
+- `update_profile` - Update existing profile (`scope` selects which copy)
+- `delete_profile` - Delete profile (requires confirmation) (`scope` selects which copy)
 
 *Script Management:*
 - `list_scripts` - List primitive scripts by category
 - `get_script` - Get script source and metadata
 - `test_script` - Test script with sample input
-- `create_script` - Create new primitive script
-- `delete_script` - Delete script (requires confirmation)
+- `create_script` - Create new primitive script (`scope`: `project` default, or `global` to write under `~/.config/llm-orc`)
+- `delete_script` - Delete script (requires confirmation) (`scope` selects which copy)
 
 *Library Operations:*
 - `library_browse` - Browse library ensembles and scripts
