@@ -108,6 +108,24 @@ Record findings as a dated "Spike findings" section appended to this file.
   `test-research-pipeline` from the checkout's `.llm-orc/ensembles/` into
   `~/.config/llm-orc/ensembles/`.
 
+**Arc 1 live row (2026-09-28).** `llm-orc` 0.21.0, worktree
+`feat/crud-scope` @ 1652a258, serve on `--port 8766 --backend-port 8790
+--models-max 1` against the real `~/.config/llm-orc/ensembles/`, agent
+profile `local-qwen3-0.6b`.
+
+- `POST /api/ensembles` with `scope: global` → `200`, file written to
+  `~/.config/llm-orc/ensembles/scope-live.yaml`.
+- `GET /api/ensembles` → `200`, `scope-live` entry shows `source: global`.
+- `POST /api/ensembles/scope-live/execute` → `200`, `status: success`,
+  `deliverable: "ok"` (3.2s, no cold-load wait).
+- `DELETE ...?scope=project` → `500 Internal server error`, detail names
+  the global tier (`Ensemble 'scope-live' is not in scope 'project'; it
+  lives in the global tier at .../scope-live.yaml`); file untouched. Matches
+  the brief's "errors naming the global tier," but as a `500` rather than a
+  `4xx`: a client-input mismatch surfacing as a server error.
+- `DELETE ...?scope=global` → `200`, `deleted: true`; file confirmed gone,
+  rest of `~/.config/llm-orc/ensembles/` untouched.
+
 ### Arc 2: serving project ships with the wheel (#196) (Sonnet, 2-3 days, after S1)
 
 - Package `.llm-orc/{ensembles,profiles,scripts,config.yaml}` (tracked files

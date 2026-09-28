@@ -9,6 +9,10 @@ from unittest.mock import MagicMock
 import pytest
 import yaml
 
+from llm_orc.core.config.config_manager import (
+    ConfigurationManager,
+    resolve_global_config_dir,
+)
 from llm_orc.services.handlers.ensemble_crud_handler import EnsembleCrudHandler
 
 
@@ -16,9 +20,11 @@ def _make_handler(
     ensemble_dirs: list[str] | None = None,
     find_ensemble_return: Any = None,
     read_artifact_return: dict[str, Any] | None = None,
+    local_config_dir: Path | None = None,
 ) -> EnsembleCrudHandler:
     config_manager = MagicMock()
     config_manager.get_ensembles_dirs.return_value = ensemble_dirs or []
+    config_manager.local_config_dir = local_config_dir
 
     ensemble_loader = MagicMock()
 
@@ -39,7 +45,9 @@ class TestCreateEnsemble:
     async def test_creates_ensemble_with_valid_agents(self, tmp_path: Path) -> None:
         """create_ensemble writes a loadable YAML file."""
         ensembles_dir = tmp_path / "ensembles"
-        handler = _make_handler(ensemble_dirs=[str(ensembles_dir)])
+        handler = _make_handler(
+            ensemble_dirs=[str(ensembles_dir)], local_config_dir=tmp_path
+        )
 
         result = await handler.create_ensemble(
             {
@@ -66,7 +74,9 @@ class TestCreateEnsemble:
     async def test_normalizes_model_profile_null(self, tmp_path: Path) -> None:
         """Payload with model_profile: null alongside ensemble is normalized."""
         ensembles_dir = tmp_path / "ensembles"
-        handler = _make_handler(ensemble_dirs=[str(ensembles_dir)])
+        handler = _make_handler(
+            ensemble_dirs=[str(ensembles_dir)], local_config_dir=tmp_path
+        )
 
         result = await handler.create_ensemble(
             {
@@ -92,7 +102,9 @@ class TestCreateEnsemble:
     async def test_creates_loop_ensemble(self, tmp_path: Path) -> None:
         """Loop agents are dumped as plain dicts, not Python objects."""
         ensembles_dir = tmp_path / "ensembles"
-        handler = _make_handler(ensemble_dirs=[str(ensembles_dir)])
+        handler = _make_handler(
+            ensemble_dirs=[str(ensembles_dir)], local_config_dir=tmp_path
+        )
 
         result = await handler.create_ensemble(
             {
@@ -131,7 +143,9 @@ class TestCreateEnsemble:
         ensembles_dir = tmp_path / "ensembles"
         ensembles_dir.mkdir()
         (ensembles_dir / "existing.yaml").write_text("name: existing\n")
-        handler = _make_handler(ensemble_dirs=[str(ensembles_dir)])
+        handler = _make_handler(
+            ensemble_dirs=[str(ensembles_dir)], local_config_dir=tmp_path
+        )
 
         with pytest.raises(ValueError, match="Ensemble already exists: existing"):
             await handler.create_ensemble({"name": "existing"})
@@ -163,7 +177,9 @@ class TestUpdateEnsemble:
         ensemble_file = ensembles_dir / "my-ensemble.yaml"
         ensemble_file.write_text(yaml.dump({"name": "my-ensemble", "agents": []}))
 
-        handler = _make_handler(ensemble_dirs=[str(ensembles_dir)])
+        handler = _make_handler(
+            ensemble_dirs=[str(ensembles_dir)], local_config_dir=tmp_path
+        )
         changes: dict[str, Any] = {"add_agents": [{"name": "agent-x"}]}
 
         result = await handler.update_ensemble(
@@ -186,7 +202,9 @@ class TestUpdateEnsemble:
             yaml.dump({"name": "my-ensemble", "agents": []})
         )
 
-        handler = _make_handler(ensemble_dirs=[str(ensembles_dir)])
+        handler = _make_handler(
+            ensemble_dirs=[str(ensembles_dir)], local_config_dir=tmp_path
+        )
 
         result = await handler.update_ensemble({"ensemble_name": "my-ensemble"})
 
@@ -199,7 +217,9 @@ class TestUpdateEnsemble:
         ensemble_file = ensembles_dir / "my-ensemble.yaml"
         ensemble_file.write_text(yaml.dump({"name": "my-ensemble", "agents": []}))
 
-        handler = _make_handler(ensemble_dirs=[str(ensembles_dir)])
+        handler = _make_handler(
+            ensemble_dirs=[str(ensembles_dir)], local_config_dir=tmp_path
+        )
         changes: dict[str, Any] = {"add_agents": [{"name": "agent-x"}]}
 
         result = await handler.update_ensemble(
@@ -222,7 +242,9 @@ class TestUpdateEnsemble:
         original_content = yaml.dump({"name": "my-ensemble", "agents": []})
         ensemble_file.write_text(original_content)
 
-        handler = _make_handler(ensemble_dirs=[str(ensembles_dir)])
+        handler = _make_handler(
+            ensemble_dirs=[str(ensembles_dir)], local_config_dir=tmp_path
+        )
 
         result = await handler.update_ensemble(
             {
@@ -246,7 +268,9 @@ class TestUpdateEnsemble:
             yaml.dump({"name": "my-ensemble", "agents": []})
         )
 
-        handler = _make_handler(ensemble_dirs=[str(ensembles_dir)])
+        handler = _make_handler(
+            ensemble_dirs=[str(ensembles_dir)], local_config_dir=tmp_path
+        )
 
         result = await handler.update_ensemble(
             {
@@ -497,3 +521,177 @@ class TestCopyFromTemplate:
         _, description, _ = handler._copy_from_template("tmpl", "my description")
 
         assert description == "my description"
+
+
+def _real_handler(project: Path) -> EnsembleCrudHandler:
+    config_manager = ConfigurationManager(project_dir=project, provision=False)
+
+    async def _read_artifact(ensemble_name: str, aid: str) -> dict[str, Any]:
+        return {}
+
+    return EnsembleCrudHandler(
+        config_manager=config_manager,
+        ensemble_loader=MagicMock(),
+        find_ensemble_fn=lambda name: None,
+        read_artifact_fn=_read_artifact,
+    )
+
+
+_AGENTS = [{"name": "writer", "model_profile": "local-qwen3-8b"}]
+
+
+class TestEnsembleScope:
+    """Writes target one scope; a wrong scope names where the file lives."""
+
+    async def test_global_scope_creates_under_global_dir_even_when_absent(
+        self, tmp_path: Path
+    ) -> None:
+        (tmp_path / ".llm-orc" / "ensembles").mkdir(parents=True)
+        handler = _real_handler(tmp_path)
+        global_ensembles = resolve_global_config_dir() / "ensembles"
+        assert not global_ensembles.exists()
+
+        result = await handler.create_ensemble(
+            {"name": "remote-made", "agents": _AGENTS, "scope": "global"}
+        )
+
+        assert result["scope"] == "global"
+        assert Path(result["path"]) == global_ensembles / "remote-made.yaml"
+        assert (global_ensembles / "remote-made.yaml").exists()
+        assert not (tmp_path / ".llm-orc" / "ensembles" / "remote-made.yaml").exists()
+
+    async def test_default_scope_still_writes_project(self, tmp_path: Path) -> None:
+        (tmp_path / ".llm-orc" / "ensembles").mkdir(parents=True)
+        handler = _real_handler(tmp_path)
+
+        result = await handler.create_ensemble({"name": "mine", "agents": _AGENTS})
+
+        assert result["scope"] == "project"
+        assert Path(result["path"]) == tmp_path / ".llm-orc" / "ensembles" / "mine.yaml"
+        assert not (resolve_global_config_dir() / "ensembles" / "mine.yaml").exists()
+
+    async def test_global_create_does_not_overwrite_project_twin(
+        self, tmp_path: Path
+    ) -> None:
+        project_file = tmp_path / ".llm-orc" / "ensembles" / "twin.yaml"
+        project_file.parent.mkdir(parents=True)
+        project_file.write_text("name: twin\ndescription: project copy\nagents: []\n")
+        handler = _real_handler(tmp_path)
+
+        await handler.create_ensemble(
+            {
+                "name": "twin",
+                "description": "global copy",
+                "agents": _AGENTS,
+                "scope": "global",
+            }
+        )
+
+        assert yaml.safe_load(project_file.read_text())["description"] == "project copy"
+
+    async def test_delete_with_wrong_scope_touches_nothing_and_names_tier(
+        self, tmp_path: Path
+    ) -> None:
+        project_file = tmp_path / ".llm-orc" / "ensembles" / "keep.yaml"
+        project_file.parent.mkdir(parents=True)
+        project_file.write_text("name: keep\nagents: []\n")
+        handler = _real_handler(tmp_path)
+
+        with pytest.raises(ValueError, match=r"not in scope 'global'.*local tier"):
+            await handler.delete_ensemble(
+                {"ensemble_name": "keep", "confirm": True, "scope": "global"}
+            )
+
+        assert project_file.exists()
+
+    async def test_delete_global_scope_removes_global_file(
+        self, tmp_path: Path
+    ) -> None:
+        (tmp_path / ".llm-orc" / "ensembles").mkdir(parents=True)
+        global_file = resolve_global_config_dir() / "ensembles" / "gone.yaml"
+        global_file.parent.mkdir(parents=True)
+        global_file.write_text("name: gone\nagents: []\n")
+        handler = _real_handler(tmp_path)
+
+        result = await handler.delete_ensemble(
+            {"ensemble_name": "gone", "confirm": True, "scope": "global"}
+        )
+
+        assert result["deleted"] is True
+        assert not global_file.exists()
+
+    async def test_update_with_wrong_scope_names_tier(self, tmp_path: Path) -> None:
+        project_file = tmp_path / ".llm-orc" / "ensembles" / "upd.yaml"
+        project_file.parent.mkdir(parents=True)
+        project_file.write_text("name: upd\nagents: []\n")
+        handler = _real_handler(tmp_path)
+
+        with pytest.raises(ValueError, match=r"not in scope 'global'"):
+            await handler.update_ensemble(
+                {
+                    "ensemble_name": "upd",
+                    "changes": {},
+                    "dry_run": False,
+                    "scope": "global",
+                }
+            )
+
+    async def test_bad_scope_writes_nothing(self, tmp_path: Path) -> None:
+        (tmp_path / ".llm-orc" / "ensembles").mkdir(parents=True)
+        handler = _real_handler(tmp_path)
+
+        with pytest.raises(ValueError, match="scope must be one of"):
+            await handler.create_ensemble(
+                {"name": "nope", "agents": _AGENTS, "scope": "local"}
+            )
+
+        assert not list((tmp_path / ".llm-orc" / "ensembles").iterdir())
+
+    async def test_omitted_scope_never_deletes_a_global_only_ensemble(
+        self, tmp_path: Path
+    ) -> None:
+        (tmp_path / ".llm-orc" / "ensembles").mkdir(parents=True)
+        global_file = resolve_global_config_dir() / "ensembles" / "only-global.yaml"
+        global_file.parent.mkdir(parents=True)
+        global_file.write_text("name: only-global\nagents: []\n")
+        handler = _real_handler(tmp_path)
+
+        with pytest.raises(ValueError, match=r"not in scope 'project'.*global tier"):
+            await handler.delete_ensemble(
+                {"ensemble_name": "only-global", "confirm": True}
+            )
+
+        assert global_file.exists()
+
+    async def test_project_scope_without_project_dir_errors_and_writes_nothing(
+        self, tmp_path: Path
+    ) -> None:
+        # A global ensembles dir with unrelated content already exists, so
+        # a fallback to "first search dir when nothing matches .llm-orc"
+        # would otherwise find it and silently write the new ensemble there.
+        global_ensembles = resolve_global_config_dir() / "ensembles"
+        global_ensembles.mkdir(parents=True)
+        (global_ensembles / "unrelated.yaml").write_text(
+            "name: unrelated\nagents: []\n"
+        )
+        handler = _real_handler(tmp_path)  # no .llm-orc created
+
+        with pytest.raises(ValueError, match=r"No project directory.*scope: global"):
+            await handler.create_ensemble({"name": "orphan", "agents": _AGENTS})
+
+        assert not (global_ensembles / "orphan.yaml").exists()
+
+    async def test_omitted_scope_without_project_dir_never_deletes_global(
+        self, tmp_path: Path
+    ) -> None:
+        global_file = resolve_global_config_dir() / "ensembles" / "only-global.yaml"
+        global_file.parent.mkdir(parents=True)
+        global_file.write_text("name: only-global\nagents: []\n")
+        handler = _real_handler(tmp_path)  # no .llm-orc created
+
+        with pytest.raises(ValueError, match=r"not in scope 'project'.*global tier"):
+            await handler.delete_ensemble(
+                {"ensemble_name": "only-global", "confirm": True}
+            )
+
+        assert global_file.exists()
