@@ -59,7 +59,7 @@ layer is the insulation that keeps an eventual hardening cheap, and
 "frozen component" status is the trigger, tracked informally the way the
 buy-back ledger tracks hosted seats.
 
-## State (2026-09-16 handoff)
+## State (2026-09-27 handoff)
 
 **Ranked index:** the GitHub project "llm-orc kanban"
 (https://github.com/users/mrilikecoding/projects/2). THIS DOCUMENT
@@ -76,6 +76,34 @@ client; llm-orc must be deployable without coupling to additional
 applications (#90's packaging goal). Standing directives from 2026-09-11
 hold (daily driver on existing repos; real OpenCode sessions; Go spend
 and paid comparison runs within reason; cheaper subagents; meter usage).
+
+### 2026-09-27: fail-closed composition, released v0.21.0
+
+Merged `e3764632`, released v0.21.0 (breaking fix for callers; see
+CHANGELOG). Plan and addenda: `docs/plans/2026-09-22-fail-closed-composition.md`.
+Invariant: a failed step never reaches a consumer, parent, or caller as
+a success. Shape: implicit 0.6b fallback removed (explicit
+`fallback_model_profile` chains only, each hop loaded as its profile);
+one engine-owned per-node `outcome` read through one predicate module;
+dependency-failure cascade with `on_dependency_failure: run` for
+serving's refusal composers; ensemble/dispatch/loop fail when no child
+terminal succeeded (loop: final iteration, earlier ones recorded as
+`iteration_failures`); script failures are `failed` with the payload
+under `payload`; LLM consumers get a child's terminal output, not its
+execution record; CLI/REST/MCP report `status` + `has_errors`,
+`deliverable` null unless a terminal succeeded, CLI exits non-zero;
+`think` validated per provider before execution; OpenCode Go requests
+carry User-Agent and a salted per-invocation `x-opencode-session`.
+Four independent review rounds; suite 4677.
+
+**T1 regression-gate row (laptop, llama-server qwen3-8b, OpenCode, r=5
+each, same fixture):** main `938dfe8b` 0 correct / 1 shipped broken /
+3 refused / 1 client timeout; branch 0 / 1 / 4 / 0. No branch
+regression. The backend result is the finding: T1 is 0 of 10 correct on
+llama-server vs 3 of 8 on Ollama. Every miss traces to the 8b
+test-writer (tests with no import, self-contradicting expectations);
+the gate refuses honestly, and 2 of 10 shipped oracle-failing code.
+This is Next up 2's owed #90 gate, now measured for T1.
 
 ### Merged on local main this session
 
