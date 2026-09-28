@@ -77,10 +77,10 @@ class ProfileHandler:
         """Write directory for one scope; None when the project has none."""
         if scope == "global":
             return self._config_manager.global_config_dir / "profiles"
-        try:
-            return self.get_local_profiles_dir()
-        except ValueError:
+        local_config_dir = self._config_manager.local_config_dir
+        if local_config_dir is None:
             return None
+        return local_config_dir / "profiles"
 
     async def create_profile(self, arguments: dict[str, Any]) -> dict[str, Any]:
         """Create a new profile."""
@@ -98,7 +98,11 @@ class ProfileHandler:
         scope = parse_scope(arguments)
         local_dir = self._dir_for_scope(scope)
         if local_dir is None:
-            raise ValueError("No profiles directory configured")
+            global_profiles = self._config_manager.global_config_dir / "profiles"
+            raise ValueError(
+                "No project directory (.llm-orc) here; pass scope: global to "
+                f"write under {global_profiles}, or run llm-orc config init"
+            )
         target_file = local_dir / f"{name}.yaml"
         if target_file.exists():
             raise ValueError(f"Profile '{name}' already exists")

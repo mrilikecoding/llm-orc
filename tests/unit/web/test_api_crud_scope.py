@@ -29,6 +29,14 @@ def project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     return tmp_path
 
 
+@pytest.fixture
+def bare_project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """A cwd with no `.llm-orc` at all -- there is no project tier."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(web_api, "_orchestra_service", None)
+    return tmp_path
+
+
 class TestEnsembleScopeOverRest:
     def test_global_scope_lands_in_global_dir_and_lists_as_global(
         self, project: Path
@@ -90,6 +98,20 @@ class TestEnsembleScopeOverRest:
 
         assert response.status_code == 422
         assert not (project / ".llm-orc" / "ensembles" / "nope.yaml").exists()
+
+    def test_default_scope_without_project_dir_is_rejected(
+        self, bare_project: Path
+    ) -> None:
+        # raise_server_exceptions=False: the ValueError from having no
+        # project tier maps to a 500 today, same as the scope-mismatch
+        # delete case above.
+        with TestClient(create_app(), raise_server_exceptions=False) as client:
+            created = client.post(
+                "/api/ensembles", json={"name": "orphan", "agents": _AGENTS}
+            )
+
+        assert created.status_code != 200
+        assert not (resolve_global_config_dir() / "ensembles" / "orphan.yaml").exists()
 
 
 class TestProfileScopeOverRest:
