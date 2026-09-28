@@ -7,6 +7,7 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 from llm_orc.core.config.ensemble_config import EnsembleConfig
+from llm_orc.core.execution.utils import terminal_failure_summary
 from llm_orc.models.base import ModelInterface
 from llm_orc.schemas.agent_config import EnsembleAgentConfig
 
@@ -70,6 +71,15 @@ class EnsembleAgentRunner:
 
         # Execute child ensemble
         child_result = await child_executor.execute(child_config, input_data)
+
+        failure = terminal_failure_summary(
+            child_config.agents, child_result.get("results", {})
+        )
+        if failure is not None:
+            raise RuntimeError(
+                f"Ensemble '{agent_config.ensemble}' produced no successful "
+                f"terminal agent ({failure})"
+            )
 
         # Return full result dict as JSON
         return json.dumps(child_result), None, False

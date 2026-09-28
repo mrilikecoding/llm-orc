@@ -1,8 +1,13 @@
 """Tests for the ensembles API endpoints."""
 
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import yaml
 from fastapi.testclient import TestClient
+
+from llm_orc.core.config.config_manager import ConfigurationManager
+from llm_orc.services.orchestra_service import OrchestraService
 
 
 class TestEnsemblesAPI:
@@ -123,6 +128,74 @@ class TestEnsemblesAPI:
             assert data["runnable"] is True
             assert len(data["agents"]) == 1
             assert data["agents"][0]["status"] == "available"
+
+
+class TestExecuteEnsembleCallerContract:
+    """Outcome pins for the caller contract (fail-closed-composition,
+    Doctrine 11): a REAL OrchestraService (real ConfigurationManager,
+    real executor, real script agents) behind the REST endpoint, not a
+    mocked service.invoke — pins what a REST client actually receives
+    on the wire."""
+
+    @staticmethod
+    def _real_service(tmp_path: Path) -> OrchestraService:
+        (tmp_path / ".llm-orc" / "ensembles").mkdir(parents=True, exist_ok=True)
+        config_manager = ConfigurationManager(project_dir=tmp_path, provision=False)
+        return OrchestraService(config_manager=config_manager)
+
+    @staticmethod
+    def _write_ensemble(
+        tmp_path: Path, name: str, agents: list[dict[str, object]]
+    ) -> None:
+        path = tmp_path / ".llm-orc" / "ensembles" / f"{name}.yaml"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            yaml.dump(
+                {"name": name, "description": "REST outcome pin", "agents": agents}
+            )
+        )
+
+    def test_clean_run_reports_success(
+        self, client: TestClient, tmp_path: Path
+    ) -> None:
+        self._write_ensemble(
+            tmp_path, "clean", [{"name": "answer", "script": "echo '{\"ok\": true}'"}]
+        )
+        service = self._real_service(tmp_path)
+
+        with patch(
+            "llm_orc.web.api.ensembles.get_orchestra_service", return_value=service
+        ):
+            response = client.post(
+                "/api/ensembles/clean/execute", json={"input": "hello"}
+            )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "success"
+        assert data["has_errors"] is False
+        assert data["deliverable"] is not None
+
+    def test_failed_terminal_reports_error(
+        self, client: TestClient, tmp_path: Path
+    ) -> None:
+        self._write_ensemble(
+            tmp_path, "failed", [{"name": "answer", "script": "exit 1"}]
+        )
+        service = self._real_service(tmp_path)
+
+        with patch(
+            "llm_orc.web.api.ensembles.get_orchestra_service", return_value=service
+        ):
+            response = client.post(
+                "/api/ensembles/failed/execute", json={"input": "hello"}
+            )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "error"
+        assert data["has_errors"] is True
+        assert data["deliverable"] is None
 
     def test_check_runnable_with_unavailable_agents(self, client: TestClient) -> None:
         """Test that runnable endpoint shows unavailable agents correctly."""

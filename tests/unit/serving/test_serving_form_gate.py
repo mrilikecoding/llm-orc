@@ -261,3 +261,21 @@ def test_form_gate_defaults_seat_failed_empty_when_absent() -> None:
     gated = _gate({"build": False, "file": "solution.py", "content": "prose"})
 
     assert gated["seat_failed"] == ""
+
+
+def test_failed_shape_dependency_does_not_crash() -> None:
+    """fail-closed-composition rule 2: a failed shape dependency reaches
+    form_gate.py as ``{"status": "failed", "error": ..., "response":
+    None}`` instead of vanishing. ``_readable_shape`` already catches the
+    resulting TypeError, so this stays green — pinned so the accessor
+    parity fix (matching resolve/shape/seat_contract) never regresses."""
+    deps = {"shape": {"status": "failed", "error": "boom", "response": None}}
+    out = subprocess.run(
+        [sys.executable, str(FORM_GATE)],
+        input=json.dumps({"dependencies": deps}),
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    gated: dict[str, Any] = json.loads(out)
+    assert gated["node_failed"]

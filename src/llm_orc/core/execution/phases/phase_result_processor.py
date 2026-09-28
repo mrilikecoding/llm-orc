@@ -4,6 +4,7 @@ import logging
 from collections.abc import Callable
 from typing import Any
 
+from llm_orc.core.execution.outcome import stamp_outcome
 from llm_orc.core.execution.phases.agent_request_processor import AgentRequestProcessor
 from llm_orc.core.execution.result_types import AgentResult
 from llm_orc.core.execution.usage_collector import UsageCollector
@@ -105,7 +106,14 @@ class PhaseResultProcessor:
         agent_name: str,
         agent_result: AgentResult | dict[str, Any],
     ) -> None:
-        """Store agent result in results dictionary."""
+        """Store agent result in results dictionary.
+
+        The stamping point for LLM/script/ensemble/dispatch/loop nodes
+        (fail-closed-composition addendum 2026-09-23): every dispatched
+        agent's result, whichever of the five kinds it is, is built here
+        from its own ``status``/``error``, so ``stamp_outcome`` here is
+        the one place all five get their ``outcome``/``has_errors``.
+        """
         if isinstance(agent_result, AgentResult):
             results_dict[agent_name] = {
                 "response": agent_result.response,
@@ -114,6 +122,8 @@ class PhaseResultProcessor:
             }
             if agent_result.status == "failed":
                 results_dict[agent_name]["error"] = agent_result.error
+                if agent_result.payload:
+                    results_dict[agent_name]["payload"] = agent_result.payload
         else:
             results_dict[agent_name] = {
                 "response": agent_result.get("response"),
@@ -122,6 +132,10 @@ class PhaseResultProcessor:
             }
             if agent_result["status"] == "failed":
                 results_dict[agent_name]["error"] = agent_result["error"]
+                payload = agent_result.get("payload")
+                if payload:
+                    results_dict[agent_name]["payload"] = payload
+        stamp_outcome(results_dict[agent_name])
 
     async def _process_successful_agent_result(
         self,

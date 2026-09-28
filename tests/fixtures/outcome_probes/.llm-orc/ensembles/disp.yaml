@@ -1,0 +1,11 @@
+name: disp
+description: p
+agents:
+  - name: d
+    script: scripts/target.py
+  - name: seat
+    dispatch: "${d.t}"
+    depends_on: [d]
+  - name: after
+    script: scripts/echo.py
+    depends_on: [seat]

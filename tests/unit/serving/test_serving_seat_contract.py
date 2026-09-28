@@ -166,3 +166,29 @@ def test_a_rejected_seat_contract_refuses_before_the_deliverable_ships() -> None
     outcome = _emit(rejected_seat)
     assert outcome["finish"] is True
     assert "Seat contract" in outcome["content"]
+
+
+def test_failed_resolve_dependency_does_not_crash() -> None:
+    """fail-closed-composition rule 2: a failed resolve dependency now
+    reaches seat_contract.py as ``{"status": "failed", "error": ...,
+    "response": None}`` instead of vanishing. ``main``'s
+    ``json.loads(_response(deps.get("resolve", {})))`` must not crash on
+    a ``None`` response — an unreadable target vacuously admits, same as
+    a target-less seat."""
+    payload = json.dumps(
+        {
+            "dependencies": {
+                "resolve": {"status": "failed", "error": "boom", "response": None},
+                "seat": {"response": "some prose"},
+            }
+        }
+    )
+    out = subprocess.run(
+        [sys.executable, str(SEAT_CONTRACT)],
+        input=payload,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    result: dict[str, Any] = json.loads(out)
+    assert result["seat_admitted"] is True

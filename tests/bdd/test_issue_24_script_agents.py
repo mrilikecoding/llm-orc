@@ -1412,20 +1412,13 @@ def execute_script_with_permission_error(bdd_context: dict[str, Any]) -> None:
         result = asyncio.run(_async_execute())
         bdd_context["error_execution_result"] = result
 
-        # Check if script failed within ensemble execution
+        # Check if script failed within ensemble execution. The script's
+        # own failure (success: false, or a non-zero exit) is now the
+        # agent's status directly (fail-closed-composition B2) — no need
+        # to parse it back out of a JSON-encoded response.
         agent_results = result.get("results", {})
         script_result = agent_results.get("error-prone-script", {})
-        script_response = script_result.get("response", "{}")
-
-        # Parse script response to check for failure
-        try:
-            import json
-
-            response_data = json.loads(script_response)
-            script_success = response_data.get("success", True)
-            bdd_context["execution_failed"] = script_success is False
-        except json.JSONDecodeError:
-            bdd_context["execution_failed"] = False
+        bdd_context["execution_failed"] = script_result.get("status") == "failed"
 
     except Exception as e:
         bdd_context["error_execution_result"] = {
@@ -1445,16 +1438,10 @@ def validate_original_error_caught(bdd_context: dict[str, Any]) -> None:
     result = bdd_context.get("error_execution_result", {})
     agent_results = result.get("results", {})
     script_result = agent_results.get("error-prone-script", {})
-    script_response = script_result.get("response", "{}")
 
-    # Parse script response to get error details
-    import json
-
-    try:
-        response_data = json.loads(script_response)
-        error_info = response_data.get("error", "")
-    except json.JSONDecodeError:
-        error_info = script_response
+    # fail-closed-composition B2: the failed script's error text is the
+    # agent result's own "error" field, not JSON embedded in "response".
+    error_info = script_result.get("error") or ""
 
     # Check that permission-related error occurred
     assert any(
@@ -1488,16 +1475,10 @@ def validate_descriptive_error_message(bdd_context: dict[str, Any]) -> None:
     result = bdd_context.get("error_execution_result", {})
     agent_results = result.get("results", {})
     script_result = agent_results.get("error-prone-script", {})
-    script_response = script_result.get("response", "{}")
 
-    # Parse script response to get error details
-    import json
-
-    try:
-        response_data = json.loads(script_response)
-        error_message = response_data.get("error", "")
-    except json.JSONDecodeError:
-        error_message = script_response
+    # fail-closed-composition B2: the failed script's error text is the
+    # agent result's own "error" field, not JSON embedded in "response".
+    error_message = script_result.get("error") or ""
 
     # Error message should be substantive
     assert len(error_message) > 20, "Error message should be descriptive"
@@ -1516,18 +1497,11 @@ def validate_error_logging(bdd_context: dict[str, Any]) -> None:
     result = bdd_context.get("error_execution_result", {})
     agent_results = result.get("results", {})
     script_result = agent_results.get("error-prone-script", {})
-    script_response = script_result.get("response", "{}")
 
-    # Parse script response to get error details
-    import json
-
-    try:
-        response_data = json.loads(script_response)
-        assert "error" in response_data, "Error information should be captured"
-        assert response_data.get("success") is False, "Failure should be logged"
-    except json.JSONDecodeError:
-        # If response isn't JSON, we still have some error info
-        assert len(script_response) > 0, "Some error information should be available"
+    # fail-closed-composition B2: the failure is captured as the agent
+    # result's own status/error fields, not JSON embedded in "response".
+    assert script_result.get("status") == "failed", "Failure should be logged"
+    assert script_result.get("error"), "Error information should be captured"
 
     # In a full implementation, we'd check actual log files
     # For TDD, we're validating the error info structure exists
@@ -1542,20 +1516,13 @@ def validate_graceful_ensemble_failure(bdd_context: dict[str, Any]) -> None:
     assert isinstance(result, dict), "Should return structured result even on failure"
     assert "results" in result, "Should have results structure"
 
-    # Agent should report failure but ensemble should continue
+    # Agent should report failure, and the ensemble keeps going rather
+    # than raising — fail-closed-composition B2's status is the failure
+    # signal now, not JSON content buried inside a "success" response.
     agent_results = result.get("results", {})
     script_result = agent_results.get("error-prone-script", {})
-    assert script_result.get("status") == "success", "Agent execution should complete"
-
-    # But script content should indicate failure
-    script_response = script_result.get("response", "{}")
-    import json
-
-    try:
-        response_data = json.loads(script_response)
-        assert response_data.get("success") is False, "Script should report failure"
-    except json.JSONDecodeError:
-        pass  # If response isn't JSON, that's also a kind of failure
+    assert script_result.get("status") == "failed", "Agent should report failure"
+    assert script_result.get("error"), "Failure should carry error text"
 
 
 @then("dependent agents should receive clear error information")
@@ -1564,16 +1531,10 @@ def validate_dependent_agent_error_info(bdd_context: dict[str, Any]) -> None:
     result = bdd_context.get("error_execution_result", {})
     agent_results = result.get("results", {})
     script_result = agent_results.get("error-prone-script", {})
-    script_response = script_result.get("response", "{}")
 
-    # Parse script response to get error details
-    import json
-
-    try:
-        response_data = json.loads(script_response)
-        error_info = response_data.get("error", "")
-    except json.JSONDecodeError:
-        error_info = script_response
+    # fail-closed-composition B2: the failed script's error text is the
+    # agent result's own "error" field, not JSON embedded in "response".
+    error_info = script_result.get("error") or ""
 
     # For single agent test, just validate error structure
     # In multi-agent scenario, this would check downstream error propagation
@@ -1796,10 +1757,19 @@ def validate_concurrent_execution(bdd_context: dict[str, Any]) -> None:
         f"Should have multiple agent results, got: {len(agent_results)}"
     )
 
-    # Validate all agents completed
+    # Validate all agents completed (ran, one way or another). One of the
+    # three scripts (slow-script) is the read_protected_file.py fixture,
+    # which intentionally simulates a permission failure (see
+    # conftest.py) — reused here only for its distinct timing profile,
+    # not to exercise error handling. fail-closed-composition B2 now
+    # correctly reports that as a failed agent instead of a "success"
+    # wrapping the failure, so this only checks that every agent
+    # completed rather than hung.
     for agent_name, agent_result in agent_results.items():
-        status = agent_result.get("status", "failed")
-        assert status == "success", f"Agent {agent_name} should complete successfully"
+        status = agent_result.get("status")
+        assert status in ("success", "failed"), (
+            f"Agent {agent_name} should complete, got status: {status!r}"
+        )
 
 
 @then("total execution time should be bounded by the slowest script")

@@ -1,0 +1,8 @@
+name: looprunkid
+description: p
+agents:
+  - name: L
+    loop:
+      body: runkid
+      until: "${ok}"
+      max_iterations: 2

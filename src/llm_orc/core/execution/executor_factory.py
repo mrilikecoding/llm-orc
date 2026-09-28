@@ -27,12 +27,27 @@ class ExecutorFactory:
         project_dir: Path | None = None,
         *,
         save_artifacts: bool = True,
+        execution_id: str | None = None,
+        config_manager: ConfigurationManager | None = None,
+        credential_storage: CredentialStorage | None = None,
     ) -> EnsembleExecutor:
         """Create a top-level executor with fresh infrastructure.
 
         Args:
             project_dir: Project directory path.
             save_artifacts: Whether to save execution artifacts.
+            execution_id: Stable id for this top-level execution, shared
+                by every child executor and fan-out instance it spawns
+                (they share this ModelFactory instance). Generated when
+                omitted. Callers that already have a stable per-
+                conversation id (e.g. the serve's resolved Session
+                identity) should pass it through here.
+            config_manager: Reuse an already-constructed configuration
+                manager instead of paying its disk I/O again. A fresh
+                one is created when omitted.
+            credential_storage: Reuse already-constructed credential
+                storage likewise. A fresh one is created when omitted
+                (built from ``config_manager`` when that was reused).
 
         Returns:
             Configured EnsembleExecutor.
@@ -41,11 +56,13 @@ class ExecutorFactory:
             EnsembleExecutor,
         )
 
-        config_manager = ConfigurationManager(
+        config_manager = config_manager or ConfigurationManager(
             template_provider=LibraryTemplateProvider(),
         )
-        credential_storage = CredentialStorage(config_manager)
-        model_factory = ModelFactory(config_manager, credential_storage)
+        credential_storage = credential_storage or CredentialStorage(config_manager)
+        model_factory = ModelFactory(
+            config_manager, credential_storage, execution_id=execution_id
+        )
 
         return EnsembleExecutor(
             project_dir=project_dir,

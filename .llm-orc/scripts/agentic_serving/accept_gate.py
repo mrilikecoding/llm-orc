@@ -42,9 +42,15 @@ from _helpers import workspace_unplaced_reason as _workspace_unplaced_reason
 
 
 def _dep_response(deps: dict[str, object], name: str) -> str:
+    """A dependency node's response string ('' when absent, failed, or
+    non-string) — same rule as ``_helpers.response`` (SF7): a failed
+    dependency's ``response`` is present but ``None``, not absent, and
+    is never stringified to the literal "null"."""
     node = deps.get(name, {})
     if isinstance(node, dict):
-        resp = node.get("response", "")
+        resp = node.get("response")
+        if resp is None:
+            return ""
         return resp if isinstance(resp, str) else json.dumps(resp)
     return ""
 

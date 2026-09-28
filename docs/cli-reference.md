@@ -55,7 +55,17 @@ Structured data format for integration and automation:
 llm-orc invoke code-review --output-format json --input "code to review"
 ```
 
-Returns complete execution data including events, results, metadata, and dependency information.
+Returns complete execution data including results, metadata, dependency
+information, and the caller contract fields:
+
+- `status`: `"success"` or `"error"` — never a raw internal status string.
+- `has_errors`: the same information as `status`, as a boolean.
+- `deliverable`: the terminal agent's response, or `null` when no terminal
+  agent succeeded (an intermediate agent's output never stands in for it).
+
+The process exits non-zero whenever `status` is `"error"` — in every output
+format, not just JSON — so `llm-orc invoke ... && next-step` and `$?` work as
+expected even when using the Rich or text interface.
 
 #### Text Output  
 Clean, pipe-friendly format for command-line workflows:
@@ -149,7 +159,7 @@ mcp__llm-orc__list_ensembles        # See available ensembles
 **Core Execution**
 | Tool | Description |
 |------|-------------|
-| `invoke` | Execute ensemble with streaming progress, saves artifacts automatically |
+| `invoke` | Execute ensemble with streaming progress, saves artifacts automatically. Returns `status` ("success"/"error"), `has_errors`, `results`, and `deliverable` (`null` unless a terminal agent succeeded) — the same caller contract REST and `--output-format json` report. |
 | `list_ensembles` | List all ensembles from local/library/global sources |
 | `validate_ensemble` | Check config validity, profile availability, and dependencies |
 | `update_ensemble` | Modify ensemble config (supports dry-run and backup) |

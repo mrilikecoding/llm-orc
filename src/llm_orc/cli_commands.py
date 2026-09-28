@@ -208,7 +208,7 @@ def _execute_ensemble_with_mode(
     detailed: bool,
     requires_user_input: bool,
     effective_streaming: bool,
-) -> None:
+) -> bool:
     """Execute ensemble with the appropriate execution mode.
 
     Args:
@@ -219,27 +219,32 @@ def _execute_ensemble_with_mode(
         detailed: Detailed output flag
         requires_user_input: Whether ensemble requires user input
         effective_streaming: Whether to use streaming execution
+
+    Returns:
+        Whether the run's caller-facing status is "error" (fail-closed-
+        composition, caller contract) — the caller uses this to set a
+        non-zero process exit code.
     """
     # Convert None output_format to "rich" for execution functions
     execution_format = output_format or "rich"
 
     if requires_user_input:
         # Interactive execution with streaming visualization for progress control
-        asyncio.run(
+        return asyncio.run(
             run_streaming_execution(
                 executor, ensemble_config, input_data, execution_format, detailed
             )
         )
     elif effective_streaming:
         # Streaming execution with Rich status
-        asyncio.run(
+        return asyncio.run(
             run_streaming_execution(
                 executor, ensemble_config, input_data, execution_format, detailed
             )
         )
     else:
         # Standard execution
-        asyncio.run(
+        return asyncio.run(
             run_standard_execution(
                 executor, ensemble_config, input_data, execution_format, detailed
             )
@@ -257,8 +262,15 @@ def invoke_ensemble(
     detailed: bool,
     *,
     input_file: str | None = None,
-) -> None:
-    """Invoke an ensemble of agents."""
+) -> bool:
+    """Invoke an ensemble of agents.
+
+    Returns:
+        Whether the run's caller-facing status is "error" (fail-closed-
+        composition, caller contract) — ``cli.py``'s ``invoke`` command
+        uses this to set a non-zero process exit code in every output
+        format (rich/text/json alike).
+    """
     service = _get_service()
 
     # Resolve input data using helper method
@@ -313,7 +325,7 @@ def invoke_ensemble(
 
     # Execute the ensemble
     try:
-        _execute_ensemble_with_mode(
+        return _execute_ensemble_with_mode(
             executor,
             ensemble_config,
             input_data,

@@ -56,7 +56,65 @@ def _deps(raw: str) -> dict:
 
 
 def _response(dep: object) -> str:
-    return dep.get("response", "") if isinstance(dep, dict) else ""
+    # A failed or skipped dependency (fail-closed-composition rule 2) is
+    # now present with an explicit "response": None rather than vanishing
+    # from the dependencies dict — dict.get's default only covers an
+    # ABSENT key, so a bare ``.get("response", "")`` still hands `None`
+    # through here on a present-but-null value.
+    return (dep.get("response") or "") if isinstance(dep, dict) else ""
+
+
+def _dep_failed(dep: object) -> bool:
+    """True when ``dep``'s own execution was a plain failure.
+
+    Reads the explicit ``outcome`` field (fail-closed-composition
+    addendum 2026-09-23) when present — the live engine stamps it on
+    every node it produces, so this is what a real dependency record
+    actually carries. Falls back to the legacy ``status == "failed"``
+    check only when ``outcome`` is absent:
+    ``tests/unit/serving/test_serving_shape.py`` hand-builds dependency
+    dicts with ``status`` but no ``outcome``, and is the one caller left
+    that still does. The two checks agree on every record the engine
+    produces (a node's ``outcome`` reads ``"failed"`` exactly when its
+    ``status`` does — ``handled_failure`` never coincides with a
+    ``status`` of ``"failed"``), so this is a read-order preference, not
+    a behavior change.
+    """
+    if not isinstance(dep, dict):
+        return False
+    outcome = dep.get("outcome")
+    if outcome is not None:
+        return bool(outcome == "failed")
+    return dep.get("status") == "failed"
+
+
+def _dep_failure_text(dep: object) -> str:
+    """A dependency's own failure text, or "".
+
+    Two producers of the same fact, both read here. The current
+    contract (fail-closed-composition B2/B1): a script's own crash, or a
+    dispatch/ensemble agent whose child produced no successful terminal,
+    is recorded as ``status: "failed"`` with the text in ``error`` —
+    ``response`` is ``None``, so there is nothing to parse there any
+    more. Older callers (and the unit harness) that hand a dep straight
+    through with the engine's wrapped-JSON ``response`` and no ``status``
+    field are still read the old way, as a fallback: parse ``response``
+    for an embedded ``error`` key. The status-first check wins when both
+    could apply, since it is the one the live engine actually produces.
+    """
+    if _dep_failed(dep) and isinstance(dep, dict):
+        error = dep.get("error")
+        if isinstance(error, str) and error:
+            return error
+    try:
+        parsed = json.loads(_response(dep))
+    except (json.JSONDecodeError, TypeError):
+        return ""
+    if isinstance(parsed, dict):
+        error = parsed.get("error")
+        if isinstance(error, str) and error:
+            return error
+    return ""
 
 
 def _readable_decision(dep: object) -> dict | None:
@@ -107,19 +165,14 @@ def _routing_failure_reason(deps: dict) -> str:
     never the engine wrap's text, which embeds the subprocess argv
     (#168), and never raw stderr."""
     for name in ("resolve", "classify"):
-        try:
-            parsed = json.loads(_response(deps.get(name)))
-        except json.JSONDecodeError:
-            continue
-        if isinstance(parsed, dict):
-            error = parsed.get("error")
-            if isinstance(error, str) and error:
-                summary = _engine_failure_summary(error)
-                return (
-                    "serving pipeline error: no readable routing decision "
-                    f"this turn ({name}: {summary}); nothing was built or "
-                    "written"
-                )
+        error = _dep_failure_text(deps.get(name))
+        if error:
+            summary = _engine_failure_summary(error)
+            return (
+                "serving pipeline error: no readable routing decision "
+                f"this turn ({name}: {summary}); nothing was built or "
+                "written"
+            )
     return (
         "serving pipeline error: no readable routing decision this turn; "
         "nothing was built or written"
@@ -144,27 +197,46 @@ def _envelope_deliverable(seat_terminal: str) -> str | None:
     return primary if isinstance(primary, str) else None
 
 
-def _dead_seat_reason(seat_terminal: str) -> str:
+def _dead_seat_reason(seat_dep: object, seat_terminal: str) -> str:
     """Why the seat is dead, or ``""`` when it isn't (#174).
 
-    Positive recognition, not a denylist: a seat terminal that parses as a
-    JSON dict WITHOUT ``status`` is not a healthy seat output whatever else
-    it may be — a raw-prose seat (the explainer) never parses as a dict at
-    all, and a healthy ADR-024 envelope always carries ``status``. Both
-    engine failure families are dicts of this disjoint shape by
-    construction: ``execute_with_schema_json``'s wrap
-    (``success``/``data``/``error``/``agent_requests``) and the sub-ensemble
-    ``ScriptAgent.execute`` ``{success, error, stderr}`` shape.
+    Two ways a seat can be dead, checked in order:
+
+    1. The seat (a ``dispatch:`` agent) failed closed on its OWN outcome
+       (fail-closed-composition B1, extended to dynamic dispatch; ``_dep_
+       failed`` reads the addendum's ``outcome`` field, falling back to
+       ``status`` for the unit harness): none of the dispatched
+       ensemble's terminal agents succeeded, so the seat's own
+       dependency record is ``status: "failed"`` with the reason in
+       ``error`` — ``response`` is ``None``, nothing to peel. This is
+       the live engine's actual shape today.
+    2. Positive recognition over ``seat_terminal``, not a denylist: a
+       seat terminal that parses as a JSON dict WITHOUT ``status`` is not
+       a healthy seat output whatever else it may be — a raw-prose seat
+       (the explainer) never parses as a dict at all, and a healthy
+       ADR-024 envelope always carries ``status``. Both engine failure
+       families are dicts of this disjoint shape by construction:
+       ``execute_with_schema_json``'s wrap
+       (``success``/``data``/``error``/``agent_requests``) and the
+       sub-ensemble ``ScriptAgent.execute`` ``{success, error, stderr}``
+       shape. Kept as a fallback for a dep handed straight through
+       without a ``status`` field (the unit harness; any caller not
+       going through AgentDispatcher's B1/B2 contract).
 
     Named bound (accepted the way #155 accepted its seat_contract
     trip-wire): an explainer answer that happens to BE a parseable JSON
     dict without ``status`` is indistinguishable from a dead seat here and
     wrong-refuses. The system prompt forbids that shape.
 
-    The reason text is built ONLY from ``_engine_failure_summary`` over the
-    dict's string ``error`` field — never ``stderr``, argv, or any other
+    The reason text is built ONLY from ``_engine_failure_summary`` over
+    the failure's ``error`` text — never ``stderr``, argv, or any other
     dict value; ``turn_trace.py`` keeps the whole thing server-side.
     """
+    if _dep_failed(seat_dep) and isinstance(seat_dep, dict):
+        error = seat_dep.get("error")
+        if isinstance(error, str) and error:
+            return _engine_failure_summary(error)
+        return "failed"
     try:
         env = json.loads(seat_terminal)
     except (json.JSONDecodeError, TypeError):
@@ -274,7 +346,12 @@ def main() -> None:
         decision = {}
         routing_failed = _routing_failure_reason(deps)
 
-    seat_terminal = _terminal(_response(deps.get("seat", {})))
+    seat_dep = deps.get("seat", {})
+    # `_terminal` peels through a healthy child result's own `response`
+    # chain; a defensive `or ""` guards the (should-not-happen) case
+    # where that peel bottoms out on a present-but-null `response`
+    # rather than a string, so `.strip()` below never sees `None`.
+    seat_terminal = _terminal(_response(seat_dep)) or ""
     deliverable = _envelope_deliverable(seat_terminal)
     seat_failed = ""
     if deliverable is None:
@@ -282,7 +359,7 @@ def main() -> None:
         # seat output — zero the deliverable as defense in depth rather than
         # ship the engine's failure envelope. Everything that does not parse
         # to a dict stays raw prose, unaffected.
-        seat_failed = _dead_seat_reason(seat_terminal)
+        seat_failed = _dead_seat_reason(seat_dep, seat_terminal)
         deliverable = "" if seat_failed else seat_terminal.strip()
 
     accept, accept_reason = _envelope_verdict(seat_terminal)

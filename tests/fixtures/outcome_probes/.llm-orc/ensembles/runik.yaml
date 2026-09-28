@@ -1,0 +1,10 @@
+name: runik
+description: p
+agents:
+  - name: a
+    script: scripts/fail.py
+  - name: k
+    ensemble: whenskip
+    depends_on: [a]
+    input_key: q
+    on_dependency_failure: run

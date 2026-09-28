@@ -1321,7 +1321,11 @@ class TestMCPServerStreamingExecution:
     async def test_handle_streaming_event_execution_completed(
         self, server: MCPServer, mock_reporter: MagicMock
     ) -> None:
-        """Handle execution_completed event sets result."""
+        """Handle execution_completed event sets the caller-facing result
+        (fail-closed-composition, caller contract: MCP invoke's
+        execute_streaming path used to hand back the raw internal status
+        unmapped, e.g. "completed_with_errors", instead of the
+        "success"/"error" vocabulary REST already used)."""
         event = {
             "type": "execution_completed",
             "data": {
@@ -1339,9 +1343,37 @@ class TestMCPServerStreamingExecution:
 
         await server._handle_streaming_event(event, mock_reporter, 2, state)
 
-        assert state["result"]["status"] == "completed"
+        assert state["result"]["status"] == "success"
+        assert state["result"]["has_errors"] is False
         assert state["result"]["deliverable"] == "combined"
         mock_reporter.report_progress.assert_called_once_with(progress=2, total=2)
+
+    @pytest.mark.asyncio
+    async def test_handle_streaming_event_execution_completed_with_errors(
+        self, server: MCPServer, mock_reporter: MagicMock
+    ) -> None:
+        """A partial-failure run maps to the same "error" value a hard
+        crash does — one vocabulary, not a third status string."""
+        event = {
+            "type": "execution_completed",
+            "data": {
+                "results": {"agent1": {"status": "failed"}},
+                "deliverable": None,
+                "status": "completed_with_errors",
+            },
+        }
+        state: dict[str, Any] = {
+            "completed": 2,
+            "result": {},
+            "ensemble_name": "test",
+            "input_data": "test input",
+        }
+
+        await server._handle_streaming_event(event, mock_reporter, 2, state)
+
+        assert state["result"]["status"] == "error"
+        assert state["result"]["has_errors"] is True
+        assert state["result"]["deliverable"] is None
 
     @pytest.mark.asyncio
     async def test_handle_streaming_event_execution_failed(
@@ -1353,7 +1385,8 @@ class TestMCPServerStreamingExecution:
 
         await server._handle_streaming_event(event, mock_reporter, 2, state)
 
-        assert state["result"]["status"] == "failed"
+        assert state["result"]["status"] == "error"
+        assert state["result"]["has_errors"] is True
         assert state["result"]["error"] == "Test error"
         mock_reporter.error.assert_called_once_with("Execution failed: Test error")
 

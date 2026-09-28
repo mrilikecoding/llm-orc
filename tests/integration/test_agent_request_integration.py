@@ -269,7 +269,11 @@ print(json.dumps(output))
 
         # Create mock role resolver
         mock_role_resolver = Mock(return_value="Test Role")
-        dependency_resolver = DependencyResolver(mock_role_resolver)
+        dependency_resolver = DependencyResolver(
+            mock_role_resolver,
+            dependency_config_lookup=lambda _name: None,
+            ensemble_terminal_agents=lambda _ref: [],
+        )
 
         # Create AgentRequestProcessor with DependencyResolver
         processor = AgentRequestProcessor(dependency_resolver)

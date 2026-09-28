@@ -112,16 +112,22 @@ class TestDepthLimitPreventsUnboundedNesting:
 
 
 class TestChildEnsembleFailureIsAgentFailure:
-    """Scenario 11: Child ensemble failure is an agent failure."""
+    """Scenario 11: Child ensemble failure is an agent failure
+    (fail-closed-composition B1). The ensemble agent FAILS when none of
+    the child's terminal agents succeeded — its error names the child's
+    terminal failures. Raising here (rather than returning a status
+    field) is caught by AgentDispatcher's existing
+    ``_handle_agent_execution_failure``, the same path
+    ``EnsembleAgentRunner``'s own depth-limit error already uses."""
 
     @pytest.mark.asyncio
-    async def test_child_failure_returns_error_status(self) -> None:
-        """Failed child ensemble produces agent failure, not crash."""
+    async def test_sole_terminal_failure_fails_the_agent(self) -> None:
+        """A single-agent child whose one terminal failed: no terminal
+        succeeded, so the ensemble agent fails, naming it."""
         from llm_orc.core.execution.runners.ensemble_runner import (
             EnsembleAgentRunner,
         )
 
-        # Mock a child executor that returns an error result
         mock_child = AsyncMock()
         mock_child.execute = AsyncMock(
             return_value={
@@ -151,15 +157,158 @@ class TestChildEnsembleFailureIsAgentFailure:
 
         config = EnsembleAgentConfig(name="analysis", ensemble="child-ensemble")
 
+        with pytest.raises(RuntimeError) as exc_info:
+            await runner.execute(config, "test input")
+
+        assert "worker" in str(exc_info.value)
+        assert "boom" in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_one_of_two_terminals_succeeding_is_agent_success(self) -> None:
+        """A multi-terminal child: one terminal failed, the other
+        succeeded. At least one terminal succeeded, so the ensemble
+        agent succeeds — the full child result (including the failed
+        terminal's error) still reaches the response for
+        DependencyResolver's per-terminal rendering (fail-closed-
+        composition D)."""
+        from llm_orc.core.execution.runners.ensemble_runner import (
+            EnsembleAgentRunner,
+        )
+
+        mock_child = AsyncMock()
+        mock_child.execute = AsyncMock(
+            return_value={
+                "status": "completed_with_errors",
+                "results": {
+                    "search_a": {"status": "failed", "error": "timeout"},
+                    "search_b": {"status": "success", "response": "found it"},
+                },
+                "metadata": {},
+            }
+        )
+
+        child_config = EnsembleConfig(
+            name="child",
+            description="Test child",
+            agents=[
+                ScriptAgentConfig(name="search_a", script="echo a"),
+                ScriptAgentConfig(name="search_b", script="echo b"),
+            ],
+        )
+
+        mock_parent = Mock()
+        mock_parent.create_child_executor.return_value = mock_child
+
+        runner = EnsembleAgentRunner(
+            ensemble_loader=lambda _name: child_config,
+            parent_executor=mock_parent,
+            current_depth=0,
+            depth_limit=5,
+        )
+
+        config = EnsembleAgentConfig(name="analysis", ensemble="child-ensemble")
+
         response, model_instance, model_substituted = await runner.execute(
             config, "test input"
         )
 
-        # Should return the child result as JSON, not crash
         result_data = json.loads(response)
-        assert result_data["status"] == "completed_with_errors"
+        assert result_data["results"]["search_b"]["status"] == "success"
+        assert result_data["results"]["search_a"]["status"] == "failed"
         assert model_instance is None
         assert model_substituted is False
+
+    @pytest.mark.asyncio
+    async def test_intermediate_failure_with_successful_terminal_is_agent_success(
+        self,
+    ) -> None:
+        """A single-terminal child where an INTERMEDIATE agent failed but
+        the terminal still succeeded (it had another successful
+        dependency, per Invariant 13): the ensemble agent succeeds."""
+        from llm_orc.core.execution.runners.ensemble_runner import (
+            EnsembleAgentRunner,
+        )
+
+        mock_child = AsyncMock()
+        mock_child.execute = AsyncMock(
+            return_value={
+                "status": "completed_with_errors",
+                "results": {
+                    "fetch": {"status": "failed", "error": "network down"},
+                    "note": {"status": "success", "response": "static note"},
+                    "format": {"status": "success", "response": "formatted"},
+                },
+                "metadata": {},
+            }
+        )
+
+        child_config = EnsembleConfig(
+            name="child",
+            description="Test child",
+            agents=[
+                ScriptAgentConfig(name="fetch", script="echo fetch"),
+                ScriptAgentConfig(name="note", script="echo note"),
+                ScriptAgentConfig(
+                    name="format",
+                    script="echo format",
+                    depends_on=["fetch", "note"],
+                ),
+            ],
+        )
+
+        mock_parent = Mock()
+        mock_parent.create_child_executor.return_value = mock_child
+
+        runner = EnsembleAgentRunner(
+            ensemble_loader=lambda _name: child_config,
+            parent_executor=mock_parent,
+            current_depth=0,
+            depth_limit=5,
+        )
+
+        config = EnsembleAgentConfig(name="analysis", ensemble="child-ensemble")
+
+        response, model_instance, model_substituted = await runner.execute(
+            config, "test input"
+        )
+
+        result_data = json.loads(response)
+        assert result_data["results"]["format"]["status"] == "success"
+
+    @pytest.mark.asyncio
+    async def test_empty_child_falls_open_to_success(self) -> None:
+        """A child config with no agents has no terminals to check —
+        falls open rather than manufacturing a failure the resolver
+        never asked for (mirrors _terminal_agents_for_ensemble's own
+        resolution-failure default)."""
+        from llm_orc.core.execution.runners.ensemble_runner import (
+            EnsembleAgentRunner,
+        )
+
+        mock_child = AsyncMock()
+        mock_child.execute = AsyncMock(
+            return_value={"status": "completed", "results": {}, "metadata": {}}
+        )
+
+        child_config = EnsembleConfig(name="child", description="Empty", agents=[])
+
+        mock_parent = Mock()
+        mock_parent.create_child_executor.return_value = mock_child
+
+        runner = EnsembleAgentRunner(
+            ensemble_loader=lambda _name: child_config,
+            parent_executor=mock_parent,
+            current_depth=0,
+            depth_limit=5,
+        )
+
+        config = EnsembleAgentConfig(name="analysis", ensemble="child-ensemble")
+
+        response, _model_instance, _model_substituted = await runner.execute(
+            config, "test input"
+        )
+
+        assert json.loads(response)["status"] == "completed"
 
 
 class TestEnsembleAgentExecutesChildEnsemble:
@@ -225,3 +374,109 @@ class TestEnsembleAgentExecutesChildEnsemble:
             assert "worker" in child_result["results"]
         finally:
             Path(child_path).unlink()
+
+
+class TestEnsembleExecutorTerminalAgentLookups:
+    """fail-closed-composition D: EnsembleExecutor exposes the lookups
+    DependencyResolver needs to render an LLM consumer's ensemble
+    dependency as terminal responses, instead of the raw execution
+    record.
+    """
+
+    def test_get_agent_config_finds_dependency_by_name(self) -> None:
+        """Looks up a sibling agent's own config by name."""
+        executor = ExecutorFactory.create_root_executor()
+        config = EnsembleConfig(
+            name="parent",
+            description="Test parent",
+            agents=[
+                EnsembleAgentConfig(name="searcher", ensemble="web-searcher"),
+            ],
+        )
+        executor._agent_configs = config.agents
+
+        found = executor._get_agent_config("searcher")
+
+        assert found is config.agents[0]
+        assert executor._get_agent_config("missing") is None
+
+    def test_terminal_agents_for_ensemble_resolves_child_graph(self) -> None:
+        """Terminal names come from the same reference EnsembleAgentRunner
+        resolves to run the child — the agents no other agent in the
+        child depends on."""
+        executor = ExecutorFactory.create_root_executor()
+        child_config = EnsembleConfig(
+            name="web-searcher",
+            description="Test child",
+            agents=[
+                ScriptAgentConfig(name="fetch", script="echo ok"),
+                ScriptAgentConfig(
+                    name="format", script="echo ok", depends_on=["fetch"]
+                ),
+            ],
+        )
+
+        def _resolve(_ref: str) -> EnsembleConfig:
+            return child_config
+
+        executor._resolve_ensemble_reference = _resolve  # type: ignore[assignment]
+
+        terminals = executor._terminal_agents_for_ensemble("web-searcher")
+
+        assert terminals == ["format"]
+
+    def test_terminal_agents_for_ensemble_missing_ensemble_yields_empty(self) -> None:
+        """A resolution failure yields an empty list, not a crash — the
+        resolver falls back to the child's own results dict."""
+        executor = ExecutorFactory.create_root_executor()
+
+        def _raise(_ref: str) -> EnsembleConfig:
+            raise FileNotFoundError("nope")
+
+        executor._resolve_ensemble_reference = _raise  # type: ignore[assignment]
+
+        assert executor._terminal_agents_for_ensemble("missing") == []
+
+    def test_root_executor_wires_working_lookups_into_dependency_resolver(
+        self,
+    ) -> None:
+        """SF6: ``DependencyResolver``'s ``dependency_config_lookup`` /
+        ``ensemble_terminal_agents`` are required constructor arguments,
+        not optional-and-defaulted — a mutant that drops them at this
+        construction site (ensemble_execution.py) raises ``TypeError``
+        here rather than silently reverting every LLM consumer of an
+        ``ensemble:`` dependency to the pre-D full-JSON-record render.
+        Beyond "were they passed", this pins that they actually WORK:
+        the lookup finds a sibling agent by name and the terminal-agents
+        callable resolves a real child ensemble's graph.
+        """
+        executor = ExecutorFactory.create_root_executor()
+        config = EnsembleConfig(
+            name="parent",
+            description="Test parent",
+            agents=[
+                EnsembleAgentConfig(name="searcher", ensemble="web-searcher"),
+            ],
+        )
+        executor._agent_configs = config.agents
+
+        resolver = executor._dependency_resolver
+        found = resolver._get_dependency_config("searcher")
+        assert found is config.agents[0]
+
+        child_config = EnsembleConfig(
+            name="web-searcher",
+            description="Test child",
+            agents=[
+                ScriptAgentConfig(name="fetch", script="echo ok"),
+                ScriptAgentConfig(
+                    name="format", script="echo ok", depends_on=["fetch"]
+                ),
+            ],
+        )
+
+        def _resolve(_ref: str) -> EnsembleConfig:
+            return child_config
+
+        executor._resolve_ensemble_reference = _resolve  # type: ignore[assignment]
+        assert resolver._ensemble_terminal_agents("web-searcher") == ["format"]

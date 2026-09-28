@@ -4,6 +4,7 @@ import json
 from collections.abc import Callable
 from typing import Any
 
+from llm_orc.core.execution.outcome import is_ok
 from llm_orc.core.execution.utils import dep_name
 from llm_orc.schemas.agent_config import (
     AgentConfig,
@@ -43,9 +44,26 @@ class DependencyResolver:
     def __init__(
         self,
         role_resolver: Callable[[str], str | None],
+        dependency_config_lookup: Callable[[str], AgentConfig | None],
+        ensemble_terminal_agents: Callable[[str], list[str]],
     ) -> None:
-        """Initialize resolver with role description function."""
+        """Initialize resolver with role description function.
+
+        ``dependency_config_lookup`` and ``ensemble_terminal_agents`` let
+        the resolver tell an ``ensemble:`` dependency apart from any
+        other and look up its child's terminal agent names, to render
+        terminal responses instead of the raw execution record
+        (fail-closed-composition D). SF6: required rather than
+        optional-and-only-used-together — an ensemble_execution.py
+        construction site that drops them used to degrade silently back
+        to the pre-D full-JSON-record behavior; a caller with no
+        meaningful lookup passes an explicit stub (``lambda name: None``
+        / ``lambda ref: []``) instead, so the degradation is visible in
+        the call site rather than absorbed here.
+        """
         self._get_agent_role_description = role_resolver
+        self._get_dependency_config = dependency_config_lookup
+        self._ensemble_terminal_agents = ensemble_terminal_agents
 
     def enhance_input_with_dependencies(
         self,
@@ -113,7 +131,7 @@ class DependencyResolver:
                 return selected
 
         dependency_results = self._extract_successful_dependency_results(
-            dependencies, effective_results
+            dependencies, effective_results, agent_config
         )
 
         if isinstance(agent_config, ChildExecutionConfig):
@@ -157,9 +175,48 @@ class DependencyResolver:
             return None
         first_dep = dep_name(agent_config.depends_on[0])
         dep_result = effective_results.get(first_dep, {})
-        if dep_result.get("status") == "success":
+        if is_ok(dep_result):
             return str(dep_result.get("response", ""))
         return None
+
+    def child_input_key_contract_error(
+        self, agent_config: AgentConfig, results_dict: dict[str, Any]
+    ) -> str | None:
+        """None when a child-execution node's ``input_key`` contract is
+        satisfiable; otherwise an error naming the upstream agent and
+        the key (fail-closed-composition, the input_key/depends_on[0]
+        decision).
+
+        ``input_key`` on an ``ensemble:``/``loop:``/``dispatch:`` node
+        selects ``depends_on[0]``'s response verbatim (ADR-014) — the
+        node's ENTIRE input, not one dependency among several. If
+        ``depends_on[0]`` did not succeed, there is no honest verbatim
+        value to hand the child, even when some OTHER dependency did
+        succeed: silently composing a different, unrequested input shape
+        (base input plus the other deps' data) would let a failed step
+        reach the child as a success by another route. This is checked
+        and the agent failed before it ever runs, the same way a fan-out
+        agent's own ``input_key`` contract failure already works. A
+        fan-out original (``fan_out: true``) is excluded — FanOutCoordinator
+        already applies this exact check ahead of expansion, with its
+        own error text; this method only covers the non-fan-out case.
+        """
+        if not isinstance(agent_config, ChildExecutionConfig):
+            return None
+        if agent_config.fan_out or not agent_config.input_key:
+            return None
+        if not agent_config.depends_on:
+            return None
+        first_dep = dep_name(agent_config.depends_on[0])
+        dep_result = results_dict.get(first_dep, {})
+        if is_ok(dep_result):
+            return None
+        status = dep_result.get("status") if isinstance(dep_result, dict) else None
+        return (
+            f"Agent '{agent_config.name}' cannot run: input_key "
+            f"'{agent_config.input_key}' selects from upstream agent "
+            f"'{first_dep}', which did not succeed (status: {status!r})"
+        )
 
     def _child_contract_input(
         self,
@@ -207,7 +264,7 @@ class DependencyResolver:
         first_dep = dep_name(agent_config.depends_on[0])
         dep_result = results_dict.get(first_dep, {})
 
-        if dep_result.get("status") != "success":
+        if not is_ok(dep_result):
             return results_dict, None
 
         response = dep_result.get("response", "")
@@ -245,38 +302,298 @@ class DependencyResolver:
         return modified, None
 
     def _extract_successful_dependency_results(
-        self, dependencies: list[str | dict[str, Any]], results_dict: dict[str, Any]
+        self,
+        dependencies: list[str | dict[str, Any]],
+        results_dict: dict[str, Any],
+        consumer_config: AgentConfig | None = None,
     ) -> list[str]:
-        """Extract successful dependency results with role attribution.
+        """Extract dependency results with role attribution.
+
+        Despite the name (kept for the extracted-helper test), this
+        covers every dependency PRESENT in ``results_dict``, not only
+        successful ones: a failed or skipped dependency renders as a
+        named ``(status): detail`` block instead of silently vanishing
+        (fail-closed-composition rule 2 — a failed step never reaches a
+        downstream consumer as an unqualified success). A dependency
+        entirely absent from ``results_dict`` is still omitted.
 
         Args:
             dependencies: List of dependency names (str or dict form)
             results_dict: Dictionary of previous agent results
+            consumer_config: The dependent agent's own config. When it is
+                an LLM agent, a successful ``ensemble:`` dependency's
+                response renders as its child's terminal agent responses
+                instead of the raw execution record (fail-closed-
+                composition D). The dependency selected by the consumer's
+                own ``input_key`` is left verbatim — that selection
+                already happened in ``_apply_input_key_selection``.
 
         Returns:
             List of formatted dependency result strings
         """
+        input_key_dep = self._input_key_selected_dep_name(consumer_config)
         dependency_results = []
         for dep in dependencies:
             agent_dep_name = dep_name(dep)
-            if (
-                agent_dep_name in results_dict
-                and results_dict[agent_dep_name].get("status") == "success"
-            ):
-                response = results_dict[agent_dep_name]["response"]
-                dep_role = self._get_agent_role_description(agent_dep_name)
-                role_text = f" ({dep_role})" if dep_role else ""
+            if agent_dep_name not in results_dict:
+                continue
+            result = results_dict[agent_dep_name]
+            dep_role = self._get_agent_role_description(agent_dep_name)
+            role_text = f" ({dep_role})" if dep_role else ""
 
+            # S2: outcome.is_ok, not a literal status membership check —
+            # a handled_failure dependency's status is in
+            # SUCCEEDED_STATUSES (it ran without incident), but its
+            # output is a composed refusal over a real failure, not
+            # forward progress a consumer should read as unqualified
+            # success (rule 2).
+            if is_ok(result):
+                response = result["response"]
+                if (
+                    isinstance(consumer_config, LlmAgentConfig)
+                    and agent_dep_name != input_key_dep
+                ):
+                    response = self._render_fan_out_or_ensemble_dependency(
+                        agent_dep_name, result
+                    )
                 dependency_results.append(
                     f"Agent {agent_dep_name}{role_text}:\n{response}"
+                )
+            else:
+                dependency_results.append(
+                    self._render_non_success_dependency_block(
+                        agent_dep_name, role_text, result
+                    )
                 )
 
         return dependency_results
 
+    @staticmethod
+    def _render_non_success_dependency_block(
+        agent_dep_name: str, role_text: str, result: dict[str, Any]
+    ) -> str:
+        """A named block for a dependency that does not count as ok
+        (failed, skipped, or handled_failure) — fail-closed-composition
+        rule 2: the consumer sees which upstream agent failed and why,
+        in the same shape the engine already uses for a failed ensemble
+        terminal (``_render_terminal_block``).
+
+        A ``handled_failure`` dependency's own ``status`` reads
+        ``"success"`` (it ran without incident), so it is named by its
+        ``handled_failure_reason`` — the real upstream failure it
+        composed a refusal over — instead of a misleading
+        ``(success): <refusal text>``.
+        """
+        if result.get("handled_failure"):
+            reason = result.get("handled_failure_reason")
+            reason_suffix = f": {reason}" if reason else ""
+            return f"Agent {agent_dep_name}{role_text} (handled failure{reason_suffix})"
+        status = result.get("status", "failed")
+        detail = result.get("error") or result.get("reason") or result.get("response")
+        detail_text = detail or "no response"
+        return f"Agent {agent_dep_name}{role_text} ({status}): {detail_text}"
+
+    @staticmethod
+    def _input_key_selected_dep_name(
+        consumer_config: AgentConfig | None,
+    ) -> str | None:
+        """The dependency name already resolved by the consumer's own
+        ``input_key`` (ADR-014), or None. That dependency's response was
+        already replaced with the selected value in
+        ``_apply_input_key_selection`` and must not be re-rendered."""
+        if consumer_config is None or not consumer_config.input_key:
+            return None
+        if not consumer_config.depends_on:
+            return None
+        return dep_name(consumer_config.depends_on[0])
+
+    def _render_fan_out_or_ensemble_dependency(
+        self, dep_agent_name: str, result: dict[str, Any]
+    ) -> Any:
+        """A ``success``/``partial`` dependency's response for an LLM
+        consumer, ahead of the generic ``Agent X:`` wrap.
+
+        A genuinely empty gathered fan-out (the upstream array was
+        ``[]``) renders as an explicit statement rather than an empty
+        block (SF4) — checked before the ensemble-specific render, since
+        it applies to any fan-out dependency, not only an ``ensemble:``
+        one. Otherwise falls through to
+        ``_render_ensemble_dependency``.
+        """
+        response = result.get("response")
+        if result.get("fan_out") and isinstance(response, list) and not response:
+            return (
+                f"Agent {dep_agent_name}: produced zero instances "
+                "(upstream list was empty)"
+            )
+        return self._render_ensemble_dependency(dep_agent_name, result)
+
+    def _render_ensemble_dependency(
+        self, dep_agent_name: str, result: dict[str, Any]
+    ) -> Any:
+        """An ``ensemble:`` dependency's response for an LLM consumer
+        (fail-closed-composition D). A plain (non-ensemble) fan-out
+        dependency's gathered instance list renders per-instance (SF1)
+        instead. Falls through to the raw response unchanged when the
+        dependency isn't an ensemble agent AND isn't a fan-out (SF6: the
+        lookups themselves are always wired — a caller with nothing
+        meaningful to look up passes an explicit stub).
+        """
+        response = result.get("response")
+        dep_config = self._get_dependency_config(dep_agent_name)
+        if not isinstance(dep_config, EnsembleAgentConfig):
+            if result.get("fan_out") and isinstance(response, list):
+                return self._render_plain_fan_out(response, result)
+            return response
+        terminals = self._ensemble_terminal_agents(dep_config.ensemble)
+        instance_errors = self._fan_out_instance_errors(result)
+        return self._render_ensemble_response(response, terminals, instance_errors)
+
+    def _render_plain_fan_out(self, response: list[Any], result: dict[str, Any]) -> str:
+        """A plain (non-ensemble: script or LLM) fan-out dependency's
+        gathered instance list for an LLM consumer (SF1): each
+        successful instance's own text, each failed one named by its
+        error — the same shape a failed ensemble fan-out instance gets
+        (``_render_raw_fallback``), instead of the raw Python list a
+        consumer used to see (``['inst-ok ...', None]``).
+        """
+        errors = self._fan_out_instance_errors(result)
+        blocks = [
+            self._render_raw_fallback(item, index=idx, error=errors.get(idx))
+            for idx, item in enumerate(response)
+        ]
+        return "\n\n".join(blocks)
+
+    @staticmethod
+    def _fan_out_instance_errors(result: dict[str, Any]) -> dict[int, str]:
+        """``index -> error`` for each failed instance of a gathered
+        fan-out dependency (a ``partial`` status), so a failed instance's
+        block can name why it has nothing to show instead of rendering
+        a bare "(no result)" (fail-closed-composition, partial fan-out
+        decision)."""
+        instances = result.get("instances")
+        if not isinstance(instances, list):
+            return {}
+        errors: dict[int, str] = {}
+        for item in instances:
+            if not isinstance(item, dict) or item.get("status") != "failed":
+                continue
+            index = item.get("index")
+            error = item.get("error")
+            if isinstance(index, int) and error:
+                errors[index] = str(error)
+        return errors
+
+    def _render_ensemble_response(
+        self,
+        response: Any,
+        terminals: list[str],
+        instance_errors: dict[int, str] | None = None,
+    ) -> str:
+        """One labeled block per terminal agent. A plain (non-fan-out)
+        ensemble dependency is a single child result; a gathered fan-out
+        dependency is a list of them, one per instance."""
+        if isinstance(response, list):
+            errors = instance_errors or {}
+            blocks = [
+                self._render_child_result(
+                    item, terminals, index=idx, error=errors.get(idx)
+                )
+                for idx, item in enumerate(response)
+            ]
+            return "\n\n".join(blocks)
+        return self._render_child_result(response, terminals, index=None)
+
+    def _render_child_result(
+        self,
+        raw: Any,
+        terminals: list[str],
+        index: int | None,
+        error: str | None = None,
+    ) -> str:
+        """Terminal blocks for a single child result. A child result that
+        doesn't parse into the expected shape — the child failed, or the
+        ensemble reference didn't resolve so ``terminals`` is empty —
+        renders what's there honestly instead of going silently empty.
+        ``error`` is the failed fan-out instance's own error text
+        (``None`` for a non-fan-out or successful item).
+        """
+        parsed = self._parse_child_result(raw)
+        results = parsed.get("results") if parsed is not None else None
+        if not isinstance(results, dict):
+            return self._render_raw_fallback(raw, index, error)
+        names = terminals or list(results.keys())
+        blocks = [
+            self._render_terminal_block(name, results.get(name), index)
+            for name in names
+        ]
+        return "\n\n".join(blocks)
+
+    @staticmethod
+    def _parse_child_result(raw: Any) -> dict[str, Any] | None:
+        """Parse a child result to a dict, or None when it doesn't."""
+        if isinstance(raw, dict):
+            return raw
+        if not isinstance(raw, str):
+            return None
+        try:
+            parsed = json.loads(raw)
+        except (json.JSONDecodeError, TypeError):
+            return None
+        return parsed if isinstance(parsed, dict) else None
+
+    @staticmethod
+    def _render_raw_fallback(
+        raw: Any, index: int | None, error: str | None = None
+    ) -> str:
+        """Honest fallback for a child result that isn't a parseable
+        child-result dict — never silently empty, and never a bare
+        "None" for a failed fan-out instance that has an error to name.
+        """
+        label = f"[{index}]" if index is not None else "result"
+        if raw is None:
+            return f"{label} (failed): {error}" if error else f"{label}: (no result)"
+        text = raw if isinstance(raw, str) else json.dumps(raw)
+        return f"{label}:\n{text}"
+
+    @staticmethod
+    def _render_terminal_block(name: str, agent_result: Any, index: int | None) -> str:
+        """One labeled block for a single terminal agent's result.
+
+        Uses ``outcome.is_ok`` (succeeded or partial), not a literal
+        ``status == "success"`` check (S2): a ``handled_failure``
+        terminal's own ``status`` is literally ``"success"`` (it ran
+        without incident), but its output is the refusal it composed
+        over a real upstream failure, not proof the nested branch
+        worked — it renders like any other blocking terminal, naming
+        the real failure it handled.
+        """
+        label = f"{name}[{index}]" if index is not None else name
+        if not isinstance(agent_result, dict):
+            return f"{label}: (no result)"
+        if is_ok(agent_result):
+            return f"{label}:\n{agent_result.get('response')}"
+        if agent_result.get("handled_failure"):
+            reason = agent_result.get("handled_failure_reason")
+            reason_suffix = f": {reason}" if reason else ""
+            return f"{label} (handled failure{reason_suffix})"
+        status = agent_result.get("status", "failed")
+        detail = agent_result.get("error") or agent_result.get("response")
+        return f"{label} ({status}): {detail or 'no response'}"
+
     def _extract_dependency_results_as_dict(
         self, dependencies: list[str | dict[str, Any]], results_dict: dict[str, Any]
     ) -> dict[str, Any]:
-        """Extract successful dependency results as a dict.
+        """Extract dependency results as a dict, keyed by agent name.
+
+        Every dependency PRESENT in ``results_dict`` is included
+        regardless of status (fail-closed-composition rule 2): the
+        ``ScriptAgentInput`` shape (``dependencies: dict[str, Any]``)
+        already carries a raw result's ``status``/``error`` honestly, so
+        a script consumer can read ``dependencies[name]["status"]``
+        directly instead of a failed or skipped dependency silently
+        vanishing from the dict. A dependency entirely absent from
+        ``results_dict`` is still omitted.
 
         Args:
             dependencies: List of dependency agent names (str or dict form)
@@ -285,15 +602,11 @@ class DependencyResolver:
         Returns:
             Dictionary mapping dependency names to their results
         """
-        dep_results = {}
-        for dep in dependencies:
-            agent_dep_name = dep_name(dep)
-            if (
-                agent_dep_name in results_dict
-                and results_dict[agent_dep_name].get("status") == "success"
-            ):
-                dep_results[agent_dep_name] = results_dict[agent_dep_name]
-        return dep_results
+        return {
+            agent_dep_name: results_dict[agent_dep_name]
+            for agent_dep_name in (dep_name(dep) for dep in dependencies)
+            if agent_dep_name in results_dict
+        }
 
     def _build_script_input(
         self, agent_name: str, base_input: str, dependencies: dict[str, Any]

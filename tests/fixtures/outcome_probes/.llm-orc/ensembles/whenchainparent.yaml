@@ -1,0 +1,5 @@
+name: whenchainparent
+description: p
+agents:
+  - name: k
+    ensemble: whenchain

@@ -394,16 +394,38 @@ def deps(payload_dict: dict[str, Any]) -> dict[str, Any]:
 
 
 def response(dep: Any) -> str:
-    """A dependency node's response string ('' when absent or non-string)."""
+    """A dependency node's response string ('' when absent, failed, or
+    non-string).
+
+    A failed or skipped dependency's ``response`` field is PRESENT but
+    ``None`` (AgentResult's default) — not absent — so a bare
+    ``.get("response", "")`` returns ``None``, and the non-string
+    fallback below used to turn that into ``json.dumps(None)``: the
+    literal three-byte string ``"null"``, which every downstream
+    ``json.loads`` and code/text extractor accepts as real content
+    (SF7: ``extract_code`` shipping "null" as a code deliverable). A
+    ``None`` response is treated identically to an absent one instead.
+    """
     if isinstance(dep, dict):
-        resp = dep.get("response", "")
+        resp = dep.get("response")
+        if resp is None:
+            return ""
         return resp if isinstance(resp, str) else json.dumps(resp)
     return ""
 
 
 def terminal(text: str) -> str:
     """Peel sub-ensemble envelope layers (deliverable / output / results) to
-    the terminal node's raw output."""
+    the terminal node's raw output.
+
+    The last results node's own ``response`` is PRESENT but ``None`` for a
+    failed/skipped terminal (SF7's honest-absence contract, extended here):
+    ``node.get("response", "")`` only supplies the default when the key is
+    ABSENT, so a present-but-null value used to flow through as ``None`` and
+    make this function return it — violating its own ``-> str`` contract and
+    crashing ``extract_code(terminal(...))`` with a ``TypeError`` (``re``
+    against ``None``). Treated identically to an absent response: "".
+    """
     current = text
     for _ in range(6):
         try:
@@ -421,7 +443,11 @@ def terminal(text: str) -> str:
         results = obj.get("results")
         if isinstance(results, dict) and results:
             node = results[list(results.keys())[-1]]
-            current = node.get("response", "") if isinstance(node, dict) else str(node)
+            if isinstance(node, dict):
+                node_response = node.get("response")
+                current = node_response if isinstance(node_response, str) else ""
+            else:
+                current = str(node)
             continue
         return current
     return current

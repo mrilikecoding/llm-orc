@@ -1,6 +1,7 @@
 """Agent dispatch and parallel execution for ensemble phases."""
 
 import asyncio
+import json
 import logging
 import time
 from collections.abc import Awaitable, Callable
@@ -12,6 +13,7 @@ from llm_orc.core.execution.phases.agent_execution_coordinator import (
 from llm_orc.core.execution.phases.dependency_resolver import DependencyResolver
 from llm_orc.core.execution.progress_controller import ProgressController
 from llm_orc.core.execution.result_types import AgentResult
+from llm_orc.core.execution.scripting.agent_runner import reports_failure
 from llm_orc.core.execution.utils import resolve_agent_timeout
 from llm_orc.schemas.agent_config import (
     AgentConfig,
@@ -23,6 +25,52 @@ from llm_orc.schemas.agent_config import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _script_failure_error(response: str) -> str:
+    """The error text a failed script agent's response names.
+
+    ``reports_failure`` has already confirmed ``response`` parses to a
+    dict reporting a failure; prefer its own ``error`` text
+    (web_searcher's convention: ``{"error": ...}``, ADR-020), falling
+    back to the raw response for a bare ``{"success": false}`` with no
+    ``error`` key — never silently empty.
+    """
+    try:
+        parsed = json.loads(response)
+    except (json.JSONDecodeError, TypeError):
+        return response
+    if isinstance(parsed, dict):
+        error = parsed.get("error")
+        if error:
+            return error if isinstance(error, str) else json.dumps(error)
+    return response
+
+
+def _script_failure_payload(response: str) -> dict[str, Any] | None:
+    """Every field alongside a failed script's own ``error``/``success``
+    keys (fail-closed-composition B2) — ``stderr`` (turn_trace's
+    ``_engine_failure_fields`` reads ``payload.stderr``) and producer-
+    specific fields like web_searcher's ``backend``. ``AgentResult.
+    to_dict`` nests this under its own ``payload`` key rather than
+    merging it onto the record (addendum 2026-09-23): the fields
+    returned here come straight from the script's own JSON and may
+    include keys that collide with engine-owned ones (a script printing
+    ``"status": "success"`` alongside a genuine failure), so they must
+    never land in the same namespace as the record's real
+    ``status``/``response``/``error``. ``None`` when the response
+    doesn't parse to a dict, or nothing is left once ``error``/
+    ``success`` are excluded.
+    """
+    try:
+        parsed = json.loads(response)
+    except (json.JSONDecodeError, TypeError):
+        return None
+    if not isinstance(parsed, dict):
+        return None
+    payload = {k: v for k, v in parsed.items() if k not in ("error", "success")}
+    return payload or None
+
 
 # Type alias for the resolve profile callback
 ResolveProfileFn = Callable[[AgentConfig], Awaitable[dict[str, Any]]]
@@ -176,6 +224,13 @@ class AgentDispatcher:
         )
 
         await self._emit_agent_completion_events(agent_name, agent_start_time)
+
+        if isinstance(agent_config, ScriptAgentConfig) and reports_failure(response):
+            return agent_name, AgentResult(
+                status="failed",
+                error=_script_failure_error(response),
+                payload=_script_failure_payload(response),
+            )
 
         return agent_name, AgentResult(
             status="success",

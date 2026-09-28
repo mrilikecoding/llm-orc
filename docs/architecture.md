@@ -81,7 +81,7 @@ Fan-out is woven into the existing phase-based execution pipeline in `EnsembleEx
 - **Discriminated union**: `AgentConfig = LlmAgentConfig | ScriptAgentConfig | EnsembleAgentConfig`
 - **Parse factory**: `parse_agent_config()` discriminates by key presence (`script`, `ensemble`, `model_profile`)
 - **Strict validation**: `extra="forbid"` catches typos and invalid fields at parse time
-- **Shared fields**: `BaseAgentConfig` provides `name`, `depends_on`, `fan_out`, `input_key`
+- **Shared fields**: `BaseAgentConfig` provides `name`, `depends_on`, `fan_out`, `input_key`, `when` (guard predicate), `on_dependency_failure` (`run`\|`skip`, default `skip` — lets a failure-handling node execute despite a failed/skipped dependency, overriding the rule-1 cascade)
 
 #### EnsembleAgentRunner (`llm_orc/core/execution/runners/ensemble_runner.py`)
 - **Recursive execution**: Resolves ensemble references and executes child ensembles

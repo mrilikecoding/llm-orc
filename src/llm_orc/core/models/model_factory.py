@@ -2,6 +2,8 @@
 
 import logging
 import os
+import uuid
+from collections.abc import AsyncIterator, Iterator, Sequence
 from typing import Any
 
 from llm_orc.core.auth.authentication import CredentialStorage
@@ -13,8 +15,23 @@ from llm_orc.models.anthropic import (
 from llm_orc.models.base import ModelInterface
 from llm_orc.models.mock import MockModel
 from llm_orc.models.openai_compat import OpenAICompatibleModel
+from llm_orc.schemas.agent_config import AgentConfig, LlmAgentConfig
 
 logger = logging.getLogger(__name__)
+
+
+class ModelConfigurationError(ValueError):
+    """An author config error — never a fallback-eligible failure.
+
+    Distinguishes a structural mistake in the ensemble YAML (e.g.
+    ``think`` set on a provider that doesn't speak llama-server's
+    chat-template convention) from a runtime/availability failure
+    (bad credentials, unreachable host) that the fallback chain exists
+    to route around. Still a ``ValueError`` so existing ``except
+    ValueError`` call sites are unaffected; callers that must not let
+    a config error masquerade as a successful fallback substitution
+    check for this type explicitly (``LlmAgentRunner``).
+    """
 
 
 class ModelFactory:
@@ -24,15 +41,24 @@ class ModelFactory:
         self,
         config_manager: ConfigurationManager,
         credential_storage: CredentialStorage,
+        *,
+        execution_id: str | None = None,
     ) -> None:
         """Initialize the model factory.
 
         Args:
             config_manager: Configuration manager instance
             credential_storage: Credential storage instance
+            execution_id: Stable identifier for the top-level ensemble
+                execution this factory serves. Generated when omitted.
+                Child executors share their parent's ModelFactory
+                instance (ExecutorFactory.create_child_executor), so
+                this id is naturally shared by every agent in the
+                execution tree, including fan-out instances.
         """
         self._config_manager = config_manager
         self._credential_storage = credential_storage
+        self.execution_id = execution_id or uuid.uuid4().hex
 
     async def load_model_from_agent_config(
         self, agent_config: dict[str, Any]
@@ -61,23 +87,12 @@ class ModelFactory:
         # Check if model_profile is specified (takes precedence)
         # Use .get() truthy check: model_dump() includes None values as keys
         if agent_config.get("model_profile"):
-            profile_name = agent_config["model_profile"]
-            resolved_model, resolved_provider = (
-                self._config_manager.resolve_model_profile(profile_name)
-            )
-            # Merge profile options with agent options (agent wins)
-            profile = self._config_manager.get_model_profile(profile_name)
-            profile_options = (profile or {}).get("options")
-            merged_options = _merge_options(profile_options, agent_options)
-            base_url: str | None = (profile or {}).get("base_url")
-            return await self.load_model(
-                resolved_model,
-                resolved_provider,
+            return await self._load_profile(
+                agent_config["model_profile"],
                 temperature=temperature,
                 max_tokens=max_tokens,
-                options=merged_options,
+                agent_options=agent_options,
                 response_format=response_format,
-                base_url=base_url,
             )
 
         # Fall back to explicit model+provider
@@ -96,6 +111,40 @@ class ModelFactory:
             max_tokens=max_tokens,
             options=agent_options,
             response_format=response_format,
+        )
+
+    async def _load_profile(
+        self,
+        profile_name: str,
+        *,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+        agent_options: dict[str, Any] | None = None,
+        response_format: str | dict[str, Any] | None = None,
+    ) -> ModelInterface:
+        """Load a named model profile — the one code path every profile
+        load goes through, whether it is the agent's primary profile or a
+        hop in its fallback chain.
+
+        Resolves the profile's model+provider, merges the profile's own
+        ``options`` with the caller's agent-level ``options`` (agent
+        wins), and carries the profile's ``base_url``.
+        """
+        resolved_model, resolved_provider = self._config_manager.resolve_model_profile(
+            profile_name
+        )
+        profile = self._config_manager.get_model_profile(profile_name)
+        profile_options = (profile or {}).get("options")
+        merged_options = _merge_options(profile_options, agent_options)
+        base_url: str | None = (profile or {}).get("base_url")
+        return await self.load_model(
+            resolved_model,
+            resolved_provider,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            options=merged_options,
+            response_format=response_format,
+            base_url=base_url,
         )
 
     async def load_model(
@@ -130,6 +179,8 @@ class ModelFactory:
         if model_name.startswith("mock"):
             return MockModel(model_name)
 
+        _validate_think_option(provider, options)
+
         storage = self._credential_storage
 
         # Get authentication method
@@ -144,6 +195,7 @@ class ModelFactory:
                 options=options,
                 response_format=response_format,
                 base_url=base_url,
+                execution_id=self.execution_id,
             )
 
         # Create authenticated model (cloud providers don't use options)
@@ -155,39 +207,158 @@ class ModelFactory:
             temperature=temperature,
             max_tokens=max_tokens,
             base_url=base_url,
+            execution_id=self.execution_id,
         )
 
     async def get_fallback_model(
         self,
         context: str = "general",
         original_profile: str | None = None,
-    ) -> ModelInterface:
-        """Get a fallback model with configurable fallback support.
+        agent_fallback_profile: str | None = None,
+        *,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+        agent_options: dict[str, Any] | None = None,
+        response_format: str | dict[str, Any] | None = None,
+    ) -> tuple[ModelInterface, str]:
+        """Get a fallback model from the explicit fallback_model_profile chain.
+
+        There is no implicit fallback: the agent-level
+        ``fallback_model_profile`` is tried first, then the original
+        profile's own ``fallback_model_profile`` chain. If neither
+        yields a loadable model, the chain is exhausted and the caller
+        is expected to fail the agent with its original error.
 
         Args:
             context: Context for fallback (for logging)
             original_profile: Original model profile that failed
+            agent_fallback_profile: Agent-level fallback_model_profile
+                override, tried before the profile's own chain
+            temperature: The failed agent's temperature, carried into
+                whichever fallback profile loads (SF2: a hop loads
+                exactly as a primary profile would).
+            max_tokens: The failed agent's max_tokens, carried likewise.
+            agent_options: The failed agent's options, merged with the
+                fallback profile's own options (agent wins).
+            response_format: The failed agent's response_format,
+                carried likewise.
 
         Returns:
-            Fallback model interface
-        """
-        if original_profile:
-            model = await self._try_configurable_fallback(original_profile)
-            if model:
-                return model
+            Tuple of (model, fallback_model_profile) naming the profile
+            that actually loaded.
 
-        return await self._try_legacy_fallback()
+        Raises:
+            ValueError: If the fallback chain is empty or exhausted.
+        """
+        if agent_fallback_profile:
+            agent_result = await self._try_single_fallback(
+                agent_fallback_profile,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                agent_options=agent_options,
+                response_format=response_format,
+            )
+            if agent_result:
+                return agent_result
+
+        if original_profile:
+            chain_result = await self._try_configurable_fallback(
+                original_profile,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                agent_options=agent_options,
+                response_format=response_format,
+            )
+            if chain_result:
+                return chain_result
+
+        raise ValueError(
+            f"No fallback_model_profile configured for {context}; "
+            "fallback chain exhausted"
+        )
+
+    async def _try_single_fallback(
+        self,
+        profile_name: str,
+        *,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+        agent_options: dict[str, Any] | None = None,
+        response_format: str | dict[str, Any] | None = None,
+    ) -> tuple[ModelInterface, str] | None:
+        """Try loading one named fallback profile — the same code path
+        (``_load_profile``) a primary profile load uses, so this hop
+        carries the profile's base_url/options and the agent's
+        generation params instead of dropping them.
+
+        Returns:
+            (model, profile_name) if successful, None if the profile
+            doesn't resolve or load — callers continue down the chain.
+        """
+        try:
+            model = await self._load_profile(
+                profile_name,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                agent_options=agent_options,
+                response_format=response_format,
+            )
+            return model, profile_name
+        except ModelConfigurationError:
+            # A config error (X2) is never "this hop is unavailable, try
+            # the next one" — it is an author mistake on a profile the
+            # chain reaches, and letting the walk continue past it would
+            # substitute a DIFFERENT, uninvolved profile and report
+            # success, exactly the quiet-substitution failure mode
+            # ModelConfigurationError exists to prevent on a primary load.
+            raise
+        except (ValueError, KeyError):
+            return None
 
     async def _try_configurable_fallback(
-        self, original_profile: str
-    ) -> ModelInterface | None:
-        """Try configurable fallback chain for a given profile.
+        self,
+        original_profile: str,
+        *,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+        agent_options: dict[str, Any] | None = None,
+        response_format: str | dict[str, Any] | None = None,
+    ) -> tuple[ModelInterface, str] | None:
+        """The first loadable candidate in ``original_profile``'s
+        fallback_model_profile chain, or None if the chain is exhausted.
 
         Args:
             original_profile: The original profile that failed
+            temperature: Carried into whichever hop loads.
+            max_tokens: Carried into whichever hop loads.
+            agent_options: Merged with each hop's own options (agent wins).
+            response_format: Carried into whichever hop loads.
+        """
+        async for result in self._iter_configurable_fallback_chain(
+            original_profile,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            agent_options=agent_options,
+            response_format=response_format,
+        ):
+            return result
+        return None
 
-        Returns:
-            Model if successful, None if fallback chain exhausted
+    async def _iter_configurable_fallback_chain(
+        self,
+        original_profile: str,
+        *,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+        agent_options: dict[str, Any] | None = None,
+        response_format: str | dict[str, Any] | None = None,
+    ) -> AsyncIterator[tuple[ModelInterface, str]]:
+        """Yield every profile in ``original_profile``'s
+        fallback_model_profile chain that successfully loads, in chain
+        order — unlike ``_try_configurable_fallback``, which stops at
+        the first one, this walks the whole chain so a caller (the
+        runtime-failure path) can keep trying past a hop that loaded
+        fine but failed to actually generate.
         """
         fallback_chain_visited: set[str] = set()
         current_profile = original_profile
@@ -208,58 +379,68 @@ class ModelFactory:
                 break
 
             try:
-                resolved_model, resolved_provider = (
-                    self._config_manager.resolve_model_profile(fallback_profile_name)
+                model = await self._load_profile(
+                    fallback_profile_name,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    agent_options=agent_options,
+                    response_format=response_format,
                 )
-                return await self.load_model(resolved_model, resolved_provider)
-            except (ValueError, KeyError):
-                current_profile = fallback_profile_name
-                continue
-
-        return None
-
-    async def _try_legacy_fallback(self) -> ModelInterface:
-        """Try legacy fallback system.
-
-        Returns:
-            Model interface (guaranteed to return something)
-        """
-        project_config = self._config_manager.load_project_config()
-        default_models = project_config.get("project", {}).get("default_models", {})
-
-        fallback_profile = default_models.get("test")
-
-        if fallback_profile and isinstance(fallback_profile, str):
-            try:
-                resolved_model, resolved_provider = (
-                    self._config_manager.resolve_model_profile(fallback_profile)
-                )
-                if resolved_provider == LLAMA_SERVER_PROVIDER:
-                    try:
-                        return await self.load_model(resolved_model, resolved_provider)
-                    except (ValueError, OSError):
-                        logger.warning(
-                            "Failed to load fallback profile %r",
-                            fallback_profile,
-                            exc_info=True,
-                        )
+                yield model, fallback_profile_name
+            except ModelConfigurationError:
+                # See _try_single_fallback: a config error on a chain hop
+                # must not be treated as "unavailable, try the next one".
+                raise
             except (ValueError, KeyError):
                 pass
 
-        fallback_model = default_models.get("fallback", DEFAULT_LOCAL_MODEL)
-        fallback_provider = default_models.get(
-            "fallback_provider", LLAMA_SERVER_PROVIDER
-        )
-        try:
-            return await self.load_model(fallback_model, fallback_provider)
-        except (ValueError, OSError):
-            return OpenAICompatibleModel(
-                model_name=fallback_model, base_url=_llama_server_url()
+            current_profile = fallback_profile_name
+
+    async def iter_fallback_chain(
+        self,
+        original_profile: str | None = None,
+        agent_fallback_profile: str | None = None,
+        *,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+        agent_options: dict[str, Any] | None = None,
+        response_format: str | dict[str, Any] | None = None,
+    ) -> AsyncIterator[tuple[ModelInterface, str]]:
+        """Yield every loadable candidate in the explicit fallback chain,
+        in the same priority order as ``get_fallback_model`` (agent-level
+        override first, then the original profile's own chain).
+
+        For a caller that needs to keep trying past a runtime failure on
+        an earlier candidate — ``get_fallback_model`` returns only the
+        first one that loads, which is enough when a model-load failure
+        is the trigger (load success there IS the outcome), but not when
+        the trigger is a runtime failure: the first loadable model can
+        still fail to generate, and the next candidate deserves a try
+        too.
+        """
+        if agent_fallback_profile:
+            agent_result = await self._try_single_fallback(
+                agent_fallback_profile,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                agent_options=agent_options,
+                response_format=response_format,
             )
+            if agent_result:
+                yield agent_result
+
+        if original_profile:
+            async for result in self._iter_configurable_fallback_chain(
+                original_profile,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                agent_options=agent_options,
+                response_format=response_format,
+            ):
+                yield result
 
 
 LLAMA_SERVER_PROVIDER = "llama-server"
-DEFAULT_LOCAL_MODEL = "qwen3-8b"
 LLAMA_SERVER_URL_ENV = "LLAMA_SERVER_URL"
 DEFAULT_LLAMA_SERVER_URL = "http://127.0.0.1:8080/v1"
 
@@ -267,6 +448,148 @@ DEFAULT_LLAMA_SERVER_URL = "http://127.0.0.1:8080/v1"
 def _llama_server_url() -> str:
     """The llama-server router's OpenAI-compatible base URL."""
     return os.environ.get(LLAMA_SERVER_URL_ENV, DEFAULT_LLAMA_SERVER_URL)
+
+
+def _validate_think_option(
+    provider: str | None, options: dict[str, Any] | None
+) -> None:
+    """Fail closed at load time when ``think`` targets a provider that
+    doesn't speak llama-server's chat-template convention.
+
+    ``think`` only has a home in ``OpenAICompatibleModel._apply_options``,
+    which folds it into ``chat_template_kwargs.enable_thinking`` — a
+    llama-server-specific request field. Other OpenAI-compatible
+    providers (OpenCode Zen/Go, OpenAI proper, ...) reject an unknown
+    field with an opaque request-time 400 (measured 2026-09-22 against
+    OpenCode Go). Raising here, while the provider and the option are
+    both still in hand, turns that into a load-time config error that
+    names both.
+    """
+    if not options or "think" not in options:
+        return
+    if provider == LLAMA_SERVER_PROVIDER:
+        return
+    raise ModelConfigurationError(
+        f"options.think is only supported for provider "
+        f"'{LLAMA_SERVER_PROVIDER}' (got provider={provider!r}). Remove "
+        "'think' from this profile/agent's options, or point it at a "
+        "llama-server-backed profile."
+    )
+
+
+def validate_think_options_for_ensemble(
+    agents: Sequence[AgentConfig],
+    config_manager: ConfigurationManager,
+) -> None:
+    """Fail closed BEFORE any agent executes when an ensemble configures
+    ``think`` against a provider that doesn't speak llama-server's
+    chat-template convention (Invariant 14: structural errors are caught
+    at load time and prevent execution — they must never reach the
+    runtime fallback chain, which would silently substitute a working
+    model and report success).
+
+    Validates not only the agent's primary load (``model_profile``, or
+    inline ``model``/``provider``) but every profile reachable through
+    its fallback chain — agent-level ``fallback_model_profile``, then
+    each hop's own profile-level ``fallback_model_profile``,
+    transitively (fail-closed-composition X2): the agent's ``think``
+    option travels into whichever profile actually ends up serving the
+    request (``_merge_options`` always lets the agent's own options
+    win), so a mismatch on a fallback-only hop is just as much a
+    load-time config error as one on the primary — reachable but never
+    exercised is still reachable, and finding out at 2am via a silent
+    substitution defeats the point of validating up front. Non-LLM
+    agents (script, ensemble, loop, dispatch) are skipped.
+    ``_validate_think_option`` on the direct ``ModelFactory.load_model``
+    path stays in place as defense in depth.
+    """
+    for agent in agents:
+        if not isinstance(agent, LlmAgentConfig):
+            continue
+        for provider, options in _reachable_provider_options(agent, config_manager):
+            _validate_think_option(provider, options)
+
+
+def _reachable_provider_options(
+    agent: LlmAgentConfig, config_manager: ConfigurationManager
+) -> Iterator[tuple[str | None, dict[str, Any] | None]]:
+    """``(provider, merged options)`` for ``agent``'s primary load and
+    every profile reachable through its fallback chain (X2).
+
+    The agent-level ``fallback_model_profile`` override is checked as a
+    SINGLE hop, not walked as its own further chain (addendum 2026-09-23
+    NIT): ``ModelFactory.get_fallback_model``/``iter_fallback_chain``
+    try it via ``_try_single_fallback`` alone — if it doesn't load, they
+    fall through to ``original_profile``'s OWN chain (a separate branch,
+    already covered by the ``agent.model_profile`` case below), never to
+    ``agent.fallback_model_profile``'s own ``fallback_model_profile``
+    field. Validating a hop runtime can never reach would reject configs
+    that would run fine. ``agent.model_profile``'s chain, by contrast,
+    IS walked transitively at runtime (``_iter_configurable_fallback_
+    chain`` starting at ``original_profile``), so it is walked the same
+    way here — both sides read the one profile-resolution step
+    (``_single_profile_provider_options``) the same number of times
+    runtime would call it.
+    """
+    if agent.model_profile:
+        yield from _profile_chain_provider_options(
+            agent.model_profile, agent.options, config_manager
+        )
+    else:
+        yield agent.provider, agent.options
+
+    if agent.fallback_model_profile:
+        single = _single_profile_provider_options(
+            agent.fallback_model_profile, agent.options, config_manager
+        )
+        if single is not None:
+            yield single
+
+
+def _single_profile_provider_options(
+    profile_name: str,
+    agent_options: dict[str, Any] | None,
+    config_manager: ConfigurationManager,
+) -> tuple[str | None, dict[str, Any] | None] | None:
+    """``(provider, merged options)`` for ONE named profile, or ``None``
+    when it doesn't resolve — the one profile-resolution step both
+    ``_profile_chain_provider_options`` (called once per hop while
+    walking a chain) and the agent-level single-hop check in
+    ``_reachable_provider_options`` share, so the two read a profile's
+    provider/options the same way."""
+    try:
+        _, provider = config_manager.resolve_model_profile(profile_name)
+    except (ValueError, KeyError):
+        return None
+    profile = config_manager.get_model_profile(profile_name)
+    profile_options = (profile or {}).get("options")
+    return provider, _merge_options(profile_options, agent_options)
+
+
+def _profile_chain_provider_options(
+    start_profile: str,
+    agent_options: dict[str, Any] | None,
+    config_manager: ConfigurationManager,
+) -> Iterator[tuple[str | None, dict[str, Any] | None]]:
+    """``(provider, merged options)`` for ``start_profile`` and every
+    profile in ITS OWN ``fallback_model_profile`` chain, transitively —
+    the same chain ``ModelFactory._iter_configurable_fallback_chain``
+    walks at runtime. Cycle-guarded; an unresolvable profile ends the
+    walk without raising (a different structural error, surfaced
+    elsewhere) rather than hiding the profiles already yielded.
+    """
+    visited: set[str] = set()
+    current: str | None = start_profile
+    while current and current not in visited:
+        visited.add(current)
+        single = _single_profile_provider_options(
+            current, agent_options, config_manager
+        )
+        if single is None:
+            return
+        yield single
+        profile = config_manager.get_model_profile(current)
+        current = (profile or {}).get("fallback_model_profile")
 
 
 def _is_openai_compatible(provider: str | None) -> bool:
@@ -304,6 +627,7 @@ def _create_authenticated_model(
     temperature: float | None = None,
     max_tokens: int | None = None,
     base_url: str | None = None,
+    execution_id: str | None = None,
 ) -> ModelInterface:
     """Create authenticated model based on authentication method.
 
@@ -315,6 +639,7 @@ def _create_authenticated_model(
         temperature: Optional temperature for generation
         max_tokens: Optional max tokens for generation
         base_url: Optional base URL for OpenAI-compatible endpoints
+        execution_id: Stable id for the top-level ensemble execution
 
     Returns:
         Configured model interface
@@ -335,6 +660,7 @@ def _create_authenticated_model(
             temperature=temperature,
             max_tokens=max_tokens,
             base_url=base_url,
+            execution_id=execution_id,
         )
 
     else:
@@ -350,6 +676,7 @@ def _handle_no_authentication(
     options: dict[str, Any] | None = None,
     response_format: str | dict[str, Any] | None = None,
     base_url: str | None = None,
+    execution_id: str | None = None,
 ) -> ModelInterface:
     """Handle cases when no authentication is configured.
 
@@ -361,6 +688,7 @@ def _handle_no_authentication(
         options: Optional provider-specific options forwarded to local models
         response_format: Optional structured-output format (schema dict or 'json')
         base_url: Optional base URL for OpenAI-compatible endpoints
+        execution_id: Stable id for the top-level ensemble execution
 
     Returns:
         Model interface for providers that don't require auth
@@ -378,6 +706,7 @@ def _handle_no_authentication(
             max_tokens=max_tokens,
             options=options,
             response_format=response_format,
+            execution_id=execution_id,
         )
     elif _is_openai_compatible(provider):
         return OpenAICompatibleModel(
@@ -387,6 +716,7 @@ def _handle_no_authentication(
             max_tokens=max_tokens,
             options=options,
             response_format=response_format,
+            execution_id=execution_id,
         )
     elif provider:
         raise ValueError(
@@ -407,6 +737,7 @@ def _handle_no_authentication(
             max_tokens=max_tokens,
             options=options,
             response_format=response_format,
+            execution_id=execution_id,
         )
 
 
@@ -418,6 +749,7 @@ def _create_api_key_model(
     temperature: float | None = None,
     max_tokens: int | None = None,
     base_url: str | None = None,
+    execution_id: str | None = None,
 ) -> ModelInterface:
     """Create model using API key authentication.
 
@@ -428,6 +760,7 @@ def _create_api_key_model(
         temperature: Optional temperature for generation
         max_tokens: Optional max tokens for generation
         base_url: Optional base URL for OpenAI-compatible endpoints
+        execution_id: Stable id for the top-level ensemble execution
 
     Returns:
         Configured model interface
@@ -454,6 +787,7 @@ def _create_api_key_model(
             api_key=api_key,
             temperature=temperature,
             max_tokens=max_tokens,
+            execution_id=execution_id,
         )
     else:
         return ClaudeModel(

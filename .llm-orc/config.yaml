@@ -7,8 +7,12 @@ serving:
 
 project:
   name: LLM Orchestra Test Project
+  # `default_models` is informational only (shown by `llm-orc config`);
+  # it is not consulted by fallback resolution. Model-load and runtime
+  # failures fall back only through the explicit fallback_model_profile
+  # chain (agent-level, then profile-level) — see model_profiles below.
   default_models:
-    test: micro-local    # Fallback model for reliability and testing
+    test: micro-local
 
 performance:
   streaming_enabled: true
@@ -378,7 +382,8 @@ model_profiles:
     cost_per_token: 0.0
     system_prompt: "You are a capable local AI analyst running on local hardware."
     timeout_seconds: 60
-    # No fallback_model_profile - will use system default (legacy fallback)
+    # No fallback_model_profile - the chain ends here; a load or runtime
+    # failure on this profile with nothing left to try fails the agent.
     
   # Profile that demonstrates cycle detection (should be prevented)
   # Using real ollama models but with forced failures to test cycle detection

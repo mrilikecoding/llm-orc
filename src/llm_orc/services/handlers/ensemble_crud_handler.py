@@ -27,6 +27,7 @@ _PRESERVED_FIELDS = (
     "fan_out",
     "input_key",
     "when",
+    "on_dependency_failure",
     "output_format",
     "timeout_seconds",
     "input_scope",

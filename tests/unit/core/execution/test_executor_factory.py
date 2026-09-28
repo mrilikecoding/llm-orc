@@ -3,6 +3,7 @@
 from pathlib import Path
 
 from llm_orc.core.execution.executor_factory import ExecutorFactory
+from llm_orc.core.models.model_factory import ModelFactory
 
 
 class TestCreateRootExecutor:
@@ -29,6 +30,46 @@ class TestCreateRootExecutor:
         executor = ExecutorFactory.create_root_executor(save_artifacts=False)
 
         assert executor._save_artifacts is False
+
+    def test_generates_an_execution_id_when_omitted(self) -> None:
+        """A root executor's ModelFactory gets a generated execution_id."""
+        executor = ExecutorFactory.create_root_executor()
+
+        assert executor._model_factory.execution_id
+
+    def test_honors_a_provided_execution_id(self) -> None:
+        """Callers with a stable per-conversation id (the serve's resolved
+        Session identity) can pass it through."""
+        executor = ExecutorFactory.create_root_executor(execution_id="exec-fixed")
+
+        assert executor._model_factory.execution_id == "exec-fixed"
+
+    def test_two_root_executors_get_different_execution_ids(self) -> None:
+        """Doctrine 11: two separate top-level executions get different
+        ids (each is a fresh ModelFactory)."""
+        first = ExecutorFactory.create_root_executor()
+        second = ExecutorFactory.create_root_executor()
+
+        assert first._model_factory.execution_id != second._model_factory.execution_id
+
+    def test_reuses_a_provided_config_manager_and_credential_storage(self) -> None:
+        """SF5: a caller that already paid for ConfigurationManager /
+        CredentialStorage construction (real disk I/O) can hand them in,
+        so a fresh execution_id doesn't require rebuilding that state."""
+        first = ExecutorFactory.create_root_executor()
+
+        second = ExecutorFactory.create_root_executor(
+            config_manager=first._config_manager,
+            credential_storage=first._credential_storage,
+        )
+
+        assert second._config_manager is first._config_manager
+        assert second._credential_storage is first._credential_storage
+        # A fresh ModelFactory - and therefore a fresh execution_id -
+        # even though the expensive infrastructure is reused.
+        assert second._model_factory is not first._model_factory
+        assert isinstance(second._model_factory, ModelFactory)
+        assert second._model_factory.execution_id != first._model_factory.execution_id
 
 
 class TestCreateChildExecutor:

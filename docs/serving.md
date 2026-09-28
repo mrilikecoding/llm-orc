@@ -33,6 +33,37 @@ Defined in `.llm-orc/ensembles/agentic-serving/serving.yaml`; scripts in
 | `form_gate` | script | Deterministic destination-validity check: refuses a deliverable that does not parse as its path claims (a `.py` must parse, a `.json` must load). |
 | `emit` | script | Shapes the client-seam outcome: a `write` tool_call (`finish_reason: tool_calls`) for a valid build, a prose finish otherwise. |
 
+`resolve`, `shape`, `form_gate`, and `emit` are each marked
+`on_dependency_failure: run` (Invariant 13/14): a crashed `classify`, `seat`,
+or any node earlier in this chain would otherwise cascade-skip everything
+downstream, and the turn would lose its refusal along with the failure it
+exists to report. Each reads its own crashed dependency defensively and
+composes an honest `"Refused: serving pipeline error: ..."` instead of
+vanishing. The top-level `status`/`has_errors` a client or operator reads
+still say `error` — the CAUSE is `has_errors` (the crashed `classify`/`seat`
+node is genuinely `failed`, and that alone makes `has_errors` true regardless
+of what runs after it), not the `handled_failure` marking on the node that
+ran to compose the refusal. `handled_failure` is a separate fact about that
+node's own `outcome` (addendum 2026-09-23): it keeps the composed refusal
+from being misread as a *succeeded* terminal by anything that consults it —
+without it, a wrapping node could report success just because the handler
+ran without incident, masking the real upstream failure. So the client's
+HTTP response body carries real refusal content, while the top-level status
+still honestly says `error`: two separate reads of the same underlying
+failure, not one causing the other. See `docs/domain-model.md` Invariant 13
+and the `on_dependency_failure` glossary entry for the general contract;
+this is serving's own instance of it.
+
+A `loop:` node's `has_errors` (round-4 amendment, 2026-09-23) reflects only
+its FINAL iteration: earlier iterations are retry attempts the loop exists
+to absorb, so a build-gated round that fails once and passes on retry must
+not report `error` — the loop's own outcome is `succeeded`, has_errors is
+`false`. Earlier iterations' blocking outcomes are never dropped, though:
+each one lands in the loop's JSON response as `iteration_failures`, a list
+of `{iteration, error}` entries naming which terminal failed and why. An
+operator reading `turns.jsonl` sees both facts — the turn succeeded, and it
+took more than one try.
+
 Build turns route to the **gated build shape** (`build-gated.yaml`): test-writer
 → code-writer → deterministic executor (runs code + tests, sandboxed
 subprocess) → isolated adequacy judge → accept gate (`accept = tests_pass AND

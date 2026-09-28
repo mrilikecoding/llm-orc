@@ -1,0 +1,8 @@
+name: dispempty
+description: p
+agents:
+  - name: d
+    script: scripts/emptytarget.py
+  - name: seat
+    dispatch: "${d.t}"
+    depends_on: [d]

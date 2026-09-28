@@ -1,0 +1,5 @@
+name: runwhenskippedparent
+description: p
+agents:
+  - name: k
+    ensemble: runwhenskipped

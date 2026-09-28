@@ -2,6 +2,7 @@
 
 import time
 from typing import Any
+from urllib.parse import urlparse
 
 from llm_orc.models.base import (
     HTTPConnectionPool,
@@ -11,6 +12,26 @@ from llm_orc.models.base import (
     ToolCallingResponse,
     ToolCallUsage,
 )
+
+_OPENCODE_GO_HOST = "opencode.ai"
+_OPENCODE_GO_PATH_PREFIX = "/zen/go"
+
+
+def _is_opencode_go(base_url: str) -> bool:
+    """Whether ``base_url`` is an OpenCode Go endpoint.
+
+    Go asks every client for a stable ``x-opencode-session`` header per
+    conversation (docs: opencode.ai/docs/go/; measured 2026-09-22:
+    omitting it 400s with ``MissingSessionID``). Detected by host + path
+    rather than provider string, so a profile pointing straight at the
+    endpoint under any provider label is still caught. The pay-as-you-go
+    sibling (``opencode.ai/zen/v1``, no ``/go``) is a different product
+    surface and is out of scope.
+    """
+    parsed = urlparse(base_url)
+    return parsed.hostname == _OPENCODE_GO_HOST and parsed.path.startswith(
+        _OPENCODE_GO_PATH_PREFIX
+    )
 
 
 class OpenAICompatibleModel(ModelInterface):
@@ -31,6 +52,7 @@ class OpenAICompatibleModel(ModelInterface):
         max_tokens: int | None = None,
         options: dict[str, Any] | None = None,
         response_format: str | dict[str, Any] | None = None,
+        execution_id: str | None = None,
     ) -> None:
         super().__init__(temperature=temperature, max_tokens=max_tokens)
         self.model_name = model_name
@@ -38,6 +60,7 @@ class OpenAICompatibleModel(ModelInterface):
         self.api_key = api_key
         self._options = options
         self._response_format = response_format
+        self._execution_id = execution_id
 
     def _apply_options(self, body: dict[str, Any]) -> None:
         """Fold provider options into the request body.
@@ -90,13 +113,20 @@ class OpenAICompatibleModel(ModelInterface):
     def name(self) -> str:
         return f"openai-compat-{self.model_name}"
 
+    def _build_headers(self) -> dict[str, str]:
+        """Request headers common to every OpenAI-compat call."""
+        headers: dict[str, str] = {"Content-Type": "application/json"}
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+        if self._execution_id and _is_opencode_go(self.base_url):
+            headers["x-opencode-session"] = self._execution_id
+        return headers
+
     async def generate_response(self, message: str, role_prompt: str) -> str:
         """Generate response using an OpenAI-compatible chat completions API."""
         start_time = time.time()
 
-        headers: dict[str, str] = {"Content-Type": "application/json"}
-        if self.api_key:
-            headers["Authorization"] = f"Bearer {self.api_key}"
+        headers = self._build_headers()
 
         body: dict[str, Any] = {
             "model": self.model_name,
@@ -158,9 +188,7 @@ class OpenAICompatibleModel(ModelInterface):
         """
         start_time = time.time()
 
-        headers: dict[str, str] = {"Content-Type": "application/json"}
-        if self.api_key:
-            headers["Authorization"] = f"Bearer {self.api_key}"
+        headers = self._build_headers()
 
         body: dict[str, Any] = {
             "model": self.model_name,
