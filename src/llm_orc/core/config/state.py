@@ -23,6 +23,7 @@ STATE_DIR_ENV = "LLM_ORC_STATE_DIR"
 ARTIFACTS_DIRNAME = "artifacts"
 TRACE_DIRNAME = ".serve-trace"
 CACHE_DIRNAME = "cache"
+PYCACHE_DIRNAME = "pycache"
 
 
 def resolve_state_dir(local_config_dir: Path | None) -> Path:

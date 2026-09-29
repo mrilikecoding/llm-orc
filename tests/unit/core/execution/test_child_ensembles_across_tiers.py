@@ -57,7 +57,12 @@ def test_child_resolves_from_the_packaged_tier(
 
 async def test_parent_runs_the_packaged_child_and_its_packaged_script(
     parent_in_global: tuple[ConfigurationManager, Path],
+    packaged_serving_project: Path,
 ) -> None:
+    before = sorted(
+        p.relative_to(packaged_serving_project)
+        for p in packaged_serving_project.rglob("*")
+    )
     cm, path = parent_in_global
     executor = ExecutorFactory.create_root_executor(
         config_manager=cm, save_artifacts=False
@@ -73,3 +78,11 @@ async def test_parent_runs_the_packaged_child_and_its_packaged_script(
     # and it echoes the JSON envelope it read on stdin.
     payload = json.loads(child["results"]["echo"]["response"])
     assert json.loads(payload["data"]["echo"])["input"] == "ping"
+    # the script imported its sibling helper, and that import left no
+    # bytecode under the read-only packaged tier
+    assert payload["data"]["tag"] == "helper"
+    after = sorted(
+        p.relative_to(packaged_serving_project)
+        for p in packaged_serving_project.rglob("*")
+    )
+    assert after == before

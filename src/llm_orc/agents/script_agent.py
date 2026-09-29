@@ -13,6 +13,8 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
+from llm_orc.core.config.config_manager import ConfigurationManager
+from llm_orc.core.config.state import PYCACHE_DIRNAME, resolve_state_dir
 from llm_orc.core.execution.scripting.resolver import ScriptResolver
 from llm_orc.schemas.script_agent import ScriptAgentInput, ScriptAgentOutput
 
@@ -47,6 +49,24 @@ async def _run_subprocess(
     return await loop.run_in_executor(
         SCRIPT_POOL, functools.partial(subprocess.run, *args, **kwargs)
     )
+
+
+def _bytecode_environment(project_dir: Path | None) -> dict[str, str]:
+    """Send a script's bytecode to the state dir, never beside the script.
+
+    A serving script imports its sibling ``_helpers``; run in place, the
+    interpreter would write ``__pycache__`` under the read-only packaged
+    tier (#196). Every subprocess environment in this module starts from
+    ``self.environment``, so setting it here covers every run path. A
+    caller's own ``PYTHONPYCACHEPREFIX`` wins.
+    """
+    if "PYTHONPYCACHEPREFIX" in os.environ:
+        return {}
+    local = ConfigurationManager(
+        project_dir=project_dir, provision=False
+    ).local_config_dir
+    prefix = resolve_state_dir(local) / PYCACHE_DIRNAME
+    return {"PYTHONPYCACHEPREFIX": str(prefix)}
 
 
 class ScriptEnvironmentManager:
@@ -146,7 +166,10 @@ class ScriptAgent:
         # silently disagree with the outer bound.
         configured_timeout = config.get("timeout_seconds")
         self.timeout = 60 if configured_timeout is None else configured_timeout
-        self.environment = config.get("environment", {})
+        self.environment = {
+            **_bytecode_environment(project_dir),
+            **config.get("environment", {}),
+        }
 
         if not self.script and not self.command:
             raise ValueError(
