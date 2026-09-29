@@ -228,3 +228,36 @@ class TestConfigMerges:
         )
         cm = ConfigurationManager(project_dir=tmp_path, provision=False)
         assert cm.load_performance_config()["execution"]["default_timeout"] == 777
+
+
+class TestServingRoot:
+    def test_project_with_serving_ensemble_is_the_root(
+        self, tmp_path: Path, packaged_serving_project: Path
+    ) -> None:
+        project = tmp_path / "proj"
+        marker = project / ".llm-orc" / packaged.SERVING_MARKER
+        marker.parent.mkdir(parents=True)
+        marker.write_text("name: serving\nagents: []\n")
+        cm = ConfigurationManager(project_dir=project, provision=False)
+        assert cm.serving_root() == project / ".llm-orc"
+
+    def test_project_without_it_falls_to_packaged(
+        self, tmp_path: Path, packaged_serving_project: Path
+    ) -> None:
+        project = tmp_path / "proj"
+        (project / ".llm-orc" / "ensembles").mkdir(parents=True)
+        cm = ConfigurationManager(project_dir=project, provision=False)
+        assert cm.serving_root() == packaged_serving_project
+
+    def test_no_serving_ensemble_anywhere_names_both_candidates(
+        self, tmp_path: Path
+    ) -> None:
+        """Review Focus 5."""
+        project = tmp_path / "proj"
+        (project / ".llm-orc").mkdir(parents=True)
+        cm = ConfigurationManager(project_dir=project, provision=False)
+        with pytest.raises(
+            FileNotFoundError,
+            match=r"agentic-serving/serving\.yaml.*\.llm-orc.*None",
+        ):
+            cm.serving_root()

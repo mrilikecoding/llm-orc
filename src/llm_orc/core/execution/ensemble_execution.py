@@ -1107,7 +1107,8 @@ class EnsembleExecutor:
     def _resolve_ensemble_reference(self, name: str) -> EnsembleConfig:
         """Resolve an ensemble name to its config.
 
-        Searches the project directory and standard ensemble locations.
+        Searches the project directory, then every configuration tier
+        (local, library, global, packaged).
         """
         # Search in project dir if available
         search_dirs: list[str] = []
@@ -1121,6 +1122,12 @@ class EnsembleExecutor:
             ensembles_dir = local_dir / "ensembles"
             if ensembles_dir.exists():
                 search_dirs.append(str(ensembles_dir))
+
+        # Every tier (#196): a global ensemble's child may be packaged,
+        # a project's child may be global. Order is the tier order.
+        for tier_dir in self._config_manager.get_ensembles_dirs():
+            if str(tier_dir) not in search_dirs:
+                search_dirs.append(str(tier_dir))
 
         config = self._ensemble_loader._find_ensemble_in_dirs(name, search_dirs)
         if config is None:
