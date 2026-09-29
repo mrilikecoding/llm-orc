@@ -161,13 +161,16 @@ own provider — a paid API, a hosted endpoint, a bigger local model — create 
 gitignored override:
 
 ```yaml
-# .llm-orc/profiles/my-paid-seat.local.yaml   (never committed)
+# my-paid-seat.local.yaml   (never committed)
 name: agentic-tier-cheap-general   # the tier name to override
 model: your-hosted-model
 provider: openai-compatible/yourprovider
 cost_per_token: 0.0
 ```
 
+In a checkout the file lives in `.llm-orc/profiles/`. In a wheel install
+(the mini) it lives in `~/.config/llm-orc/profiles/`, because the global
+tier sits above the packaged one and nothing reads `.llm-orc/` there.
 `*.local.yaml` files load last (deterministically), so they win over the
 checked-in profile of the same name. Nothing provider-specific belongs in
 tracked config. Empirical note (2026-07-08 A/B): a hosted frontier seat did
