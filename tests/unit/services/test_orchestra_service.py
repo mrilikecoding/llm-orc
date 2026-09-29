@@ -11,6 +11,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from llm_orc.core.config.config_manager import ConfigurationManager
 from llm_orc.mcp.server import MCPServer  # noqa: F401 — breaks circular import
 from llm_orc.services.orchestra_service import OrchestraService
 
@@ -88,6 +89,58 @@ class TestHandleSetProjectAsync:
         result = await service.handle_set_project_async(str(tmp_path))
 
         assert "note" not in result
+
+
+class _NullReporter:
+    async def info(self, message: str) -> None:
+        return None
+
+    async def warning(self, message: str) -> None:
+        return None
+
+    async def error(self, message: str) -> None:
+        return None
+
+    async def report_progress(self, progress: float, total: float) -> None:
+        return None
+
+
+class TestSetProjectRebuildsArtifactManagers:
+    """After a project switch the execution handler writes to the new project."""
+
+    async def test_streaming_artifact_lands_in_the_new_project(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "xdg"))
+        elsewhere = tmp_path / "elsewhere"
+        elsewhere.mkdir()
+        monkeypatch.chdir(elsewhere)
+        project = tmp_path / "proj"
+        (project / ".llm-orc" / "ensembles").mkdir(parents=True)
+        (project / ".llm-orc" / "scripts").mkdir()
+        (project / ".llm-orc" / "ensembles" / "probe-ens.yaml").write_text(
+            "name: probe-ens\ndescription: one script agent\n"
+            "agents:\n  - name: probe\n    script: probe.py\n"
+        )
+        (project / ".llm-orc" / "scripts" / "probe.py").write_text(
+            'import json\nprint(json.dumps({"success": True, "data": {"ok": True}}))\n'
+        )
+        service = OrchestraService(
+            config_manager=ConfigurationManager(
+                project_dir=tmp_path / "before", provision=False
+            )
+        )
+
+        await service.handle_set_project_async(str(project))
+        result = await service.execute_streaming("probe-ens", "go", _NullReporter())
+
+        assert result["status"] == "success", result
+        # The executor's own manager resolves from a cwd-discovered config
+        # (it does not follow set_project), so only the execution handler's
+        # manager can put an artifact in the project's tier here.
+        assert any((project / ".llm-orc" / "artifacts" / "probe-ens").iterdir())
+        handler_manager = service._execution_handler._artifact_manager
+        assert handler_manager.artifacts_dir == project / ".llm-orc" / "artifacts"
 
 
 class TestHandleSetProjectAsyncConcurrency:

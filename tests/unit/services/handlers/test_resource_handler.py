@@ -729,9 +729,8 @@ class TestReadArtifacts:
         arts.mkdir(parents=True)
         (arts / "stray-file.txt").write_text("ignore me")
         mock_config_manager.global_config_dir = str(tmp_path / "global")
-        patch_target = "llm_orc.services.handlers.resource_handler.Path.cwd"
-        with patch(patch_target, return_value=tmp_path):
-            result = await handler.read_artifacts("my-ens")
+        mock_config_manager.local_config_dir = tmp_path / ".llm-orc"
+        result = await handler.read_artifacts("my-ens")
 
         assert result == []
 
@@ -745,9 +744,8 @@ class TestReadArtifacts:
         arts = tmp_path / ".llm-orc" / "artifacts" / "my-ens"
         (arts / "empty-run").mkdir(parents=True)
         mock_config_manager.global_config_dir = str(tmp_path / "global")
-        patch_target = "llm_orc.services.handlers.resource_handler.Path.cwd"
-        with patch(patch_target, return_value=tmp_path):
-            result = await handler.read_artifacts("my-ens")
+        mock_config_manager.local_config_dir = tmp_path / ".llm-orc"
+        result = await handler.read_artifacts("my-ens")
 
         assert result == []
 
@@ -763,9 +761,8 @@ class TestReadArtifacts:
         run_dir.mkdir(parents=True)
         (run_dir / "execution.json").write_text("{invalid")
         mock_config_manager.global_config_dir = str(tmp_path / "global")
-        patch_target = "llm_orc.services.handlers.resource_handler.Path.cwd"
-        with patch(patch_target, return_value=tmp_path):
-            result = await handler.read_artifacts("my-ens")
+        mock_config_manager.local_config_dir = tmp_path / ".llm-orc"
+        result = await handler.read_artifacts("my-ens")
 
         assert result == []
 
@@ -801,9 +798,8 @@ class TestParseDurationValueError:
         }
         (run_dir / "execution.json").write_text(json.dumps(execution))
         mock_config_manager.global_config_dir = str(tmp_path / "global")
-        patch_target = "llm_orc.services.handlers.resource_handler.Path.cwd"
-        with patch(patch_target, return_value=tmp_path):
-            result = await handler.read_metrics("my-ens")
+        mock_config_manager.local_config_dir = tmp_path / ".llm-orc"
+        result = await handler.read_metrics("my-ens")
 
         assert result["avg_duration"] == 0.0
 
