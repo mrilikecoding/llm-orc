@@ -59,19 +59,20 @@ class ProfileHandler:
         return {"profiles": profiles}
 
     def get_local_profiles_dir(self) -> Path:
-        """Get the local profiles directory for writing.
+        """The project's profiles directory for writing.
 
         Raises:
-            ValueError: If no profiles directory is configured.
+            ValueError: when there is no project tier. Writes never fall
+                through to the library or packaged tiers; ``scope: global``
+                is the writable home without a project (#196).
         """
-        profiles_dirs = self._config_manager.get_profiles_dirs()
-        for dir_path in profiles_dirs:
-            path = Path(dir_path)
-            if ".llm-orc" in str(path) and "library" not in str(path):
-                return path
-        if profiles_dirs:
-            return Path(profiles_dirs[0])
-        raise ValueError("No profiles directory configured")
+        local = self._config_manager.local_config_dir
+        if local is None:
+            raise ValueError(
+                "No project (.llm-orc) directory to write to; "
+                "use scope 'global' for the global tier"
+            )
+        return local / "profiles"
 
     def _dir_for_scope(self, scope: Scope) -> Path | None:
         """Write directory for one scope; None when the project has none."""

@@ -89,38 +89,22 @@ class TestListProfiles:
 
 
 class TestGetLocalProfilesDir:
-    """Covers lines 71-73 in get_local_profiles_dir."""
+    """get_local_profiles_dir is the project dir or a raise naming global."""
 
-    def test_returns_llm_orc_non_library_path(
+    def test_returns_the_project_profiles_dir(
         self, mock_config: Any, tmp_path: Path
     ) -> None:
-        """Returns the first .llm-orc non-library path."""
-        local_path = tmp_path / ".llm-orc" / "profiles"
-        mock_config.get_profiles_dirs.return_value = [str(local_path)]
+        mock_config.local_config_dir = tmp_path / ".llm-orc"
         handler = _handler(mock_config)
 
-        result = handler.get_local_profiles_dir()
+        assert handler.get_local_profiles_dir() == tmp_path / ".llm-orc" / "profiles"
 
-        assert result == local_path
-
-    def test_falls_back_to_first_dir_when_no_llm_orc_path(
-        self, mock_config: Any, tmp_path: Path
-    ) -> None:
-        """Falls back to first entry when no .llm-orc path exists (line 72)."""
-        fallback = tmp_path / "other" / "profiles"
-        mock_config.get_profiles_dirs.return_value = [str(fallback)]
+    def test_raises_naming_global_when_no_project(self, mock_config: Any) -> None:
+        mock_config.local_config_dir = None
+        mock_config.get_profiles_dirs.return_value = ["/somewhere/profiles"]
         handler = _handler(mock_config)
 
-        result = handler.get_local_profiles_dir()
-
-        assert result == fallback
-
-    def test_raises_when_no_dirs_configured(self, mock_config: Any) -> None:
-        """Raises ValueError when no profiles directories at all (line 73)."""
-        mock_config.get_profiles_dirs.return_value = []
-        handler = _handler(mock_config)
-
-        with pytest.raises(ValueError, match="No profiles directory configured"):
+        with pytest.raises(ValueError, match="scope 'global'"):
             handler.get_local_profiles_dir()
 
 

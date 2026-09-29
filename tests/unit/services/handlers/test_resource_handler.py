@@ -181,19 +181,26 @@ class TestDetermineSource:
     """determine_source returns the correct source label."""
 
     def test_local_when_dot_llm_orc_without_library(
-        self, handler: ResourceHandler
+        self, handler: ResourceHandler, mock_config_manager: Any
     ) -> None:
-        """Path containing .llm-orc but not library is 'local'."""
+        """A directory classified 'local' is 'local'."""
+        mock_config_manager.classify_tier = lambda p: "local"
         result = handler.determine_source(Path("/home/user/.llm-orc/ensembles"))
         assert result == "local"
 
-    def test_library_when_library_in_path(self, handler: ResourceHandler) -> None:
-        """Path containing 'library' is 'library'."""
+    def test_library_when_library_in_path(
+        self, handler: ResourceHandler, mock_config_manager: Any
+    ) -> None:
+        """A directory classified 'library' is 'library'."""
+        mock_config_manager.classify_tier = lambda p: "library"
         result = handler.determine_source(Path("/home/user/.llm-orc/library/ensembles"))
         assert result == "library"
 
-    def test_global_for_other_paths(self, handler: ResourceHandler) -> None:
-        """Path without .llm-orc or library is 'global'."""
+    def test_global_for_other_paths(
+        self, handler: ResourceHandler, mock_config_manager: Any
+    ) -> None:
+        """A directory outside every tier ('unknown') is 'global'."""
+        mock_config_manager.classify_tier = lambda p: "unknown"
         result = handler.determine_source(Path("/usr/share/llm-orc/ensembles"))
         assert result == "global"
 
@@ -827,3 +834,27 @@ class TestArtifactsDirFollowsState:
             EnsembleLoader(),
         )
         assert handler.get_artifacts_dir() == tmp_path / ".llm-orc" / "artifacts"
+
+
+class TestDetermineSourceUsesTiers:
+    def test_packaged_dir_reports_packaged(
+        self, tmp_path: Path, packaged_serving_project: Path
+    ) -> None:
+        handler = ResourceHandler(
+            ConfigurationManager(project_dir=tmp_path / "noproj", provision=False),
+            EnsembleLoader(),
+        )
+        source = handler.determine_source(packaged_serving_project / "ensembles")
+        assert source == "packaged"
+
+    async def test_listing_labels_packaged_ensembles(
+        self, tmp_path: Path, packaged_serving_project: Path
+    ) -> None:
+        handler = ResourceHandler(
+            ConfigurationManager(project_dir=tmp_path / "noproj", provision=False),
+            EnsembleLoader(),
+        )
+        entries = await handler.read_ensembles()
+        sources = {e["name"]: e["source"] for e in entries}
+        assert sources["serving"] == "packaged"
+        assert sources["child"] == "packaged"

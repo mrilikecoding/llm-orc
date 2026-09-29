@@ -1219,22 +1219,15 @@ class TestMCPServerHelperMethods:
 
         assert result == local_dir
 
-    def test_get_local_ensembles_dir_falls_back(
+    def test_get_local_ensembles_dir_raises_without_project(
         self, server: MCPServer, tmp_path: Path
     ) -> None:
-        """Get local ensembles dir falls back to first directory."""
-        fallback_dir = tmp_path / "ensembles"
-        _mock_config(server).get_ensembles_dirs.return_value = [str(fallback_dir)]
+        """No project tier: raise naming scope global, never fall through."""
+        config = _mock_config(server)
+        config.local_config_dir = None
+        config.get_ensembles_dirs.return_value = [str(tmp_path / "ensembles")]
 
-        result = server._get_local_ensembles_dir()
-
-        assert result == fallback_dir
-
-    def test_get_local_ensembles_dir_raises_if_none(self, server: MCPServer) -> None:
-        """Get local ensembles dir raises if no directories."""
-        _mock_config(server).get_ensembles_dirs.return_value = []
-
-        with pytest.raises(ValueError, match="No ensemble directory"):
+        with pytest.raises(ValueError, match="scope 'global'"):
             server._get_local_ensembles_dir()
 
 
