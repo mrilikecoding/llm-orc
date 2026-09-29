@@ -254,25 +254,20 @@ class EnsembleCrudHandler:
         }
 
     def get_local_ensembles_dir(self) -> Path:
-        """Get the local ensembles directory for writing.
-
-        Returns:
-            Path to local ensembles directory.
+        """The project's ensembles directory for writing.
 
         Raises:
-            ValueError: If no ensemble directory is available.
+            ValueError: when there is no project tier. Writes never fall
+                through to the library or packaged tiers; ``scope: global``
+                is the writable home without a project (#196).
         """
-        ensemble_dirs = self._config_manager.get_ensembles_dirs()
-
-        for dir_path in ensemble_dirs:
-            path = Path(dir_path)
-            if ".llm-orc" in str(path) and "library" not in str(path):
-                return path
-
-        if ensemble_dirs:
-            return Path(ensemble_dirs[0])
-
-        raise ValueError("No ensemble directory available")
+        local = self._config_manager.local_config_dir
+        if local is None:
+            raise ValueError(
+                "No project (.llm-orc) directory to write to; "
+                "use scope 'global' for the global tier"
+            )
+        return local / "ensembles"
 
     def _dir_for_scope(self, scope: Scope) -> Path | None:
         """Write directory for one scope; None when the project has none."""
