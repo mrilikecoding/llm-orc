@@ -475,23 +475,11 @@ class TestMCPServerGetLibraryDir:
 
         assert result == tmp_path / "test-lib"
 
-    def test_get_library_dir_from_ensemble_dirs(
+    def test_get_library_dir_falls_back_to_config_manager(
         self, server: MCPServer, tmp_path: Path
     ) -> None:
-        """Finds library from ensemble dirs."""
-        library_dir = tmp_path / "llm-orchestra-library" / "ensembles"
-        _mock_config(server).get_ensembles_dirs.return_value = [str(library_dir)]
-
-        result = server._library_handler.get_library_dir()
-
-        assert result == tmp_path / "llm-orchestra-library"
-
-    def test_get_library_dir_default(
-        self, server: MCPServer, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """Falls back to default library location."""
-        monkeypatch.chdir(tmp_path)
-        _mock_config(server).get_ensembles_dirs.return_value = []
+        """Without an injected path, the manager's library_dir is used."""
+        _mock_config(server).library_dir = tmp_path / "llm-orchestra-library"
 
         result = server._library_handler.get_library_dir()
 
