@@ -59,7 +59,7 @@ layer is the insulation that keeps an eventual hardening cheap, and
 "frozen component" status is the trigger, tracked informally the way the
 buy-back ledger tracks hosted seats.
 
-## State (2026-09-28 handoff)
+## State (2026-09-29 handoff)
 
 **Ranked index:** the GitHub project "llm-orc kanban"
 (https://github.com/users/mrilikecoding/projects/2). THIS DOCUMENT
@@ -178,11 +178,58 @@ and name where the file lives; global scripts resolve at execution time;
 MCP schema advertises the enum. Pins through the real service and files
 on disk, each shown red under a mutant; suite 4735; whole-branch
 adversarial review plus two scoped re-reviews. Live row in the plan doc.
-Owed: practitioner moves `research-dossier` and `test-research-pipeline`
-on the mini into `~/.config/llm-orc/ensembles/`; Arcs 2-4 get re-cut from
-the S1/S2 findings before starting (Arc 2 needs the state dir, the
-`get_model_profiles` rewrite, `classify_tier` with a packaged tier).
-v0.21.0 is deployed on remote-host (practitioner, 2026-09-28).
+`research-dossier` on the mini is global now; `test-research-pipeline`
+still lives in the checkout. v0.21.0 is deployed on remote-host
+(practitioner, 2026-09-28).
+
+**Arc 2 merged on local main 2026-09-29 (`762a2665`, NOT pushed).**
+Re-cut rulings in the spec doc ("Arc 2 re-cut (2026-09-29)"); plan
+`docs/plans/2026-09-29-remote-delegation-arc2.md`; summary and findings
+posted on #196 and #191. Shape: the repo's `.llm-orc/` ships in the wheel
+as `llm_orc/serving_project/` (hatchling `include` + `sources`;
+`make wheel-check` pins the 162 packaged files to `git ls-files`, red on
+the 0.21.0 wheel); `ConfigurationManager` gets a read-only fourth tier,
+packaged, lowest precedence (project → library → global → packaged) in
+every read path: dir lists, runtime profiles as a tier loop (library
+stays out of runtime resolution, pinned), the `performance:` /
+`agentic_serving:` merges, `classify_tier` (`source: packaged`, fourth
+CLI group), the script resolver, the executor's child-ensemble lookup
+(a global ensemble reaches a packaged child), and `serving_root()`
+replacing the cwd lookup in `/v1/chat/completions`. Packaged is lowest so
+a global `*.local.yaml` re-seats a tier on a plain-dir serve.
+`LLM_ORC_SERVING_PROJECT_DIR` overrides the tier (empty disables; the
+suite's default). State (artifacts, `.serve-trace`, cache,
+`llama-server.ini`, script bytecode) goes through `resolve_state_dir`:
+`LLM_ORC_STATE_DIR` / `serve --state-dir`, else the project's `.llm-orc`,
+else `$XDG_STATE_HOME/llm-orc`. Engine writes with no project land in
+global; after `set_project` the executor takes the service's config
+manager. Suite 4786; eight per-task adversarial reviews, a whole-branch
+review, one fix wave (bytecode under the packaged tier; cut-over docs).
+Live rows (plan doc): wheel in a fresh venv, serve from an empty dir;
+`/v1/models` = the packaged tier; 105 ensembles {global, packaged};
+`research-dossier` (global) → packaged `web-searcher` ×5 → dossier in
+87 s, artifacts in the state dir; a real `opencode run` turn drove three
+rounds to an honest T1 refusal with 0 bytecode files under the packaged
+path. **Owed:** mini cut-over (practitioner; checklist in
+`deploy/remote-host/README.md`: move `*.local.yaml` overrides to
+`~/.config/llm-orc/`, `~/.llm-orc` absent, plist `WorkingDirectory` +
+`brew upgrade` in one kickstart; the 15 library ensembles drop out unless
+`LLM_ORC_LIBRARY_PATH` names the submodule); push + release on the go;
+wiring `make wheel-check` into CI needs a go. **Next:** re-cut Arc 3
+(transitive preflight; `needs_restart` per S2) from the merged shape.
+
+Deferred from the Arc 2 reviews (none block; 40-odd minors in the review
+record, the ones worth a line): `check_wheel_contents.py` run from a
+subdirectory passes a wheel with no serving project (Makefile runs it
+from the root); `resolve_state_dir(local)/"artifacts"` is spelled at
+seven sites; `_resolve_ensemble_reference`'s local-dir block is redundant
+with `get_ensembles_dirs()[0]`; the `serving_root` error prints `None` for
+a missing candidate; relative `--state-dir` is stored as-is; primitive
+and `test_script` subprocesses still spawn with a bare env (no pycache
+prefix); the packaged `config.yaml` ships verbatim (test and demo
+profiles included), a curation chore for later; a checkout-cwd serve on a
+wheel that carries `serving_project` lists everything twice until the
+`WorkingDirectory` changes, hence the one-kickstart cut-over.
 
 Deferred from the Arc 1 reviews (none block; pick up when touching the
 area): `_dir_for_scope` / `_find_*` are duplicated across the three CRUD
