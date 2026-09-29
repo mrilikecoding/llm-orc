@@ -20,6 +20,8 @@ from pathlib import Path
 from types import FrameType
 from typing import IO, Any
 
+from llm_orc.core.config.state import resolve_state_dir
+
 LLAMA_SERVER_PROVIDER = "llama-server"
 
 #: Global section every model instance inherits. Metal takes every layer
@@ -376,15 +378,13 @@ def start_router_from_config(
 ) -> LlamaServerSupervisor:
     """Render the preset from the project's profiles and start the router.
 
-    The preset lands next to the profiles it was rendered from (the
-    local ``.llm-orc`` when there is one, else the global config dir) so
-    an operator can read exactly what the router was given.
+    The preset lands in the state dir (the local ``.llm-orc`` when there
+    is one, else the XDG state dir) so an operator can read exactly what
+    the router was given.
     """
     profiles = config_manager.get_model_profiles()
     rendered = render_preset(profiles)
-    config_dir = Path(
-        config_manager.local_config_dir or config_manager.global_config_dir
-    )
+    config_dir = resolve_state_dir(config_manager.local_config_dir)
     config_dir.mkdir(parents=True, exist_ok=True)
     preset_path = config_dir / PRESET_FILENAME
     preset_path.write_text(rendered.text)

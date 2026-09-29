@@ -1,6 +1,8 @@
 """Command line interface for llm-orc."""
 
+import os
 import sys
+from pathlib import Path
 
 import click
 
@@ -471,8 +473,22 @@ def web(port: int, host: str, open_browser: bool) -> None:
     type=int,
     help="Models resident at once in the router (default: 1)",
 )
+@click.option(
+    "--state-dir",
+    default=None,
+    type=click.Path(file_okay=False, path_type=Path),
+    help=(
+        "Where artifacts, the turn trace and the router preset are written "
+        "(default: the project's .llm-orc, else $XDG_STATE_HOME/llm-orc)"
+    ),
+)
 def serve(
-    port: int, host: str, backend: bool, backend_port: int, models_max: int | None
+    port: int,
+    host: str,
+    backend: bool,
+    backend_port: int,
+    models_max: int | None,
+    state_dir: Path | None,
 ) -> None:
     """Start the agentic serving layer for LLM-client consumption.
 
@@ -485,7 +501,12 @@ def serve(
     exists so the name matches the agentic-serving use case. Use
     ``web`` when you also want the browser UI; use ``serve`` when you
     are deploying behind an HTTP LLM client.
+
+    ``--state-dir`` overrides where runtime state is written;
+    ``LLM_ORC_STATE_DIR`` is the same setting as an environment variable.
     """
+    if state_dir is not None:
+        os.environ["LLM_ORC_STATE_DIR"] = str(state_dir)
     _start_server(
         host=host,
         port=port,
