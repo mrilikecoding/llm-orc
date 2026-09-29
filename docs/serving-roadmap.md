@@ -184,6 +184,22 @@ the S1/S2 findings before starting (Arc 2 needs the state dir, the
 `get_model_profiles` rewrite, `classify_tier` with a packaged tier).
 v0.21.0 is deployed on remote-host (practitioner, 2026-09-28).
 
+Deferred from the Arc 1 reviews (none block; pick up when touching the
+area): `_dir_for_scope` / `_find_*` are duplicated across the three CRUD
+handlers (a `refactor:` tidy once Arc 2 settles the packaged tier); the
+REST scope-mismatch pins assert `!= 200` until the ValueError-to-500
+mapping becomes a 4xx (#191); `ScriptResolver.list_available_scripts` is
+cwd-only and ignores `project_dir`; `ScriptHandler._get_scripts_dir`'s
+docstring undersells its "config manager present, no project tier"
+branch; `tests/bdd/test_adr_009_mcp_server_architecture.py` builds a
+MagicMock config manager and asserts only returned dicts; FastMCP and the
+REST bodies ignore unknown keys, so a misspelled `scope` silently means
+`project` (#191). Rulings that shaped Arc 1, for the record: `project`
+scope errors without a project tier rather than falling through to
+library or global (option A over "land on global"); PUT carries `scope`
+in the body and DELETE in the query, never both; the MCP `scope`
+parameter is the `Scope` literal so `/mcp` advertises the enum.
+
 1. **Serve is up on remote-host (2026-09-16 afternoon).** launchd agent,
    v0.20.0 from origin main, llama.cpp b10964 x64 binary (no Intel brew
    bottles; see `deploy/remote-host/README.md`). http://llm-orc.remote.example
