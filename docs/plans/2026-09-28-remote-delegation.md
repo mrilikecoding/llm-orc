@@ -149,6 +149,94 @@ profile `local-qwen3-0.6b`.
 - Then `deploy/remote-host/`: plist `WorkingDirectory` becomes a plain dir (no
   checkout); README update path is `brew upgrade` only.
 
+**Arc 2 re-cut (2026-09-29), from the S1 findings and a code read.** The
+card above stands; these rulings replace its open points. Implementation
+plan: `docs/plans/2026-09-29-remote-delegation-arc2.md`.
+
+1. **Shipping.** `.llm-orc/` stays the source of truth in the repo. The
+   wheel maps `.llm-orc/{ensembles,profiles,scripts,config.yaml}` to
+   `llm_orc/serving_project/` through hatchling `include` + `sources`
+   (the same selection rules as the package, so `.gitignore` applies:
+   no `*.local.yaml`, artifacts, trace, preset or `__pycache__`).
+   Moving the files under `src/` was rejected: it would put ~45 serving
+   scripts under mypy strict, ruff, complexipy, bandit and vulture, and
+   churn the history of 130 files. A checker (`scripts/check_wheel_contents.py`)
+   asserts the packaged set equals `git ls-files .llm-orc`; it is red on
+   the 0.21.0 wheel and on any checkout with an untracked file under
+   `.llm-orc/` (this laptop has one: `ensembles/research-dossier.yaml`).
+2. **Content ships verbatim**, `config.yaml` included (`serving.self_reference:
+   true` stays on: the packaged scripts ARE the running wheel's scripts,
+   so a self-read is still ground truth, S1 step 4). Curating the test
+   and demo profiles out of the serving project is a separate chore, not
+   Arc 2, so the mini's behavior surface after the move is byte-for-byte
+   the checkout's.
+3. **Layer order: project → library → global → packaged.** Packaged is
+   the lowest tier, not the third as the card said. Reason: operator
+   seat overrides are `*.local.yaml` files, and `.local.yaml` ordering is
+   within a tier; on a plain-dir serve the only writable tiers are
+   global, so global must beat packaged or `docs/serving.md`'s "Operator
+   seat configuration" promise dies with the checkout. Library above
+   global is today's order and keeps it. Name collisions measured:
+   global's auto-provisioned templates (`example-local-ensemble`,
+   `validate-*`, `local-models.yaml`, `research-profiles.yaml`) and the
+   library's `security-review`, `validate-file-read`; none of them is a
+   serving seat, and the two multi-profile files carry no `name:` so
+   runtime resolution skips them. `classify_tier` gains `"packaged"`;
+   listings show `source: packaged`.
+4. **Runtime profiles (`get_model_profiles`) become a tier loop** over
+   packaged → global → local (each tier: `config.yaml: model_profiles`,
+   then `profiles/*.yaml`, `.local.yaml` last). The library tier stays
+   out of runtime resolution, as today, and that is pinned: letting it
+   in would let a submodule profile with `provider: ollama` shadow a
+   global one by name, a behavior change #196 does not ask for.
+   `performance:` and `agentic_serving:` merge defaults → packaged →
+   global → local. `serving:` keys are read from the serving root
+   (ruling 6), a two-tier shadow as S1 recommended.
+5. **Scripts:** resolver search order becomes project (three entries) →
+   package primitives → library → global → packaged (`<pkg>/scripts`,
+   `<pkg>`), consistent with ruling 3. `list_available_scripts` honors
+   `project_dir`. `PrimitiveRegistry` is left alone (S1: pre-existing
+   gap, independent of #196).
+6. **Serving root.** `ConfigurationManager.serving_root()` returns the
+   dot-dir that carries `ensembles/agentic-serving/serving.yaml`: the
+   project's `.llm-orc` when it does, else the packaged dir, else a
+   `FileNotFoundError` naming both. It replaces
+   `v1_chat_completions._resolve_serving_project_dir` (S1's concrete
+   break). `ServingEnsembleCaller` keeps its dot-dir `project_dir`
+   meaning and receives `trace_root` explicitly. The executor's child
+   resolution (`_resolve_ensemble_reference`) searches every tier from
+   `get_ensembles_dirs()` after the project dir; today it stops at the
+   local dot-dir, so a global ensemble cannot reach a packaged child
+   (`research-dossier` → `agentic-serving/web-searcher`).
+7. **State dir.** `LLM_ORC_STATE_DIR` (and `llm-orc serve --state-dir`,
+   which sets it) → else the project's `.llm-orc` when there is one
+   (today's layout, so instruments reading `.llm-orc/.serve-trace/` and
+   `.llm-orc/artifacts/` are unchanged) → else `$XDG_STATE_HOME/llm-orc`
+   or `~/.local/state/llm-orc`. Under it: `artifacts/`, `.serve-trace/`,
+   `cache/`, `llama-server.ini`. Every writer and every reader from the
+   S1 step 3 table goes through `resolve_state_dir`. One visible change:
+   a global-only serve's preset moves from `~/.config/llm-orc/` to the
+   state dir.
+8. **Override for tests and ops:** `LLM_ORC_SERVING_PROJECT_DIR=<path>`
+   uses that directory as the packaged tier; an empty value disables the
+   tier. The test suite sets it empty by default (the #86 lesson: a
+   `ConfigurationManager` built in a temp cwd would otherwise see this
+   checkout's serving project), and the packaged pins set it explicitly.
+9. **Write fallbacks.** `get_local_ensembles_dir` / `get_local_profiles_dir`
+   return the project dir or raise naming `scope: global` (Arc 1's ruling
+   A; nothing on the CRUD path calls them). The orchestrator's
+   `ConfigManagerEnsembleWriter` writes to the project dir, else global:
+   an engine write with no caller to ask has to land somewhere writable,
+   and never in the library or packaged tiers. `library_handler` and the
+   three library-path sites in `ConfigurationManager` derive the checkout
+   root from the local dot-dir's parent instead of cwd.
+10. **Deploy.** The plist's `WorkingDirectory` becomes a plain directory
+    with no `.llm-orc`; user ensembles live in `~/.config/llm-orc/`, state
+    in `~/.local/state/llm-orc/`; `brew upgrade` + kickstart is the whole
+    update path. The mini's 15 library ensembles disappear with the
+    checkout unless `LLM_ORC_LIBRARY_PATH` names a library; the README
+    says so. The practitioner does the move.
+
 ### Arc 3: transitive preflight (Sonnet, ~1-2 days, after S2)
 
 - `check_ensemble_runnable` (`services/handlers/provider_handler.py` ~165)
