@@ -8,6 +8,7 @@ from typing import Any
 
 import yaml
 
+from llm_orc.core.config.packaged import packaged_serving_project_dir
 from llm_orc.core.config.template_provider import TemplateProvider
 
 logger = logging.getLogger(__name__)
@@ -60,6 +61,11 @@ class ConfigurationManager:
         else:
             # Discover from cwd
             self._local_config_dir = self._discover_local_config()
+
+        # The read-only tier shipped in the wheel (#196), lowest precedence.
+        # In a checkout it is the local dot-dir itself; the dir lists and
+        # the profile merge each skip it then, so nothing is read twice.
+        self._packaged_serving_dir = packaged_serving_project_dir()
 
         # Profile cache
         self._profiles_cache: dict[str, dict[str, str]] | None = None
@@ -177,109 +183,87 @@ class ConfigurationManager:
         """Get the local configuration directory if found."""
         return self._local_config_dir
 
+    @property
+    def packaged_serving_dir(self) -> Path | None:
+        """The packaged serving project (read-only), if this install has one."""
+        return self._packaged_serving_dir
+
+    @property
+    def library_dir(self) -> Path:
+        """The library base directory, whether or not it exists.
+
+        ``LLM_ORC_LIBRARY_PATH`` wins; else the submodule location under
+        the checkout root, which is the local dot-dir's parent when there
+        is a project and the cwd otherwise. Derived from the project so a
+        manager built with an explicit ``project_dir`` does not read a
+        library off an unrelated cwd (S1 finding).
+        """
+        library_path_env = os.environ.get("LLM_ORC_LIBRARY_PATH")
+        if library_path_env:
+            return Path(library_path_env)
+        root = (
+            self._local_config_dir.parent
+            if self._local_config_dir is not None
+            else Path.cwd()
+        )
+        return root / "llm-orchestra-library"
+
+    def _is_packaged_distinct(self) -> bool:
+        """True when the packaged tier exists and is not the local dot-dir."""
+        packaged = self._packaged_serving_dir
+        if packaged is None:
+            return False
+        local = self._local_config_dir
+        return local is None or packaged.resolve() != local.resolve()
+
     def classify_tier(self, path: Path) -> str:
-        """Classify a path as belonging to the local, global, or library tier.
+        """Classify a path as local, library, global, packaged, or unknown.
 
         Args:
             path: Path to classify (file or directory).
 
         Returns:
-            One of ``"local"``, ``"global"``, ``"library"``, or ``"unknown"``.
+            One of ``"local"``, ``"library"``, ``"global"``, ``"packaged"``,
+            or ``"unknown"``. A checkout's dot-dir is ``"local"`` even
+            though it is also the packaged tier.
         """
-        library_dir = self._get_library_dir()
-
         if self._local_config_dir and path.is_relative_to(self._local_config_dir):
             return "local"
-        if library_dir is not None and path.is_relative_to(library_dir):
+        if path.is_relative_to(self.library_dir):
             return "library"
         if path.is_relative_to(self._global_config_dir):
             return "global"
+        if self._packaged_serving_dir is not None and path.is_relative_to(
+            self._packaged_serving_dir
+        ):
+            return "packaged"
         return "unknown"
 
-    def _get_library_dir(self) -> Path | None:
-        """Resolve the library base directory (without requiring it to exist).
-
-        Resolution order:
-        1. ``LLM_ORC_LIBRARY_PATH`` environment variable
-        2. ``<cwd>/llm-orchestra-library`` (default submodule location)
-        """
-        library_path_env = os.environ.get("LLM_ORC_LIBRARY_PATH")
-        if library_path_env:
-            return Path(library_path_env)
-        return Path.cwd() / "llm-orchestra-library"
-
     def get_ensembles_dirs(self) -> list[Path]:
-        """Get ensemble directories in priority order (local → library → global).
+        """Ensemble directories in priority order.
 
-        Library path resolution:
-        1. LLM_ORC_LIBRARY_PATH env var (custom location)
-        2. Current directory/llm-orchestra-library (submodule)
+        local → library → global → packaged. Each entry appears only when
+        it exists; the packaged entry is skipped in a checkout, where it
+        is the local dot-dir.
         """
-        dirs = []
-        cwd = Path.cwd()
-
-        # Priority 1: Local config takes precedence
-        if self._local_config_dir:
-            local_ensembles = self._local_config_dir / "ensembles"
-            if local_ensembles.exists():
-                dirs.append(local_ensembles)
-
-        # Priority 2: Library ensembles
-        # Check for custom library path from environment
-        import os
-
-        library_path_env = os.environ.get("LLM_ORC_LIBRARY_PATH")
-        if library_path_env:
-            library_ensembles = Path(library_path_env) / "ensembles"
-            if library_ensembles.exists():
-                dirs.append(library_ensembles)
-        else:
-            # Default: check for library submodule in current directory
-            library_ensembles = cwd / "llm-orchestra-library" / "ensembles"
-            if library_ensembles.exists():
-                dirs.append(library_ensembles)
-
-        # Priority 3: Global config as fallback
-        global_ensembles = self._global_config_dir / "ensembles"
-        if global_ensembles.exists():
-            dirs.append(global_ensembles)
-
-        return dirs
+        return self._tier_dirs("ensembles")
 
     def get_profiles_dirs(self) -> list[Path]:
-        """Get profile directories in priority order (local → library → global).
+        """Profile directories in priority order (same tiers as ensembles)."""
+        return self._tier_dirs("profiles")
 
-        Library path resolution:
-        1. LLM_ORC_LIBRARY_PATH env var (custom location)
-        2. Current directory/llm-orchestra-library (submodule)
-        """
-        dirs: list[Path] = []
-        cwd = Path.cwd()
-
-        # Priority 1: Local config takes precedence
-        if self._local_config_dir:
-            local_profiles = self._local_config_dir / "profiles"
-            if local_profiles.exists():
-                dirs.append(local_profiles)
-
-        # Priority 2: Library profiles
-        library_path_env = os.environ.get("LLM_ORC_LIBRARY_PATH")
-        if library_path_env:
-            library_profiles = Path(library_path_env) / "profiles"
-            if library_profiles.exists():
-                dirs.append(library_profiles)
-        else:
-            # Default: check for library submodule in current directory
-            library_profiles = cwd / "llm-orchestra-library" / "profiles"
-            if library_profiles.exists():
-                dirs.append(library_profiles)
-
-        # Priority 3: Global config as fallback
-        global_profiles = self._global_config_dir / "profiles"
-        if global_profiles.exists():
-            dirs.append(global_profiles)
-
-        return dirs
+    def _tier_dirs(self, subdir: str) -> list[Path]:
+        candidates: list[Path | None] = [
+            self._local_config_dir,
+            self.library_dir,
+            self._global_config_dir,
+            self._packaged_serving_dir if self._is_packaged_distinct() else None,
+        ]
+        return [
+            base / subdir
+            for base in candidates
+            if base is not None and (base / subdir).exists()
+        ]
 
     def get_credentials_file(self) -> Path:
         """Get the credentials file path (always in global config)."""
