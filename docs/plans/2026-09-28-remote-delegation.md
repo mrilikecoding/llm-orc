@@ -237,6 +237,42 @@ plan: `docs/plans/2026-09-29-remote-delegation-arc2.md`.
     checkout unless `LLM_ORC_LIBRARY_PATH` names a library; the README
     says so. The practitioner does the move.
 
+**Arc 2 live row (2026-09-29).** Laptop, branch `feat/packaged-serving` @
+`7c358c58`, `make wheel-check` → `ok: 162 serving project files match git
+ls-files`; the wheel (`llm_orchestra-0.21.0-py3-none-any.whl`) installed into
+a fresh `python3 -m venv`; `site-packages/llm_orc/serving_project/` carries
+`config.yaml`, `ensembles/`, `profiles/`, `scripts/`. Serve started from an
+empty directory with `XDG_CONFIG_HOME` and `XDG_STATE_HOME` pointed at fresh
+temp dirs: `llm-orc serve --port 8766 --backend-port 8790 --models-max 1`
+(llama-server 9850, GGUFs from the Hugging Face hub cache).
+
+- `/health` → `healthy 0.21.0`; cwd still empty; `<state>/llm-orc/llama-server.ini`
+  rendered (six model sections).
+- `GET /v1/models` → `["agentic-tier-cheap-general"]` (the packaged
+  `agentic_serving.orchestrator.model_profile`).
+- `GET /api/ensembles` → 105 entries, `source` ∈ {`global`, `packaged`};
+  `serving` reported as `packaged` at `agentic-serving/serving.yaml` (global
+  holds the provisioning templates only).
+- `GET /api/models` → six router models, all `unloaded`.
+- A bare prose `POST /v1/chat/completions` was echoed in 2 ms (the
+  session-start contract; not a serving turn). An OpenCode-shaped turn
+  (system prompt + tools from the 2026-07-13 capture, one user message
+  "Create hello.py that prints hello world.") → `200` in 1.1 s,
+  `finish_reason: tool_calls`, one `glob` call (the discovery round);
+  `<state>/llm-orc/.serve-trace/turns.jsonl` has one line; `artifacts/serving/`
+  created under the state dir.
+- `research-dossier.yaml` copied into `$XDG_CONFIG_HOME/llm-orc/ensembles/`
+  (global tier); `POST /api/ensembles/research-dossier/execute` with "the 1783
+  Laki eruption" → `200` in 86.7 s, `status: success`, `has_errors: false`:
+  decomposer (qwen3-8b) → five `searcher[i]` fan-out instances of the
+  packaged `agentic-serving/web-searcher` child, each `completed` → compiler
+  returned a markdown dossier as `deliverable`. Artifact at
+  `<state>/llm-orc/artifacts/research-dossier/20260929-141512-617/{execution.json,execution.md}`
+  plus `latest`.
+- `find <venv> -path '*serving_project*' -newer <marker>` → nothing: no write
+  under the packaged tier. cwd empty throughout. SIGTERM to the serve stopped
+  the router; ports free.
+
 ### Arc 3: transitive preflight (Sonnet, ~1-2 days, after S2)
 
 - `check_ensemble_runnable` (`services/handlers/provider_handler.py` ~165)
