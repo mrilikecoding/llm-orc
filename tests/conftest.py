@@ -43,9 +43,11 @@ def _isolated_state_and_packaged_tier(
     up (the #86 lesson again). Tests that pin the packaged tier opt in
     with the `packaged_serving_project` fixture below or set the env
     themselves. XDG_STATE_HOME keeps artifacts, traces and presets out
-    of the developer's ~/.local/state.
+    of the developer's ~/.local/state. The LLM_ORC_STATE_DIR override is
+    cleared too, so a shell export or `serve --state-dir` cannot leak.
     """
     monkeypatch.setenv("LLM_ORC_SERVING_PROJECT_DIR", "")
+    monkeypatch.setenv("LLM_ORC_STATE_DIR", "")
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path_factory.mktemp("state")))
 
 

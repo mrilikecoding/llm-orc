@@ -443,7 +443,6 @@ class TestStartRouterFromConfig:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """Review Focus 3: the state dir does not exist yet and is created."""
-        monkeypatch.delenv("LLM_ORC_STATE_DIR", raising=False)
         monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "xdg"))
         config = MagicMock()
         config.get_model_profiles.return_value = {}
