@@ -190,7 +190,26 @@ markers = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/llm_orc"]
+# The serving project (#196): the repo's own `.llm-orc/` ships as
+# `llm_orc/serving_project/`, a read-only layer below project, library and
+# global. Selected by the same rules as the package, so `.gitignore` keeps
+# `*.local.yaml`, artifacts, the trace, the preset and `__pycache__` out.
+# `scripts/check_wheel_contents.py` (make wheel-check) pins the set.
+# dev-mode-dirs: hatchling's default editable install rejects the `sources`
+# prefix rewrite, so `uv sync` needs the editable path stated explicitly. The
+# editable install does not carry the serving project; only wheels do.
+dev-mode-dirs = ["src"]
+include = [
+    "src/llm_orc",
+    ".llm-orc/ensembles",
+    ".llm-orc/profiles",
+    ".llm-orc/scripts",
+    ".llm-orc/config.yaml",
+]
+
+[tool.hatch.build.targets.wheel.sources]
+"src/llm_orc" = "llm_orc"
+".llm-orc" = "llm_orc/serving_project"
 
 [dependency-groups]
 dev = [

@@ -19,8 +19,10 @@ import asyncio
 import importlib.util
 import json
 import re
+import sys
 import uuid
-from collections.abc import AsyncIterator, Callable, Sequence
+from collections.abc import AsyncIterator, Callable, Iterator, Sequence
+from contextlib import contextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, NamedTuple
 
@@ -1260,6 +1262,18 @@ def _find_ensemble(project_dir: Path, name: str) -> Path:
     )
 
 
+@contextmanager
+def _no_bytecode() -> Iterator[None]:
+    """Keep an in-process file import from writing ``__pycache__`` beside
+    it: the packaged serving tier is read-only (#196)."""
+    previous = sys.dont_write_bytecode
+    sys.dont_write_bytecode = True
+    try:
+        yield
+    finally:
+        sys.dont_write_bytecode = previous
+
+
 def _load_emit_reject_prefixes(path: Path) -> _RejectPrefixes:
     """The reject/refuse terminals read straight out of a project's OWN
     ``emit.py`` TERMINALS registry (recap grounding, #133/#134; review
@@ -1291,7 +1305,8 @@ def _load_emit_reject_prefixes(path: Path) -> _RejectPrefixes:
         if spec is None or spec.loader is None:
             return ()
         module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
+        with _no_bytecode():
+            spec.loader.exec_module(module)
     except Exception:
         return ()
     terminals = getattr(module, "TERMINALS", None)

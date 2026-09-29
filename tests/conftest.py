@@ -32,6 +32,105 @@ def _isolated_global_config(
 
 
 @pytest.fixture(autouse=True)
+def _isolated_state_and_packaged_tier(
+    tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No packaged serving tier and a per-test state dir by default (#196).
+
+    An editable install resolves the packaged tier to THIS checkout's
+    `.llm-orc/`, so a ConfigurationManager built in a temp cwd would
+    otherwise see ~60 model profiles and 100+ ensembles it did not set
+    up (the #86 lesson again). Tests that pin the packaged tier opt in
+    with the `packaged_serving_project` fixture below or set the env
+    themselves. XDG_STATE_HOME keeps artifacts, traces and presets out
+    of the developer's ~/.local/state. The LLM_ORC_STATE_DIR override is
+    cleared too, so a shell export or `serve --state-dir` cannot leak.
+    """
+    monkeypatch.setenv("LLM_ORC_SERVING_PROJECT_DIR", "")
+    monkeypatch.setenv("LLM_ORC_STATE_DIR", "")
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path_factory.mktemp("state")))
+
+
+_PACKAGED_PROFILE = """\
+name: agentic-tier-cheap-general
+model: qwen3-8b
+provider: llama-server
+cost_per_token: 0.0
+"""
+
+_PACKAGED_CONFIG = """\
+project:
+  name: packaged-fixture
+serving:
+  self_reference: true
+model_profiles:
+  packaged-orch:
+    model: qwen3-0.6b
+    provider: llama-server
+  shadowed-by-file:
+    model: from-config-yaml
+    provider: llama-server
+agentic_serving:
+  orchestrator:
+    model_profile: packaged-orch
+"""
+
+_PACKAGED_SHADOW_PROFILE = """\
+name: shadowed-by-file
+model: from-profiles-dir
+provider: llama-server
+"""
+
+_PACKAGED_SERVING = """\
+name: serving
+description: fixture serving ensemble (never executed by these tests)
+agents:
+  - name: classify
+    script: scripts/agentic_serving/classify.py
+"""
+
+_PACKAGED_CHILD = """\
+name: child
+description: a packaged child that runs one packaged script
+agents:
+  - name: echo
+    script: scripts/agentic_serving/classify.py
+"""
+
+_PACKAGED_SCRIPT = """\
+import json, sys
+from _helpers import tag
+data = sys.stdin.read()
+print(json.dumps({"success": True, "data": {"echo": data.strip(), "tag": tag}}))
+"""
+
+_PACKAGED_HELPERS = 'tag = "helper"\n'
+
+
+@pytest.fixture
+def packaged_serving_project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """A minimal serving project on disk, installed as the packaged tier
+    through the env override. Returns its root (the dot-dir equivalent)."""
+    root = tmp_path / "serving_project"
+    (root / "ensembles" / "agentic-serving").mkdir(parents=True)
+    (root / "ensembles" / "agentic-serving" / "serving.yaml").write_text(
+        _PACKAGED_SERVING
+    )
+    (root / "ensembles" / "agentic-serving" / "child.yaml").write_text(_PACKAGED_CHILD)
+    (root / "profiles").mkdir()
+    (root / "profiles" / "agentic-tier-cheap-general.yaml").write_text(
+        _PACKAGED_PROFILE
+    )
+    (root / "profiles" / "shadowed-by-file.yaml").write_text(_PACKAGED_SHADOW_PROFILE)
+    (root / "scripts" / "agentic_serving").mkdir(parents=True)
+    (root / "scripts" / "agentic_serving" / "classify.py").write_text(_PACKAGED_SCRIPT)
+    (root / "scripts" / "agentic_serving" / "_helpers.py").write_text(_PACKAGED_HELPERS)
+    (root / "config.yaml").write_text(_PACKAGED_CONFIG)
+    monkeypatch.setenv("LLM_ORC_SERVING_PROJECT_DIR", str(root))
+    return root
+
+
+@pytest.fixture(autouse=True)
 def _reset_http_connection_pool() -> Generator[None, None, None]:
     """Reset HTTPConnectionPool singleton between tests.
 

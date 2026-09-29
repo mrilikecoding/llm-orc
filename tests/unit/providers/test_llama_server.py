@@ -436,9 +436,14 @@ class TestStartRouterFromConfig:
         finally:
             sup.stop()
 
-    def test_falls_back_to_global_config_dir_without_a_local_one(
-        self, stub_binary: Path, tmp_path: Path
+    def test_lands_in_the_state_dir_without_a_local_project(
+        self,
+        stub_binary: Path,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
+        """Review Focus 3: the state dir does not exist yet and is created."""
+        monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "xdg"))
         config = MagicMock()
         config.get_model_profiles.return_value = {}
         config.local_config_dir = None
@@ -448,7 +453,10 @@ class TestStartRouterFromConfig:
             config, binary=stub_binary, port=_free_port(), timeout_s=10.0
         )
         try:
-            assert sup.preset_path == tmp_path / "global" / "llama-server.ini"
+            expected = tmp_path / "xdg" / "llm-orc" / "llama-server.ini"
+            assert sup.preset_path == expected
+            assert expected.exists()
+            assert not (tmp_path / "global" / "llama-server.ini").exists()
         finally:
             sup.stop()
 
