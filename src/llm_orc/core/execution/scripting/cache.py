@@ -32,6 +32,16 @@ class ScriptCacheConfig:
     max_size: int = 1000  # Maximum number of cached entries
     persist_to_artifacts: bool = False  # Whether to persist cache to artifacts
     artifact_base_dir: Path = field(default_factory=lambda: Path("."))
+    # Explicit cache directory (#196). None keeps the legacy layout,
+    # artifact_base_dir/.llm-orc/cache, so existing callers are unchanged.
+    cache_dir: Path | None = None
+
+    @property
+    def resolved_cache_dir(self) -> Path:
+        """The cache directory: explicit, else under artifact_base_dir."""
+        if self.cache_dir is not None:
+            return self.cache_dir
+        return self.artifact_base_dir / ".llm-orc" / "cache"
 
 
 @dataclass
@@ -205,7 +215,7 @@ class ScriptCache:
 
         try:
             # Use artifact manager to load from cache directory
-            cache_dir = self.config.artifact_base_dir / ".llm-orc" / "cache"
+            cache_dir = self.config.resolved_cache_dir
             cache_file = cache_dir / f"{cache_key}.json"
 
             if not cache_file.exists():
@@ -236,7 +246,7 @@ class ScriptCache:
 
         try:
             # Create cache directory
-            cache_dir = self.config.artifact_base_dir / ".llm-orc" / "cache"
+            cache_dir = self.config.resolved_cache_dir
             cache_dir.mkdir(parents=True, exist_ok=True)
 
             # Save cache entry
@@ -260,7 +270,7 @@ class ScriptCache:
             return
 
         try:
-            cache_dir = self.config.artifact_base_dir / ".llm-orc" / "cache"
+            cache_dir = self.config.resolved_cache_dir
             if cache_dir.exists():
                 for cache_file in cache_dir.glob("*.json"):
                     cache_file.unlink(missing_ok=True)

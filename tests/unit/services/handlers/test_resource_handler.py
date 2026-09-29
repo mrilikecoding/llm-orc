@@ -9,6 +9,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from llm_orc.core.config.config_manager import ConfigurationManager
+from llm_orc.core.config.ensemble_config import EnsembleLoader
 from llm_orc.services.handlers.resource_handler import ResourceHandler
 
 
@@ -18,6 +20,7 @@ def mock_config_manager() -> Any:
     config.get_ensembles_dirs.return_value = []
     config.get_model_profiles.return_value = {}
     config.global_config_dir = "/fake/.llm-orc"
+    config.local_config_dir = None
     return config
 
 
@@ -178,19 +181,26 @@ class TestDetermineSource:
     """determine_source returns the correct source label."""
 
     def test_local_when_dot_llm_orc_without_library(
-        self, handler: ResourceHandler
+        self, handler: ResourceHandler, mock_config_manager: Any
     ) -> None:
-        """Path containing .llm-orc but not library is 'local'."""
+        """A directory classified 'local' is 'local'."""
+        mock_config_manager.classify_tier = lambda p: "local"
         result = handler.determine_source(Path("/home/user/.llm-orc/ensembles"))
         assert result == "local"
 
-    def test_library_when_library_in_path(self, handler: ResourceHandler) -> None:
-        """Path containing 'library' is 'library'."""
+    def test_library_when_library_in_path(
+        self, handler: ResourceHandler, mock_config_manager: Any
+    ) -> None:
+        """A directory classified 'library' is 'library'."""
+        mock_config_manager.classify_tier = lambda p: "library"
         result = handler.determine_source(Path("/home/user/.llm-orc/library/ensembles"))
         assert result == "library"
 
-    def test_global_for_other_paths(self, handler: ResourceHandler) -> None:
-        """Path without .llm-orc or library is 'global'."""
+    def test_global_for_other_paths(
+        self, handler: ResourceHandler, mock_config_manager: Any
+    ) -> None:
+        """A directory outside every tier ('unknown') is 'global'."""
+        mock_config_manager.classify_tier = lambda p: "unknown"
         result = handler.determine_source(Path("/usr/share/llm-orc/ensembles"))
         assert result == "global"
 
@@ -615,52 +625,52 @@ class TestGetArtifactsDir:
 
         assert result == artifacts_dir
 
-    def test_returns_local_artifacts_when_exists(
+    def test_returns_project_artifacts_when_project_has_local_dir(
         self, handler: ResourceHandler, tmp_path: Path, mock_config_manager: Any
     ) -> None:
-        """If .llm-orc/artifacts exists under cwd, return that path."""
-        local_artifacts = tmp_path / ".llm-orc" / "artifacts"
-        local_artifacts.mkdir(parents=True)
+        """A project's .llm-orc/artifacts is returned, whatever cwd is."""
+        local_dir = tmp_path / ".llm-orc"
+        (local_dir / "artifacts").mkdir(parents=True)
         mock_config_manager.global_config_dir = str(tmp_path / "global")
+        mock_config_manager.local_config_dir = local_dir
 
-        patch_target = "llm_orc.services.handlers.resource_handler.Path.cwd"
-        with patch(patch_target, return_value=tmp_path):
-            result = handler.get_artifacts_dir()
+        result = handler.get_artifacts_dir()
 
-        assert result == local_artifacts
+        assert result == local_dir / "artifacts"
 
-    def test_returns_global_artifacts_when_exists(
-        self, handler: ResourceHandler, tmp_path: Path, mock_config_manager: Any
+    def test_state_override_wins_over_the_project(
+        self,
+        handler: ResourceHandler,
+        tmp_path: Path,
+        mock_config_manager: Any,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """If global artifacts dir exists (but local does not), return global."""
-        global_dir = tmp_path / "global"
-        global_artifacts = global_dir / "artifacts"
-        global_artifacts.mkdir(parents=True)
-        mock_config_manager.global_config_dir = str(global_dir)
-
-        # Ensure local path does not exist
-        non_cwd = tmp_path / "project"
-        non_cwd.mkdir()
-
-        patch_target = "llm_orc.services.handlers.resource_handler.Path.cwd"
-        with patch(patch_target, return_value=non_cwd):
-            result = handler.get_artifacts_dir()
-
-        assert result == global_artifacts
-
-    def test_falls_back_to_local_artifacts_when_nothing_exists(
-        self, handler: ResourceHandler, tmp_path: Path, mock_config_manager: Any
-    ) -> None:
-        """When nothing exists, fall back to <cwd>/.llm-orc/artifacts."""
+        """LLM_ORC_STATE_DIR beats the project's .llm-orc."""
         mock_config_manager.global_config_dir = str(tmp_path / "global")
-        non_cwd = tmp_path / "empty"
-        non_cwd.mkdir()
+        mock_config_manager.local_config_dir = tmp_path / ".llm-orc"
+        monkeypatch.setenv("LLM_ORC_STATE_DIR", str(tmp_path / "state"))
 
-        patch_target = "llm_orc.services.handlers.resource_handler.Path.cwd"
-        with patch(patch_target, return_value=non_cwd):
-            result = handler.get_artifacts_dir()
+        result = handler.get_artifacts_dir()
 
-        assert result == non_cwd / ".llm-orc" / "artifacts"
+        assert result == tmp_path / "state" / "artifacts"
+
+    def test_falls_back_to_the_state_dir_when_no_project(
+        self,
+        handler: ResourceHandler,
+        tmp_path: Path,
+        mock_config_manager: Any,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """With no project, <state>/artifacts, not <cwd>/.llm-orc/artifacts."""
+        mock_config_manager.global_config_dir = str(tmp_path / "global")
+        monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "xdg"))
+        empty = tmp_path / "empty"
+        empty.mkdir()
+        monkeypatch.chdir(empty)
+
+        result = handler.get_artifacts_dir()
+
+        assert result == tmp_path / "xdg" / "llm-orc" / "artifacts"
 
 
 # -------------------------------------------------------------------
@@ -692,6 +702,7 @@ class TestReadArtifacts:
         mock_config_manager: Any,
     ) -> None:
         """Parses execution.json and returns artifact metadata."""
+        mock_config_manager.local_config_dir = tmp_path / ".llm-orc"
         arts = tmp_path / ".llm-orc" / "artifacts" / "my-ens"
         run_dir = arts / "20240101_120000"
         run_dir.mkdir(parents=True)
@@ -725,9 +736,8 @@ class TestReadArtifacts:
         arts.mkdir(parents=True)
         (arts / "stray-file.txt").write_text("ignore me")
         mock_config_manager.global_config_dir = str(tmp_path / "global")
-        patch_target = "llm_orc.services.handlers.resource_handler.Path.cwd"
-        with patch(patch_target, return_value=tmp_path):
-            result = await handler.read_artifacts("my-ens")
+        mock_config_manager.local_config_dir = tmp_path / ".llm-orc"
+        result = await handler.read_artifacts("my-ens")
 
         assert result == []
 
@@ -741,9 +751,8 @@ class TestReadArtifacts:
         arts = tmp_path / ".llm-orc" / "artifacts" / "my-ens"
         (arts / "empty-run").mkdir(parents=True)
         mock_config_manager.global_config_dir = str(tmp_path / "global")
-        patch_target = "llm_orc.services.handlers.resource_handler.Path.cwd"
-        with patch(patch_target, return_value=tmp_path):
-            result = await handler.read_artifacts("my-ens")
+        mock_config_manager.local_config_dir = tmp_path / ".llm-orc"
+        result = await handler.read_artifacts("my-ens")
 
         assert result == []
 
@@ -759,9 +768,8 @@ class TestReadArtifacts:
         run_dir.mkdir(parents=True)
         (run_dir / "execution.json").write_text("{invalid")
         mock_config_manager.global_config_dir = str(tmp_path / "global")
-        patch_target = "llm_orc.services.handlers.resource_handler.Path.cwd"
-        with patch(patch_target, return_value=tmp_path):
-            result = await handler.read_artifacts("my-ens")
+        mock_config_manager.local_config_dir = tmp_path / ".llm-orc"
+        result = await handler.read_artifacts("my-ens")
 
         assert result == []
 
@@ -797,8 +805,56 @@ class TestParseDurationValueError:
         }
         (run_dir / "execution.json").write_text(json.dumps(execution))
         mock_config_manager.global_config_dir = str(tmp_path / "global")
-        patch_target = "llm_orc.services.handlers.resource_handler.Path.cwd"
-        with patch(patch_target, return_value=tmp_path):
-            result = await handler.read_metrics("my-ens")
+        mock_config_manager.local_config_dir = tmp_path / ".llm-orc"
+        result = await handler.read_metrics("my-ens")
 
         assert result["avg_duration"] == 0.0
+
+
+class TestArtifactsDirFollowsState:
+    def test_no_project_reads_the_state_dir(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "xdg"))
+        elsewhere = tmp_path / "elsewhere"
+        elsewhere.mkdir()
+        monkeypatch.chdir(elsewhere)
+        handler = ResourceHandler(
+            ConfigurationManager(project_dir=tmp_path / "noproj", provision=False),
+            EnsembleLoader(),
+        )
+
+        expected = tmp_path / "xdg" / "llm-orc" / "artifacts"
+        assert handler.get_artifacts_dir() == expected
+
+    def test_project_reads_its_dot_dir(self, tmp_path: Path) -> None:
+        (tmp_path / ".llm-orc").mkdir()
+        handler = ResourceHandler(
+            ConfigurationManager(project_dir=tmp_path, provision=False),
+            EnsembleLoader(),
+        )
+        assert handler.get_artifacts_dir() == tmp_path / ".llm-orc" / "artifacts"
+
+
+class TestDetermineSourceUsesTiers:
+    def test_packaged_dir_reports_packaged(
+        self, tmp_path: Path, packaged_serving_project: Path
+    ) -> None:
+        handler = ResourceHandler(
+            ConfigurationManager(project_dir=tmp_path / "noproj", provision=False),
+            EnsembleLoader(),
+        )
+        source = handler.determine_source(packaged_serving_project / "ensembles")
+        assert source == "packaged"
+
+    async def test_listing_labels_packaged_ensembles(
+        self, tmp_path: Path, packaged_serving_project: Path
+    ) -> None:
+        handler = ResourceHandler(
+            ConfigurationManager(project_dir=tmp_path / "noproj", provision=False),
+            EnsembleLoader(),
+        )
+        entries = await handler.read_ensembles()
+        sources = {e["name"]: e["source"] for e in entries}
+        assert sources["serving"] == "packaged"
+        assert sources["child"] == "packaged"

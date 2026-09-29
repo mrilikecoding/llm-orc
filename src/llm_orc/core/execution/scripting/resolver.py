@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from llm_orc.core.config.config_manager import resolve_global_config_dir
+from llm_orc.core.config.packaged import packaged_serving_project_dir
 
 
 class ScriptNotFoundError(FileNotFoundError):
@@ -68,7 +69,10 @@ class ScriptResolver:
         self._project_dir = project_dir
 
     def _get_search_paths(self) -> list[str]:
-        """Get search paths in priority order: local → library → system.
+        """Get search paths in priority order.
+
+        Project (three entries), package primitives, library submodule,
+        global config scripts, then the packaged serving project (#196).
 
         Returns:
             List of search paths in priority order
@@ -116,6 +120,16 @@ class ScriptResolver:
         global_scripts = resolve_global_config_dir() / self.SCRIPTS_DIR
         if global_scripts.exists():
             search_paths.append(str(global_scripts))
+
+        # Priority 4: the packaged serving project (#196), the lowest tier.
+        # Skipped in a checkout, where it is the project's own dot-dir
+        # and already covered by priority 1.
+        packaged = packaged_serving_project_dir()
+        if (
+            packaged is not None
+            and packaged.resolve() != (base / self.LLM_ORC_DIR).resolve()
+        ):
+            search_paths.extend([str(packaged / self.SCRIPTS_DIR), str(packaged)])
 
         return search_paths
 
@@ -290,8 +304,8 @@ class ScriptResolver:
             List of script dictionaries with name, path, and relative_path
         """
         scripts: list[dict[str, str | None]] = []
-        cwd = Path(os.getcwd())
-        scripts_dir = cwd / self.LLM_ORC_DIR / self.SCRIPTS_DIR
+        base = self._project_dir or Path(os.getcwd())
+        scripts_dir = base / self.LLM_ORC_DIR / self.SCRIPTS_DIR
 
         if scripts_dir.exists():
             self._collect_local_scripts(scripts_dir, scripts)

@@ -17,12 +17,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   created with `scope: global` resolve at execution time (the resolver
   searches the global scripts dir last) and appear in `list_scripts` with
   their scope.
+- The serving project (`.llm-orc/{ensembles,profiles,scripts,config.yaml}`)
+  ships in the wheel as `llm_orc/serving_project/`, a read-only fourth
+  configuration tier below project, library and global (#196). A serve
+  started in an empty directory runs the shipped serving ensemble; a
+  checkout still shadows it. Listings report `source: packaged`.
+  `LLM_ORC_SERVING_PROJECT_DIR` overrides the tier (empty disables it).
+  `scripts/check_wheel_contents.py` (`make wheel-check`) pins the
+  packaged set to the tracked files.
+- A runtime state dir for artifacts, the turn trace, the script cache and
+  the rendered router preset: `LLM_ORC_STATE_DIR` / `llm-orc serve
+  --state-dir`, else the project's `.llm-orc/`, else `$XDG_STATE_HOME/llm-orc`.
 
 ### Changed
 - `delete_ensemble` / `delete_profile` / `delete_script` and the update
   tools act on one scope only. A name that lives in another tier (including
   the library) is an error naming the tier and path; previously delete
   removed the first match across all tiers, library included.
+- Runtime model profiles merge packaged, global and project tiers in that
+  order (`.local.yaml` last within a tier); `performance:` and
+  `agentic_serving:` config merge the packaged tier below global.
+- Child ensemble references (`ensemble:`, `loop:`, `dispatch:`) resolve
+  across every tier after the project dir; previously a global ensemble
+  could not reach a child that lived elsewhere.
+- A serve with no project renders `llama-server.ini` into the state dir
+  (was `~/.config/llm-orc/`).
+- The library submodule is located relative to the project, not cwd, when
+  a `ConfigurationManager` is built with an explicit project dir.
+- Engine writes with no project never land in the library or packaged
+  tier: composition writes go to global; the legacy project-dir helpers
+  raise naming `scope: global`.
+- The MCP `llm-orc://artifacts/...` resource and the artifact handlers read
+  the state dir only; artifacts sitting in `~/.config/llm-orc/artifacts/`
+  (an old fallback location) are no longer listed.
+- `llm-orc list-ensembles` and the service's grouped listing report a fourth
+  group, `packaged`, for ensembles shipped with llm-orc.
+- After `set_project` (MCP), the service's executor is built on the
+  project's configuration manager, so its model profiles, credentials,
+  artifacts and script cache follow the switched project (previously a cwd
+  discovery).
 
 ## [0.21.0] - 2026-09-27
 

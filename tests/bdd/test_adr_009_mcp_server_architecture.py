@@ -51,6 +51,12 @@ def _create_mock_config_manager(
     mock_config.global_config_dir = str(artifacts_dir) if artifacts_dir else ""
     mock_config.get_model_profiles.return_value = _MOCK_PROFILES
     mock_config.get_profiles_dirs.return_value = profile_dirs
+    # The service builds its executor on this manager, and CredentialStorage
+    # reads real key/credential files from it.
+    mock_config.load_performance_config.return_value = {}
+    secrets_dir = Path(ensemble_dirs[0]).parent if ensemble_dirs else Path(".")
+    mock_config.get_encryption_key_file.return_value = secrets_dir / ".key"
+    mock_config.get_credentials_file.return_value = secrets_dir / "creds"
     return mock_config
 
 

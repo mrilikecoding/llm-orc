@@ -37,6 +37,8 @@ from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from llm_orc.core.config.config_manager import ConfigurationManager
+from llm_orc.core.config.state import TRACE_DIRNAME, resolve_state_dir
 from llm_orc.core.session.registry import SessionRegistry
 from llm_orc.web.api.sse_format import OpenAiSseFormatter, encode_tool_call_for_message
 from llm_orc.web.serving.chunks import (
@@ -108,27 +110,27 @@ def _log_wire_shape(request: _ChatCompletionsRequest) -> None:
         pass
 
 
-def _resolve_serving_project_dir() -> Path:
-    local = Path.cwd() / ".llm-orc"
-    return local if local.exists() else Path.cwd()
-
-
 _SHARED_CALLERS: dict[Path, ServingEnsembleCaller] = {}
 
 
 def get_serving_ensemble_caller() -> ServingEnsembleCaller:
     """Return the Cycle-8 declarative Serving Ensemble caller (ADR-046 §1).
 
-    Shared per project dir (like _SHARED_REGISTRY) so the caller's
+    Built on ``ConfigurationManager.serving_root()`` (#196): the project's
+    ``.llm-orc`` when it carries the serving ensemble, else the packaged
+    serving project. The turn trace goes to the state dir, never under
+    the (read-only) packaged root. Shared per root so the caller's
     ensemble-config cache survives across requests (issue #93). Tests
     override this factory to point at a hermetic project dir whose
     ``code_generation`` seat is a deterministic echo (no model).
     """
-    project_dir = _resolve_serving_project_dir()
-    caller = _SHARED_CALLERS.get(project_dir)
+    config_manager = ConfigurationManager(provision=False)
+    root = config_manager.serving_root()
+    caller = _SHARED_CALLERS.get(root)
     if caller is None:
-        caller = ServingEnsembleCaller(project_dir=project_dir)
-        _SHARED_CALLERS[project_dir] = caller
+        trace_root = resolve_state_dir(config_manager.local_config_dir) / TRACE_DIRNAME
+        caller = ServingEnsembleCaller(project_dir=root, trace_root=trace_root)
+        _SHARED_CALLERS[root] = caller
     return caller
 
 

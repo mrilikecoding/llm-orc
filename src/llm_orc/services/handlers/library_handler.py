@@ -35,11 +35,7 @@ class LibraryHandler:
         if self._library_dir is not None:
             return self._library_dir
 
-        for dir_path in self._config_manager.get_ensembles_dirs():
-            if "library" in str(dir_path):
-                return Path(dir_path).parent
-
-        return Path.cwd() / "llm-orchestra-library"
+        return self._config_manager.library_dir
 
     async def browse(self, arguments: dict[str, Any]) -> dict[str, Any]:
         """Browse library items."""
@@ -100,14 +96,14 @@ class LibraryHandler:
     def _resolve_copy_destination(self, source_path: Path) -> Path:
         """Resolve the default local destination for a library copy."""
         ensemble_dirs = self._config_manager.get_ensembles_dirs()
-        local_dir = Path.cwd() / ".llm-orc"
-        lib_dir = self.get_library_dir()
+        local_dir = (
+            self._config_manager.local_config_dir
+            or self._config_manager.global_config_dir
+        )
 
         for dir_path in ensemble_dirs:
             path = Path(dir_path)
-            is_local = ".llm-orc" in str(path)
-            is_library = str(path).startswith(str(lib_dir))
-            if is_local and not is_library:
+            if self._config_manager.classify_tier(path) == "local":
                 local_dir = path.parent
                 break
 

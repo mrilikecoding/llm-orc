@@ -1,5 +1,7 @@
 """``llm-orc serve`` owns the llama-server router (#90)."""
 
+import os
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from click.testing import CliRunner
@@ -59,3 +61,17 @@ class TestServeOwnsTheRouter:
         assert result.exit_code != 0
         assert "llama-server exited with code 3" in result.output
         run.assert_not_called()
+
+    def test_state_dir_flag_sets_the_env_for_the_process(self, tmp_path: Path) -> None:
+        seen: dict[str, str | None] = {}
+
+        def fake_uvicorn_run(*args: object, **kwargs: object) -> None:
+            seen["state"] = os.environ.get("LLM_ORC_STATE_DIR")
+
+        with patch("uvicorn.run", side_effect=fake_uvicorn_run):
+            result = CliRunner().invoke(
+                cli, ["serve", "--no-backend", "--state-dir", str(tmp_path / "st")]
+            )
+
+        assert result.exit_code == 0, result.output
+        assert seen["state"] == str(tmp_path / "st")

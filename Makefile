@@ -52,6 +52,10 @@ lint-fix:
 
 lint-check: lint
 
+wheel-check:
+	rm -rf dist/wheel-check && uv build --wheel -o dist/wheel-check -q
+	uv run python scripts/check_wheel_contents.py dist/wheel-check/*.whl
+
 format:
 	uv run ruff check --fix src tests benchmarks
 	uv run ruff format src tests benchmarks

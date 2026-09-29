@@ -11,13 +11,25 @@ from llm_orc.schemas.script_agent import ScriptAgentOutput
 class ArtifactManager:
     """Manages saving execution results to structured artifact directories."""
 
-    def __init__(self, base_dir: Path | str = ".") -> None:
-        """Initialize artifact manager with base directory.
+    def __init__(
+        self, base_dir: Path | str = ".", *, artifacts_dir: Path | None = None
+    ) -> None:
+        """Initialize artifact manager.
 
         Args:
-            base_dir: Base directory for artifacts (default: current directory)
+            base_dir: Legacy root; artifacts default to
+                ``base_dir/.llm-orc/artifacts``.
+            artifacts_dir: The artifacts directory itself. Production
+                callers pass ``resolve_state_dir(...) / "artifacts"`` (#196)
+                so a serve with no project writes to the state dir, never
+                under cwd or the packaged tier.
         """
         self.base_dir = Path(base_dir) if isinstance(base_dir, str) else base_dir
+        self.artifacts_dir = (
+            artifacts_dir
+            if artifacts_dir is not None
+            else self.base_dir / ".llm-orc" / "artifacts"
+        )
 
     def save_execution_results(
         self,
@@ -51,7 +63,7 @@ class ArtifactManager:
             timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S-%f")[:-3]
 
         # Create directory structure
-        artifacts_dir = self.base_dir / ".llm-orc" / "artifacts"
+        artifacts_dir = self.artifacts_dir
 
         # Use mirrored directory structure if relative_path is provided
         if relative_path:
@@ -246,7 +258,7 @@ class ArtifactManager:
         Returns:
             List of ensemble dictionaries with execution information
         """
-        artifacts_dir = self.base_dir / ".llm-orc" / "artifacts"
+        artifacts_dir = self.artifacts_dir
 
         if not artifacts_dir.exists():
             return []
@@ -347,7 +359,7 @@ class ArtifactManager:
         Returns:
             Latest execution results or None if not found
         """
-        artifacts_dir = self.base_dir / ".llm-orc" / "artifacts"
+        artifacts_dir = self.artifacts_dir
 
         # Use mirrored directory structure if relative_path is provided
         if relative_path:
@@ -387,7 +399,7 @@ class ArtifactManager:
         Returns:
             Execution results or None if not found
         """
-        artifacts_dir = self.base_dir / ".llm-orc" / "artifacts"
+        artifacts_dir = self.artifacts_dir
 
         # Use mirrored directory structure if relative_path is provided
         if relative_path:

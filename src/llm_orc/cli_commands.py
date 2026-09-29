@@ -121,6 +121,7 @@ def _display_grouped_ensembles(
     local_ensembles: Sequence[EnsembleConfig],
     library_ensembles: Sequence[EnsembleConfig],
     global_ensembles: Sequence[EnsembleConfig],
+    packaged_ensembles: Sequence[EnsembleConfig] = (),
 ) -> None:
     """Display grouped ensembles with proper formatting.
 
@@ -129,6 +130,7 @@ def _display_grouped_ensembles(
         local_ensembles: List of local ensemble configs
         library_ensembles: List of library ensemble configs
         global_ensembles: List of global ensemble configs
+        packaged_ensembles: List of packaged (shipped with llm-orc) configs
     """
     click.echo("Available ensembles:")
 
@@ -139,6 +141,8 @@ def _display_grouped_ensembles(
 
     global_header = f"🌐 Global ({config_manager.global_config_dir}/ensembles):"
     _display_ensemble_group(global_ensembles, global_header)
+
+    _display_ensemble_group(packaged_ensembles, "📦 Packaged (shipped with llm-orc):")
 
 
 def _setup_performance_display(
@@ -378,6 +382,7 @@ def list_ensembles_command(config_dir: str | None) -> None:
         grouped["local"],
         grouped["library"],
         grouped["global"],
+        grouped["packaged"],
     )
 
 
@@ -535,9 +540,14 @@ def scripts_test_command(script_name: str, parameters_json: str | None) -> None:
 
 def artifacts_list_command(format_type: str) -> None:
     """List execution artifacts."""
+    from llm_orc.core.config.config_manager import ConfigurationManager
+    from llm_orc.core.config.state import ARTIFACTS_DIRNAME, resolve_state_dir
     from llm_orc.core.execution.artifact_manager import ArtifactManager
 
-    manager = ArtifactManager()
+    local = ConfigurationManager(provision=False).local_config_dir
+    manager = ArtifactManager(
+        artifacts_dir=resolve_state_dir(local) / ARTIFACTS_DIRNAME
+    )
     ensembles = manager.list_ensembles()
 
     if format_type == "json":
@@ -593,9 +603,14 @@ def artifacts_show_command(
     ensemble_name: str, format_type: str, execution_timestamp: str | None
 ) -> None:
     """Show latest results for an ensemble."""
+    from llm_orc.core.config.config_manager import ConfigurationManager
+    from llm_orc.core.config.state import ARTIFACTS_DIRNAME, resolve_state_dir
     from llm_orc.core.execution.artifact_manager import ArtifactManager
 
-    manager = ArtifactManager()
+    local = ConfigurationManager(provision=False).local_config_dir
+    manager = ArtifactManager(
+        artifacts_dir=resolve_state_dir(local) / ARTIFACTS_DIRNAME
+    )
 
     if execution_timestamp:
         results = manager.get_execution_results(ensemble_name, execution_timestamp)

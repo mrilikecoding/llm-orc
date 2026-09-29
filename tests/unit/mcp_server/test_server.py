@@ -36,6 +36,13 @@ def mock_config_manager(tmp_path: Path) -> Any:
     # merge project and global unconditionally, so `.exists()` on the global
     # scripts dir must give a real False rather than a truthy mock.
     config.global_config_dir = tmp_path / "global-config"
+    # The service builds its executor on this manager, and CredentialStorage
+    # reads real key/credential files from it.
+    config.load_performance_config.return_value = {}
+    secrets = tmp_path / "secrets"
+    secrets.mkdir()
+    config.get_encryption_key_file.return_value = secrets / ".key"
+    config.get_credentials_file.return_value = secrets / "creds"
     return config
 
 
@@ -468,23 +475,11 @@ class TestMCPServerGetLibraryDir:
 
         assert result == tmp_path / "test-lib"
 
-    def test_get_library_dir_from_ensemble_dirs(
+    def test_get_library_dir_falls_back_to_config_manager(
         self, server: MCPServer, tmp_path: Path
     ) -> None:
-        """Finds library from ensemble dirs."""
-        library_dir = tmp_path / "llm-orchestra-library" / "ensembles"
-        _mock_config(server).get_ensembles_dirs.return_value = [str(library_dir)]
-
-        result = server._library_handler.get_library_dir()
-
-        assert result == tmp_path / "llm-orchestra-library"
-
-    def test_get_library_dir_default(
-        self, server: MCPServer, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """Falls back to default library location."""
-        monkeypatch.chdir(tmp_path)
-        _mock_config(server).get_ensembles_dirs.return_value = []
+        """Without an injected path, the manager's library_dir is used."""
+        _mock_config(server).library_dir = tmp_path / "llm-orchestra-library"
 
         result = server._library_handler.get_library_dir()
 
@@ -1224,22 +1219,15 @@ class TestMCPServerHelperMethods:
 
         assert result == local_dir
 
-    def test_get_local_ensembles_dir_falls_back(
+    def test_get_local_ensembles_dir_raises_without_project(
         self, server: MCPServer, tmp_path: Path
     ) -> None:
-        """Get local ensembles dir falls back to first directory."""
-        fallback_dir = tmp_path / "ensembles"
-        _mock_config(server).get_ensembles_dirs.return_value = [str(fallback_dir)]
+        """No project tier: raise naming scope global, never fall through."""
+        config = _mock_config(server)
+        config.local_config_dir = None
+        config.get_ensembles_dirs.return_value = [str(tmp_path / "ensembles")]
 
-        result = server._get_local_ensembles_dir()
-
-        assert result == fallback_dir
-
-    def test_get_local_ensembles_dir_raises_if_none(self, server: MCPServer) -> None:
-        """Get local ensembles dir raises if no directories."""
-        _mock_config(server).get_ensembles_dirs.return_value = []
-
-        with pytest.raises(ValueError, match="No ensemble directory"):
+        with pytest.raises(ValueError, match="scope 'global'"):
             server._get_local_ensembles_dir()
 
 

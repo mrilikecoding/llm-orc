@@ -292,12 +292,11 @@ class ConfigManagerPrimitiveRegistry:
 
 
 class ConfigManagerEnsembleWriter:
-    """Production adapter: writes to the local tier via ConfigurationManager.
+    """Production adapter: writes via ConfigurationManager.
 
-    Mirrors :class:`EnsembleCrudHandler.get_local_ensembles_dir` so the
-    orchestrator's composition path writes to the same directory the
-    MCP ``create_ensemble`` tool writes to. Collision (same name
-    already present) is a failure — composition never overwrites.
+    Writes to the project's ensembles dir, else the global one; never the
+    library or packaged tiers. Collision (same name already present) is a
+    failure — composition never overwrites.
     """
 
     def __init__(self, config_manager: ConfigurationManager) -> None:
@@ -315,17 +314,15 @@ class ConfigManagerEnsembleWriter:
         return str(target)
 
     def _resolve_local_ensembles_dir(self) -> Path:
-        ensemble_dirs = self._config_manager.get_ensembles_dirs()
-        for path in ensemble_dirs:
-            path_str = str(path)
-            if ".llm-orc" in path_str and "library" not in path_str:
-                return path
-        if ensemble_dirs:
-            return ensemble_dirs[0]
-        raise EnsembleWriteError(
-            "no local ensembles directory is configured; "
-            "run `llm-orc init` or create .llm-orc/ensembles/"
-        )
+        """The project's ensembles dir, else the global one.
+
+        The orchestrator's composition write has no caller to ask for a
+        scope, so it lands in the first writable tier: never the library
+        or the packaged serving project (#196).
+        """
+        local = self._config_manager.local_config_dir
+        base = local if local is not None else self._config_manager.global_config_dir
+        return base / "ensembles"
 
 
 def _render_ensemble_yaml(config: EnsembleConfig) -> str:

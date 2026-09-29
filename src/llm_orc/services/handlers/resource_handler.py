@@ -8,6 +8,7 @@ from typing import Any
 
 from llm_orc.core.config.config_manager import ConfigurationManager
 from llm_orc.core.config.ensemble_config import EnsembleLoader
+from llm_orc.core.config.state import ARTIFACTS_DIRNAME, resolve_state_dir
 from llm_orc.mcp.project_context import ProjectContext
 
 
@@ -151,21 +152,14 @@ class ResourceHandler:
         return ensembles
 
     def determine_source(self, ensemble_dir: Path) -> str:
-        """Determine the source type of an ensemble directory.
-
-        Args:
-            ensemble_dir: Path to ensemble directory.
+        """The tier an ensemble directory belongs to.
 
         Returns:
-            Source type: 'local', 'library', or 'global'.
+            ``'local'``, ``'library'``, ``'global'`` or ``'packaged'``;
+            a directory outside every tier reports ``'global'`` as before.
         """
-        path = ensemble_dir
-        if ".llm-orc" in str(path) and "library" not in str(path):
-            return "local"
-        elif "library" in str(path):
-            return "library"
-        else:
-            return "global"
+        tier = self._config_manager.classify_tier(Path(ensemble_dir))
+        return "global" if tier == "unknown" else tier
 
     async def read_ensemble(self, name: str) -> dict[str, Any]:
         """Read specific ensemble configuration.
@@ -329,12 +323,6 @@ class ResourceHandler:
         if global_config_path.name == "artifacts" and global_config_path.exists():
             return global_config_path
 
-        local_artifacts = Path.cwd() / ".llm-orc" / "artifacts"
-        if local_artifacts.exists():
-            return local_artifacts
-
-        global_artifacts = global_config_path / "artifacts"
-        if global_artifacts.exists():
-            return global_artifacts
-
-        return local_artifacts
+        return (
+            resolve_state_dir(self._config_manager.local_config_dir) / ARTIFACTS_DIRNAME
+        )

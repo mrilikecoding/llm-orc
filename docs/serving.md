@@ -104,13 +104,13 @@ another round is needed and writes nothing).
 | HTTP endpoint / OpenAI compat | `src/llm_orc/web/api/v1_chat_completions.py`, `v1_models.py`, `sse_format.py` |
 | Per-turn caller (endpoint → ensemble) | `src/llm_orc/web/serving/serving_ensemble_caller.py` |
 | Chunk vocabulary / session-start contract | `src/llm_orc/web/serving/chunks.py`, `session_start.py` |
-| Serving ensemble + seats | `.llm-orc/ensembles/agentic-serving/` |
+| Serving ensemble + seats | `.llm-orc/ensembles/agentic-serving/` (shipped in the wheel as `llm_orc/serving_project/`) |
 | Registry: Topaz-keyed parts, shape catalog, admission | `src/llm_orc/core/serving/` |
 | Seat contracts / validation framework | `src/llm_orc/core/validation/` |
 | Session substrate (registry, artifacts, compaction, plexus adapter) | `src/llm_orc/core/session/` |
 | I/O envelope (inter-seat seam) | `src/llm_orc/models/dispatch_envelope.py` |
 | Engine primitives (guard, loop, dynamic dispatch) | `src/llm_orc/core/execution/` |
-| Turn trace (per-turn introspection) | `src/llm_orc/web/serving/turn_trace.py` → `.llm-orc/.serve-trace/turns.jsonl` |
+| Turn trace (per-turn introspection) | `src/llm_orc/web/serving/turn_trace.py` → `<state dir>/.serve-trace/turns.jsonl` |
 
 ## Decisions
 
@@ -122,6 +122,35 @@ ADR-046 (the target architecture and the orchestrator-actor dissolution),
 ADR-047 (extensibility: registry + shape catalog), and ADR-048 (grounded
 acceptance).
 
+## Layers and state
+
+Configuration is read from four tiers, highest precedence first:
+
+| Tier | Where | Written by |
+|------|-------|------------|
+| project | `<checkout>/.llm-orc/` (discovered walking up from cwd) | CRUD with `scope: project` (the default), the orchestrator's composition writes |
+| library | `LLM_ORC_LIBRARY_PATH`, else `<checkout>/llm-orchestra-library/` | nothing (templates) |
+| global | `$XDG_CONFIG_HOME/llm-orc/`, default `~/.config/llm-orc/` | CRUD with `scope: global`, operator `*.local.yaml` overrides |
+| packaged | `llm_orc/serving_project/` in the wheel; this repo's `.llm-orc/` in a checkout | nothing (read-only; `brew upgrade` changes it) |
+
+Ensembles, profile listings and scripts merge all four (first match
+wins). Runtime model profiles merge packaged → global → project (the
+library is listed, never resolved). The serving ensemble, its
+serve-owned scripts and the `serving:` config keys are read from the
+**serving root**: the project's `.llm-orc/` when it carries
+`ensembles/agentic-serving/serving.yaml`, else the packaged project. So a
+serve started in an empty directory runs the shipped serving ensemble,
+and a checkout of this repo shadows it. `LLM_ORC_SERVING_PROJECT_DIR`
+points the packaged tier at another directory (empty disables it).
+
+Runtime state (artifacts, the turn trace, the script cache, the rendered
+router preset) is written to one **state dir**: `LLM_ORC_STATE_DIR` or
+`llm-orc serve --state-dir`, else the project's `.llm-orc/` when there is
+one, else `$XDG_STATE_HOME/llm-orc/` (default `~/.local/state/llm-orc/`).
+In a wheel install nothing is ever written under the packaged tier; in a
+checkout the packaged tier is the project's own `.llm-orc/`, which is where
+project writes go.
+
 ## Operator seat configuration
 
 Seat models resolve through **tier profile names** (`agentic-tier-cheap-general`
@@ -132,13 +161,16 @@ own provider — a paid API, a hosted endpoint, a bigger local model — create 
 gitignored override:
 
 ```yaml
-# .llm-orc/profiles/my-paid-seat.local.yaml   (never committed)
+# my-paid-seat.local.yaml   (never committed)
 name: agentic-tier-cheap-general   # the tier name to override
 model: your-hosted-model
 provider: openai-compatible/yourprovider
 cost_per_token: 0.0
 ```
 
+In a checkout the file lives in `.llm-orc/profiles/`. In a wheel install
+(the mini) it lives in `~/.config/llm-orc/profiles/`, because the global
+tier sits above the packaged one and nothing reads `.llm-orc/` there.
 `*.local.yaml` files load last (deterministically), so they win over the
 checked-in profile of the same name. Nothing provider-specific belongs in
 tracked config. Empirical note (2026-07-08 A/B): a hosted frontier seat did
@@ -149,7 +181,7 @@ shapes) before bigger models.
 
 `llm-orc serve` starts and supervises one `llama-server` process in router
 mode (llama.cpp; the binary is the only external runtime dependency). At
-start the serve renders `.llm-orc/llama-server.ini` from every
+start the serve renders `llama-server.ini` into the state dir from every
 `provider: llama-server` profile: one section per distinct `model:` name,
 its GGUF source from the profile's `hf_repo:` (fetched from Hugging Face on
 first load), a 40960-token context (the window the truncation backstop

@@ -50,6 +50,10 @@ class ExecutionHandler:
         self._config_manager = ctx.config_manager
         self._project_path = ctx.project_path
 
+    def set_artifact_manager(self, manager: ArtifactManager) -> None:
+        """Use a rebuilt artifact manager after a project switch."""
+        self._artifact_manager = manager
+
     async def invoke(self, arguments: dict[str, Any]) -> dict[str, Any]:
         """Execute invoke tool.
 

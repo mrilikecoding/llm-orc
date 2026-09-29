@@ -10,6 +10,11 @@ from typing import Any
 from llm_orc.core.auth.authentication import CredentialStorage
 from llm_orc.core.config.config_manager import ConfigurationManager
 from llm_orc.core.config.ensemble_config import EnsembleConfig, EnsembleLoader
+from llm_orc.core.config.state import (
+    ARTIFACTS_DIRNAME,
+    CACHE_DIRNAME,
+    resolve_state_dir,
+)
 from llm_orc.core.execution.artifact_manager import ArtifactManager
 from llm_orc.core.execution.fan_out.coordinator import FanOutCoordinator
 from llm_orc.core.execution.fan_out.expander import FanOutExpander
@@ -258,7 +263,10 @@ class EnsembleExecutor:
         self._usage_collector = UsageCollector()
 
         self._streaming_progress_tracker = StreamingProgressTracker()
-        self._artifact_manager = ArtifactManager()
+        self._artifact_manager = ArtifactManager(
+            artifacts_dir=resolve_state_dir(self._config_manager.local_config_dir)
+            / ARTIFACTS_DIRNAME
+        )
         self._progress_controller = NoOpProgressController()
         self._agent_request_processor = AgentRequestProcessor(self._dependency_resolver)
 
@@ -405,6 +413,8 @@ class EnsembleExecutor:
                 "persist_to_artifacts", defaults.persist_to_artifacts
             ),
             artifact_base_dir=self._artifact_manager.base_dir,
+            cache_dir=resolve_state_dir(self._config_manager.local_config_dir)
+            / CACHE_DIRNAME,
         )
 
     # Phase 5: Performance hooks system removed - events go directly to streaming queue
@@ -1097,7 +1107,8 @@ class EnsembleExecutor:
     def _resolve_ensemble_reference(self, name: str) -> EnsembleConfig:
         """Resolve an ensemble name to its config.
 
-        Searches the project directory and standard ensemble locations.
+        Searches the project directory, then every configuration tier
+        (local, library, global, packaged).
         """
         # Search in project dir if available
         search_dirs: list[str] = []
@@ -1111,6 +1122,12 @@ class EnsembleExecutor:
             ensembles_dir = local_dir / "ensembles"
             if ensembles_dir.exists():
                 search_dirs.append(str(ensembles_dir))
+
+        # Every tier (#196): a global ensemble's child may be packaged,
+        # a project's child may be global. Order is the tier order.
+        for tier_dir in self._config_manager.get_ensembles_dirs():
+            if str(tier_dir) not in search_dirs:
+                search_dirs.append(str(tier_dir))
 
         config = self._ensemble_loader._find_ensemble_in_dirs(name, search_dirs)
         if config is None:

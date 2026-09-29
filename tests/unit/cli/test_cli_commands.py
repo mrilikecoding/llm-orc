@@ -744,6 +744,7 @@ class TestListEnsemblesCommand:
             "local": [mock_ensemble1, mock_ensemble2],
             "library": [],
             "global": [],
+            "packaged": [],
         }
 
         with patch(
@@ -808,6 +809,7 @@ class TestListEnsemblesCommand:
             "local": [],
             "library": [],
             "global": [],
+            "packaged": [],
         }
 
         with (
@@ -846,6 +848,7 @@ class TestListEnsemblesCommand:
             "local": [mock_ensemble],
             "library": [],
             "global": [],
+            "packaged": [],
         }
 
         with (
@@ -1393,6 +1396,29 @@ class TestListEnsemblesHelperMethods:
             call("  global-test: Global description"),
         ]
         mock_echo.assert_has_calls(expected_calls)
+
+    def test_display_grouped_ensembles_packaged_section(self) -> None:
+        """Packaged ensembles get their own section after global."""
+        config_manager = Mock()
+        config_manager.global_config_dir = Path("/global")
+
+        packaged_ensemble = Mock()
+        packaged_ensemble.name = "serving"
+        packaged_ensemble.description = "Shipped"
+        packaged_ensemble.relative_path = None
+
+        with patch("click.echo") as mock_echo:
+            llm_orc.cli_commands._display_grouped_ensembles(
+                config_manager, [], [], [], [packaged_ensemble]
+            )
+
+        mock_echo.assert_has_calls(
+            [
+                call("Available ensembles:"),
+                call("\n📦 Packaged (shipped with llm-orc):"),
+                call("  serving: Shipped"),
+            ]
+        )
 
 
 class TestAuthCommands:
