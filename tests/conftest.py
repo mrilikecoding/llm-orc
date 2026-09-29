@@ -99,9 +99,12 @@ agents:
 
 _PACKAGED_SCRIPT = """\
 import json, sys
+from _helpers import tag
 data = sys.stdin.read()
-print(json.dumps({"success": True, "data": {"echo": data.strip()}}))
+print(json.dumps({"success": True, "data": {"echo": data.strip(), "tag": tag}}))
 """
+
+_PACKAGED_HELPERS = 'tag = "helper"\n'
 
 
 @pytest.fixture
@@ -121,6 +124,7 @@ def packaged_serving_project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) ->
     (root / "profiles" / "shadowed-by-file.yaml").write_text(_PACKAGED_SHADOW_PROFILE)
     (root / "scripts" / "agentic_serving").mkdir(parents=True)
     (root / "scripts" / "agentic_serving" / "classify.py").write_text(_PACKAGED_SCRIPT)
+    (root / "scripts" / "agentic_serving" / "_helpers.py").write_text(_PACKAGED_HELPERS)
     (root / "config.yaml").write_text(_PACKAGED_CONFIG)
     monkeypatch.setenv("LLM_ORC_SERVING_PROJECT_DIR", str(root))
     return root
