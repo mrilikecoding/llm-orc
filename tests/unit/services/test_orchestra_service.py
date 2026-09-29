@@ -135,10 +135,11 @@ class TestSetProjectRebuildsArtifactManagers:
         result = await service.execute_streaming("probe-ens", "go", _NullReporter())
 
         assert result["status"] == "success", result
-        # The executor's own manager resolves from a cwd-discovered config
-        # (it does not follow set_project), so only the execution handler's
-        # manager can put an artifact in the project's tier here.
-        assert any((project / ".llm-orc" / "artifacts" / "probe-ens").iterdir())
+        # The executor saves its own artifacts and the execution handler one
+        # more; all sit in the project's tier and none in the state dir.
+        saved = list((project / ".llm-orc" / "artifacts" / "probe-ens").iterdir())
+        assert len(saved) > 1, saved
+        assert not (tmp_path / "xdg" / "llm-orc").exists()
         handler_manager = service._execution_handler._artifact_manager
         assert handler_manager.artifacts_dir == project / ".llm-orc" / "artifacts"
 

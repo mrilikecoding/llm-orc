@@ -36,6 +36,13 @@ def mock_config_manager(tmp_path: Path) -> Any:
     # merge project and global unconditionally, so `.exists()` on the global
     # scripts dir must give a real False rather than a truthy mock.
     config.global_config_dir = tmp_path / "global-config"
+    # The service builds its executor on this manager, and CredentialStorage
+    # reads real key/credential files from it.
+    config.load_performance_config.return_value = {}
+    secrets = tmp_path / "secrets"
+    secrets.mkdir()
+    config.get_encryption_key_file.return_value = secrets / ".key"
+    config.get_credentials_file.return_value = secrets / "creds"
     return config
 
 
