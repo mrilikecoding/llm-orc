@@ -95,3 +95,4 @@ CLAUDE.md
 .llm-orc/.serve-trace/
 .llm-orc/profiles/*.local.yaml
 .llm-orc/llama-server.ini
+.llm-orc/pycache/
