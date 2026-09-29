@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any
 from llm_orc.cli_library.template_provider import LibraryTemplateProvider
 from llm_orc.core.config.config_manager import ConfigurationManager
 from llm_orc.core.config.ensemble_config import EnsembleLoader
+from llm_orc.core.config.state import ARTIFACTS_DIRNAME, resolve_state_dir
 from llm_orc.core.execution.artifact_manager import ArtifactManager
 from llm_orc.mcp.project_context import ProjectContext
 from llm_orc.models.base import HTTPConnectionPool
@@ -54,7 +55,10 @@ class OrchestraService:
             config_manager=self.config_manager,
         )
         self.ensemble_loader = EnsembleLoader()
-        self.artifact_manager = ArtifactManager()
+        self.artifact_manager = ArtifactManager(
+            artifacts_dir=resolve_state_dir(self.config_manager.local_config_dir)
+            / ARTIFACTS_DIRNAME
+        )
         self._executor = executor
         # A caller-injected executor (tests, embedders) is returned as-is
         # forever - it bypasses ExecutorFactory entirely, so there is
@@ -72,7 +76,7 @@ class OrchestraService:
             self.config_manager, self.ensemble_loader
         )
         self._profile_handler = ProfileHandler(self.config_manager)
-        self._artifact_handler = ArtifactHandler()
+        self._artifact_handler = ArtifactHandler(config_manager=self.config_manager)
         self._script_handler = ScriptHandler(config_manager=self.config_manager)
         self._library_handler = LibraryHandler(
             self.config_manager, self.ensemble_loader
@@ -223,12 +227,17 @@ class OrchestraService:
         self._project_context = ctx
         self._project_path = ctx.project_path
         self.config_manager = ctx.config_manager
+        self.artifact_manager = ArtifactManager(
+            artifacts_dir=resolve_state_dir(self.config_manager.local_config_dir)
+            / ARTIFACTS_DIRNAME
+        )
         self._executor = None
         self._executor_injected = False
 
         self._configure_http_pool()
         self._ensemble_crud_handler.set_project_context(ctx)
         self._execution_handler.set_project_context(ctx)
+        self._execution_handler.set_artifact_manager(self.artifact_manager)
         self._validation_handler.set_project_context(ctx)
         self._profile_handler.set_project_context(ctx)
         self._promotion_handler.set_project_context(ctx)

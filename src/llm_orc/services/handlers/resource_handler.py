@@ -8,6 +8,7 @@ from typing import Any
 
 from llm_orc.core.config.config_manager import ConfigurationManager
 from llm_orc.core.config.ensemble_config import EnsembleLoader
+from llm_orc.core.config.state import ARTIFACTS_DIRNAME, resolve_state_dir
 from llm_orc.mcp.project_context import ProjectContext
 
 
@@ -329,12 +330,6 @@ class ResourceHandler:
         if global_config_path.name == "artifacts" and global_config_path.exists():
             return global_config_path
 
-        local_artifacts = Path.cwd() / ".llm-orc" / "artifacts"
-        if local_artifacts.exists():
-            return local_artifacts
-
-        global_artifacts = global_config_path / "artifacts"
-        if global_artifacts.exists():
-            return global_artifacts
-
-        return local_artifacts
+        return (
+            resolve_state_dir(self._config_manager.local_config_dir) / ARTIFACTS_DIRNAME
+        )
