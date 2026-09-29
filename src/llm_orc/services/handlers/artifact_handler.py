@@ -5,25 +5,41 @@ import time
 from pathlib import Path
 from typing import Any
 
+from llm_orc.core.config.config_manager import ConfigurationManager
+from llm_orc.core.config.state import ARTIFACTS_DIRNAME, resolve_state_dir
 from llm_orc.mcp.project_context import ProjectContext
 
 
 class ArtifactHandler:
     """Manages execution artifact operations."""
 
-    def __init__(self, project_path: Path | None = None) -> None:
-        """Initialize with optional project path."""
+    def __init__(
+        self,
+        project_path: Path | None = None,
+        config_manager: ConfigurationManager | None = None,
+    ) -> None:
+        """Initialize with optional project path and configuration manager."""
         self._project_path = project_path
+        self._config_manager = config_manager
 
     def set_project_context(self, ctx: ProjectContext) -> None:
         """Update handler to use new project context."""
         self._project_path = ctx.project_path
+        self._config_manager = ctx.config_manager
 
     def _get_artifacts_base(self) -> Path:
-        """Get artifacts base directory."""
-        if self._project_path is not None:
-            return self._project_path / ".llm-orc" / "artifacts"
-        return Path.cwd() / ".llm-orc" / "artifacts"
+        """The artifacts directory, through the state rule (#196)."""
+        local: Path | None
+        if self._config_manager is not None:
+            local = self._config_manager.local_config_dir
+        elif (
+            self._project_path is not None
+            and (self._project_path / ".llm-orc").is_dir()
+        ):
+            local = self._project_path / ".llm-orc"
+        else:
+            local = None
+        return resolve_state_dir(local) / ARTIFACTS_DIRNAME
 
     async def delete_artifact(self, arguments: dict[str, Any]) -> dict[str, Any]:
         """Delete an artifact."""

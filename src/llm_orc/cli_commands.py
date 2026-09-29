@@ -535,9 +535,14 @@ def scripts_test_command(script_name: str, parameters_json: str | None) -> None:
 
 def artifacts_list_command(format_type: str) -> None:
     """List execution artifacts."""
+    from llm_orc.core.config.config_manager import ConfigurationManager
+    from llm_orc.core.config.state import ARTIFACTS_DIRNAME, resolve_state_dir
     from llm_orc.core.execution.artifact_manager import ArtifactManager
 
-    manager = ArtifactManager()
+    local = ConfigurationManager(provision=False).local_config_dir
+    manager = ArtifactManager(
+        artifacts_dir=resolve_state_dir(local) / ARTIFACTS_DIRNAME
+    )
     ensembles = manager.list_ensembles()
 
     if format_type == "json":
@@ -593,9 +598,14 @@ def artifacts_show_command(
     ensemble_name: str, format_type: str, execution_timestamp: str | None
 ) -> None:
     """Show latest results for an ensemble."""
+    from llm_orc.core.config.config_manager import ConfigurationManager
+    from llm_orc.core.config.state import ARTIFACTS_DIRNAME, resolve_state_dir
     from llm_orc.core.execution.artifact_manager import ArtifactManager
 
-    manager = ArtifactManager()
+    local = ConfigurationManager(provision=False).local_config_dir
+    manager = ArtifactManager(
+        artifacts_dir=resolve_state_dir(local) / ARTIFACTS_DIRNAME
+    )
 
     if execution_timestamp:
         results = manager.get_execution_results(ensemble_name, execution_timestamp)
