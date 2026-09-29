@@ -86,7 +86,12 @@ class TestListEnsemblesGrouped:
 
     def test_empty_dirs_returns_empty_buckets(self, service: OrchestraService) -> None:
         result = service.list_ensembles_grouped()
-        assert result == {"local": [], "library": [], "global": []}
+        assert result == {
+            "local": [],
+            "library": [],
+            "global": [],
+            "packaged": [],
+        }
 
     def test_local_tier_goes_into_local_bucket(self, tmp_path: Path) -> None:
         svc = self._make_service([(str(tmp_path), "local")])

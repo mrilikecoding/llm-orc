@@ -74,3 +74,16 @@ class TestWithProject:
         assert crud_dir == tmp_path / ".llm-orc" / "ensembles"
         profiles_dir = ProfileHandler(cm).get_local_profiles_dir()
         assert profiles_dir == tmp_path / ".llm-orc" / "profiles"
+
+
+class TestGroupedListing:
+    def test_packaged_ensembles_get_their_own_group(
+        self, tmp_path: Path, packaged_serving_project: Path
+    ) -> None:
+        from llm_orc.services.orchestra_service import OrchestraService
+
+        cm = ConfigurationManager(project_dir=tmp_path / "noproj", provision=False)
+        grouped = OrchestraService(config_manager=cm).list_ensembles_grouped()
+
+        assert {e.name for e in grouped["packaged"]} >= {"serving", "child"}
+        assert not [e for e in grouped["global"] if e.name == "serving"]

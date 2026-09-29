@@ -233,6 +233,7 @@ class TestCLI:
                     "local": local_ens,
                     "library": [],
                     "global": global_ens,
+                    "packaged": [],
                 }
 
                 with patch(
