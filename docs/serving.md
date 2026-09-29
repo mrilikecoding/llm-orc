@@ -147,7 +147,9 @@ Runtime state (artifacts, the turn trace, the script cache, the rendered
 router preset) is written to one **state dir**: `LLM_ORC_STATE_DIR` or
 `llm-orc serve --state-dir`, else the project's `.llm-orc/` when there is
 one, else `$XDG_STATE_HOME/llm-orc/` (default `~/.local/state/llm-orc/`).
-Nothing is ever written under the packaged tier.
+In a wheel install nothing is ever written under the packaged tier; in a
+checkout the packaged tier is the project's own `.llm-orc/`, which is where
+project writes go.
 
 ## Operator seat configuration
 
