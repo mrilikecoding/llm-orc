@@ -300,6 +300,111 @@ temp dirs: `llm-orc serve --port 8766 --backend-port 8790 --models-max 1`
 - Pins over real fixtures: a closure with one of each status gets exactly
   that report; a child ensemble's missing script surfaces at the top.
 
+**Arc 3 re-cut (2026-09-29), from the merged Arc 2 shape, S2 and a
+router probe.** The card above stands; these rulings settle its open
+points. Implementation plan: `docs/plans/2026-09-29-remote-delegation-arc3.md`.
+
+1. **The router answers "downloaded" itself; no second source of truth.**
+   Probe (laptop, llama-server 9850, a scratch router on `:8791` fed the
+   checkout's rendered preset plus one section
+   `[not-downloaded-probe] hf-repo = unsloth/Qwen3-4B-GGUF:Q4_K_M` whose
+   GGUF is not on disk): `GET /models` lists every preset section
+   including the undownloaded one (`status.value: unloaded`,
+   `source: preset`), plus `default`, plus one entry per cached GGUF
+   whose `id` is the `hf_repo` string verbatim
+   (`unsloth/Qwen3-8B-GGUF:Q4_K_M`, `source: cache`, `can_remove: true`);
+   `llama-server --cache-list` agrees (3 entries). So one listing decides
+   three things: what the router can route (preset ids, no `/`), what is
+   downloaded (cache ids, contain `/`, not `default`), and load state.
+   The cache id shape (`/` in the id) is the signal, not the `source`
+   field: the id shape is what the 2026-09-16 e2e and S2 both observed on
+   this binary and the mini's, `source` was first seen today.
+   `LlamaServerClient` gains `inventory()` (one GET; preset models and
+   cached sources), and the llama-server provider status carries
+   `cached: [...]` next to `models`.
+2. **Statuses are a closed set of eleven.** The card's seven, plus S2's
+   `needs_restart`, plus three the code read forced: `model_unavailable`
+   (an OpenAI-compatible endpoint that does not list the model; nothing
+   to pull), `provider_unavailable` (router or endpoint unreachable, or a
+   provider llm-orc does not know, such as the library templates'
+   `ollama`), and `dynamic` (a `${...}` dispatch target, resolved at run
+   time; issue #94: not followable statically). Each status maps to one
+   `resolve` hint: `ready`/`dynamic` → `none`; `pullable` → `pull`;
+   `needs_restart` → `restart`; `missing_profile`, `model_unavailable` →
+   `bind`; `missing_model_source` → `add_source`; `needs_credentials` →
+   `add_credentials`; `missing_script`, `missing_ensemble` → `ship`;
+   `provider_unavailable` → `start_provider`.
+3. **Classification of a llama-server profile's model `M` with source `R`
+   (`hf_repo`), from ruling 1's listing:** router unreachable →
+   `provider_unavailable`; `M` listed and `R` cached → `ready` (load
+   state is irrelevant: the router loads on demand); `M` listed and `R`
+   not cached → `pullable` (hint names `POST /api/models/M/pull`); `M`
+   listed and the profile has no `hf_repo` → `ready` (the router lists
+   it, so it will serve it; download state is unknowable without a
+   source); `M` not listed and `R` present → `needs_restart` (the router
+   scanned its preset at start, S2; the serve renders the profile in on
+   restart, cost 1.5 to 2.2 s plus a hard cut of in-flight completions);
+   `M` not listed and no `hf_repo` → `missing_model_source` (the same
+   condition `render_preset` reports as `missing_source`). Cloud
+   providers (`anthropic-api`, `google-gemini`): configured in
+   `CredentialStorage` → `ready`, else `needs_credentials`; there is no
+   model list to check, as today. OpenAI-compatible: endpoint down →
+   `provider_unavailable`, model absent → `model_unavailable`, else
+   `ready`. A restart is reported, never performed: Arc 3 is a read.
+4. **The closure is walked from typed agent configs, depth-first in
+   agent order, deduplicated on (kind, name), first sighting wins.**
+   Kinds: `ensemble` (`ensemble:`, `loop.body`, a literal `dispatch:`),
+   `dispatch` (a templated target; always `dynamic`), `script`
+   (`script:`), `profile` (`model_profile`, then the agent-level and
+   every profile-level `fallback_model_profile` hop, transitively; a
+   missing hop ends the chain as `missing_profile`), and `model`
+   (an agent's inline `model` + `provider`, Invariant 3). Every
+   dependency carries `via`: the frames `"<ensemble>.<agent>"` from the
+   root to the agent that names it, so a child ensemble's missing script
+   is reported at the top with the path that reaches it. A child that
+   does not resolve is `missing_ensemble` and its subtree is not walked
+   (nothing to walk). Child resolution uses the service's
+   `find_ensemble_by_name` (every tier, the same lookup the executor's
+   `_resolve_ensemble_reference` performs after the project dir).
+   Cycles cannot load (Invariant 5) but the walker keeps a visited set
+   anyway; a walker that trusts the loader is one refactor from a hang.
+   A new module owns this (`core/config/closure.py`) because Arc 5
+   builds the same closure on the laptop to ship it.
+5. **Scripts** are checked with the executor's own resolver
+   (`ScriptResolver(project_dir=<the service's project path>)`, the
+   value `ExecutorFactory.create_root_executor` receives) and its
+   `resolve_and_classify`: a path-syntax or absolute reference that
+   raises `ScriptNotFoundError` is `missing_script`; a bare name is
+   inline content and `ready`. Anything else would make preflight
+   disagree with the run.
+6. **`runnable` means every dependency is `ready` or `dynamic`.** A
+   `pullable` model makes the ensemble not runnable: the first request
+   would block on a multi-gigabyte download, and the point of preflight
+   is that the caller decides that (`pull: true` in Arc 4), not the
+   engine. The existing `agents` list stays for the web UI and the MCP
+   docstring's promise, each agent's coarse status derived from its own
+   dependencies: `available` when all are `ready`/`dynamic`; otherwise
+   the first unmet dependency's status mapped `missing_profile` →
+   `missing_profile`; `provider_unavailable`, `needs_credentials` →
+   `provider_unavailable`; `pullable`, `needs_restart`,
+   `missing_model_source`, `model_unavailable` → `model_unavailable`;
+   `missing_script`, `missing_ensemble` → `dependency_unmet` (new, for
+   the ensemble/script/loop/dispatch agents that used to be `available`
+   unconditionally). `alternatives` keeps today's meaning.
+7. **Report shape.** The existing result gains `dependencies`, a list
+   of `{kind, name, via, status, resolve, detail}` (and `provider` on
+   profile/model entries); no new endpoint, no new MCP tool. Arc 4's
+   `not_equipped` error carries this same list. `detail` is one sentence
+   naming the observed fact (the model listed, the source not cached,
+   the path searched), not advice.
+8. **Out of scope, on the record:** acting on `needs_restart` (a
+   supervised router restart endpoint is an Arc 4+ question, gated on
+   the in-flight hard cut S2 measured); the web frontend's
+   `RunnableStatus` type (its `model_not_found` already drifts from the
+   API's `model_unavailable`; pre-existing); `render_preset`'s
+   `missing_source` reporting (unchanged, consistent with ruling 3);
+   promotion readiness (reads provider status directly, untouched).
+
 ### Arc 4: one-run injection (Sonnet, ~2-3 days, after Arc 3)
 
 Request shape, identical on REST (`POST /api/ensembles/execute` body), MCP
