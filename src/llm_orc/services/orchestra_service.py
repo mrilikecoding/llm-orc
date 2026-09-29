@@ -177,21 +177,18 @@ class OrchestraService:
         return None
 
     def list_ensembles_grouped(self) -> dict[str, list[Any]]:
-        """List all ensembles grouped by tier."""
-        ensemble_dirs = self.config_manager.get_ensembles_dirs()
-        local: list[Any] = []
-        library: list[Any] = []
-        global_: list[Any] = []
-        for dir_path in ensemble_dirs:
+        """List all ensembles grouped by tier (local, library, global, packaged)."""
+        groups: dict[str, list[Any]] = {
+            "local": [],
+            "library": [],
+            "global": [],
+            "packaged": [],
+        }
+        for dir_path in self.config_manager.get_ensembles_dirs():
             ensembles = self.ensemble_loader.list_ensembles(str(dir_path))
             tier = self.config_manager.classify_tier(dir_path)
-            if tier == "local":
-                local.extend(ensembles)
-            elif tier == "library":
-                library.extend(ensembles)
-            else:
-                global_.extend(ensembles)
-        return {"local": local, "library": library, "global": global_}
+            groups.get(tier, groups["global"]).extend(ensembles)
+        return groups
 
     def find_ensemble_in_dir(self, ensemble_name: str, dir_path: str) -> Any:
         """Find an ensemble by name in a specific directory.

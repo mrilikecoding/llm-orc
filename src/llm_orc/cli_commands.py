@@ -121,6 +121,7 @@ def _display_grouped_ensembles(
     local_ensembles: Sequence[EnsembleConfig],
     library_ensembles: Sequence[EnsembleConfig],
     global_ensembles: Sequence[EnsembleConfig],
+    packaged_ensembles: Sequence[EnsembleConfig] = (),
 ) -> None:
     """Display grouped ensembles with proper formatting.
 
@@ -129,6 +130,7 @@ def _display_grouped_ensembles(
         local_ensembles: List of local ensemble configs
         library_ensembles: List of library ensemble configs
         global_ensembles: List of global ensemble configs
+        packaged_ensembles: List of packaged (shipped with llm-orc) configs
     """
     click.echo("Available ensembles:")
 
@@ -139,6 +141,8 @@ def _display_grouped_ensembles(
 
     global_header = f"🌐 Global ({config_manager.global_config_dir}/ensembles):"
     _display_ensemble_group(global_ensembles, global_header)
+
+    _display_ensemble_group(packaged_ensembles, "📦 Packaged (shipped with llm-orc):")
 
 
 def _setup_performance_display(
@@ -378,6 +382,7 @@ def list_ensembles_command(config_dir: str | None) -> None:
         grouped["local"],
         grouped["library"],
         grouped["global"],
+        grouped["packaged"],
     )
 
 
