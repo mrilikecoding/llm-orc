@@ -150,8 +150,12 @@ class OrchestraService:
         )
 
         if self._executor is None:
+            # The executor's artifact manager and script cache resolve their
+            # state dir from this manager's local_config_dir, so it must be
+            # the project's, not a cwd discovery.
             self._executor = ExecutorFactory.create_root_executor(
-                project_dir=self._project_path
+                project_dir=self._project_path,
+                config_manager=self.config_manager,
             )
             return self._executor
 
