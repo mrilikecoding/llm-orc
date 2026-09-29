@@ -4,7 +4,6 @@ import os
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
 from click.testing import CliRunner
 
 from llm_orc.cli import cli
@@ -63,12 +62,7 @@ class TestServeOwnsTheRouter:
         assert "llama-server exited with code 3" in result.output
         run.assert_not_called()
 
-    def test_state_dir_flag_sets_the_env_for_the_process(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        # setenv, not delenv: the CLI sets the variable, and only a recorded
-        # setenv is undone at teardown (delenv of an unset var records nothing).
-        monkeypatch.setenv("LLM_ORC_STATE_DIR", "")
+    def test_state_dir_flag_sets_the_env_for_the_process(self, tmp_path: Path) -> None:
         seen: dict[str, str | None] = {}
 
         def fake_uvicorn_run(*args: object, **kwargs: object) -> None:
