@@ -272,6 +272,20 @@ temp dirs: `llm-orc serve --port 8766 --backend-port 8790 --models-max 1`
 - `find <venv> -path '*serving_project*' -newer <marker>` → nothing: no write
   under the packaged tier. cwd empty throughout. SIGTERM to the serve stopped
   the router; ports free.
+- **Real client, after the final-review fix (`a92129f7`).** Wheel rebuilt
+  (162 ok), installed with `pip install --no-compile` (0 `.pyc` under
+  `serving_project/`, the brew shape), served from a second empty dir.
+  `opencode run --format json -m llm-orc-live/agentic-tier-cheap-general
+  "Create hello.py that prints hello world."` (OpenCode 1.18.31, a temp
+  workspace whose `opencode.json` points the provider at `:8766`)
+  bootstrapped and drove three `POST /v1/chat/completions`: the `glob`
+  discovery round, the build round, then an honest refusal ("Another
+  round needed: tests did not pass"); no `hello.py` written. That is a T1
+  refusal of the kind the llama-server gate row already measures, not an
+  Arc 2 failure: the packaged serving ensemble ran end to end from the
+  wheel. After the run: 0 `__pycache__` entries and nothing newer than the
+  start marker under `serving_project/`; 228 `.pyc` under
+  `<state>/llm-orc/pycache/`; cwd empty; SIGTERM stopped serve and router.
 
 ### Arc 3: transitive preflight (Sonnet, ~1-2 days, after S2)
 
