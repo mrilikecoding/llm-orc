@@ -163,7 +163,7 @@ the llama-server backend yet — that is the regression gate below.
 cards: `docs/plans/2026-09-28-remote-delegation.md` (#196, #191);
 implementation plan for Arc 0 + Arc 1:
 `docs/plans/2026-09-28-remote-delegation-arc0-arc1.md`. **Arc 0 and Arc 1
-merged on local main 2026-09-28 (`ac148dcf`), not pushed.** S1: the
+merged on local main 2026-09-28 (`ac148dcf`), pushed 2026-09-29 (`fc336019`, CI green).** S1: the
 packaged serving project can be a read-only layer; artifacts,
 agentic-sessions, serve-trace, the rendered preset and the CRUD write
 fallback move to a state dir; `get_model_profiles` has no layer list
