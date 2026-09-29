@@ -1248,3 +1248,18 @@ class TestFanOutArtifacts:
         # Should indicate success
         assert "processor" in content
         assert "3/3" in content or "3 of 3" in content or "success" in content.lower()
+
+
+class TestArtifactsDir:
+    def test_explicit_artifacts_dir_is_used_verbatim(self, tmp_path: Path) -> None:
+        manager = ArtifactManager(artifacts_dir=tmp_path / "state" / "artifacts")
+
+        created = manager.save_execution_results("ens", {"status": "completed"})
+
+        assert created.parent == tmp_path / "state" / "artifacts" / "ens"
+        assert manager.list_ensembles()[0]["name"] == "ens"
+        assert not (Path.cwd() / ".llm-orc" / "artifacts" / "ens").exists()
+
+    def test_default_is_base_dir_dot_llm_orc_artifacts(self, tmp_path: Path) -> None:
+        manager = ArtifactManager(base_dir=tmp_path)
+        assert manager.artifacts_dir == tmp_path / ".llm-orc" / "artifacts"
