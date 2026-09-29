@@ -8,7 +8,11 @@ from typing import Any
 
 import yaml
 
-from llm_orc.core.config.packaged import packaged_serving_project_dir
+from llm_orc.core.config.packaged import (
+    SERVING_MARKER,
+    has_serving_ensemble,
+    packaged_serving_project_dir,
+)
 from llm_orc.core.config.template_provider import TemplateProvider
 
 logger = logging.getLogger(__name__)
@@ -207,6 +211,25 @@ class ConfigurationManager:
             else Path.cwd()
         )
         return root / "llm-orchestra-library"
+
+    def serving_root(self) -> Path:
+        """The dot-dir that carries the serving ensemble (#196).
+
+        The project's ``.llm-orc`` when it has
+        ``ensembles/agentic-serving/serving.yaml``, else the packaged
+        serving project. ``ServingEnsembleCaller`` reads the ensemble,
+        the serve-owned scripts and the ``serving:`` config keys from
+        this one directory; other ensembles, profiles and scripts still
+        merge every tier.
+        """
+        for candidate in (self._local_config_dir, self._packaged_serving_dir):
+            if candidate is not None and has_serving_ensemble(candidate):
+                return candidate
+        raise FileNotFoundError(
+            f"no serving ensemble ({SERVING_MARKER}) under the project "
+            f"({self._local_config_dir}) or the packaged serving project "
+            f"({self._packaged_serving_dir})"
+        )
 
     def _is_packaged_distinct(self) -> bool:
         """True when the packaged tier exists and is not the local dot-dir."""
