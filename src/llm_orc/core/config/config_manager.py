@@ -300,8 +300,28 @@ class ConfigurationManager:
         except (yaml.YAMLError, OSError):
             return {}
 
+    def _load_packaged_config(self) -> dict[str, Any]:
+        """The packaged serving project's ``config.yaml``, or ``{}``.
+
+        Empty in a checkout (the file is then the local config and is
+        merged as such) and when this install has no packaged tier.
+        """
+        if not self._is_packaged_distinct():
+            return {}
+        assert self._packaged_serving_dir is not None
+        config_file = self._packaged_serving_dir / "config.yaml"
+        if not config_file.exists():
+            return {}
+        with open(config_file) as f:
+            data = yaml.safe_load(f)
+        return data if isinstance(data, dict) else {}
+
     def load_performance_config(self) -> dict[str, Any]:
-        """Load performance configuration with sensible defaults."""
+        """Load performance configuration with sensible defaults.
+
+        Defaults, then the packaged, global and local ``config.yaml``
+        ``performance:`` sections, each overlaying the last.
+        """
         # Default performance settings
         defaults = {
             "concurrency": {
@@ -323,6 +343,8 @@ class ConfigurationManager:
             },
         }
 
+        packaged_performance = self._load_packaged_config().get("performance", {})
+
         # Try to load from global config
         global_config = self._load_global_config()
         global_performance = global_config.get("performance", {})
@@ -331,8 +353,9 @@ class ConfigurationManager:
         local_config = self.load_project_config()
         local_performance = local_config.get("performance", {})
 
-        # Merge configurations: defaults -> global -> local
+        # Merge configurations: defaults -> packaged -> global -> local
         merged_config = defaults.copy()
+        self._deep_merge_dict(merged_config, packaged_performance)
         self._deep_merge_dict(merged_config, global_performance)
         self._deep_merge_dict(merged_config, local_performance)
 
@@ -350,8 +373,8 @@ class ConfigurationManager:
         cost ceiling for frontier-API pricing. Frontier-mix deployments
         tighten via ``config.yaml``.
 
-        Global ``config.yaml`` overlays defaults; local project
-        ``config.yaml`` overlays global.
+        The packaged ``config.yaml`` overlays defaults; global overlays
+        packaged; local project ``config.yaml`` overlays global.
         """
         # Post-collapse only the orchestrator key is consumed (the /v1/models
         # allowlist default). Shipping defaults for budget/autonomy/plexus
@@ -360,6 +383,10 @@ class ConfigurationManager:
         defaults: dict[str, Any] = {
             "orchestrator": {"model_profile": "default"},
         }
+
+        packaged_section = self._load_packaged_config().get("agentic_serving") or {}
+        if not isinstance(packaged_section, dict):
+            packaged_section = {}
 
         global_config = self._load_global_config()
         global_section = global_config.get("agentic_serving") or {}
@@ -371,6 +398,7 @@ class ConfigurationManager:
         if not isinstance(local_section, dict):
             local_section = {}
 
+        self._deep_merge_dict(defaults, packaged_section)
         self._deep_merge_dict(defaults, global_section)
         self._deep_merge_dict(defaults, local_section)
 
@@ -458,16 +486,32 @@ class ConfigurationManager:
                     "# Local credentials (if any)\ncredentials.yaml\n.encryption_key\n"
                 )
 
+    def _profile_tiers(self) -> list[Path]:
+        """Config dirs whose profiles resolve at runtime, lowest precedence first.
+
+        packaged -> global -> local. The library tier is listed by
+        ``get_profiles_dirs`` but never resolved here, as before this
+        tier loop existed: a submodule profile must not shadow a global
+        one by name. In a checkout the packaged dir is the local dot-dir
+        and is skipped at the bottom so it merges once, at the top.
+        """
+        tiers: list[Path] = []
+        if self._is_packaged_distinct():
+            assert self._packaged_serving_dir is not None
+            tiers.append(self._packaged_serving_dir)
+        tiers.append(self._global_config_dir)
+        if self._local_config_dir is not None:
+            tiers.append(self._local_config_dir)
+        return tiers
+
     def get_model_profiles(self) -> dict[str, dict[str, str]]:
-        """Get merged model profiles from all sources.
+        """Get merged model profiles from every runtime tier.
 
-        Sources (lowest to highest precedence):
-        1. Global config.yaml model_profiles section
-        2. Global profiles/ directory (individual YAML files)
-        3. Local config.yaml model_profiles section
-        4. Local profiles/ directory (individual YAML files)
-
-        Results are cached and invalidated when source files change.
+        Within a tier ``config.yaml: model_profiles`` loads first and
+        ``profiles/*.yaml`` after it (``*.local.yaml`` last), so a file
+        beats the config entry of the same name and a later tier beats an
+        earlier one. Results are cached and invalidated when any source
+        file's mtime changes.
         """
         current_mtimes = self._get_profile_file_mtimes()
         if (
@@ -477,27 +521,13 @@ class ConfigurationManager:
             return self._profiles_cache
 
         merged: dict[str, dict[str, str]] = {}
-
-        # Global config.yaml
-        global_config_file = self._global_config_dir / "config.yaml"
-        if global_config_file.exists():
-            with open(global_config_file) as f:
-                global_config = yaml.safe_load(f) or {}
-                merged.update(global_config.get("model_profiles", {}))
-
-        # Global profiles/ directory
-        self._load_profile_yaml_files(self._global_config_dir / "profiles", merged)
-
-        # Local config.yaml
-        if self._local_config_dir:
-            local_config_file = self._local_config_dir / "config.yaml"
-            if local_config_file.exists():
-                with open(local_config_file) as f:
-                    local_config = yaml.safe_load(f) or {}
-                    merged.update(local_config.get("model_profiles", {}))
-
-            # Local profiles/ directory
-            self._load_profile_yaml_files(self._local_config_dir / "profiles", merged)
+        for tier in self._profile_tiers():
+            config_file = tier / "config.yaml"
+            if config_file.exists():
+                with open(config_file) as f:
+                    data = yaml.safe_load(f) or {}
+                merged.update(data.get("model_profiles") or {})
+            self._load_profile_yaml_files(tier / "profiles", merged)
 
         self._profiles_cache = merged
         self._profiles_cache_mtimes = current_mtimes
@@ -530,23 +560,16 @@ class ConfigurationManager:
                 logger.warning("Skipping invalid profile %s", yaml_file)
 
     def _get_profile_file_mtimes(self) -> dict[str, float]:
-        """Get modification times for profile source files."""
+        """Modification times of every runtime profile source, keyed by path."""
         mtimes: dict[str, float] = {}
-        global_config_file = self._global_config_dir / "config.yaml"
-        if global_config_file.exists():
-            mtimes["global"] = global_config_file.stat().st_mtime
-        global_profiles_dir = self._global_config_dir / "profiles"
-        if global_profiles_dir.exists():
-            for f in global_profiles_dir.glob("*.yaml"):
-                mtimes[f"global_prof_{f.name}"] = f.stat().st_mtime
-        if self._local_config_dir:
-            local_config_file = self._local_config_dir / "config.yaml"
-            if local_config_file.exists():
-                mtimes["local"] = local_config_file.stat().st_mtime
-            local_profiles_dir = self._local_config_dir / "profiles"
-            if local_profiles_dir.exists():
-                for f in local_profiles_dir.glob("*.yaml"):
-                    mtimes[f"local_prof_{f.name}"] = f.stat().st_mtime
+        for tier in self._profile_tiers():
+            config_file = tier / "config.yaml"
+            if config_file.exists():
+                mtimes[str(config_file)] = config_file.stat().st_mtime
+            profiles_dir = tier / "profiles"
+            if profiles_dir.exists():
+                for f in profiles_dir.glob("*.yaml"):
+                    mtimes[str(f)] = f.stat().st_mtime
         return mtimes
 
     def resolve_model_profile(self, profile_name: str) -> tuple[str, str]:

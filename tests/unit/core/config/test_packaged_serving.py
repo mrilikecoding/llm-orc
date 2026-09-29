@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
@@ -102,3 +103,128 @@ class TestTiers:
             project / "llm-orchestra-library" / "ensembles" in cm.get_ensembles_dirs()
         )
         assert cm.classify_tier(project / "llm-orchestra-library" / "x") == "library"
+
+
+class TestRuntimeProfiles:
+    def test_packaged_profile_resolves_with_no_project_and_empty_global(
+        self, tmp_path: Path, packaged_serving_project: Path
+    ) -> None:
+        cm = ConfigurationManager(project_dir=tmp_path, provision=False)
+
+        model, provider = cm.resolve_model_profile("agentic-tier-cheap-general")
+
+        assert (model, provider) == ("qwen3-8b", "llama-server")
+        assert cm.get_model_profiles()["packaged-orch"]["model"] == "qwen3-0.6b"
+
+    def test_within_packaged_profiles_dir_beats_config_yaml(
+        self, tmp_path: Path, packaged_serving_project: Path
+    ) -> None:
+        cm = ConfigurationManager(project_dir=tmp_path, provision=False)
+        shadowed = cm.get_model_profiles()["shadowed-by-file"]
+        assert shadowed["model"] == "from-profiles-dir"
+
+    def test_global_local_yaml_override_beats_packaged(
+        self, tmp_path: Path, packaged_serving_project: Path
+    ) -> None:
+        cm = ConfigurationManager(project_dir=tmp_path, provision=False)
+        override_dir = cm.global_config_dir / "profiles"
+        override_dir.mkdir(parents=True)
+        (override_dir / "seat.local.yaml").write_text(
+            "name: agentic-tier-cheap-general\nmodel: bigger\nprovider: llama-server\n"
+        )
+
+        model, _ = cm.resolve_model_profile("agentic-tier-cheap-general")
+
+        assert model == "bigger"
+
+    def test_project_beats_global_beats_packaged(
+        self, tmp_path: Path, packaged_serving_project: Path
+    ) -> None:
+        project = tmp_path / "proj"
+        (project / ".llm-orc" / "profiles").mkdir(parents=True)
+        (project / ".llm-orc" / "profiles" / "seat.yaml").write_text(
+            "name: agentic-tier-cheap-general\nmodel: project\nprovider: llama-server\n"
+        )
+        cm = ConfigurationManager(project_dir=project, provision=False)
+        (cm.global_config_dir / "profiles").mkdir(parents=True)
+        (cm.global_config_dir / "profiles" / "seat.yaml").write_text(
+            "name: agentic-tier-cheap-general\nmodel: global\nprovider: llama-server\n"
+        )
+
+        assert cm.resolve_model_profile("agentic-tier-cheap-general")[0] == "project"
+
+    def test_library_profiles_stay_invisible_at_runtime(
+        self,
+        tmp_path: Path,
+        packaged_serving_project: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Pins today's behavior (S1 step 1): listed, never resolved."""
+        project = tmp_path / "proj"
+        (project / ".llm-orc").mkdir(parents=True)
+        lib_profiles = project / "llm-orchestra-library" / "profiles"
+        lib_profiles.mkdir(parents=True)
+        (lib_profiles / "lib-only.yaml").write_text(
+            "name: lib-only\nmodel: m\nprovider: ollama\n"
+        )
+        monkeypatch.delenv("LLM_ORC_LIBRARY_PATH", raising=False)
+        cm = ConfigurationManager(project_dir=project, provision=False)
+
+        assert lib_profiles in cm.get_profiles_dirs()
+        assert "lib-only" not in cm.get_model_profiles()
+
+    def test_checkout_merges_its_dot_dir_once_at_top_precedence(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Review Focus 2: packaged == local must not be merged below global."""
+        monkeypatch.delenv(packaged.SERVING_PROJECT_ENV)
+        cm = ConfigurationManager(project_dir=REPO, provision=False)
+
+        tiers = cm._profile_tiers()
+
+        assert tiers[-1] == REPO / ".llm-orc"
+        assert tiers.count(REPO / ".llm-orc") == 1
+
+    def test_cache_invalidates_when_a_packaged_profile_changes(
+        self, tmp_path: Path, packaged_serving_project: Path
+    ) -> None:
+        cm = ConfigurationManager(project_dir=tmp_path, provision=False)
+        assert cm.resolve_model_profile("agentic-tier-cheap-general")[0] == "qwen3-8b"
+        target = (
+            packaged_serving_project / "profiles" / "agentic-tier-cheap-general.yaml"
+        )
+        target.write_text(
+            "name: agentic-tier-cheap-general\nmodel: edited\nprovider: llama-server\n"
+        )
+        os.utime(target, (target.stat().st_atime, target.stat().st_mtime + 5))
+
+        assert cm.resolve_model_profile("agentic-tier-cheap-general")[0] == "edited"
+
+
+class TestConfigMerges:
+    def test_agentic_serving_orchestrator_comes_from_packaged(
+        self, tmp_path: Path, packaged_serving_project: Path
+    ) -> None:
+        cm = ConfigurationManager(project_dir=tmp_path, provision=False)
+        orchestrator = cm.load_agentic_serving_config()["orchestrator"]
+        assert orchestrator["model_profile"] == "packaged-orch"
+
+    def test_global_overrides_packaged_agentic_serving(
+        self, tmp_path: Path, packaged_serving_project: Path
+    ) -> None:
+        cm = ConfigurationManager(project_dir=tmp_path, provision=False)
+        cm.global_config_dir.mkdir(parents=True, exist_ok=True)
+        (cm.global_config_dir / "config.yaml").write_text(
+            "agentic_serving:\n  orchestrator:\n    model_profile: mine\n"
+        )
+        orchestrator = cm.load_agentic_serving_config()["orchestrator"]
+        assert orchestrator["model_profile"] == "mine"
+
+    def test_performance_merge_includes_packaged(
+        self, tmp_path: Path, packaged_serving_project: Path
+    ) -> None:
+        (packaged_serving_project / "config.yaml").write_text(
+            "performance:\n  execution:\n    default_timeout: 777\n"
+        )
+        cm = ConfigurationManager(project_dir=tmp_path, provision=False)
+        assert cm.load_performance_config()["execution"]["default_timeout"] == 777

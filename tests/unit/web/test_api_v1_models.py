@@ -146,3 +146,19 @@ class TestV1ModelsEndpoint:
         ids = [m["id"] for m in client.get("/v1/models").json()["data"]]
 
         assert ids == ["c", "a", "b"]
+
+
+def test_v1_models_from_an_empty_cwd_lists_the_packaged_orchestrator(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, packaged_serving_project: Path
+) -> None:
+    """The real allowlist over a real ConfigurationManager: no project, no
+    global config, only the packaged tier names the orchestrator seat."""
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    monkeypatch.chdir(empty)
+
+    with TestClient(create_app()) as client:
+        response = client.get("/v1/models")
+
+    assert response.status_code == 200
+    assert "packaged-orch" in [m["id"] for m in response.json()["data"]]
