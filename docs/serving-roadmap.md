@@ -215,8 +215,11 @@ path. **Owed:** mini cut-over (practitioner; checklist in
 `~/.config/llm-orc/`, `~/.llm-orc` absent, plist `WorkingDirectory` +
 `brew upgrade` in one kickstart; the 15 library ensembles drop out unless
 `LLM_ORC_LIBRARY_PATH` names the submodule); push + release on the go;
-wiring `make wheel-check` into CI needs a go. **Next:** re-cut Arc 3
-(transitive preflight; `needs_restart` per S2) from the merged shape.
+wiring `make wheel-check` into CI needs a go. **Next:** Arc 3 re-cut 2026-09-29
+(spec: "Arc 3 re-cut", eleven statuses, the router's one listing decides
+routable/downloaded/loaded, probe recorded); plan
+`docs/plans/2026-09-29-remote-delegation-arc3.md` (six tasks, Sonnet
+implementer in `.claude/worktrees/arc3-preflight`); in flight.
 
 Deferred from the Arc 2 reviews (none block; 40-odd minors in the review
 record, the ones worth a line): `check_wheel_contents.py` run from a
