@@ -35,11 +35,7 @@ class LibraryHandler:
         if self._library_dir is not None:
             return self._library_dir
 
-        for dir_path in self._config_manager.get_ensembles_dirs():
-            if "library" in str(dir_path):
-                return Path(dir_path).parent
-
-        return Path.cwd() / "llm-orchestra-library"
+        return self._config_manager.library_dir
 
     async def browse(self, arguments: dict[str, Any]) -> dict[str, Any]:
         """Browse library items."""
