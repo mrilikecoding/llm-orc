@@ -122,3 +122,21 @@ class TestCheckEnsembleRunnableNonLlmAgents:
         assert agent_result["name"] == "dispatcher"
         assert agent_result["provider"] == "dispatch"
         assert agent_result["status"] == AgentStatus.AVAILABLE.value
+
+
+class TestLlamaServerStatusCarriesCache:
+    async def test_status_reports_models_and_cached_sources(self) -> None:
+        from llm_orc.providers.llama_server import LlamaServerClient
+
+        handler = _make_handler()
+        listing = [
+            {"id": "qwen3-8b", "status": {"value": "loaded"}},
+            {"id": "default", "status": {"value": "unloaded"}},
+            {"id": "unsloth/Qwen3-8B-GGUF:Q4_K_M", "status": {"value": "unloaded"}},
+        ]
+        with patch.object(LlamaServerClient, "_list", return_value=listing):
+            status = await handler._get_llama_server_status()
+
+        assert status["available"] is True
+        assert status["models"] == ["qwen3-8b"]
+        assert status["cached"] == ["unsloth/Qwen3-8B-GGUF:Q4_K_M"]

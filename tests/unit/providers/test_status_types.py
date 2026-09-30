@@ -66,6 +66,7 @@ class TestLlamaServerProviderStatus:
             "available": True,
             "base_url": "",
             "models": ["llama3:latest"],
+            "cached": [],
             "model_count": 1,
             "reason": "",
         }
