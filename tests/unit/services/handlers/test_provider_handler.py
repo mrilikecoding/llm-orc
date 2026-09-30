@@ -33,6 +33,7 @@ class TestCheckEnsembleRunnableNonLlmAgents:
         from llm_orc.providers.status_types import AgentStatus
 
         config = MagicMock()
+        config.name = "script-ens"
         config.agents = [ScriptAgentConfig(name="sc", script="echo hi")]
 
         handler = _make_handler(find_ensemble_return=config)
@@ -55,6 +56,7 @@ class TestCheckEnsembleRunnableNonLlmAgents:
         from llm_orc.providers.status_types import AgentStatus
 
         config = MagicMock()
+        config.name = "composed"
         config.agents = [EnsembleAgentConfig(name="ref", ensemble="other")]
 
         handler = _make_handler(find_ensemble_return=config)
@@ -77,6 +79,7 @@ class TestCheckEnsembleRunnableNonLlmAgents:
         from llm_orc.providers.status_types import AgentStatus
 
         config = MagicMock()
+        config.name = "loop-ens"
         config.agents = [
             LoopAgentConfig(
                 name="looper",
@@ -104,6 +107,7 @@ class TestCheckEnsembleRunnableNonLlmAgents:
         from llm_orc.providers.status_types import AgentStatus
 
         config = MagicMock()
+        config.name = "dispatch-ens"
         config.agents = [
             DynamicDispatchAgentConfig(name="dispatcher", dispatch="${target}")
         ]
