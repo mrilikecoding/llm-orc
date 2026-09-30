@@ -169,7 +169,7 @@ mcp__llm-orc__list_ensembles        # See available ensembles
 | Tool | Description |
 |------|-------------|
 | `get_provider_status` | Show available providers and the local router's models |
-| `check_ensemble_runnable` | Check if ensemble can run, suggest local alternatives |
+| `check_ensemble_runnable` | Preflight the ensemble's whole closure: per-dependency status and resolve hint |
 
 **Ensemble Management**
 | Tool | Description |

@@ -355,9 +355,11 @@ points. Implementation plan: `docs/plans/2026-09-29-remote-delegation-arc3.md`.
    agent order, deduplicated on (kind, name), first sighting wins.**
    Kinds: `ensemble` (`ensemble:`, `loop.body`, a literal `dispatch:`),
    `dispatch` (a templated target; always `dynamic`), `script`
-   (`script:`), `profile` (`model_profile`, then the agent-level and
-   every profile-level `fallback_model_profile` hop, transitively; a
-   missing hop ends the chain as `missing_profile`), and `model`
+   (`script:`), `profile` (`model_profile` and every profile-level
+   `fallback_model_profile` hop of ITS chain, transitively; the
+   agent-level `fallback_model_profile` is one hop whose own chain is not
+   followed, mirroring `model_factory._reachable_provider_options`; a
+   missing hop ends a chain as `missing_profile`), and `model`
    (an agent's inline `model` + `provider`, Invariant 3). Every
    dependency carries `via`: the frames `"<ensemble>.<agent>"` from the
    root to the agent that names it, so a child ensemble's missing script

@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `check_ensemble_runnable` (REST `GET /api/ensembles/{name}/runnable`)
+  preflights the whole closure: child ensembles, loop bodies, dispatch
+  targets, scripts, profiles with their fallback chains and inline
+  models, each reported with one of eleven statuses (`ready`, `pullable`,
+  `needs_restart`, `missing_profile`, `missing_model_source`,
+  `model_unavailable`, `needs_credentials`, `missing_script`,
+  `missing_ensemble`, `provider_unavailable`, `dynamic`), a resolve hint
+  and the agent path that names it. `runnable` now requires every
+  dependency ready or dynamic; a downloadable model is `pullable`, not
+  runnable. The llama-server provider status carries `cached` (the
+  router's downloaded sources). Agent status gains `dependency_unmet`.
 - `scope: project | global` on ensemble, profile and script create/update/delete
   across REST (`scope` in the JSON body for `POST`/`PUT /api/ensembles`,
   `?scope=` as a query parameter for `DELETE /api/ensembles/{name}`, same on
