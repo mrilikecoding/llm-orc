@@ -4,7 +4,9 @@ re-cut rulings 2, 3 and 6).
 
 Model presence for llama-server comes from the router's one listing
 (``LlamaServerClient.inventory()``): a model the router lists is
-routable; a source in its cache is downloaded. Nothing else is
+routable; a source in its cache, or a model loaded now, is downloaded
+(the cache entries date from the router's start, a load status is
+live). Nothing else is
 consulted, so preflight cannot disagree with the router that will serve
 the request.
 """
@@ -171,6 +173,12 @@ def _classify_llama_server(
         )
     if listed and source in info.get("cached", []):
         return DependencyStatus.READY, f"model {model!r} listed; {source} cached"
+    if listed and model in info.get("loaded", []):
+        return (
+            DependencyStatus.READY,
+            f"model {model!r} listed and loaded now; "
+            f"{source} not in the start-time cache",
+        )
     if listed:
         return (
             DependencyStatus.PULLABLE,

@@ -1488,6 +1488,7 @@ class TestGetLlamaServerStatus:
                 {"id": "qwen3-14b", "status": {"value": "unloaded"}},
             ],
             cached=["unsloth/Qwen3-8B-GGUF:Q4_K_M"],
+            loaded=["qwen3-8b"],
         )
         with (
             patch.dict("os.environ", {"LLAMA_SERVER_URL": "http://remote-host:8080/v1"}),
@@ -1503,6 +1504,7 @@ class TestGetLlamaServerStatus:
             "available": True,
             "models": ["qwen3-14b", "qwen3-8b"],
             "cached": ["unsloth/Qwen3-8B-GGUF:Q4_K_M"],
+            "loaded": ["qwen3-8b"],
             "model_count": 2,
             "reason": "",
             "base_url": "http://remote-host:8080/v1",

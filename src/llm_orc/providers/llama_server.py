@@ -196,13 +196,23 @@ def _is_cache_entry(model: Mapping[str, Any]) -> bool:
     return model_id != "default" and "/" in model_id
 
 
+def model_status(model: Mapping[str, Any]) -> str | None:
+    """A listing entry's live load status: ``status`` is ``{"value": ...}``
+    or a bare string (the same reading as web/api/models.py)."""
+    status = model.get("status")
+    value = status.get("value") if isinstance(status, dict) else status
+    return str(value) if value else None
+
+
 @dataclass(frozen=True)
 class RouterInventory:
     """What one ``GET /models`` says: the models the router routes to
-    (preset sections) and the sources it has on disk."""
+    (preset sections), the sources it had on disk at start, and the
+    models loaded now."""
 
     models: list[dict[str, Any]]
     cached: list[str]
+    loaded: list[str]
 
 
 #: The router is reached directly, never through an HTTP proxy from the
@@ -240,12 +250,17 @@ class LlamaServerClient:
         Router mode lists a ``default`` entry for its own command line
         and one raw ``user/repo:tag`` entry per cached Hugging Face
         file (e2e 2026-09-16); neither is a preset model. The cache
-        entries are what "downloaded" means (spec Arc 3 re-cut, ruling 1).
+        entries are what "downloaded" means (spec Arc 3 re-cut, ruling 1),
+        but the router builds them at start only; a model's ``status`` is
+        live, so a model loaded now is downloaded even before its cache
+        entry appears (Arc 3 live row).
         """
         listing = self._list()
+        models = [m for m in listing if _is_preset_model(m)]
         return RouterInventory(
-            models=[m for m in listing if _is_preset_model(m)],
+            models=models,
             cached=sorted(str(m["id"]) for m in listing if _is_cache_entry(m)),
+            loaded=sorted(str(m["id"]) for m in models if model_status(m) == "loaded"),
         )
 
     def models(self) -> list[dict[str, Any]]:

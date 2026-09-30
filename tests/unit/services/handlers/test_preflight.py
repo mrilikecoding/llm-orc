@@ -17,8 +17,9 @@ from llm_orc.services.handlers.preflight import (
 ROUTER_UP: dict[str, Any] = {
     "llama-server": {
         "available": True,
-        "models": ["qwen3-8b", "qwen3-14b", "handmade"],
+        "models": ["qwen3-8b", "qwen3-14b", "qwen3-1.7b", "handmade"],
         "cached": ["unsloth/Qwen3-8B-GGUF:Q4_K_M"],
+        "loaded": ["qwen3-1.7b"],
     },
     "anthropic-api": {"available": False, "reason": "not configured"},
     "google-gemini": {"available": True, "reason": "configured"},
@@ -45,6 +46,11 @@ PROFILES: dict[str, dict[str, Any]] = {
         "provider": "llama-server",
         "model": "qwen3-14b",
         "hf_repo": "unsloth/Qwen3-14B-GGUF:Q4_K_M",
+    },
+    "loaded": {
+        "provider": "llama-server",
+        "model": "qwen3-1.7b",
+        "hf_repo": "unsloth/Qwen3-1.7B-GGUF:Q4_K_M",
     },
     "new": {
         "provider": "llama-server",
@@ -96,6 +102,7 @@ def _one(
     [
         ("ready", DependencyStatus.READY, "none"),
         ("pull", DependencyStatus.PULLABLE, "pull"),
+        ("loaded", DependencyStatus.READY, "none"),  # live row: pulled, running
         ("new", DependencyStatus.NEEDS_RESTART, "restart"),
         ("handmade", DependencyStatus.READY, "none"),  # review focus 3
         ("nosrc", DependencyStatus.MISSING_MODEL_SOURCE, "add_source"),
@@ -161,6 +168,17 @@ def test_detail_names_the_observed_fact_for_pullable() -> None:
     assert "qwen3-14b" in report.detail
     assert "unsloth/Qwen3-14B-GGUF:Q4_K_M" in report.detail
     assert "/api/models/qwen3-14b/pull" in report.detail
+
+
+def test_detail_names_the_fact_behind_ready() -> None:
+    reports = classify_dependencies(
+        [_profile("ready"), _profile("loaded")],
+        profiles=PROFILES,
+        providers=ROUTER_UP,
+        script_found=lambda _: True,
+    )
+    assert "unsloth/Qwen3-8B-GGUF:Q4_K_M cached" in reports[0].detail
+    assert "loaded" in reports[1].detail
 
 
 def test_runnable_requires_every_dependency_ready_or_dynamic() -> None:

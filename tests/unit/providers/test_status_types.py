@@ -67,6 +67,7 @@ class TestLlamaServerProviderStatus:
             "base_url": "",
             "models": ["llama3:latest"],
             "cached": [],
+            "loaded": [],
             "model_count": 1,
             "reason": "",
         }

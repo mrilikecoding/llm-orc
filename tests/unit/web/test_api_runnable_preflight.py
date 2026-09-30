@@ -21,6 +21,7 @@ from llm_orc.web.server import create_app
 LISTING: list[dict[str, Any]] = [
     {"id": "qwen3-8b", "status": {"value": "unloaded"}},
     {"id": "qwen3-14b", "status": {"value": "unloaded"}},
+    {"id": "qwen3-1.7b", "status": {"value": "loaded"}},
     {"id": "default", "status": {"value": "unloaded"}},
     {"id": "unsloth/Qwen3-8B-GGUF:Q4_K_M", "status": {"value": "unloaded"}},
 ]
@@ -35,6 +36,11 @@ PROFILES: dict[str, dict[str, Any]] = {
         "provider": "llama-server",
         "model": "qwen3-14b",
         "hf_repo": "unsloth/Qwen3-14B-GGUF:Q4_K_M",
+    },
+    "loaded-prof": {
+        "provider": "llama-server",
+        "model": "qwen3-1.7b",
+        "hf_repo": "unsloth/Qwen3-1.7B-GGUF:Q4_K_M",
     },
     "new-prof": {
         "provider": "llama-server",
@@ -73,6 +79,7 @@ def project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
         [
             {"name": "writer", "model_profile": "ready-prof"},
             {"name": "big", "model_profile": "pull-prof"},
+            {"name": "hot", "model_profile": "loaded-prof"},
             {"name": "fresh", "model_profile": "new-prof"},
             {"name": "ghost", "model_profile": "nope"},
             {"name": "sourceless", "model_profile": "nosrc-prof"},
@@ -122,6 +129,7 @@ class TestPreflightOverRest:
             ("ensemble", "top", "ready", "none", []),
             ("profile", "ready-prof", "ready", "none", ["top.writer"]),
             ("profile", "pull-prof", "pullable", "pull", ["top.big"]),
+            ("profile", "loaded-prof", "ready", "none", ["top.hot"]),
             ("profile", "new-prof", "needs_restart", "restart", ["top.fresh"]),
             ("profile", "nope", "missing_profile", "bind", ["top.ghost"]),
             (
@@ -165,6 +173,7 @@ class TestPreflightOverRest:
         assert {a["name"]: a["status"] for a in data["agents"]} == {
             "writer": "available",
             "big": "model_unavailable",
+            "hot": "available",
             "fresh": "model_unavailable",
             "ghost": "missing_profile",
             "sourceless": "model_unavailable",
