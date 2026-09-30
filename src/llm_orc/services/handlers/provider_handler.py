@@ -59,16 +59,18 @@ class ProviderHandler:
         base_url = os.environ.get("LLAMA_SERVER_URL", _DEFAULT_LLAMA_SERVER_URL)
         client = LlamaServerClient.from_base_url(base_url)
         try:
-            models = sorted(str(m.get("id", "")) for m in client.models())
+            inventory = client.inventory()
         except (OSError, ValueError) as e:
             return LlamaServerProviderStatus(
                 available=False,
                 reason=f"llama-server not reachable: {type(e).__name__}: {e}",
                 base_url=base_url,
             ).model_dump()
+        models = sorted(str(m.get("id", "")) for m in inventory.models)
         return LlamaServerProviderStatus(
             available=True,
             models=models,
+            cached=inventory.cached,
             model_count=len(models),
             base_url=base_url,
         ).model_dump()

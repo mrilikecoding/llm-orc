@@ -9,6 +9,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from llm_orc.mcp.server import MCPServer
+from llm_orc.providers.llama_server import RouterInventory
 
 
 def _mock_config(server: MCPServer) -> Any:
@@ -1479,10 +1480,13 @@ class TestGetLlamaServerStatus:
     @pytest.mark.asyncio
     async def test_status_lists_router_models(self, server: MCPServer) -> None:
         client = MagicMock()
-        client.models.return_value = [
-            {"id": "qwen3-8b", "status": {"value": "loaded"}},
-            {"id": "qwen3-14b", "status": {"value": "unloaded"}},
-        ]
+        client.inventory.return_value = RouterInventory(
+            models=[
+                {"id": "qwen3-8b", "status": {"value": "loaded"}},
+                {"id": "qwen3-14b", "status": {"value": "unloaded"}},
+            ],
+            cached=["unsloth/Qwen3-8B-GGUF:Q4_K_M"],
+        )
         with (
             patch.dict("os.environ", {"LLAMA_SERVER_URL": "http://remote-host:8080/v1"}),
             patch(
@@ -1496,6 +1500,7 @@ class TestGetLlamaServerStatus:
         assert result == {
             "available": True,
             "models": ["qwen3-14b", "qwen3-8b"],
+            "cached": ["unsloth/Qwen3-8B-GGUF:Q4_K_M"],
             "model_count": 2,
             "reason": "",
             "base_url": "http://remote-host:8080/v1",
@@ -1506,7 +1511,7 @@ class TestGetLlamaServerStatus:
         self, server: MCPServer
     ) -> None:
         client = MagicMock()
-        client.models.side_effect = OSError("connection refused")
+        client.inventory.side_effect = OSError("connection refused")
         with patch(
             "llm_orc.services.handlers.provider_handler.LlamaServerClient"
         ) as cls:
