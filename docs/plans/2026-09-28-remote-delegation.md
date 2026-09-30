@@ -316,6 +316,12 @@ points. Implementation plan: `docs/plans/2026-09-29-remote-delegation-arc3.md`.
    `llama-server --cache-list` agrees (3 entries). So one listing decides
    three things: what the router can route (preset ids, no `/`), what is
    downloaded (cache ids, contain `/`, not `default`), and load state.
+   The cache entries are built when the router starts; a listing's
+   `status.value` is live. The live row below saw it: after a pull in a
+   running serve the model read `loaded` while no cache entry for its
+   source appeared until a restart. So a model loaded now is downloaded
+   too, and `inventory()` reports `loaded` (preset ids whose status
+   reads `loaded`) next to `cached`.
    The cache id shape (`/` in the id) is the signal, not the `source`
    field: the id shape is what the 2026-09-16 e2e and S2 both observed on
    this binary and the mini's, `source` was first seen today.
@@ -336,9 +342,11 @@ points. Implementation plan: `docs/plans/2026-09-29-remote-delegation-arc3.md`.
    `provider_unavailable` → `start_provider`.
 3. **Classification of a llama-server profile's model `M` with source `R`
    (`hf_repo`), from ruling 1's listing:** router unreachable →
-   `provider_unavailable`; `M` listed and `R` cached → `ready` (load
-   state is irrelevant: the router loads on demand); `M` listed and `R`
-   not cached → `pullable` (hint names `POST /api/models/M/pull`); `M`
+   `provider_unavailable`; `M` listed and (`R` cached or `M` loaded
+   now) → `ready` (the router loads on demand; a loaded model is
+   downloaded even before its cache entry appears, ruling 1); `M` listed,
+   `R` not cached and `M` not loaded → `pullable` (hint names
+   `POST /api/models/M/pull`); `M`
    listed and the profile has no `hf_repo` → `ready` (the router lists
    it, so it will serve it; download state is unknowable without a
    source); `M` not listed and `R` present → `needs_restart` (the router
@@ -365,9 +373,14 @@ points. Implementation plan: `docs/plans/2026-09-29-remote-delegation-arc3.md`.
    root to the agent that names it, so a child ensemble's missing script
    is reported at the top with the path that reaches it. A child that
    does not resolve is `missing_ensemble` and its subtree is not walked
-   (nothing to walk). Child resolution uses the service's
-   `find_ensemble_by_name` (every tier, the same lookup the executor's
-   `_resolve_ensemble_reference` performs after the project dir).
+   (nothing to walk). Children resolve through the executor's own
+   search-dir list and finder (`child_ensemble_search_dirs` and
+   `_find_ensemble_in_dirs`: `<dir>/<name>.yaml` by filename), the root
+   through the API's lookup; visited-state, ownership and `via` frames
+   are keyed by the reference string, never by the `name:` field.
+   Profiles are classified against
+   `ConfigurationManager.get_model_profiles()` (runtime tiers, library
+   excluded), the same source the run and the router preset use.
    Cycles cannot load (Invariant 5) but the walker keeps a visited set
    anyway; a walker that trusts the loader is one refactor from a hang.
    A new module owns this (`core/config/closure.py`) because Arc 5
@@ -454,6 +467,10 @@ agents: `local-qwen3-1.7b`, a project profile `probe-qwen3-4b` with `hf_repo`,
   to `ready` in a running serve. Arc 4's pull-then-run flow needs to account
   for it.
 - Serves stopped by PID; ports 8766 and 8790 free afterwards.
+- Fix wave (code change, not re-run): the router inventory now reports
+  `loaded` from each listing entry's live `status.value`, and a listed
+  model that is loaded reads `ready`, so a pulled model reads `ready`
+  in the same serve without a restart (until the router evicts it).
 
 ### Arc 4: one-run injection (Sonnet, ~2-3 days, after Arc 3)
 
