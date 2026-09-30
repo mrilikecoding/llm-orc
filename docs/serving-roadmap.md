@@ -215,11 +215,51 @@ path. **Owed:** mini cut-over (practitioner; checklist in
 `~/.config/llm-orc/`, `~/.llm-orc` absent, plist `WorkingDirectory` +
 `brew upgrade` in one kickstart; the 15 library ensembles drop out unless
 `LLM_ORC_LIBRARY_PATH` names the submodule); push + release on the go;
-wiring `make wheel-check` into CI needs a go. **Next:** Arc 3 re-cut 2026-09-29
-(spec: "Arc 3 re-cut", eleven statuses, the router's one listing decides
-routable/downloaded/loaded, probe recorded); plan
-`docs/plans/2026-09-29-remote-delegation-arc3.md` (six tasks, Sonnet
-implementer in `.claude/worktrees/arc3-preflight`); in flight.
+wiring `make wheel-check` into CI needs a go. **Next:** re-cut Arc 4 (one-run injection) from the merged Arc 3 shape:
+the `not_equipped` error carries the Arc 3 `dependencies` list.
+
+**Arc 3 merged on local main 2026-09-29 (`a123ce9d`, NOT pushed).**
+Rulings in the spec doc ("Arc 3 re-cut (2026-09-29)", amended by the
+review round); plan `docs/plans/2026-09-29-remote-delegation-arc3.md`; live
+row in the spec. Shape: `check_ensemble_runnable` (REST
+`GET /api/ensembles/{name}/runnable`, MCP) walks the closure (child
+ensembles via `ensemble:`/`loop.body`/literal `dispatch:`, scripts, profiles
+with the `model_profile` chain transitive and the agent-level fallback one
+hop as at run time, inline models) and adds `dependencies` (kind, name,
+`via` frames, one of eleven statuses, resolve hint, detail) next to the
+kept `runnable` and `agents` (`dependency_unmet` added). `runnable` means
+every dependency `ready` or `dynamic`; `pullable` blocks. Model presence is
+the router's one listing: preset ids routable, cache ids (= `hf_repo`)
+downloaded, `status: loaded` live (`LlamaServerClient.inventory()`;
+provider status carries `cached` and `loaded`). Preflight resolves exactly
+as the run does: profiles from `get_model_profiles()` (runtime tiers,
+library excluded), children through the executor's search-dir list
+(`child_ensemble_search_dirs`, one shared function) and
+`_find_ensemble_in_dirs`; the walker keys on reference strings. Suite 4836;
+five per-task reviews, a whole-branch review that found three wrong-accepts
+(profile source, child finder, walker keys) closed in one fix wave with
+parity pins through the real service and executor, one scoped re-review.
+Live row (laptop, llama-server 9850): one of each status observed;
+`needs_restart` before a restart and `pullable` after; a pull (2 min 21 s,
+1 GB) left the model `pullable` until the loaded fix, now `ready` on
+`loaded`. **Owed:** the mini cut-over now also carries Arc 3 (release +
+`brew upgrade`); push + release on the go. Known limit: a model pulled in a
+running serve then evicted by the router reads `pullable` again until the
+next restart (the hint still just loads it); the serve remembering its own
+pulls is a follow-up on #196.
+
+Deferred from the Arc 3 reviews (none block): the router listing carries
+each preset model's `--hf-repo` in `args`, so inline models and sourceless
+profiles could be classified `pullable` without a profile source; a child
+file that exists but fails to load raises out of preflight (as the run
+would) rather than a row; status parsing lives in `llama_server.model_status`
+and `web/api/models.py::_entry`; `_DEFAULT_OPENAI_BASE_URL` and the
+openai-compatible predicate are duplicated in `preflight.py`; the frontend
+`RunnableStatus` type still says `model_not_found` and renders
+`dependency_unmet` bare; promotion readiness re-derives model presence from
+`models` without `cached`/`loaded`; an LLM agent with a ready primary and a
+missing fallback reads `missing_profile` naming the primary; fallback hops
+block `runnable` by ruling (conservative refusal; Arc 4's `bind` resolves).
 
 Deferred from the Arc 2 reviews (none block; 40-odd minors in the review
 record, the ones worth a line): `check_wheel_contents.py` run from a
