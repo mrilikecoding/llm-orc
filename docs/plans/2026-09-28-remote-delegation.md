@@ -407,6 +407,54 @@ points. Implementation plan: `docs/plans/2026-09-29-remote-delegation-arc3.md`.
    `missing_source` reporting (unchanged, consistent with ruling 3);
    promotion readiness (reads provider status directly, untouched).
 
+**Arc 3 live row (2026-09-29).** Laptop, branch `feat/transitive-preflight` @
+`77abe947`, llama-server 9850 (`4f31eedb0`), GGUFs from the Hugging Face hub
+cache (`llama-server --cache-list`: Qwen3-0.6B, Qwen3-8B, nomic-embed-text).
+Serve started from a temp project dir with `XDG_CONFIG_HOME` and
+`XDG_STATE_HOME` pointed at fresh temp dirs: `llm-orc serve --port 8766
+--backend-port 8790 --models-max 1`. The project holds `probe.yaml` (five
+agents: `local-qwen3-1.7b`, a project profile `probe-qwen3-4b` with `hf_repo`,
+`no-such-profile`, the packaged child `agentic-serving/web-searcher`, and
+`scripts/not_here.py`) and a `config.yaml` defining `probe-qwen3-4b`.
+`research-dossier.yaml` was copied into the global tier.
+
+- `GET /api/models` at start lists `deepseek-r1-8b`, `nomic-embed-text`,
+  `qwen3-0.6b`, `qwen3-1.7b`, `qwen3-14b`, `qwen3-4b`, `qwen3-8b`, all
+  `unloaded`; `probe-qwen3-4b` was rendered into the preset at start.
+- `GET /api/ensembles/probe/runnable` → `runnable False`:
+  `ready ensemble probe`; `pullable profile local-qwen3-1.7b
+  ['probe.small'] -> pull`; `pullable profile probe-qwen3-4b ['probe.fresh']
+  -> pull`; `missing_profile profile no-such-profile ['probe.ghost'] -> bind`;
+  `ready ensemble agentic-serving/web-searcher ['probe.search']`; `ready
+  script scripts/agentic_serving/web_searcher.py ['probe.search',
+  'web-searcher.searcher']`; `missing_script script scripts/not_here.py
+  ['probe.gone'] -> ship`. The project profile was `pullable`, not
+  `needs_restart`, as ruling 3 requires.
+- `GET /api/ensembles/research-dossier/runnable` → `runnable True`: the
+  ensemble, `agentic-tier-cheap-general` (`research-dossier.decomposer`), the
+  packaged `agentic-serving/web-searcher` child and its script, all `ready`.
+- Profile added after start (`late-qwen3-1.7b-alias`, model `qwen3-1.7b-late`,
+  `hf_repo` set) and `late.yaml` written with the serve still up:
+  `late-qwen3-1.7b-alias` → `needs_restart` (`resolve: restart`). After
+  SIGTERM and a fresh start (router stopped, ports free): `pullable`
+  (`resolve: pull`).
+- `POST /api/models/qwen3-1.7b/pull` → `{"name":"qwen3-1.7b","status":"loaded"}`
+  in 2 min 21 s wall clock (about 1 GB). `llama-server --cache-list` then
+  listed `unsloth/Qwen3-1.7B-GGUF:Q4_K_M`, but the same serve still reported
+  `local-qwen3-1.7b` as `pullable`: the router's `/v1/models` had no
+  `unsloth/Qwen3-1.7B-GGUF:Q4_K_M` cache entry (the raw entries were the
+  0.6B, 8B and nomic files only). The router scans its cache at start, so a
+  download made while it runs is invisible to `cached`.
+- After one more serve restart, the router listed the 1.7B cache entry and
+  `probe` reported `local-qwen3-1.7b` `ready`, `probe-qwen3-4b` `pullable`,
+  `no-such-profile` `missing_profile`, `runnable False`.
+- The brief expected `ready` immediately after the pull. Observed: `ready`
+  only after a router restart. The report matches the router's view
+  (the downloaded file is not listed), so a pull does not flip `pullable`
+  to `ready` in a running serve. Arc 4's pull-then-run flow needs to account
+  for it.
+- Serves stopped by PID; ports 8766 and 8790 free afterwards.
+
 ### Arc 4: one-run injection (Sonnet, ~2-3 days, after Arc 3)
 
 Request shape, identical on REST (`POST /api/ensembles/execute` body), MCP
