@@ -12,7 +12,8 @@ from llm_orc.schemas.agent_config import (
     LoopSpec,
     ScriptAgentConfig,
 )
-from llm_orc.services.handlers.provider_handler import ProviderHandler
+from llm_orc.services.handlers.preflight import UNBLOCKING, DependencyStatus
+from llm_orc.services.handlers.provider_handler import _COARSE, ProviderHandler
 
 
 def _make_handler(
@@ -20,9 +21,9 @@ def _make_handler(
     profiles: dict[str, dict[str, Any]] | None = None,
 ) -> ProviderHandler:
     profile_handler = MagicMock()
-    profile_handler.get_all_profiles.return_value = profiles or {}
+    profile_handler.get_runtime_profiles.return_value = profiles or {}
     find_ensemble = MagicMock(return_value=find_ensemble_return)
-    return ProviderHandler(profile_handler, find_ensemble)
+    return ProviderHandler(profile_handler, find_ensemble, find_child=find_ensemble)
 
 
 class TestCheckEnsembleRunnableNonLlmAgents:
@@ -144,3 +145,7 @@ class TestLlamaServerStatusCarriesCache:
         assert status["available"] is True
         assert status["models"] == ["qwen3-8b"]
         assert status["cached"] == ["unsloth/Qwen3-8B-GGUF:Q4_K_M"]
+
+
+def test_every_status_maps_to_a_coarse_agent_status_or_unblocks() -> None:
+    assert set(_COARSE) | UNBLOCKING == set(DependencyStatus)

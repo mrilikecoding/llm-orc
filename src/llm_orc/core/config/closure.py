@@ -6,6 +6,9 @@ module is the first two words: from a root ensemble it collects every
 child ensemble (``ensemble:``, ``loop.body``, a literal ``dispatch:``),
 every script, every profile with its ``fallback_model_profile`` chain,
 and every inline model, each with the path of agents that reaches it.
+Everything is keyed by the reference string (the name the caller or the
+parent agent wrote), never by a config's ``name:`` field: two files may
+share a ``name:``, and the run resolves by reference.
 The preflight classifier (services/handlers/preflight.py) and, later,
 the CLI's closure shipper both consume it.
 """
@@ -47,7 +50,8 @@ class Closure:
 
     ``dependencies`` is deduplicated on ``(kind, name)``: the closure is
     a set, and the first sighting keeps its path. ``owned`` maps every
-    frame (``"<ensemble>.<agent>"``) to every key reachable through it,
+    frame (``"<ensemble reference>.<agent>"``) to every key reachable
+    through it,
     duplicates included, so a per-agent verdict never misses a
     dependency that was first reported under a sibling.
     """
@@ -60,8 +64,11 @@ def walk_closure(
     root: EnsembleConfig,
     find_ensemble: FindEnsemble,
     profiles: Mapping[str, Mapping[str, Any]],
+    *,
+    root_ref: str,
 ) -> Closure:
-    """Depth-first in agent order from ``root``.
+    """Depth-first in agent order from ``root``, which the caller named
+    ``root_ref``.
 
     A child that does not resolve is recorded ``found=False`` and not
     walked. A ``${...}`` dispatch target cannot be followed statically
@@ -69,8 +76,8 @@ def walk_closure(
     (Invariant 5) but the walk keeps its own visited set regardless.
     """
     walker = _Walker(find_ensemble, profiles)
-    walker.add(Dependency("ensemble", root.name, ()), ())
-    walker.visit(root, ())
+    walker.add(Dependency("ensemble", root_ref, ()), ())
+    walker.visit(root, (), root_ref)
     return Closure(walker.deps, {f: frozenset(k) for f, k in walker.owned.items()})
 
 
@@ -84,8 +91,8 @@ class _Walker:
         self.owned: dict[str, set[Key]] = {}
         self._seen: set[Key] = set()
         self._visited: set[str] = set()
-        self._stack: list[str] = []  # ensembles being walked, root first
-        self._members: dict[str, set[Key]] = {}  # ensemble -> keys under it
+        self._stack: list[str] = []  # references being walked, root first
+        self._members: dict[str, set[Key]] = {}  # reference -> keys under it
 
     def add(self, dep: Dependency, via: tuple[str, ...]) -> bool:
         """Record ``dep`` under every frame of ``via`` and every ensemble
@@ -104,14 +111,14 @@ class _Walker:
         for ensemble in self._stack:
             self._members.setdefault(ensemble, set()).add(key)
 
-    def visit(self, config: EnsembleConfig, via: tuple[str, ...]) -> None:
-        if config.name in self._visited:
+    def visit(self, config: EnsembleConfig, via: tuple[str, ...], ref: str) -> None:
+        if ref in self._visited:
             return
-        self._visited.add(config.name)
-        self._stack.append(config.name)
+        self._visited.add(ref)
+        self._stack.append(ref)
         try:
             for agent in config.agents:
-                self._visit_agent(agent, (*via, f"{config.name}.{agent.name}"))
+                self._visit_agent(agent, (*via, f"{ref}.{agent.name}"))
         finally:
             self._stack.pop()
 
@@ -138,7 +145,7 @@ class _Walker:
         if child is None:
             return
         if first:
-            self.visit(child, via)
+            self.visit(child, via, name)
             return
         # Already walked under another frame: this frame owns its members too.
         for key in self._members.get(name, set()):

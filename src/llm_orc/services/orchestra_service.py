@@ -13,7 +13,11 @@ from typing import TYPE_CHECKING, Any
 
 from llm_orc.cli_library.template_provider import LibraryTemplateProvider
 from llm_orc.core.config.config_manager import ConfigurationManager
-from llm_orc.core.config.ensemble_config import EnsembleLoader
+from llm_orc.core.config.ensemble_config import (
+    EnsembleConfig,
+    EnsembleLoader,
+    child_ensemble_search_dirs,
+)
 from llm_orc.core.config.state import ARTIFACTS_DIRNAME, resolve_state_dir
 from llm_orc.core.execution.artifact_manager import ArtifactManager
 from llm_orc.core.execution.scripting.resolver import ScriptResolver
@@ -86,6 +90,7 @@ class OrchestraService:
             self._profile_handler,
             self.find_ensemble_by_name,
             lambda: ScriptResolver(project_dir=self._project_path),
+            find_child=self.find_child_ensemble,
         )
         self._validation_handler = ValidationHandler(
             self.config_manager,
@@ -178,6 +183,16 @@ class OrchestraService:
             if config:
                 return config
         return None
+
+    def find_child_ensemble(self, reference: str) -> EnsembleConfig | None:
+        """Resolve a child reference exactly as the executor does
+        (``EnsembleExecutor._resolve_ensemble_reference``): the same
+        search dirs, the same by-filename finder. Reads the project path
+        and config manager at call time, so ``set_project`` is honored."""
+        search_dirs = child_ensemble_search_dirs(
+            self._project_path, self.config_manager
+        )
+        return self.ensemble_loader._find_ensemble_in_dirs(reference, search_dirs)
 
     def list_ensembles_grouped(self) -> dict[str, list[Any]]:
         """List all ensembles grouped by tier (local, library, global, packaged)."""
