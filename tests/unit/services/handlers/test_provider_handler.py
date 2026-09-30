@@ -12,7 +12,8 @@ from llm_orc.schemas.agent_config import (
     LoopSpec,
     ScriptAgentConfig,
 )
-from llm_orc.services.handlers.provider_handler import ProviderHandler
+from llm_orc.services.handlers.preflight import UNBLOCKING, DependencyStatus
+from llm_orc.services.handlers.provider_handler import _COARSE, ProviderHandler
 
 
 def _make_handler(
@@ -20,9 +21,9 @@ def _make_handler(
     profiles: dict[str, dict[str, Any]] | None = None,
 ) -> ProviderHandler:
     profile_handler = MagicMock()
-    profile_handler.get_all_profiles.return_value = profiles or {}
+    profile_handler.get_runtime_profiles.return_value = profiles or {}
     find_ensemble = MagicMock(return_value=find_ensemble_return)
-    return ProviderHandler(profile_handler, find_ensemble)
+    return ProviderHandler(profile_handler, find_ensemble, find_child=find_ensemble)
 
 
 class TestCheckEnsembleRunnableNonLlmAgents:
@@ -33,6 +34,7 @@ class TestCheckEnsembleRunnableNonLlmAgents:
         from llm_orc.providers.status_types import AgentStatus
 
         config = MagicMock()
+        config.name = "script-ens"
         config.agents = [ScriptAgentConfig(name="sc", script="echo hi")]
 
         handler = _make_handler(find_ensemble_return=config)
@@ -55,6 +57,7 @@ class TestCheckEnsembleRunnableNonLlmAgents:
         from llm_orc.providers.status_types import AgentStatus
 
         config = MagicMock()
+        config.name = "composed"
         config.agents = [EnsembleAgentConfig(name="ref", ensemble="other")]
 
         handler = _make_handler(find_ensemble_return=config)
@@ -77,6 +80,7 @@ class TestCheckEnsembleRunnableNonLlmAgents:
         from llm_orc.providers.status_types import AgentStatus
 
         config = MagicMock()
+        config.name = "loop-ens"
         config.agents = [
             LoopAgentConfig(
                 name="looper",
@@ -104,6 +108,7 @@ class TestCheckEnsembleRunnableNonLlmAgents:
         from llm_orc.providers.status_types import AgentStatus
 
         config = MagicMock()
+        config.name = "dispatch-ens"
         config.agents = [
             DynamicDispatchAgentConfig(name="dispatcher", dispatch="${target}")
         ]
@@ -122,3 +127,26 @@ class TestCheckEnsembleRunnableNonLlmAgents:
         assert agent_result["name"] == "dispatcher"
         assert agent_result["provider"] == "dispatch"
         assert agent_result["status"] == AgentStatus.AVAILABLE.value
+
+
+class TestLlamaServerStatusCarriesCache:
+    async def test_status_reports_models_and_cached_sources(self) -> None:
+        from llm_orc.providers.llama_server import LlamaServerClient
+
+        handler = _make_handler()
+        listing = [
+            {"id": "qwen3-8b", "status": {"value": "loaded"}},
+            {"id": "default", "status": {"value": "unloaded"}},
+            {"id": "unsloth/Qwen3-8B-GGUF:Q4_K_M", "status": {"value": "unloaded"}},
+        ]
+        with patch.object(LlamaServerClient, "_list", return_value=listing):
+            status = await handler._get_llama_server_status()
+
+        assert status["available"] is True
+        assert status["models"] == ["qwen3-8b"]
+        assert status["cached"] == ["unsloth/Qwen3-8B-GGUF:Q4_K_M"]
+        assert status["loaded"] == ["qwen3-8b"]
+
+
+def test_every_status_maps_to_a_coarse_agent_status_or_unblocks() -> None:
+    assert set(_COARSE) | UNBLOCKING == set(DependencyStatus)
