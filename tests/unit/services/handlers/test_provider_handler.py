@@ -145,6 +145,7 @@ class TestLlamaServerStatusCarriesCache:
         assert status["available"] is True
         assert status["models"] == ["qwen3-8b"]
         assert status["cached"] == ["unsloth/Qwen3-8B-GGUF:Q4_K_M"]
+        assert status["loaded"] == ["qwen3-8b"]
 
 
 def test_every_status_maps_to_a_coarse_agent_status_or_unblocks() -> None:

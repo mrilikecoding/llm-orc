@@ -90,6 +90,7 @@ class ProviderHandler:
             available=True,
             models=models,
             cached=inventory.cached,
+            loaded=inventory.loaded,
             model_count=len(models),
             base_url=base_url,
         ).model_dump()
