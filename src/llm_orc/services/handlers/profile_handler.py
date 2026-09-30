@@ -193,6 +193,12 @@ class ProfileHandler:
             self._load_profiles_from_file(yaml_file, profiles)
         return profiles
 
+    def get_runtime_profiles(self) -> dict[str, dict[str, str]]:
+        """The profiles a run resolves: every runtime tier (packaged <
+        global < local), the library excluded. The run, the router
+        preset and preflight all read this one merge."""
+        return self._config_manager.get_model_profiles()
+
     def get_all_profiles(self) -> dict[str, dict[str, Any]]:
         """Get all profiles as a dict keyed by name.
 

@@ -9,7 +9,11 @@ from typing import Any
 
 from llm_orc.core.auth.authentication import CredentialStorage
 from llm_orc.core.config.config_manager import ConfigurationManager
-from llm_orc.core.config.ensemble_config import EnsembleConfig, EnsembleLoader
+from llm_orc.core.config.ensemble_config import (
+    EnsembleConfig,
+    EnsembleLoader,
+    child_ensemble_search_dirs,
+)
 from llm_orc.core.config.state import (
     ARTIFACTS_DIRNAME,
     CACHE_DIRNAME,
@@ -1110,25 +1114,9 @@ class EnsembleExecutor:
         Searches the project directory, then every configuration tier
         (local, library, global, packaged).
         """
-        # Search in project dir if available
-        search_dirs: list[str] = []
-        if self._project_dir:
-            search_dirs.append(str(self._project_dir / "ensembles"))
-            search_dirs.append(str(self._project_dir))
-
-        # Search standard config locations
-        local_dir = self._config_manager.local_config_dir
-        if local_dir:
-            ensembles_dir = local_dir / "ensembles"
-            if ensembles_dir.exists():
-                search_dirs.append(str(ensembles_dir))
-
-        # Every tier (#196): a global ensemble's child may be packaged,
-        # a project's child may be global. Order is the tier order.
-        for tier_dir in self._config_manager.get_ensembles_dirs():
-            if str(tier_dir) not in search_dirs:
-                search_dirs.append(str(tier_dir))
-
+        search_dirs = child_ensemble_search_dirs(
+            self._project_dir, self._config_manager
+        )
         config = self._ensemble_loader._find_ensemble_in_dirs(name, search_dirs)
         if config is None:
             msg = f"Ensemble '{name}' not found"

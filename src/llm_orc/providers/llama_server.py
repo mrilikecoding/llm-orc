@@ -187,6 +187,34 @@ def _is_preset_model(model: Mapping[str, Any]) -> bool:
     return model_id != "default" and "/" not in model_id
 
 
+def _is_cache_entry(model: Mapping[str, Any]) -> bool:
+    """A raw Hugging Face cache entry: the router lists one per cached
+    GGUF, its id the ``user/repo:tag`` string a profile's ``hf_repo``
+    spells (probe 2026-09-29, spec Arc 3 re-cut ruling 1). The id shape
+    is the signal, not the newer ``source`` field."""
+    model_id = str(model.get("id", ""))
+    return model_id != "default" and "/" in model_id
+
+
+def model_status(model: Mapping[str, Any]) -> str | None:
+    """A listing entry's live load status: ``status`` is ``{"value": ...}``
+    or a bare string (the same reading as web/api/models.py)."""
+    status = model.get("status")
+    value = status.get("value") if isinstance(status, dict) else status
+    return str(value) if value else None
+
+
+@dataclass(frozen=True)
+class RouterInventory:
+    """What one ``GET /models`` says: the models the router routes to
+    (preset sections), the sources it had on disk at start, and the
+    models loaded now."""
+
+    models: list[dict[str, Any]]
+    cached: list[str]
+    loaded: list[str]
+
+
 #: The router is reached directly, never through an HTTP proxy from the
 #: environment: a proxied loopback request fails or times out (CI runners
 #: carry proxy variables; reproduced locally with ``http_proxy`` set).
@@ -210,16 +238,34 @@ class LlamaServerClient:
             root = root[: -len("/v1")]
         return cls(root)
 
-    def models(self) -> list[dict[str, Any]]:
-        """The router's model list with per-model load status."""
+    def _list(self) -> list[dict[str, Any]]:
+        """One ``GET /models``, the raw ``data`` list."""
         with _DIRECT.open(f"{self.root_url}/models", timeout=5) as resp:
             data = json.load(resp)
-        models = data.get("data", [])
-        # Router mode lists a ``default`` entry for its own command line
-        # and one raw ``user/repo:tag`` entry per cached Hugging Face file
-        # (e2e 2026-09-16); neither is a preset model, and this build
-        # rejects ``dedup-cache-models``, so they are hidden here.
-        return [m for m in models if isinstance(m, dict) and _is_preset_model(m)]
+        return [m for m in data.get("data", []) if isinstance(m, dict)]
+
+    def inventory(self) -> RouterInventory:
+        """Routable models and cached sources from one listing.
+
+        Router mode lists a ``default`` entry for its own command line
+        and one raw ``user/repo:tag`` entry per cached Hugging Face
+        file (e2e 2026-09-16); neither is a preset model. The cache
+        entries are what "downloaded" means (spec Arc 3 re-cut, ruling 1),
+        but the router builds them at start only; a model's ``status`` is
+        live, so a model loaded now is downloaded even before its cache
+        entry appears (Arc 3 live row).
+        """
+        listing = self._list()
+        models = [m for m in listing if _is_preset_model(m)]
+        return RouterInventory(
+            models=models,
+            cached=sorted(str(m["id"]) for m in listing if _is_cache_entry(m)),
+            loaded=sorted(str(m["id"]) for m in models if model_status(m) == "loaded"),
+        )
+
+    def models(self) -> list[dict[str, Any]]:
+        """The router's model list with per-model load status."""
+        return self.inventory().models
 
     def load(self, model: str) -> None:
         """Ask the router to load (downloading if needed) one model."""

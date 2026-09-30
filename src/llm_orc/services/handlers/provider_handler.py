@@ -4,7 +4,12 @@ import os
 from collections.abc import Callable
 from typing import Any
 
+from llm_orc.core.config.closure import Closure, Key, walk_closure
 from llm_orc.core.config.ensemble_config import EnsembleConfig
+from llm_orc.core.execution.scripting.resolver import (
+    ScriptNotFoundError,
+    ScriptResolver,
+)
 from llm_orc.mcp.utils import get_agent_attr as _get_agent_attr
 from llm_orc.providers.llama_server import LlamaServerClient
 from llm_orc.providers.status_types import (
@@ -15,6 +20,13 @@ from llm_orc.providers.status_types import (
     EnsembleRunnability,
     LlamaServerProviderStatus,
     OpenAICompatibleStatus,
+)
+from llm_orc.services.handlers.preflight import (
+    UNBLOCKING,
+    DependencyReport,
+    DependencyStatus,
+    classify_dependencies,
+    is_runnable,
 )
 from llm_orc.services.handlers.profile_handler import ProfileHandler
 
@@ -32,10 +44,17 @@ class ProviderHandler:
         self,
         profile_handler: ProfileHandler,
         find_ensemble: Callable[[str], EnsembleConfig | None],
+        script_resolver_factory: Callable[[], ScriptResolver] | None = None,
+        *,
+        find_child: Callable[[str], EnsembleConfig | None],
     ) -> None:
-        """Initialize with profile handler and ensemble finder."""
+        """Initialize with profile handler, the root finder (the API's
+        lookup), the resolver the executor would use for scripts (ruling
+        5), and the executor's own child-ensemble lookup (ruling 4)."""
         self._profile_handler = profile_handler
         self._find_ensemble = find_ensemble
+        self._find_child = find_child
+        self._script_resolver_factory = script_resolver_factory or ScriptResolver
 
     async def get_provider_status(self, arguments: dict[str, Any]) -> dict[str, Any]:
         """Get status of all providers and available models."""
@@ -59,16 +78,19 @@ class ProviderHandler:
         base_url = os.environ.get("LLAMA_SERVER_URL", _DEFAULT_LLAMA_SERVER_URL)
         client = LlamaServerClient.from_base_url(base_url)
         try:
-            models = sorted(str(m.get("id", "")) for m in client.models())
+            inventory = client.inventory()
         except (OSError, ValueError) as e:
             return LlamaServerProviderStatus(
                 available=False,
                 reason=f"llama-server not reachable: {type(e).__name__}: {e}",
                 base_url=base_url,
             ).model_dump()
+        models = sorted(str(m.get("id", "")) for m in inventory.models)
         return LlamaServerProviderStatus(
             available=True,
             models=models,
+            cached=inventory.cached,
+            loaded=inventory.loaded,
             model_count=len(models),
             base_url=base_url,
         ).model_dump()
@@ -94,7 +116,7 @@ class ProviderHandler:
         if self._test_openai_compat_status is not None:
             return self._test_openai_compat_status
 
-        all_profiles = self._profile_handler.get_all_profiles()
+        all_profiles = self._profile_handler.get_runtime_profiles()
 
         # Group profiles by base_url
         url_profiles: dict[str, list[str]] = {}
@@ -172,145 +194,78 @@ class ProviderHandler:
 
         provider_status = await self.get_provider_status({})
         providers = provider_status.get("providers", {})
+        profiles = self._profile_handler.get_runtime_profiles()
 
-        all_profiles = self._profile_handler.get_all_profiles()
+        closure = walk_closure(
+            config, self._find_child, profiles, root_ref=ensemble_name
+        )
+        reports = classify_dependencies(
+            closure.dependencies,
+            profiles=profiles,
+            providers=providers,
+            script_found=self._script_found,
+        )
+        by_key: dict[Key, DependencyReport] = {(r.kind, r.name): r for r in reports}
 
-        agent_results: list[AgentRunnability] = []
-        all_runnable = True
-
-        for agent in config.agents:
-            agent_name = _get_agent_attr(agent, "name", "unknown")
-
-            script_path = _get_agent_attr(agent, "script", "")
-            ensemble_ref = _get_agent_attr(agent, "ensemble")
-            loop_spec = _get_agent_attr(agent, "loop")
-            dispatch_tpl = _get_agent_attr(agent, "dispatch")
-
-            if script_path:
-                agent_result = AgentRunnability(
-                    name=agent_name,
-                    profile="",
-                    provider="script",
-                )
-            elif ensemble_ref is not None:
-                agent_result = AgentRunnability(
-                    name=agent_name,
-                    profile="",
-                    provider="ensemble",
-                )
-            elif loop_spec is not None:
-                agent_result = AgentRunnability(
-                    name=agent_name,
-                    profile="",
-                    provider="loop",
-                )
-            elif dispatch_tpl is not None:
-                agent_result = AgentRunnability(
-                    name=agent_name,
-                    profile="",
-                    provider="dispatch",
-                )
-            else:
-                profile_name = _get_agent_attr(agent, "model_profile", "")
-                agent_result = self._check_agent_runnable(
-                    agent_name,
-                    profile_name,
-                    all_profiles,
-                    providers,
-                )
-
-            agent_results.append(agent_result)
-
-            if agent_result.status != AgentStatus.AVAILABLE:
-                all_runnable = False
-
-        return EnsembleRunnability(
+        agent_results = [
+            self._agent_view(ensemble_name, agent, closure, by_key, providers)
+            for agent in config.agents
+        ]
+        result = EnsembleRunnability(
             ensemble=ensemble_name,
-            runnable=all_runnable,
+            runnable=is_runnable(reports),
             agents=agent_results,
         ).model_dump()
-
-    def _check_agent_runnable(
-        self,
-        agent_name: str,
-        profile_name: str,
-        all_profiles: dict[str, dict[str, Any]],
-        providers: dict[str, Any],
-    ) -> AgentRunnability:
-        """Check if an agent can run with current providers."""
-        result = AgentRunnability(name=agent_name, profile=profile_name)
-
-        if profile_name not in all_profiles:
-            result.status = AgentStatus.MISSING_PROFILE
-            result.alternatives = self._suggest_local_alternatives(providers)
-            return result
-
-        profile = all_profiles[profile_name]
-        provider = profile.get("provider", "")
-        result.provider = provider
-
-        # For openai-compatible, look up status under the root key
-        if _is_openai_compatible(provider):
-            provider_info = providers.get("openai-compatible", {})
-        else:
-            provider_info = providers.get(provider, {})
-
-        if not provider_info.get("available", False):
-            result.status = AgentStatus.PROVIDER_UNAVAILABLE
-            result.alternatives = self._suggest_local_alternatives(providers)
-            return result
-
-        if provider == "llama-server":
-            self._check_llama_server_model(result, profile, provider_info)
-        elif _is_openai_compatible(provider):
-            self._check_openai_compat_model(result, profile, provider_info)
-
+        result["dependencies"] = [r.model_dump() for r in reports]
         return result
 
-    def _check_llama_server_model(
+    def _script_found(self, script_ref: str) -> bool:
+        """The executor's own resolution (ruling 5): a bare name is
+        inline content and resolves; only a path-syntax or absolute
+        reference can be missing."""
+        try:
+            self._script_resolver_factory().resolve_and_classify(script_ref)
+        except ScriptNotFoundError:
+            return False
+        return True
+
+    def _agent_view(
         self,
-        result: AgentRunnability,
-        profile: dict[str, Any],
-        provider_info: dict[str, Any],
-    ) -> None:
-        """Is the profile's model in the router's preset (exact name)."""
-        model = profile.get("model", "")
-        available_models = provider_info.get("models", [])
-        if model not in available_models:
-            result.status = AgentStatus.MODEL_UNAVAILABLE
-            result.alternatives = self._suggest_available_models(available_models)
-
-    def _check_openai_compat_model(
-        self,
-        result: AgentRunnability,
-        profile: dict[str, Any],
-        provider_info: dict[str, Any],
-    ) -> None:
-        """Check if a model is available at an OpenAI-compatible endpoint."""
-        model = profile.get("model", "")
-        base_url = profile.get("base_url", _DEFAULT_OPENAI_BASE_URL)
-
-        for ep in provider_info.get("endpoints", []):
-            if ep.get("base_url") != base_url:
-                continue
-            if not ep.get("available", False):
-                result.status = AgentStatus.PROVIDER_UNAVAILABLE
-                result.alternatives = self._suggest_local_alternatives({})
-                return
-            if model not in ep.get("models", []):
-                result.status = AgentStatus.MODEL_UNAVAILABLE
-                result.alternatives = self._suggest_available_models(
-                    ep.get("models", [])
-                )
-            return
-
-        # No matching endpoint found — treat as provider unavailable
-        result.status = AgentStatus.PROVIDER_UNAVAILABLE
-        result.alternatives = self._suggest_local_alternatives({})
+        root_ref: str,
+        agent: Any,
+        closure: Closure,
+        by_key: dict[Key, DependencyReport],
+        providers: dict[str, Any],
+    ) -> AgentRunnability:
+        """The coarse per-agent status the web UI reads, derived from the
+        agent's own dependencies (ruling 6)."""
+        agent_name = _get_agent_attr(agent, "name", "unknown")
+        profile_name = _get_agent_attr(agent, "model_profile", None)
+        result = AgentRunnability(
+            name=agent_name,
+            profile=profile_name if isinstance(profile_name, str) else "",
+            provider=_agent_provider(agent, by_key),
+        )
+        owned = closure.owned.get(f"{root_ref}.{agent_name}", frozenset())
+        unmet = [
+            by_key[k]
+            for k in _in_closure_order(owned, by_key)
+            if by_key[k].status not in UNBLOCKING
+        ]
+        if not unmet:
+            return result
+        result.status = _COARSE[unmet[0].status]
+        if result.status is AgentStatus.MODEL_UNAVAILABLE:
+            result.alternatives = self._suggest_available_models(
+                providers.get("llama-server", {}).get("models", [])
+            )
+        else:
+            result.alternatives = self._suggest_local_alternatives(providers)
+        return result
 
     def _suggest_local_alternatives(self, providers: dict[str, Any]) -> list[str]:
         """Suggest local profile alternatives."""
-        all_profiles = self._profile_handler.get_all_profiles()
+        all_profiles = self._profile_handler.get_runtime_profiles()
         local_profiles: list[str] = []
 
         local_available = providers.get("llama-server", {}).get("available", False)
@@ -335,3 +290,41 @@ def _is_openai_compatible(provider: str | None) -> bool:
     if not provider:
         return False
     return provider == "openai-compatible" or provider.startswith("openai-compatible/")
+
+
+_COARSE: dict[DependencyStatus, AgentStatus] = {
+    DependencyStatus.MISSING_PROFILE: AgentStatus.MISSING_PROFILE,
+    DependencyStatus.PROVIDER_UNAVAILABLE: AgentStatus.PROVIDER_UNAVAILABLE,
+    DependencyStatus.NEEDS_CREDENTIALS: AgentStatus.PROVIDER_UNAVAILABLE,
+    DependencyStatus.PULLABLE: AgentStatus.MODEL_UNAVAILABLE,
+    DependencyStatus.NEEDS_RESTART: AgentStatus.MODEL_UNAVAILABLE,
+    DependencyStatus.MISSING_MODEL_SOURCE: AgentStatus.MODEL_UNAVAILABLE,
+    DependencyStatus.MODEL_UNAVAILABLE: AgentStatus.MODEL_UNAVAILABLE,
+    DependencyStatus.MISSING_SCRIPT: AgentStatus.DEPENDENCY_UNMET,
+    DependencyStatus.MISSING_ENSEMBLE: AgentStatus.DEPENDENCY_UNMET,
+}
+
+
+def _in_closure_order(
+    keys: frozenset[Key], by_key: dict[Key, DependencyReport]
+) -> list[Key]:
+    """Deterministic: the closure's own order, so the first unmet
+    dependency is the same one on every call."""
+    order = {k: i for i, k in enumerate(by_key)}
+    return sorted(keys, key=lambda k: order[k])
+
+
+def _agent_provider(agent: Any, by_key: dict[Key, DependencyReport]) -> str:
+    """The label the old result carried: 'script' / 'ensemble' / 'loop'
+    / 'dispatch' for non-LLM agents, the profile's provider otherwise."""
+    for label in ("script", "ensemble", "loop", "dispatch"):
+        value = _get_agent_attr(agent, label)
+        if value is not None and value != "":
+            return label
+    profile_name = _get_agent_attr(agent, "model_profile", None)
+    if isinstance(profile_name, str):
+        report = by_key.get(("profile", profile_name))
+        if report is not None and report.provider:
+            return report.provider
+    provider = _get_agent_attr(agent, "provider", None)
+    return provider if isinstance(provider, str) else ""

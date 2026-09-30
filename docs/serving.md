@@ -151,6 +151,41 @@ In a wheel install nothing is ever written under the packaged tier; in a
 checkout the packaged tier is the project's own `.llm-orc/`, which is where
 project writes go.
 
+## Preflight: what a remote is missing
+
+`GET /api/ensembles/{name}/runnable` (MCP: `check_ensemble_runnable`)
+walks the ensemble's closure: child ensembles (`ensemble:`, `loop.body`,
+a literal `dispatch:`), scripts, profiles and their
+`fallback_model_profile` chains (the agent-level fallback is a single hop,
+as at run time), inline models. Children resolve as the run resolves
+them (the executor's search dirs, `<dir>/<name>.yaml` by filename) and
+profiles from the runtime tiers the run reads. Each dependency gets one
+of eleven statuses and a resolve hint:
+
+| status | meaning | resolve |
+|---|---|---|
+| `ready` | present; for a local model, listed by the router and either its `hf_repo` in the router's cache or the model loaded now; also a listed model with no `hf_repo` | `none` |
+| `dynamic` | a `${...}` dispatch target, decided at run time | `none` |
+| `pullable` | listed by the router, GGUF not downloaded: `POST /api/models/{model}/pull`. A model pulled in a running serve reads `ready` once loaded, and reads `pullable` again if the router evicts it before the next restart (its cache entry appears at restart) | `pull` |
+| `needs_restart` | profile has a source, the router has not scanned it (it reads the preset at start; a supervised restart costs 1.5 to 2.2 s and cuts in-flight completions) | `restart` |
+| `missing_profile` | no profile of that name in any runtime tier (project, global, packaged; the library is not resolved at run time) | `bind` |
+| `model_unavailable` | an OpenAI-compatible endpoint does not list the model | `bind` |
+| `missing_model_source` | not listed and the profile has no `hf_repo` | `add_source` |
+| `needs_credentials` | a cloud provider with no credentials on this host | `add_credentials` |
+| `missing_script` | a path-syntax script reference nothing on the search path resolves | `ship` |
+| `missing_ensemble` | a child ensemble no tier has | `ship` |
+| `provider_unavailable` | router or endpoint unreachable, or a provider llm-orc does not know | `start_provider` |
+
+`runnable` is true only when every dependency is `ready` or `dynamic`; a
+`pullable` model is the caller's decision, never an implicit download.
+Each entry carries `via`, the `ensemble.agent` frames from the root, so
+a child's missing script is reported at the top with the path to it.
+Model presence comes from the router's own listing and nothing else: a
+preset section is routable, a cache entry (its id is the `hf_repo`
+string, built when the router starts) or a model loaded now is
+downloaded. The `agents` list keeps the coarse per-agent
+status the web UI reads.
+
 ## Operator seat configuration
 
 Seat models resolve through **tier profile names** (`agentic-tier-cheap-general`

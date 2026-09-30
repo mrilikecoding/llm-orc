@@ -4,11 +4,14 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Any, cast
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from llm_orc.core.config.ensemble_config import EnsembleConfig
 from llm_orc.mcp.server import MCPServer
+from llm_orc.providers.llama_server import RouterInventory
+from llm_orc.schemas.agent_config import LlmAgentConfig
 
 
 def _mock_config(server: MCPServer) -> Any:
@@ -1479,10 +1482,14 @@ class TestGetLlamaServerStatus:
     @pytest.mark.asyncio
     async def test_status_lists_router_models(self, server: MCPServer) -> None:
         client = MagicMock()
-        client.models.return_value = [
-            {"id": "qwen3-8b", "status": {"value": "loaded"}},
-            {"id": "qwen3-14b", "status": {"value": "unloaded"}},
-        ]
+        client.inventory.return_value = RouterInventory(
+            models=[
+                {"id": "qwen3-8b", "status": {"value": "loaded"}},
+                {"id": "qwen3-14b", "status": {"value": "unloaded"}},
+            ],
+            cached=["unsloth/Qwen3-8B-GGUF:Q4_K_M"],
+            loaded=["qwen3-8b"],
+        )
         with (
             patch.dict("os.environ", {"LLAMA_SERVER_URL": "http://remote-host:8080/v1"}),
             patch(
@@ -1496,6 +1503,8 @@ class TestGetLlamaServerStatus:
         assert result == {
             "available": True,
             "models": ["qwen3-14b", "qwen3-8b"],
+            "cached": ["unsloth/Qwen3-8B-GGUF:Q4_K_M"],
+            "loaded": ["qwen3-8b"],
             "model_count": 2,
             "reason": "",
             "base_url": "http://remote-host:8080/v1",
@@ -1506,7 +1515,7 @@ class TestGetLlamaServerStatus:
         self, server: MCPServer
     ) -> None:
         client = MagicMock()
-        client.models.side_effect = OSError("connection refused")
+        client.inventory.side_effect = OSError("connection refused")
         with patch(
             "llm_orc.services.handlers.provider_handler.LlamaServerClient"
         ) as cls:
@@ -1586,15 +1595,65 @@ class TestCheckEnsembleRunnableTool:
         assert "ensemble" in result
 
 
-class TestCheckAgentRunnable:
-    """Tests for _check_agent_runnable helper."""
+async def _check_one_agent(
+    server: MCPServer,
+    profile_name: str,
+    profiles: dict[str, Any],
+    providers: dict[str, Any],
+) -> dict[str, Any]:
+    """Run check_ensemble_runnable on a one-agent ensemble naming the
+    profile, with the profiles and provider status the case supplies."""
+    handler = server._provider_handler
+    config = EnsembleConfig(
+        name="one-agent",
+        description="one agent",
+        agents=[LlmAgentConfig(name="agent1", model_profile=profile_name)],
+    )
+    with (
+        patch.object(handler, "_find_ensemble", return_value=config),
+        patch.object(
+            handler._profile_handler, "get_runtime_profiles", return_value=profiles
+        ),
+        patch.object(
+            handler,
+            "get_provider_status",
+            new=AsyncMock(return_value={"providers": providers}),
+        ),
+    ):
+        result: dict[str, Any] = await handler.check_ensemble_runnable(
+            {"ensemble_name": "one-agent"}
+        )
+    return result
 
-    def test_check_agent_runnable_missing_profile(self, server: MCPServer) -> None:
+
+class TestCheckEnsembleRunnableProfiles:
+    """Single-agent runnability through check_ensemble_runnable, the
+    surface the MCP tool and REST expose."""
+
+    async def test_missing_profile(self, server: MCPServer) -> None:
         """Agent with missing profile has missing_profile status."""
-        handler = server._provider_handler
-        result = handler._check_agent_runnable("agent1", "nonexistent", {}, {})
-        assert result.status == "missing_profile"
-        assert result.name == "agent1"
+        result = await _check_one_agent(server, "nonexistent", {}, {})
+        agent = result["agents"][0]
+        assert agent["status"] == "missing_profile"
+        assert agent["name"] == "agent1"
+
+    async def test_available_profile(self, server: MCPServer) -> None:
+        """Agent with available profile has available status."""
+        profiles = {"ollama-profile": {"provider": "llama-server", "model": "llama3"}}
+        providers = {"llama-server": {"available": True, "models": ["llama3"]}}
+
+        result = await _check_one_agent(server, "ollama-profile", profiles, providers)
+        agent = result["agents"][0]
+        assert agent["status"] == "available"
+        assert agent["provider"] == "llama-server"
+
+    async def test_unavailable_provider(self, server: MCPServer) -> None:
+        """Agent with unavailable provider has provider_unavailable status."""
+        profiles = {"cloud-profile": {"provider": "anthropic-api", "model": "claude"}}
+        providers = {"anthropic-api": {"available": False}}
+
+        result = await _check_one_agent(server, "cloud-profile", profiles, providers)
+        assert result["agents"][0]["status"] == "provider_unavailable"
 
     @pytest.mark.asyncio
     async def test_check_ensemble_runnable_recognizes_script_agents(
@@ -1628,27 +1687,6 @@ class TestCheckAgentRunnable:
         assert result["agents"][0]["name"] == "aggregator"
         assert result["agents"][0]["status"] == "available"
 
-    def test_check_agent_runnable_available_profile(self, server: MCPServer) -> None:
-        """Agent with available profile has available status."""
-        profiles = {"ollama-profile": {"provider": "llama-server", "model": "llama3"}}
-        providers = {"llama-server": {"available": True, "models": ["llama3"]}}
-
-        result = server._provider_handler._check_agent_runnable(
-            "agent1", "ollama-profile", profiles, providers
-        )
-        assert result.status == "available"
-        assert result.provider == "llama-server"
-
-    def test_check_agent_runnable_unavailable_provider(self, server: MCPServer) -> None:
-        """Agent with unavailable provider has provider_unavailable status."""
-        profiles = {"cloud-profile": {"provider": "anthropic-api", "model": "claude"}}
-        providers = {"anthropic-api": {"available": False}}
-
-        result = server._provider_handler._check_agent_runnable(
-            "agent1", "cloud-profile", profiles, providers
-        )
-        assert result.status == "provider_unavailable"
-
 
 class TestSuggestLocalAlternatives:
     """Tests for _suggest_local_alternatives helper."""
@@ -1681,7 +1719,7 @@ class TestGetOpenAICompatibleStatus:
         """No openai-compatible profiles means unavailable."""
         handler = server._provider_handler
         # Ensure no profiles exist
-        handler._profile_handler.get_all_profiles = lambda: {}
+        handler._profile_handler.get_runtime_profiles = lambda: {}
         result = await handler._get_openai_compatible_status()
         assert result.available is False
         assert result.endpoints == []
@@ -1691,7 +1729,7 @@ class TestGetOpenAICompatibleStatus:
     async def test_reachable_endpoint_lists_models(self, server: MCPServer) -> None:
         """Reachable endpoint returns models and profiles."""
         handler = server._provider_handler
-        handler._profile_handler.get_all_profiles = lambda: {
+        handler._profile_handler.get_runtime_profiles = lambda: {
             "my-openai": {
                 "provider": "openai-compatible",
                 "model": "gpt-4",
@@ -1732,7 +1770,7 @@ class TestGetOpenAICompatibleStatus:
         from unittest.mock import AsyncMock, patch
 
         handler = server._provider_handler
-        handler._profile_handler.get_all_profiles = lambda: {
+        handler._profile_handler.get_runtime_profiles = lambda: {
             "my-openai": {
                 "provider": "openai-compatible",
                 "model": "gpt-4",
@@ -1801,7 +1839,7 @@ class TestGetOpenAICompatibleStatus:
         from unittest.mock import AsyncMock, patch
 
         handler = server._provider_handler
-        handler._profile_handler.get_all_profiles = lambda: {
+        handler._profile_handler.get_runtime_profiles = lambda: {
             "profile-a": {
                 "provider": "openai-compatible",
                 "model": "gpt-4",
@@ -1864,10 +1902,10 @@ class TestGetOpenAICompatibleStatus:
         handler._test_openai_compat_status = None
 
 
-class TestCheckAgentRunnableOpenAICompat:
-    """Tests for openai-compatible agent runnability checks."""
+class TestCheckEnsembleRunnableOpenAICompat:
+    """Tests for openai-compatible agent runnability through check_ensemble_runnable."""
 
-    def test_model_available_at_endpoint(self, server: MCPServer) -> None:
+    async def test_model_available_at_endpoint(self, server: MCPServer) -> None:
         """Agent with model available at endpoint has available status."""
         profiles = {
             "oai-profile": {
@@ -1891,12 +1929,11 @@ class TestCheckAgentRunnableOpenAICompat:
             }
         }
 
-        result = server._provider_handler._check_agent_runnable(
-            "agent1", "oai-profile", profiles, providers
-        )
-        assert result.status == "available"
+        result = await _check_one_agent(server, "oai-profile", profiles, providers)
+        agent = result["agents"][0]
+        assert agent["status"] == "available"
 
-    def test_model_not_at_endpoint(self, server: MCPServer) -> None:
+    async def test_model_not_at_endpoint(self, server: MCPServer) -> None:
         """Agent with model not at endpoint has model_unavailable status."""
         profiles = {
             "oai-profile": {
@@ -1920,13 +1957,16 @@ class TestCheckAgentRunnableOpenAICompat:
             }
         }
 
-        result = server._provider_handler._check_agent_runnable(
-            "agent1", "oai-profile", profiles, providers
+        result = await _check_one_agent(server, "oai-profile", profiles, providers)
+        agent = result["agents"][0]
+        assert agent["status"] == "model_unavailable"
+        dependency = next(
+            d for d in result["dependencies"] if d["name"] == "oai-profile"
         )
-        assert result.status == "model_unavailable"
-        assert "gpt-4" in result.alternatives
+        assert dependency["status"] == "model_unavailable"
+        assert dependency["resolve"] == "bind"
 
-    def test_endpoint_not_reachable(self, server: MCPServer) -> None:
+    async def test_endpoint_not_reachable(self, server: MCPServer) -> None:
         """Agent with unreachable endpoint has provider_unavailable status."""
         profiles = {
             "oai-profile": {
@@ -1951,12 +1991,11 @@ class TestCheckAgentRunnableOpenAICompat:
             }
         }
 
-        result = server._provider_handler._check_agent_runnable(
-            "agent1", "oai-profile", profiles, providers
-        )
-        assert result.status == "provider_unavailable"
+        result = await _check_one_agent(server, "oai-profile", profiles, providers)
+        agent = result["agents"][0]
+        assert agent["status"] == "provider_unavailable"
 
-    def test_scoped_provider_name(self, server: MCPServer) -> None:
+    async def test_scoped_provider_name(self, server: MCPServer) -> None:
         """openai-compatible/scope provider name recognized."""
         profiles = {
             "scoped-profile": {
@@ -1980,10 +2019,9 @@ class TestCheckAgentRunnableOpenAICompat:
             }
         }
 
-        result = server._provider_handler._check_agent_runnable(
-            "agent1", "scoped-profile", profiles, providers
-        )
-        assert result.status == "available"
+        result = await _check_one_agent(server, "scoped-profile", profiles, providers)
+        agent = result["agents"][0]
+        assert agent["status"] == "available"
 
 
 class TestSuggestLocalAlternativesOpenAICompat:
@@ -1994,7 +2032,7 @@ class TestSuggestLocalAlternativesOpenAICompat:
     ) -> None:
         """openai-compatible profiles included when endpoint available."""
         handler = server._provider_handler
-        handler._profile_handler.get_all_profiles = lambda: {
+        handler._profile_handler.get_runtime_profiles = lambda: {
             "local-prof": {"provider": "llama-server"},
             "oai-prof": {"provider": "openai-compatible"},
         }
@@ -2011,7 +2049,7 @@ class TestSuggestLocalAlternativesOpenAICompat:
     ) -> None:
         """openai-compatible profiles excluded when not available."""
         handler = server._provider_handler
-        handler._profile_handler.get_all_profiles = lambda: {
+        handler._profile_handler.get_runtime_profiles = lambda: {
             "local-prof": {"provider": "llama-server"},
             "oai-prof": {"provider": "openai-compatible"},
         }

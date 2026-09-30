@@ -672,6 +672,8 @@ class MCPServer:
             - Whether ensemble can run
             - Status of each agent's profile/provider
             - Suggested local alternatives for unavailable profiles
+            - dependencies: every child ensemble, script, profile and model in the
+              closure with status and resolve hint (docs/serving.md, Preflight)
             """
             result = await self._service.check_ensemble_runnable(
                 {"ensemble_name": ensemble_name}

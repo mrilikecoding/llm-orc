@@ -203,7 +203,7 @@ LLM Orchestra implements a Model Context Protocol (MCP) server using the FastMCP
 
 *Provider Discovery:*
 - `get_provider_status` - Show available providers and the models the local router serves
-- `check_ensemble_runnable` - Check if ensemble can run with current providers, suggest alternatives
+- `check_ensemble_runnable` - Preflight the ensemble's whole closure: per-dependency status and resolve hint
 
 *Ensemble CRUD:*
 - `create_ensemble` - Create new ensemble from scratch or template (`scope`: `project` default, or `global` to write under `~/.config/llm-orc`)

@@ -3,7 +3,7 @@
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import yaml
 
@@ -14,6 +14,9 @@ from llm_orc.schemas.agent_config import (
     LoopAgentConfig,
     parse_agent_config,
 )
+
+if TYPE_CHECKING:
+    from llm_orc.core.config.config_manager import ConfigurationManager
 
 logger = logging.getLogger(__name__)
 
@@ -738,3 +741,31 @@ def _find_ensemble_in_dirs(
             if candidate.exists():
                 return loader.load_from_file(str(candidate))
     return None
+
+
+def child_ensemble_search_dirs(
+    project_dir: Path | None, config_manager: "ConfigurationManager"
+) -> list[str]:
+    """Where a child ensemble reference resolves, in order.
+
+    The project dir's ``ensembles/``, the project dir itself, the local
+    dot-dir's ``ensembles/`` when it exists, then every configuration
+    tier (#196: a global ensemble's child may be packaged, a project's
+    child may be global). The executor resolves children against this
+    list with ``_find_ensemble_in_dirs``; preflight must use the same.
+    """
+    search_dirs: list[str] = []
+    if project_dir:
+        search_dirs.append(str(project_dir / "ensembles"))
+        search_dirs.append(str(project_dir))
+
+    local_dir = config_manager.local_config_dir
+    if local_dir:
+        ensembles_dir = local_dir / "ensembles"
+        if ensembles_dir.exists():
+            search_dirs.append(str(ensembles_dir))
+
+    for tier_dir in config_manager.get_ensembles_dirs():
+        if str(tier_dir) not in search_dirs:
+            search_dirs.append(str(tier_dir))
+    return search_dirs
