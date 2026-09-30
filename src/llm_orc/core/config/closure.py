@@ -145,28 +145,45 @@ class _Walker:
             self._own(key, via)
 
     def _llm(self, agent: LlmAgentConfig, via: tuple[str, ...]) -> None:
+        # Mirrors model_factory._reachable_provider_options: the primary
+        # profile's chain is walked transitively, the agent-level fallback
+        # is one hop and its own chain is never followed.
         if agent.model_profile is not None:
             self._profile_chain(agent.model_profile, via)
-            if agent.fallback_model_profile:
-                self._profile_chain(agent.fallback_model_profile, via)
         elif agent.model is not None:
             self.add(
                 Dependency("model", agent.model, via, provider=agent.provider), via
             )
+        if agent.fallback_model_profile:
+            self._profile(agent.fallback_model_profile, via)
+
+    def _profile(self, name: str, via: tuple[str, ...]) -> Mapping[str, Any] | None:
+        """Record one profile hop (owned even on a repeat sighting)."""
+        profile = self._profiles.get(name)
+        provider = profile.get("provider") if profile is not None else None
+        dep = Dependency(
+            "profile",
+            name,
+            via,
+            provider=str(provider) if provider else None,
+            found=profile is not None,
+        )
+        self.add(dep, via)
+        return profile
 
     def _profile_chain(self, name: str, via: tuple[str, ...]) -> None:
+        """Follow ``fallback_model_profile`` hops, owning each for ``via``.
+
+        Stops at a missing hop or one already seen in this chain, so a
+        profile cycle terminates while a repeat sighting from another
+        frame still owns the whole chain.
+        """
+        in_chain: set[str] = set()
         current: str | None = name
-        while current:
-            profile = self._profiles.get(current)
-            provider = profile.get("provider") if profile is not None else None
-            dep = Dependency(
-                "profile",
-                current,
-                via,
-                provider=str(provider) if provider else None,
-                found=profile is not None,
-            )
-            if not self.add(dep, via) or profile is None:
+        while current and current not in in_chain:
+            in_chain.add(current)
+            profile = self._profile(current, via)
+            if profile is None:
                 return
             nxt = profile.get("fallback_model_profile")
             current = nxt if isinstance(nxt, str) and nxt else None
