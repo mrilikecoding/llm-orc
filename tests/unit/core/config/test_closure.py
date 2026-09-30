@@ -192,3 +192,102 @@ class TestWalkClosure:
         closure = walk_closure(a, lambda n: table.get(n), {})
 
         assert [d.name for d in closure.dependencies] == ["a", "b"]
+
+    def test_second_agent_on_a_profile_owns_the_rest_of_its_chain(
+        self, ensembles: Path
+    ) -> None:
+        _write(
+            ensembles,
+            "top",
+            [
+                {"name": "w1", "model_profile": "b"},
+                {"name": "w2", "model_profile": "b"},
+            ],
+        )
+        profiles: dict[str, dict[str, Any]] = {"b": {"fallback_model_profile": "c"}}
+        root = _finder(ensembles)("top")
+        assert root is not None
+
+        closure = walk_closure(root, _finder(ensembles), profiles)
+
+        assert ("profile", "c") in closure.owned["top.w1"]
+        assert ("profile", "c") in closure.owned["top.w2"]
+
+    def test_profile_cycle_terminates(self, ensembles: Path) -> None:
+        _write(ensembles, "top", [{"name": "w", "model_profile": "a"}])
+        profiles: dict[str, dict[str, Any]] = {
+            "a": {"fallback_model_profile": "b"},
+            "b": {"fallback_model_profile": "a"},
+        }
+        root = _finder(ensembles)("top")
+        assert root is not None
+
+        closure = walk_closure(root, _finder(ensembles), profiles)
+
+        assert [d.name for d in closure.dependencies[1:]] == ["a", "b"]
+
+    def test_inline_model_agent_keeps_its_fallback_profile(
+        self, ensembles: Path
+    ) -> None:
+        _write(
+            ensembles,
+            "top",
+            [
+                {
+                    "name": "w",
+                    "model": "qwen3-8b",
+                    "provider": "llama-server",
+                    "fallback_model_profile": "nope",
+                }
+            ],
+        )
+        root = _finder(ensembles)("top")
+        assert root is not None
+
+        closure = walk_closure(root, _finder(ensembles), {})
+
+        fallback = next(d for d in closure.dependencies if d.name == "nope")
+        assert (fallback.kind, fallback.found) == ("profile", False)
+
+    def test_agent_level_fallback_is_one_hop_like_runtime(
+        self, ensembles: Path
+    ) -> None:
+        """Runtime never walks the agent-level fallback's own chain."""
+        _write(
+            ensembles,
+            "top",
+            [{"name": "w", "model_profile": "a", "fallback_model_profile": "x"}],
+        )
+        profiles: dict[str, dict[str, Any]] = {
+            "a": {},
+            "x": {"fallback_model_profile": "y"},
+        }
+        root = _finder(ensembles)("top")
+        assert root is not None
+
+        closure = walk_closure(root, _finder(ensembles), profiles)
+
+        names = [d.name for d in closure.dependencies]
+        assert "x" in names
+        assert "y" not in names
+
+    def test_grandchild_is_owned_by_a_second_frame_on_the_shared_child(
+        self, ensembles: Path
+    ) -> None:
+        _write(ensembles, "gc", [{"name": "runner", "script": "scripts/deep.py"}])
+        _write(ensembles, "ch", [{"name": "down", "ensemble": "gc"}])
+        _write(
+            ensembles,
+            "top",
+            [
+                {"name": "first", "ensemble": "ch"},
+                {"name": "second", "ensemble": "ch"},
+            ],
+        )
+        root = _finder(ensembles)("top")
+        assert root is not None
+
+        closure = walk_closure(root, _finder(ensembles), {})
+
+        assert ("script", "scripts/deep.py") in closure.owned["top.second"]
+        assert ("ensemble", "gc") in closure.owned["top.second"]
