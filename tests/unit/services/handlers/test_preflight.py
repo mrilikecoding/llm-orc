@@ -8,6 +8,7 @@ import pytest
 
 from llm_orc.core.config.closure import Dependency
 from llm_orc.services.handlers.preflight import (
+    RESOLVE,
     DependencyStatus,
     classify_dependencies,
     is_runnable,
@@ -175,3 +176,7 @@ def test_runnable_requires_every_dependency_ready_or_dynamic() -> None:
     )
     assert is_runnable(reports[:2]) is True
     assert is_runnable(reports) is False
+
+
+def test_every_status_has_a_resolve_hint() -> None:
+    assert set(RESOLVE) == set(DependencyStatus)

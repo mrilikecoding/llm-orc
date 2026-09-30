@@ -1610,7 +1610,7 @@ async def _check_one_agent(
     with (
         patch.object(handler, "_find_ensemble", return_value=config),
         patch.object(
-            handler._profile_handler, "get_all_profiles", return_value=profiles
+            handler._profile_handler, "get_runtime_profiles", return_value=profiles
         ),
         patch.object(
             handler,
@@ -1717,7 +1717,7 @@ class TestGetOpenAICompatibleStatus:
         """No openai-compatible profiles means unavailable."""
         handler = server._provider_handler
         # Ensure no profiles exist
-        handler._profile_handler.get_all_profiles = lambda: {}
+        handler._profile_handler.get_runtime_profiles = lambda: {}
         result = await handler._get_openai_compatible_status()
         assert result.available is False
         assert result.endpoints == []
@@ -1727,7 +1727,7 @@ class TestGetOpenAICompatibleStatus:
     async def test_reachable_endpoint_lists_models(self, server: MCPServer) -> None:
         """Reachable endpoint returns models and profiles."""
         handler = server._provider_handler
-        handler._profile_handler.get_all_profiles = lambda: {
+        handler._profile_handler.get_runtime_profiles = lambda: {
             "my-openai": {
                 "provider": "openai-compatible",
                 "model": "gpt-4",
@@ -1768,7 +1768,7 @@ class TestGetOpenAICompatibleStatus:
         from unittest.mock import AsyncMock, patch
 
         handler = server._provider_handler
-        handler._profile_handler.get_all_profiles = lambda: {
+        handler._profile_handler.get_runtime_profiles = lambda: {
             "my-openai": {
                 "provider": "openai-compatible",
                 "model": "gpt-4",
@@ -1837,7 +1837,7 @@ class TestGetOpenAICompatibleStatus:
         from unittest.mock import AsyncMock, patch
 
         handler = server._provider_handler
-        handler._profile_handler.get_all_profiles = lambda: {
+        handler._profile_handler.get_runtime_profiles = lambda: {
             "profile-a": {
                 "provider": "openai-compatible",
                 "model": "gpt-4",
@@ -2030,7 +2030,7 @@ class TestSuggestLocalAlternativesOpenAICompat:
     ) -> None:
         """openai-compatible profiles included when endpoint available."""
         handler = server._provider_handler
-        handler._profile_handler.get_all_profiles = lambda: {
+        handler._profile_handler.get_runtime_profiles = lambda: {
             "local-prof": {"provider": "llama-server"},
             "oai-prof": {"provider": "openai-compatible"},
         }
@@ -2047,7 +2047,7 @@ class TestSuggestLocalAlternativesOpenAICompat:
     ) -> None:
         """openai-compatible profiles excluded when not available."""
         handler = server._provider_handler
-        handler._profile_handler.get_all_profiles = lambda: {
+        handler._profile_handler.get_runtime_profiles = lambda: {
             "local-prof": {"provider": "llama-server"},
             "oai-prof": {"provider": "openai-compatible"},
         }

@@ -45,11 +45,15 @@ class ProviderHandler:
         profile_handler: ProfileHandler,
         find_ensemble: Callable[[str], EnsembleConfig | None],
         script_resolver_factory: Callable[[], ScriptResolver] | None = None,
+        *,
+        find_child: Callable[[str], EnsembleConfig | None],
     ) -> None:
-        """Initialize with profile handler, ensemble finder, and the
-        resolver the executor would use for scripts (ruling 5)."""
+        """Initialize with profile handler, the root finder (the API's
+        lookup), the resolver the executor would use for scripts (ruling
+        5), and the executor's own child-ensemble lookup (ruling 4)."""
         self._profile_handler = profile_handler
         self._find_ensemble = find_ensemble
+        self._find_child = find_child
         self._script_resolver_factory = script_resolver_factory or ScriptResolver
 
     async def get_provider_status(self, arguments: dict[str, Any]) -> dict[str, Any]:
@@ -111,7 +115,7 @@ class ProviderHandler:
         if self._test_openai_compat_status is not None:
             return self._test_openai_compat_status
 
-        all_profiles = self._profile_handler.get_all_profiles()
+        all_profiles = self._profile_handler.get_runtime_profiles()
 
         # Group profiles by base_url
         url_profiles: dict[str, list[str]] = {}
@@ -189,19 +193,21 @@ class ProviderHandler:
 
         provider_status = await self.get_provider_status({})
         providers = provider_status.get("providers", {})
-        all_profiles = self._profile_handler.get_all_profiles()
+        profiles = self._profile_handler.get_runtime_profiles()
 
-        closure = walk_closure(config, self._find_ensemble, all_profiles)
+        closure = walk_closure(
+            config, self._find_child, profiles, root_ref=ensemble_name
+        )
         reports = classify_dependencies(
             closure.dependencies,
-            profiles=all_profiles,
+            profiles=profiles,
             providers=providers,
             script_found=self._script_found,
         )
         by_key: dict[Key, DependencyReport] = {(r.kind, r.name): r for r in reports}
 
         agent_results = [
-            self._agent_view(config.name, agent, closure, by_key, providers)
+            self._agent_view(ensemble_name, agent, closure, by_key, providers)
             for agent in config.agents
         ]
         result = EnsembleRunnability(
@@ -224,7 +230,7 @@ class ProviderHandler:
 
     def _agent_view(
         self,
-        root_name: str,
+        root_ref: str,
         agent: Any,
         closure: Closure,
         by_key: dict[Key, DependencyReport],
@@ -239,7 +245,7 @@ class ProviderHandler:
             profile=profile_name if isinstance(profile_name, str) else "",
             provider=_agent_provider(agent, by_key),
         )
-        owned = closure.owned.get(f"{root_name}.{agent_name}", frozenset())
+        owned = closure.owned.get(f"{root_ref}.{agent_name}", frozenset())
         unmet = [
             by_key[k]
             for k in _in_closure_order(owned, by_key)
@@ -258,7 +264,7 @@ class ProviderHandler:
 
     def _suggest_local_alternatives(self, providers: dict[str, Any]) -> list[str]:
         """Suggest local profile alternatives."""
-        all_profiles = self._profile_handler.get_all_profiles()
+        all_profiles = self._profile_handler.get_runtime_profiles()
         local_profiles: list[str] = []
 
         local_available = providers.get("llama-server", {}).get("available", False)
