@@ -16,6 +16,7 @@ from llm_orc.core.config.config_manager import ConfigurationManager
 from llm_orc.core.config.ensemble_config import EnsembleLoader
 from llm_orc.core.config.state import ARTIFACTS_DIRNAME, resolve_state_dir
 from llm_orc.core.execution.artifact_manager import ArtifactManager
+from llm_orc.core.execution.scripting.resolver import ScriptResolver
 from llm_orc.mcp.project_context import ProjectContext
 from llm_orc.models.base import HTTPConnectionPool
 from llm_orc.services.handlers.artifact_handler import ArtifactHandler
@@ -82,7 +83,9 @@ class OrchestraService:
             self.config_manager, self.ensemble_loader
         )
         self._provider_handler = ProviderHandler(
-            self._profile_handler, self.find_ensemble_by_name
+            self._profile_handler,
+            self.find_ensemble_by_name,
+            lambda: ScriptResolver(project_dir=self._project_path),
         )
         self._validation_handler = ValidationHandler(
             self.config_manager,

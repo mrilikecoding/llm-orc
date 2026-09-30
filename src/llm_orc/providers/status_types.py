@@ -6,12 +6,14 @@ from pydantic import BaseModel, Field
 
 
 class AgentStatus(StrEnum):
-    """Status of an agent's runnability."""
+    """Status of an agent's runnability (coarse; the dependency report
+    carries the fine-grained status, spec Arc 3 re-cut ruling 6)."""
 
     AVAILABLE = "available"
     MISSING_PROFILE = "missing_profile"
     PROVIDER_UNAVAILABLE = "provider_unavailable"
     MODEL_UNAVAILABLE = "model_unavailable"
+    DEPENDENCY_UNMET = "dependency_unmet"
 
 
 class LlamaServerProviderStatus(BaseModel):

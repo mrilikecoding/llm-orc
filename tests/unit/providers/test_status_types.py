@@ -176,7 +176,7 @@ class TestAgentRunnability:
         assert dumped["alternatives"] == ["local-fast"]
 
     def test_dump_matches_existing_dict_shape(self) -> None:
-        """model_dump matches the existing dict shape from _check_agent_runnable."""
+        """model_dump keeps the dict shape check_ensemble_runnable returns."""
         agent = AgentRunnability(
             name="agent1",
             profile="fast",

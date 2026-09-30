@@ -86,7 +86,7 @@ def classify_dependencies(
         reports.append(
             DependencyReport(
                 kind=dep.kind,
-                name=dep.name,
+                name=str(dep.name),
                 via=list(dep.via),
                 status=status,
                 resolve=RESOLVE[status],
