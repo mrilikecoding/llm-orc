@@ -1,0 +1,194 @@
+"""The transitive closure of an ensemble (spec, Arc 3 re-cut ruling 4)."""
+
+from __future__ import annotations
+
+from collections.abc import Callable
+from pathlib import Path
+from typing import Any
+
+import pytest
+import yaml
+
+from llm_orc.core.config.closure import Dependency, walk_closure
+from llm_orc.core.config.ensemble_config import EnsembleConfig, EnsembleLoader
+from llm_orc.schemas.agent_config import EnsembleAgentConfig
+
+
+def _write(dir_path: Path, name: str, agents: list[dict[str, Any]]) -> None:
+    (dir_path / f"{name}.yaml").write_text(
+        yaml.safe_dump({"name": name, "description": name, "agents": agents})
+    )
+
+
+def _finder(dir_path: Path) -> Callable[[str], EnsembleConfig | None]:
+    loader = EnsembleLoader()
+
+    def find(name: str) -> EnsembleConfig | None:
+        return loader.find_ensemble(str(dir_path), name)
+
+    return find
+
+
+@pytest.fixture
+def ensembles(tmp_path: Path) -> Path:
+    d = tmp_path / "ensembles"
+    d.mkdir()
+    return d
+
+
+def _keys(deps: list[Dependency]) -> list[tuple[str, str, tuple[str, ...]]]:
+    return [(d.kind, d.name, d.via) for d in deps]
+
+
+class TestWalkClosure:
+    def test_root_child_script_profile_and_dynamic_dispatch(
+        self, ensembles: Path
+    ) -> None:
+        _write(
+            ensembles,
+            "child",
+            [
+                {"name": "runner", "script": "scripts/gone.py"},
+                {"name": "thinker", "model_profile": "p-child"},
+            ],
+        )
+        _write(
+            ensembles,
+            "top",
+            [
+                {"name": "writer", "model_profile": "p-top"},
+                {"name": "sub", "ensemble": "child"},
+                {"name": "router", "dispatch": "${sub.target}"},
+                {"name": "fixed", "dispatch": "child"},
+                {"name": "absent", "ensemble": "no-such"},
+            ],
+        )
+        root = _finder(ensembles)("top")
+        assert root is not None
+
+        closure = walk_closure(root, _finder(ensembles), {"p-top": {}, "p-child": {}})
+
+        assert _keys(closure.dependencies) == [
+            ("ensemble", "top", ()),
+            ("profile", "p-top", ("top.writer",)),
+            ("ensemble", "child", ("top.sub",)),
+            ("script", "scripts/gone.py", ("top.sub", "child.runner")),
+            ("profile", "p-child", ("top.sub", "child.thinker")),
+            ("dispatch", "${sub.target}", ("top.router",)),
+            ("ensemble", "no-such", ("top.absent",)),
+        ]
+        missing = next(d for d in closure.dependencies if d.name == "no-such")
+        assert missing.found is False
+
+    def test_second_reference_is_deduplicated_but_owned_by_both_frames(
+        self, ensembles: Path
+    ) -> None:
+        """Review focus 1: the closure is a set; ownership is not."""
+        _write(ensembles, "child", [{"name": "runner", "script": "scripts/x.py"}])
+        _write(
+            ensembles,
+            "top",
+            [
+                {"name": "first", "ensemble": "child"},
+                {"name": "second", "ensemble": "child"},
+            ],
+        )
+        root = _finder(ensembles)("top")
+        assert root is not None
+
+        closure = walk_closure(root, _finder(ensembles), {})
+
+        assert [d.name for d in closure.dependencies] == [
+            "top",
+            "child",
+            "scripts/x.py",
+        ]
+        assert ("script", "scripts/x.py") in closure.owned["top.first"]
+        assert ("script", "scripts/x.py") in closure.owned["top.second"]
+
+    def test_loop_body_is_an_ensemble_dependency(self, ensembles: Path) -> None:
+        _write(ensembles, "body", [{"name": "step", "model_profile": "p"}])
+        _write(
+            ensembles,
+            "top",
+            [
+                {
+                    "name": "looper",
+                    "loop": {"body": "body", "until": "${done}", "max_iterations": 3},
+                }
+            ],
+        )
+        root = _finder(ensembles)("top")
+        assert root is not None
+
+        closure = walk_closure(root, _finder(ensembles), {"p": {}})
+
+        assert _keys(closure.dependencies)[1:] == [
+            ("ensemble", "body", ("top.looper",)),
+            ("profile", "p", ("top.looper", "body.step")),
+        ]
+
+    def test_fallback_chain_is_followed_until_a_missing_hop(
+        self, ensembles: Path
+    ) -> None:
+        """Review focus 2."""
+        _write(
+            ensembles,
+            "top",
+            [{"name": "w", "model_profile": "a", "fallback_model_profile": "x"}],
+        )
+        profiles: dict[str, dict[str, Any]] = {
+            "a": {"fallback_model_profile": "b"},
+            "b": {"fallback_model_profile": "gone"},
+            "x": {},
+        }
+        root = _finder(ensembles)("top")
+        assert root is not None
+
+        closure = walk_closure(root, _finder(ensembles), profiles)
+
+        assert _keys(closure.dependencies)[1:] == [
+            ("profile", "a", ("top.w",)),
+            ("profile", "b", ("top.w",)),
+            ("profile", "gone", ("top.w",)),
+            ("profile", "x", ("top.w",)),
+        ]
+        gone = next(d for d in closure.dependencies if d.name == "gone")
+        assert gone.found is False
+
+    def test_inline_model_agent_is_a_model_dependency(self, ensembles: Path) -> None:
+        _write(
+            ensembles,
+            "top",
+            [{"name": "w", "model": "qwen3-8b", "provider": "llama-server"}],
+        )
+        root = _finder(ensembles)("top")
+        assert root is not None
+
+        closure = walk_closure(root, _finder(ensembles), {})
+
+        dep = closure.dependencies[1]
+        assert (dep.kind, dep.name, dep.provider) == (
+            "model",
+            "qwen3-8b",
+            "llama-server",
+        )
+
+    def test_mutual_references_terminate(self) -> None:
+        """The loader rejects cycles; the walker must not depend on that."""
+        # Built directly: the loader would refuse this graph (Invariant 5).
+        a = EnsembleConfig(
+            name="a",
+            description="a",
+            agents=[EnsembleAgentConfig(name="to_b", ensemble="b")],
+        )
+        b = EnsembleConfig(
+            name="b",
+            description="b",
+            agents=[EnsembleAgentConfig(name="to_a", ensemble="a")],
+        )
+        table = {"a": a, "b": b}
+
+        closure = walk_closure(a, lambda n: table.get(n), {})
+
+        assert [d.name for d in closure.dependencies] == ["a", "b"]
