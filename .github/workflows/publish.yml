@@ -38,6 +38,13 @@ jobs:
     - name: Build package
       run: |
         uv build
+
+    - name: Check the wheel carries the serving project
+      run: |
+        # The packaged tier (#196): the wheel's llm_orc/serving_project/
+        # must equal the tracked .llm-orc/ files. A wheel without it
+        # serves nothing from a plain directory.
+        python scripts/check_wheel_contents.py dist/*.whl
     
     - name: Check build artifacts
       run: |
