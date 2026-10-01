@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.22.0] - 2026-10-01
 
 ### Added
 - `check_ensemble_runnable` (REST `GET /api/ensembles/{name}/runnable`)
@@ -46,6 +46,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   --state-dir`, else the project's `.llm-orc/`, else `$XDG_STATE_HOME/llm-orc`.
 
 ### Changed
+- `check_ensemble_runnable`: `runnable` is `false` while any dependency in
+  the closure is unmet. That includes a local model the router lists but
+  has not downloaded (`pullable`), and script, ensemble, loop and dispatch
+  agents whose children are missing (they used to read `available`
+  unconditionally).
 - `delete_ensemble` / `delete_profile` / `delete_script` and the update
   tools act on one scope only. A name that lives in another tier (including
   the library) is an error naming the tier and path; previously delete
