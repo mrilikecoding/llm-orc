@@ -6,10 +6,10 @@ tailnet needs neither ssh nor a second application to manage models.
 """
 
 import os
-import time
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
+from fastapi.concurrency import run_in_threadpool
 
 from llm_orc.providers.llama_server import LlamaServerClient
 
@@ -50,29 +50,20 @@ PULL_TIMEOUT_S = 3600.0
 PULL_POLL_S = 1.0
 
 
-def _status_of(client: LlamaServerClient, name: str) -> str:
-    for model in client.models():
-        if model.get("id") == name:
-            return _entry(model)["status"]
-    return "unknown"
-
-
 @router.post("/{name}/pull")
 async def pull_model(name: str) -> dict[str, str]:
     """Load one model, downloading its GGUF first if the router has to.
 
-    The router's load call returns as soon as loading starts, so this
-    waits until the router reports something other than ``loading`` and
-    answers with that real status.
+    The wait is ``LlamaServerClient.pull``: it ends when the router
+    reports something other than ``loading``, and the answer is that real
+    status. It blocks, so it runs in a worker thread; a download held on
+    the event loop stalls every other request the serve has (#199).
     """
     client = router_client()
     try:
-        client.load(name)
-        deadline = time.monotonic() + PULL_TIMEOUT_S
-        status = _status_of(client, name)
-        while status == "loading" and time.monotonic() < deadline:
-            time.sleep(PULL_POLL_S)
-            status = _status_of(client, name)
+        result = await run_in_threadpool(
+            client.pull, name, timeout_s=PULL_TIMEOUT_S, poll_s=PULL_POLL_S
+        )
     except (OSError, ValueError) as e:
         raise _unreachable(e) from e
-    return {"name": name, "status": status}
+    return {"name": name, "status": str(result["status"])}
