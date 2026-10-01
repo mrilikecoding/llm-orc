@@ -297,6 +297,35 @@ class LlamaServerClient:
         with _DIRECT.open(request, timeout=3600) as resp:
             json.load(resp)
 
+    def pull(self, model: str, *, timeout_s: float, poll_s: float) -> dict[str, Any]:
+        """Load one model and wait for the router's verdict.
+
+        The router's load call returns as soon as loading starts (e2e
+        2026-09-16: ``loaded`` reported while the status was ``loading``),
+        so this polls the listing until the status is anything but
+        ``loading`` or the deadline passes. A failed load reads
+        ``unloaded`` with ``failed`` true and an exit code (probe
+        2026-10-01), reported as observed. Blocking: callers on an event
+        loop run it in a worker thread.
+        """
+        self.load(model)
+        deadline = time.monotonic() + timeout_s
+        entry = self._observe(model)
+        while model_status(entry) == "loading" and time.monotonic() < deadline:
+            time.sleep(poll_s)
+            entry = self._observe(model)
+        status = entry.get("status")
+        detail = status if isinstance(status, dict) else {}
+        return {
+            "status": model_status(entry) or "unknown",
+            "failed": bool(detail.get("failed")),
+            "exit_code": detail.get("exit_code"),
+        }
+
+    def _observe(self, model: str) -> dict[str, Any]:
+        """The model's current listing entry, empty when not listed."""
+        return next((m for m in self.models() if m.get("id") == model), {})
+
     def embeddings(self, body: Mapping[str, Any], *, timeout: float) -> tuple[int, Any]:
         """Forward an OpenAI-compatible embeddings request to the router,
         returning its status code and JSON body as-is.

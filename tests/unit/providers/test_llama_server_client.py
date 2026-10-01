@@ -87,3 +87,59 @@ class TestInventory:
             client.models()
             client.inventory()
         assert listing.call_count == 2  # one GET per call, never two per call
+
+
+def _entry(model: str, **status: object) -> list[dict[str, object]]:
+    return [{"id": model, "status": status, "source": "preset"}]
+
+
+class TestPull:
+    """One pull-and-wait for every caller (spec Arc 4 re-cut, ruling 4);
+    the shapes are the failed and good loads the 2026-10-01 probe saw."""
+
+    def test_waits_through_loading_and_returns_the_loaded_status(self) -> None:
+        client = LlamaServerClient("http://127.0.0.1:8791")
+        listings = [
+            _entry("qwen3-8b", value="loading"),
+            _entry("qwen3-8b", value="loading"),
+            _entry("qwen3-8b", value="loaded"),
+        ]
+        with (
+            patch.object(LlamaServerClient, "load") as load,
+            patch.object(LlamaServerClient, "_list", side_effect=listings),
+        ):
+            result = client.pull("qwen3-8b", timeout_s=5, poll_s=0)
+        load.assert_called_once_with("qwen3-8b")
+        assert result == {"status": "loaded", "failed": False, "exit_code": None}
+
+    def test_a_failed_load_is_unloaded_failed_with_its_exit_code(self) -> None:
+        client = LlamaServerClient("http://127.0.0.1:8791")
+        failed = _entry("bogus", value="unloaded", exit_code=1, failed=True)
+        with (
+            patch.object(LlamaServerClient, "load"),
+            patch.object(LlamaServerClient, "_list", return_value=failed),
+        ):
+            result = client.pull("bogus", timeout_s=5, poll_s=0)
+        assert result == {"status": "unloaded", "failed": True, "exit_code": 1}
+
+    def test_a_load_still_loading_at_the_deadline_reports_loading(self) -> None:
+        client = LlamaServerClient("http://127.0.0.1:8791")
+        with (
+            patch.object(LlamaServerClient, "load"),
+            patch.object(
+                LlamaServerClient,
+                "_list",
+                return_value=_entry("slow", value="loading"),
+            ),
+        ):
+            result = client.pull("slow", timeout_s=0, poll_s=0)
+        assert result["status"] == "loading"
+
+    def test_a_model_the_router_does_not_list_is_unknown(self) -> None:
+        client = LlamaServerClient("http://127.0.0.1:8791")
+        with (
+            patch.object(LlamaServerClient, "load"),
+            patch.object(LlamaServerClient, "_list", return_value=PROBE_LISTING),
+        ):
+            result = client.pull("nope", timeout_s=5, poll_s=0)
+        assert result == {"status": "unknown", "failed": False, "exit_code": None}
