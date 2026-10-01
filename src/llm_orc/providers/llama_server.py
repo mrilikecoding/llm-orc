@@ -204,15 +204,29 @@ def model_status(model: Mapping[str, Any]) -> str | None:
     return str(value) if value else None
 
 
+def model_source(model: Mapping[str, Any]) -> str | None:
+    """The source a preset entry serves: the value after ``--hf-repo`` in
+    its ``status.args``, the argv the router would spawn (probe
+    2026-10-01). None when the entry carries no such arg (a bare-string
+    status has no args at all)."""
+    status = model.get("status")
+    args = status.get("args") if isinstance(status, dict) else None
+    if not isinstance(args, list) or "--hf-repo" not in args:
+        return None
+    index = args.index("--hf-repo") + 1
+    return str(args[index]) if index < len(args) else None
+
+
 @dataclass(frozen=True)
 class RouterInventory:
     """What one ``GET /models`` says: the models the router routes to
-    (preset sections), the sources it had on disk at start, and the
-    models loaded now."""
+    (preset sections), the sources it had on disk at start, the models
+    loaded now, and the source each routable model serves."""
 
     models: list[dict[str, Any]]
     cached: list[str]
     loaded: list[str]
+    sources: dict[str, str] = field(default_factory=dict)
 
 
 #: The router is reached directly, never through an HTTP proxy from the
@@ -261,6 +275,11 @@ class LlamaServerClient:
             models=models,
             cached=sorted(str(m["id"]) for m in listing if _is_cache_entry(m)),
             loaded=sorted(str(m["id"]) for m in models if model_status(m) == "loaded"),
+            sources={
+                str(m["id"]): source
+                for m in models
+                if (source := model_source(m)) is not None
+            },
         )
 
     def models(self) -> list[dict[str, Any]]:
