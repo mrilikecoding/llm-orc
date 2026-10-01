@@ -146,6 +146,7 @@ class ScriptAgent:
         name: str,
         config: dict[str, Any],
         project_dir: Path | None = None,
+        run_dir: Path | None = None,
     ):
         """Initialize script agent with configuration.
 
@@ -153,6 +154,7 @@ class ScriptAgent:
             name: Agent name
             config: Agent configuration including script and parameters
             project_dir: Optional project directory for script resolution
+            run_dir: Optional run layer directory (one-run injection)
         """
         self.name = name
         self.config = config
@@ -176,7 +178,7 @@ class ScriptAgent:
                 f"Script agent {name} must have either 'script' or 'command'"
             )
 
-        self._script_resolver = ScriptResolver(project_dir=project_dir)
+        self._script_resolver = ScriptResolver(project_dir=project_dir, run_dir=run_dir)
         self.parameters = config.get("parameters", {})
         self._env_manager = ScriptEnvironmentManager(self.environment, self.parameters)
 

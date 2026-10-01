@@ -62,11 +62,13 @@ class ScriptResolver:
         self,
         search_paths: list[str] | None = None,
         project_dir: Path | None = None,
+        run_dir: Path | None = None,
     ) -> None:
         """Initialize the script resolver with optional custom search paths."""
         self._cache: dict[str, str] = {}
         self._custom_search_paths = search_paths
         self._project_dir = project_dir
+        self._run_dir = run_dir
 
     def _get_search_paths(self) -> list[str]:
         """Get search paths in priority order.
