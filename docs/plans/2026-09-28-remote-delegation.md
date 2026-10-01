@@ -507,6 +507,158 @@ input:     "..."
   runs; two concurrent injected runs with the same script path stay
   isolated.
 
+**Arc 4 re-cut (2026-10-01), from the merged Arc 3 shape, a code read of
+every run-time resolution site, and two router probes.** The card above
+stands except where a ruling says otherwise. Implementation plan:
+`docs/plans/2026-10-01-remote-delegation-arc4.md`.
+
+Code read, the facts the rulings rest on. A run resolves through two
+values the executor is built with, `project_dir` and a
+`ConfigurationManager`: profiles in `LlmAgentRunner` and `ModelFactory`
+(`get_model_profiles`, `get_model_profile`, `resolve_model_profile`),
+children in `EnsembleExecutor._resolve_ensemble_reference`
+(`child_ensemble_search_dirs` + `_find_ensemble_in_dirs`), scripts in
+`ScriptAgentRunner` and `ScriptAgent` (`ScriptResolver(project_dir=...)`).
+Child executors share the parent's config manager and model factory.
+`OrchestraService._get_executor` already builds a fresh root executor per
+invocation. Three entry paths look the root up and run it, each with its
+own copy of the lookup: `ExecutionHandler.invoke` (REST, the MCP dict
+dispatch), `execute_streaming` (the FastMCP `invoke` tool) and
+`invoke_streaming`. A script runs as `python <path>`, so its import path
+starts at its own directory; that is how the serving scripts import
+`_helpers`. `POST /api/models/{name}/pull` is an `async def` that polls
+with `time.sleep`, so it blocks the event loop for the whole download
+(#199).
+
+Probes (2026-10-01, a scratch router on `:8791`, llama-server 9850, plus
+the mini's router read over ssh):
+
+- Every preset entry in `GET /models` carries `status.args`, the argv the
+  router would spawn, with `--hf-repo <source>` and `--ctx-size <n>`. Same
+  on the mini's binary (six preset models, each with its source). The
+  router states which file a model name serves.
+- A load of a source that does not exist (`[bogus-probe] hf-repo =
+  nobody-xyz/does-not-exist-GGUF:Q4_K_M`): `POST /models/load` answers
+  200 `{"success":true}`; within a second the entry reads `{"value":
+  "unloaded", "exit_code": 1, "failed": true}`. A good load reads
+  `loading` then `loaded`. With `--models-max 1`, the failed load still
+  evicted the model that was resident.
+
+1. **One preparation step in front of every service run.** The three
+   entry paths share one function that validates the request,
+   materializes the run layer, gates, builds the executor and cleans up.
+   It applies to a named ensemble with no injections too: `pull` defaults
+   to false for `ensemble_name` as for `ensemble`, and Arc 3 ruling 6
+   already said a download is the caller's decision. This is a breaking
+   change for callers: an ensemble that is not `runnable` no longer starts
+   over REST or MCP, it answers `not_equipped`. That includes a ready
+   primary with an unmet fallback hop (Arc 3's conservative ruling; `bind`
+   resolves it). `/v1/chat/completions` builds its own executor and is
+   untouched. The local CLI is untouched (Arc 5, #191).
+2. **The run layer is a directory shaped like every other tier, carried
+   by a config manager view.** `<state dir>/runs/<id>/` holds
+   `ensembles/<name>.yaml`, `profiles/*.yaml` and each script at its key.
+   `ConfigurationManager.with_run_layer(dir)` returns a copy with its own
+   profile cache whose tier lists put that directory highest: first in
+   `_tier_dirs`, last in `_profile_tiers`, first in
+   `child_ensemble_search_dirs`. The run's executor is built on the view;
+   children inherit it. Isolation is by object. Nothing global changes:
+   no environment variable, no cwd, no shared cache. Two concurrent runs
+   hold two views over two directories.
+3. **`bind` is materialized, never rewritten.** `bind: {a: b}` writes a
+   run-layer profile named `a` that carries `b`'s definition, `b` looked
+   up in the view after the inline profiles, one hop (a bind target is
+   never itself rebound). The closure walk and the model load then read
+   the same profile map, which answers the "walk or load" question:
+   neither rewrites a name. A binding applies whether or not the host has
+   its own `a`. If `b` is not a profile here the call fails
+   `not_equipped` with a row for `b` (`missing_profile`, `via:
+   ["bind:a"]`), also when the host has an `a`, because running on the
+   host's `a` would ignore what the caller asked for. A bind key that no
+   profile dependency in the static closure names is `invalid_request`: a
+   misspelled key must not run on the host's profile of the intended
+   name. A dynamic child's profile is re-seated by shipping an inline
+   profile instead. Applied bindings are returned as `bindings: {a: b}`.
+4. **`pull: true` waits for `loaded` and trusts its own observation.**
+   Each `pullable` dependency is pulled with the function the pull
+   endpoint uses (extracted; both callers run it off the event loop). The
+   wait ends when the router reports anything other than `loading`. Only
+   `loaded` resolves the dependency; any other status leaves it
+   `pullable` with the observed status in `detail`, and the call fails
+   `not_equipped` (the failed-load probe above). The gate does not
+   re-read the listing after a pull: with `--models-max 1` a second pull
+   evicts the first, which then reads `pullable` again though its file is
+   on disk (Arc 3's known limit). Pulled model names are returned as
+   `pulled: [...]`. Without `pull`, a `pullable` dependency blocks.
+5. **`needs_restart` is never resolved inside a run.** A restart cuts the
+   in-flight completions of every other run (S2), and a run-scoped
+   profile cannot be in the preset a restart renders without persisting
+   it. The call fails `not_equipped`; a new local model is served by
+   persisting its profile (`scope: global`) and restarting the serve.
+   Inline profiles therefore cover: a role bound to a model the router
+   already lists (with the caller's options and fallback chain), cloud
+   providers the host has credentials for, and OpenAI-compatible
+   endpoints.
+6. **Arc 3 ruling 3 gains one case: a listed model whose router source
+   differs from the profile's `hf_repo` is `needs_restart`.** The router
+   serves a model name from the source in its own preset, whatever a
+   profile written later says. Without this an inline profile that reuses
+   a host model name with another source is classified against the wrong
+   file, runs the host's file and reports success.
+   `LlamaServerClient.inventory()` gains `sources` (model id to its
+   `--hf-repo` argument, from the probe above) and the provider status
+   carries it. Persisted profiles edited after the router started get
+   the same check. No new status. Context size is in the same args and is
+   not compared in this arc (on #196).
+7. **Scripts.** A script with key `K` is written to `<run dir>/K` and the
+   resolver's search paths start with `<run dir>/scripts`, `<run dir>`,
+   the two entries every tier has. `ScriptResolver` takes the run
+   directory next to `project_dir`; the script runner, the script agent
+   and the gate pass the same two values. An injected script imports from
+   its own directory in the run layer and nowhere else: helpers ship
+   beside it. There is no fall-through to a host helper at the same
+   relative path, since a caller's script running against the host's
+   helper is a version mix that would run and report success. This
+   replaces the card's "run-scoped scripts dir on their import path".
+   Preflight does not see imports; a missing helper fails the script at
+   run time. Bytecode for a run with a layer goes under the run directory
+   (the state dir's `pycache` mirrors absolute paths and would keep
+   files). The script cache is off for a run with a layer (its identity
+   would name a deleted path).
+8. **Nothing persists.** The run directory is removed in a `finally`
+   that covers success, refusal, an exception and cancellation. A run
+   whose root is inline saves no artifact: there is no installed ensemble
+   to file it under, and the caller holds the result. A named root keeps
+   its artifact, with or without injections. The pin is a tree snapshot
+   of the state dir, the global config dir and the project dir before and
+   after.
+9. **Request validation.** Exactly one of `ensemble` and
+   `ensemble_name`. Ensemble names and script keys are relative paths
+   with no `..`, no leading `/`, no backslash and no empty segment.
+   Inline ensembles must load through `EnsembleLoader` (the root with
+   the run's search dirs, so Invariant 5 holds). A profile name defined
+   twice in one request (inline and as a bind key) is rejected. The REST
+   body forbids unknown keys. All of these answer `invalid_request`
+   and leave nothing on disk.
+10. **Error shape.** `{status: "error", has_errors: true, results: {},
+    deliverable: null, error: {kind, message, dependencies}}` with `kind`
+    one of `not_equipped`, `invalid_request`. HTTP 200 on REST, as for
+    every run outcome since v0.21.0. `dependencies` is the Arc 3 report
+    computed over the run's view: the gate is `check_ensemble_runnable`'s
+    own function called with the run's config manager and project dir,
+    and provider status is computed over the run's profiles so an inline
+    profile's OpenAI-compatible endpoint is probed.
+11. **Surfaces.** REST: `POST /api/ensembles/execute` takes the full
+    shape; `POST /api/ensembles/{name}/execute` takes the same body
+    without a root. MCP: `invoke` gains the fields, `ensemble_name`
+    becomes optional, the input argument keeps its name `input_data`.
+12. **On the record, not in this arc:** credentials are not injectable
+    (`needs_credentials` blocks); preflight does not follow script
+    imports; the serve remembering its own pulls (#196); a run directory
+    left by a killed process is inert and is not swept, because a stdio
+    MCP server and a serve may share one state dir; context-size
+    mismatch (ruling 6).
+
 ### Arc 5: CLI as the remote client (Sonnet, ~1-2 days, after Arc 4)
 
 - `llm-orc invoke <ensemble> --remote <url> [--bind a=b] [--pull]
