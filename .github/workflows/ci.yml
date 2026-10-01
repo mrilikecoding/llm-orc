@@ -57,6 +57,11 @@ jobs:
       run: |
         uv run mypy src tests benchmarks
 
+    - name: Check the wheel carries the serving project
+      if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11'
+      run: |
+        make wheel-check
+
   security:
     runs-on: ubuntu-latest
 
