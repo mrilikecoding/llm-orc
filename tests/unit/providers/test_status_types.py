@@ -68,6 +68,7 @@ class TestLlamaServerProviderStatus:
             "models": ["llama3:latest"],
             "cached": [],
             "loaded": [],
+            "sources": {},
             "model_count": 1,
             "reason": "",
         }

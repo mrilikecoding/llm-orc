@@ -18,13 +18,14 @@ class AgentStatus(StrEnum):
 
 class LlamaServerProviderStatus(BaseModel):
     """Status of the llama-server router (#90): reachable, what it
-    serves, which sources it had downloaded at start (#196), and which
-    models are loaded now."""
+    serves, which sources it had downloaded at start (#196), which models
+    are loaded now, and the source each model name serves."""
 
     available: bool
     models: list[str] = Field(default_factory=list)
     cached: list[str] = Field(default_factory=list)
     loaded: list[str] = Field(default_factory=list)
+    sources: dict[str, str] = Field(default_factory=dict)
     model_count: int = 0
     reason: str = ""
     base_url: str = ""
