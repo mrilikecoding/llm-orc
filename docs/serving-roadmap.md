@@ -89,17 +89,19 @@ commits; commits and tags before that are unchanged. Every hash cited in
 this document and in `docs/plans/` is the new one. The old history is
 kept under `refs/backup/pre-deploy-rewrite/` until the push is verified.
 
-Not yet pushed. The force-push of main and the nine tags needs the
-practitioner's go, and it has consequences to handle in the same step:
-the tap formula downloads the v0.22.0 tag tarball and pins its sha256,
-so the formula needs the new sha; origin's merged PR branches
-(`feat/llama-server-backend`, `fix/200-rest-api-agent-properties`,
-`fix/issue-202-child-input-contract`) still carry the old commits and
-should be deleted; GitHub keeps the old commits reachable through the
-merged PRs' refs (#186, #201, #203) until GitHub Support purges them;
-the PyPI sdists for 0.20.0 through 0.22.0 contain the directory and
-cannot be changed, only yanked. Hashes cited in GitHub issue comments
-are the old ones.
+The practitioner gave the go for the force-push on 2026-10-01: main and
+the nine tags. It has landed when `git ls-remote origin main` matches
+local main. In the same step: the tap formula downloads the v0.22.0 tag
+tarball and pins its sha256, so the formula takes the new sha; origin's
+merged PR branches (`feat/llama-server-backend`,
+`fix/200-rest-api-agent-properties`,
+`fix/issue-202-child-input-contract`) carry the old commits and are
+deleted. What a push cannot reach: GitHub keeps the old commits
+reachable through the merged PRs' refs (#186, #201, #203) until GitHub
+Support purges them; the PyPI sdists for 0.20.0 through 0.22.0 contain
+the directory and cannot be changed, only yanked (left as they are; the
+wheels never carried it). Hashes cited in GitHub issue comments before
+this date are the old ones.
 
 ### 2026-10-01: v0.22.0 released; Arc 4 in flight
 
