@@ -289,8 +289,6 @@ config key is renamed.
 - `GET /api/models` lists what the router serves with load status;
   `POST /api/models/{name}/pull` loads (downloading first) and returns
   once the router reports the real status.
-- `deploy/remote-host/`: launchd unit and setup notes for a native serve
-  behind a reverse proxy.
 
 ### Removed
 - The Ollama provider, model class, and `ollama` dependency. Model names

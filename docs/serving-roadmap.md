@@ -77,17 +77,41 @@ applications (#90's packaging goal). Standing directives from 2026-09-11
 hold (daily driver on existing repos; real OpenCode sessions; Go spend
 and paid comparison runs within reason; cheaper subagents; meter usage).
 
-### 2026-10-01: v0.22.0 released; the next session starts Arc 4
+### 2026-10-01: history rewritten, `deploy/remote-host/` removed
 
-Released v0.22.0 on the practitioner's go: push `fc336019..fcf28827`,
+llm-orc is a machine-agnostic tool (practitioner, 2026-10-01): files for
+one machine's deployment do not belong in this repo. `deploy/remote-host/`
+(a launchd unit and setup notes) was removed from every commit that
+carried it and moved to the homelab repo. On local main the 219 commits
+since 2026-09-16 have new hashes (three that touched only that directory
+are gone) and tags v0.20.0 through v0.22.0 point at the rewritten
+commits; commits and tags before that are unchanged. Every hash cited in
+this document and in `docs/plans/` is the new one. The old history is
+kept under `refs/backup/pre-deploy-rewrite/` until the push is verified.
+
+Not yet pushed. The force-push of main and the nine tags needs the
+practitioner's go, and it has consequences to handle in the same step:
+the tap formula downloads the v0.22.0 tag tarball and pins its sha256,
+so the formula needs the new sha; origin's merged PR branches
+(`feat/llama-server-backend`, `fix/200-rest-api-agent-properties`,
+`fix/issue-202-child-input-contract`) still carry the old commits and
+should be deleted; GitHub keeps the old commits reachable through the
+merged PRs' refs (#186, #201, #203) until GitHub Support purges them;
+the PyPI sdists for 0.20.0 through 0.22.0 contain the directory and
+cannot be changed, only yanked. Hashes cited in GitHub issue comments
+are the old ones.
+
+### 2026-10-01: v0.22.0 released; Arc 4 in flight
+
+Released v0.22.0 on the practitioner's go: push `3442fa63..665e7961`,
 tag, GitHub release, PyPI, tap formula bumped (`1b3cdb00`, Intel
 `cryptography<49` constraint intact). It carries Arc 1's `scope`, Arc 2
 (packaged serving tier, state dir, serving root) and Arc 3 (transitive
 preflight). CI is green on main: six test cells, security, wheel check.
 On the way: `make wheel-check` now runs in CI (one cell) and in the
-publish build before upload (`c68f235f`); pip-audit failed CI on new
+publish build before upload (`8fca7937`); pip-audit failed CI on new
 advisories for `pyjwt` 2.13.0 and `urllib3` 2.7.0 (both transitive), the
-lock pins moved to 2.15.1 and 2.8.0 (`f0bd6157`).
+lock pins moved to 2.15.1 and 2.8.0 (`435d863b`).
 
 Lesson, binding: `publish.yml` runs on every push to main and publishes
 the version in `pyproject.toml`. The push that carries a version bump IS
@@ -110,47 +134,38 @@ with the web UI's HTML; the plain name works.
 `research-dossier.yaml` moved from the checkout's `.llm-orc/ensembles/`
 to the laptop's global tier, so local `make wheel-check` is green.
 
-**Owed (practitioner):** the mini cut-over, "Cut-over checklist" in
-`deploy/remote-host/README.md`. The mini still runs 0.21.0 from the checkout
-directory. After it: 162 files under the brew install's
-`serving_project/`, `/v1/models`, and
-`GET /api/ensembles/research-dossier/runnable` on the mini. That call is
-also the first test of the cache-id rule (a cache entry's id equals the
-profile's `hf_repo`) on the mini's llama-server build: if downloaded
-models read `pullable` there, the id shape differs and spec ruling 1
-needs the mini's listing. The homelab cert renewal daemon fix is still
-owed before December.
+**Owed (practitioner):** the mini cut-over. Observed 2026-10-01 over
+ssh: the mini has brew 0.22.0 and `/health` answers 0.22.0, but the
+launchd plist's `WorkingDirectory` is still the old checkout (at the
+0.20.4 commit). That checkout's `.llm-orc` is the local tier, so it
+shadows the packaged serving project: 227 ensembles listed, 79 duplicate
+names, the router preset is the checkout's. `/v1` results from the mini
+are suspect until the working directory is a plain directory. The
+cut-over checklist and the launchd unit now live in the homelab repo
+(`docs/llm-orc-serve.md`, `launchd/com.llm-orc.serve.plist`). Already
+checked on the mini: `GET /api/ensembles/research-dossier/runnable` is
+`runnable: true` and the cache-id rule holds on its llama-server build
+(a cache entry's id equals the profile's `hf_repo`), so spec ruling 1
+stands there. The homelab cert renewal daemon fix is still owed before
+December.
 
-**Next task: re-cut Arc 4 (one-run injection).** On entry:
-
-1. Read the spec's decisions 2-4, the Arc 4 card, and the Arc 3 re-cut
-   with its live row (`docs/plans/2026-09-28-remote-delegation.md`).
-2. Code read before any ruling: the execute request shapes
-   (`ExecutionHandler`, `POST /api/ensembles/{name}/execute`, MCP
-   `invoke`); the tier loop in `ConfigurationManager` (`_profile_tiers`,
-   `_tier_dirs`) where a run-scoped highest layer would sit;
-   `child_ensemble_search_dirs` (an injected child must be found by the
-   executor's finder, by filename); `ScriptResolver._get_search_paths`
-   (run-scoped scripts and the `_helpers` import path);
-   `resolve_state_dir` for the per-run temp dir.
-3. Questions the re-cut settles with evidence (a spike where the code
-   read does not answer): where the per-run layer plugs in so concurrent
-   runs stay isolated; whether `bind` rewrites profile names at the
-   closure walk or at model load, and where the binding is recorded;
-   what `pull: true` waits for, given a pulled model reads `ready` on
-   `loaded` only; whether `needs_restart` can be resolved inside a run
-   (a router restart hard-cuts in-flight completions, S2) or is always
-   `not_equipped`.
-4. Standing rule from Arc 3: any resolution the gate performs is the
-   run's own function, pinned by driving both on one fixture.
-5. Then the plan (`docs/plans/YYYY-MM-DD-remote-delegation-arc4.md`),
-   Sonnet implementers per task, Opus reviews, a whole-branch review
-   before merge. The whole-branch review is where Arc 3's three
-   wrong-accepts were found; do not skip it.
+**In flight: Arc 4 (one-run injection).** The re-cut is done: twelve
+rulings in the spec ("Arc 4 re-cut (2026-10-01)", with the code read and
+two router probes) and the plan with task cards
+(`docs/plans/2026-10-01-remote-delegation-arc4.md`). Implementation is on
+`feat/one-run-injection` in `.claude/worktrees/arc4-injection`, Sonnet
+implementers per task, Opus reviews, a whole-branch review before merge
+(where Arc 3's three wrong-accepts were found; do not skip it). The plan's
+Task 9 is the laptop live row and the review gate. The rulings a caller
+will notice: every REST/MCP run is gated, named ensembles too (an
+ensemble that is not `runnable` answers `not_equipped`); `needs_restart`
+is never resolved inside a run; an inline root saves no artifact; a
+listed model whose router source differs from the profile's `hf_repo`
+reads `needs_restart`.
 
 ### 2026-09-27: fail-closed composition, released v0.21.0
 
-Merged `e3764632`, released v0.21.0 (breaking fix for callers; see
+Merged `6fbff81a`, released v0.21.0 (breaking fix for callers; see
 CHANGELOG). Plan and addenda: `docs/plans/2026-09-22-fail-closed-composition.md`.
 Invariant: a failed step never reaches a consumer, parent, or caller as
 a success. Shape: implicit 0.6b fallback removed (explicit
@@ -168,7 +183,7 @@ carry User-Agent and a salted per-invocation `x-opencode-session`.
 Four independent review rounds; suite 4677.
 
 **T1 regression-gate row (laptop, llama-server qwen3-8b, OpenCode, r=5
-each, same fixture):** main `938dfe8b` 0 correct / 1 shipped broken /
+each, same fixture):** main `728534a6` 0 correct / 1 shipped broken /
 3 refused / 1 client timeout; branch 0 / 1 / 4 / 0. No branch
 regression. The backend result is the finding: T1 is 0 of 10 correct on
 llama-server vs 3 of 8 on Ollama. Every miss traces to the 8b
@@ -205,8 +220,8 @@ This is Next up 2's owed #90 gate, now measured for T1.
   (`~/Development/llm-orc-proxy`, nginx → `host.lima.internal:8765`;
   edge nginx set to 3600 s / buffering off / 50 m body);
   http://llm-orc.remote.example answers 502 until the serve exists on
-  remote-host. `deploy/remote-host/` carries the launchd unit and setup notes.
-- **#202 (2026-09-22, PR #203 merged as `774c9359`, released v0.20.6,
+  remote-host. The launchd unit and setup notes live in the homelab repo.
+- **#202 (2026-09-22, PR #203 merged as `09b5383d`, released v0.20.6,
   formula bumped).** Core-engine fix outside the serving track but landing
   on it: `ensemble:`/`loop:`/`dispatch:` children now share one input
   contract (Option B on the issue: `input_key` value verbatim; otherwise
@@ -234,7 +249,7 @@ the llama-server backend yet — that is the regression gate below.
 cards: `docs/plans/2026-09-28-remote-delegation.md` (#196, #191);
 implementation plan for Arc 0 + Arc 1:
 `docs/plans/2026-09-28-remote-delegation-arc0-arc1.md`. **Arc 0 and Arc 1
-merged on local main 2026-09-28 (`ac148dcf`), pushed 2026-09-29 (`fc336019`, CI green).** S1: the
+merged on local main 2026-09-28 (`06b085c6`), pushed 2026-09-29 (`3442fa63`, CI green).** S1: the
 packaged serving project can be a read-only layer; artifacts,
 agentic-sessions, serve-trace, the rendered preset and the CRUD write
 fallback move to a state dir; `get_model_profiles` has no layer list
@@ -253,7 +268,7 @@ adversarial review plus two scoped re-reviews. Live row in the plan doc.
 still lives in the checkout. v0.21.0 is deployed on remote-host
 (practitioner, 2026-09-28).
 
-**Arc 2 merged on local main 2026-09-29 (`762a2665`; released in v0.22.0).**
+**Arc 2 merged on local main 2026-09-29 (`e4b1e5b8`; released in v0.22.0).**
 Re-cut rulings in the spec doc ("Arc 2 re-cut (2026-09-29)"); plan
 `docs/plans/2026-09-29-remote-delegation-arc2.md`; summary and findings
 posted on #196 and #191. Shape: the repo's `.llm-orc/` ships in the wheel
@@ -281,15 +296,15 @@ Live rows (plan doc): wheel in a fresh venv, serve from an empty dir;
 `research-dossier` (global) → packaged `web-searcher` ×5 → dossier in
 87 s, artifacts in the state dir; a real `opencode run` turn drove three
 rounds to an honest T1 refusal with 0 bytecode files under the packaged
-path. **Owed:** mini cut-over (practitioner; checklist in
-`deploy/remote-host/README.md`: move `*.local.yaml` overrides to
+path. **Owed:** mini cut-over (practitioner; checklist in the homelab
+repo's `docs/llm-orc-serve.md`: move `*.local.yaml` overrides to
 `~/.config/llm-orc/`, `~/.llm-orc` absent, plist `WorkingDirectory` +
 `brew upgrade` in one kickstart; the 15 library ensembles drop out unless
 `LLM_ORC_LIBRARY_PATH` names the submodule). Released as v0.22.0 on
 2026-10-01; the wheel check runs in CI. **Next:** re-cut Arc 4 (one-run injection) from the merged Arc 3 shape:
 the `not_equipped` error carries the Arc 3 `dependencies` list.
 
-**Arc 3 merged on local main 2026-09-29 (`a123ce9d`; released in v0.22.0).**
+**Arc 3 merged on local main 2026-09-29 (`75fa5927`; released in v0.22.0).**
 Rulings in the spec doc ("Arc 3 re-cut (2026-09-29)", amended by the
 review round); plan `docs/plans/2026-09-29-remote-delegation-arc3.md`; live
 row in the spec. Shape: `check_ensemble_runnable` (REST
@@ -363,7 +378,7 @@ parameter is the `Scope` literal so `/mcp` advertises the enum.
 
 1. **Serve is up on remote-host (2026-09-16 afternoon).** launchd agent,
    v0.20.0 from origin main, llama.cpp b10964 x64 binary (no Intel brew
-   bottles; see `deploy/remote-host/README.md`). http://llm-orc.remote.example
+   bottles; see the homelab repo's `docs/llm-orc-serve.md`). http://llm-orc.remote.example
    answers 200; four tiers pulled over the tailnet; acceptance 1 and 2 of
    the handoff pass (tool call parsed through the tailnet URL). Measured
    on the box (i7-8700B, CPU-only): qwen3-8b 23 prompt tok/s, 4-6 gen
