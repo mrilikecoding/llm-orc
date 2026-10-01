@@ -166,6 +166,13 @@ def _classify_llama_server(
         )
     listed = model in info.get("models", [])
     source = str(hf_repo) if hf_repo else None
+    served = info.get("sources", {}).get(model)
+    if listed and source is not None and served is not None and served != source:
+        return (
+            DependencyStatus.NEEDS_RESTART,
+            f"model {model!r} listed; the router serves {served}, "
+            f"the profile names {source}",
+        )
     if listed and source is None:
         return (
             DependencyStatus.READY,

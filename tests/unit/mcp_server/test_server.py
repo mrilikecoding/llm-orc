@@ -1507,6 +1507,7 @@ class TestGetLlamaServerStatus:
             "models": ["qwen3-14b", "qwen3-8b"],
             "cached": ["unsloth/Qwen3-8B-GGUF:Q4_K_M"],
             "loaded": ["qwen3-8b"],
+            "sources": {},
             "model_count": 2,
             "reason": "",
             "base_url": "http://remote-host:8080/v1",
