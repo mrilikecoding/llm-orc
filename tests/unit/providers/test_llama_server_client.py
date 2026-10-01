@@ -7,7 +7,28 @@ from unittest.mock import patch
 from llm_orc.providers.llama_server import LlamaServerClient
 
 PROBE_LISTING = [
-    {"id": "qwen3-8b", "status": {"value": "unloaded"}, "source": "preset"},
+    {
+        "id": "qwen3-8b",
+        "status": {
+            "value": "unloaded",
+            "args": [
+                "/opt/llama-server",
+                "--host",
+                "127.0.0.1",
+                "--alias",
+                "qwen3-8b",
+                "--ctx-size",
+                "8192",
+                "--hf-repo",
+                "unsloth/Qwen3-8B-GGUF:Q4_K_M",
+                "--n-gpu-layers",
+                "999",
+            ],
+            "preset": "version = 1",
+        },
+        "source": "preset",
+        "can_remove": False,
+    },
     {"id": "qwen3-14b", "status": {"value": "unloaded"}, "source": "preset"},
     {"id": "qwen3-1.7b", "status": {"value": "loaded"}, "source": "preset"},
     {"id": "qwen3-4b", "status": "loaded", "source": "preset"},
@@ -37,6 +58,15 @@ class TestInventory:
         with patch.object(LlamaServerClient, "_list", return_value=PROBE_LISTING):
             inventory = client.inventory()
         assert inventory.cached == ["unsloth/Qwen3-8B-GGUF:Q4_K_M"]
+
+    def test_sources_are_the_value_after_hf_repo_in_the_status_args(self) -> None:
+        """The router states which file a model name serves (probe
+        2026-10-01); a model with no ``--hf-repo`` arg, or a bare-string
+        status, is absent rather than guessed."""
+        client = LlamaServerClient("http://127.0.0.1:8791")
+        with patch.object(LlamaServerClient, "_list", return_value=PROBE_LISTING):
+            inventory = client.inventory()
+        assert inventory.sources == {"qwen3-8b": "unsloth/Qwen3-8B-GGUF:Q4_K_M"}
 
     def test_loaded_is_the_preset_models_whose_live_status_is_loaded(self) -> None:
         """A status is ``{"value": ...}`` or a bare string (web/api/models.py)."""
