@@ -101,12 +101,14 @@ class ScriptAgentRunner:
         project_dir: Path | None,
         strict_schema: bool = False,
         performance_config: dict[str, Any] | None = None,
+        run_dir: Path | None = None,
     ) -> None:
         self._script_cache = script_cache
         self._usage_collector = usage_collector
         self._progress_controller = progress_controller
         self._emit_event = emit_event
         self._project_dir = project_dir
+        self._run_dir = run_dir
         self._strict_schema = strict_schema
         # #157: the subprocess bound has to be the SAME number the
         # dispatcher resolved, or a script agent runs unbounded — which is
@@ -299,7 +301,7 @@ class ScriptAgentRunner:
         # there, but the invariant is about the READ too.
         if not script_ref:
             return None
-        resolver = ScriptResolver(project_dir=self._project_dir)
+        resolver = ScriptResolver(project_dir=self._project_dir, run_dir=self._run_dir)
         try:
             resolved, is_file = resolver.resolve_and_classify(script_ref)
         except Exception:
@@ -350,6 +352,7 @@ class ScriptAgentRunner:
                 agent_name,
                 config_dict,
                 project_dir=self._project_dir,
+                run_dir=self._run_dir,
             )
 
             self._usage_collector.sample_agent_resources(agent_name)
