@@ -59,7 +59,7 @@ layer is the insulation that keeps an eventual hardening cheap, and
 "frozen component" status is the trigger, tracked informally the way the
 buy-back ledger tracks hosted seats.
 
-## State (2026-09-29 handoff)
+## State (2026-10-01 handoff)
 
 **Ranked index:** the GitHub project "llm-orc kanban"
 (https://github.com/users/mrilikecoding/projects/2). THIS DOCUMENT
@@ -76,6 +76,77 @@ client; llm-orc must be deployable without coupling to additional
 applications (#90's packaging goal). Standing directives from 2026-09-11
 hold (daily driver on existing repos; real OpenCode sessions; Go spend
 and paid comparison runs within reason; cheaper subagents; meter usage).
+
+### 2026-10-01: v0.22.0 released; the next session starts Arc 4
+
+Released v0.22.0 on the practitioner's go: push `fc336019..fcf28827`,
+tag, GitHub release, PyPI, tap formula bumped (`1b3cdb00`, Intel
+`cryptography<49` constraint intact). It carries Arc 1's `scope`, Arc 2
+(packaged serving tier, state dir, serving root) and Arc 3 (transitive
+preflight). CI is green on main: six test cells, security, wheel check.
+On the way: `make wheel-check` now runs in CI (one cell) and in the
+publish build before upload (`c68f235f`); pip-audit failed CI on new
+advisories for `pyjwt` 2.13.0 and `urllib3` 2.7.0 (both transitive), the
+lock pins moved to 2.15.1 and 2.8.0 (`f0bd6157`).
+
+Lesson, binding: `publish.yml` runs on every push to main and publishes
+the version in `pyproject.toml`. The push that carries a version bump IS
+the PyPI release, before CI finishes. Push the work at the old version
+first (publish skips the existing version), wait for CI, then push the
+release commit.
+
+Verified by a clean install from PyPI (fresh venv, `--no-compile`):
+`llm-orc --version` 0.22.0; 162 files under `llm_orc/serving_project/`;
+a serve from an empty dir with temp XDG dirs answered `/health` healthy
+0.22.0, `/v1/models` = `agentic-tier-cheap-general`, 105 ensembles
+{global, packaged}, six router models, preset in the state dir, cwd
+empty, nothing written under the packaged tier;
+`GET /api/ensembles/serving/runnable` → `runnable: true`, 9 dependencies
+(the root, 6 scripts, 1 profile, 1 dynamic dispatch). Found on the way,
+on #191: a hierarchical name in a REST path
+(`/api/ensembles/agentic-serving%2Fweb-searcher/runnable`) answers 200
+with the web UI's HTML; the plain name works.
+
+`research-dossier.yaml` moved from the checkout's `.llm-orc/ensembles/`
+to the laptop's global tier, so local `make wheel-check` is green.
+
+**Owed (practitioner):** the mini cut-over, "Cut-over checklist" in
+`deploy/remote-host/README.md`. The mini still runs 0.21.0 from the checkout
+directory. After it: 162 files under the brew install's
+`serving_project/`, `/v1/models`, and
+`GET /api/ensembles/research-dossier/runnable` on the mini. That call is
+also the first test of the cache-id rule (a cache entry's id equals the
+profile's `hf_repo`) on the mini's llama-server build: if downloaded
+models read `pullable` there, the id shape differs and spec ruling 1
+needs the mini's listing. The homelab cert renewal daemon fix is still
+owed before December.
+
+**Next task: re-cut Arc 4 (one-run injection).** On entry:
+
+1. Read the spec's decisions 2-4, the Arc 4 card, and the Arc 3 re-cut
+   with its live row (`docs/plans/2026-09-28-remote-delegation.md`).
+2. Code read before any ruling: the execute request shapes
+   (`ExecutionHandler`, `POST /api/ensembles/{name}/execute`, MCP
+   `invoke`); the tier loop in `ConfigurationManager` (`_profile_tiers`,
+   `_tier_dirs`) where a run-scoped highest layer would sit;
+   `child_ensemble_search_dirs` (an injected child must be found by the
+   executor's finder, by filename); `ScriptResolver._get_search_paths`
+   (run-scoped scripts and the `_helpers` import path);
+   `resolve_state_dir` for the per-run temp dir.
+3. Questions the re-cut settles with evidence (a spike where the code
+   read does not answer): where the per-run layer plugs in so concurrent
+   runs stay isolated; whether `bind` rewrites profile names at the
+   closure walk or at model load, and where the binding is recorded;
+   what `pull: true` waits for, given a pulled model reads `ready` on
+   `loaded` only; whether `needs_restart` can be resolved inside a run
+   (a router restart hard-cuts in-flight completions, S2) or is always
+   `not_equipped`.
+4. Standing rule from Arc 3: any resolution the gate performs is the
+   run's own function, pinned by driving both on one fixture.
+5. Then the plan (`docs/plans/YYYY-MM-DD-remote-delegation-arc4.md`),
+   Sonnet implementers per task, Opus reviews, a whole-branch review
+   before merge. The whole-branch review is where Arc 3's three
+   wrong-accepts were found; do not skip it.
 
 ### 2026-09-27: fail-closed composition, released v0.21.0
 
@@ -182,7 +253,7 @@ adversarial review plus two scoped re-reviews. Live row in the plan doc.
 still lives in the checkout. v0.21.0 is deployed on remote-host
 (practitioner, 2026-09-28).
 
-**Arc 2 merged on local main 2026-09-29 (`762a2665`, NOT pushed).**
+**Arc 2 merged on local main 2026-09-29 (`762a2665`; released in v0.22.0).**
 Re-cut rulings in the spec doc ("Arc 2 re-cut (2026-09-29)"); plan
 `docs/plans/2026-09-29-remote-delegation-arc2.md`; summary and findings
 posted on #196 and #191. Shape: the repo's `.llm-orc/` ships in the wheel
@@ -214,11 +285,11 @@ path. **Owed:** mini cut-over (practitioner; checklist in
 `deploy/remote-host/README.md`: move `*.local.yaml` overrides to
 `~/.config/llm-orc/`, `~/.llm-orc` absent, plist `WorkingDirectory` +
 `brew upgrade` in one kickstart; the 15 library ensembles drop out unless
-`LLM_ORC_LIBRARY_PATH` names the submodule); push + release on the go;
-wiring `make wheel-check` into CI needs a go. **Next:** re-cut Arc 4 (one-run injection) from the merged Arc 3 shape:
+`LLM_ORC_LIBRARY_PATH` names the submodule). Released as v0.22.0 on
+2026-10-01; the wheel check runs in CI. **Next:** re-cut Arc 4 (one-run injection) from the merged Arc 3 shape:
 the `not_equipped` error carries the Arc 3 `dependencies` list.
 
-**Arc 3 merged on local main 2026-09-29 (`a123ce9d`, NOT pushed).**
+**Arc 3 merged on local main 2026-09-29 (`a123ce9d`; released in v0.22.0).**
 Rulings in the spec doc ("Arc 3 re-cut (2026-09-29)", amended by the
 review round); plan `docs/plans/2026-09-29-remote-delegation-arc3.md`; live
 row in the spec. Shape: `check_ensemble_runnable` (REST
@@ -242,8 +313,8 @@ parity pins through the real service and executor, one scoped re-review.
 Live row (laptop, llama-server 9850): one of each status observed;
 `needs_restart` before a restart and `pullable` after; a pull (2 min 21 s,
 1 GB) left the model `pullable` until the loaded fix, now `ready` on
-`loaded`. **Owed:** the mini cut-over now also carries Arc 3 (release +
-`brew upgrade`); push + release on the go. Known limit: a model pulled in a
+`loaded`. **Owed:** the mini cut-over (the release is out: `brew upgrade`).
+Known limit: a model pulled in a
 running serve then evicted by the router reads `pullable` again until the
 next restart (the hint still just loads it); the serve remembering its own
 pulls is a follow-up on #196.
