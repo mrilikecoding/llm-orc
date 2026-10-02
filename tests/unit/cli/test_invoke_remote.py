@@ -855,3 +855,23 @@ def test_a_redirect_is_not_followed_and_is_not_a_result(
     assert "307" in result.output
     assert "https://other.example/x" in result.output
     assert seen == [REMOTE_URL + "/api/ensembles/execute"]
+
+
+def test_a_redirects_location_is_capped_and_stripped_of_control_characters(
+    in_project: Path, remotes: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _write_top(in_project)
+    location = "https://other.example/\x85" + "a" * 300
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        raw = [(b"location", location.encode("latin-1"))]
+        return httpx.Response(307, headers=raw)
+
+    monkeypatch.setattr(remote_run, "transport", httpx.MockTransport(handle))
+
+    result = _remote_invoke("--output-format", "text")
+
+    assert result.exit_code == 1, result.output
+    assert "https://other.example/" + "a" * 20 in result.output
+    assert "a" * 200 not in result.output
+    assert "\x85" not in result.output
