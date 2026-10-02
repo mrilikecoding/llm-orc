@@ -5,8 +5,14 @@ from __future__ import annotations
 import datetime
 import shutil
 import tempfile
-from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
-from contextlib import asynccontextmanager
+from collections.abc import (
+    AsyncGenerator,
+    AsyncIterator,
+    Awaitable,
+    Callable,
+    Mapping,
+)
+from contextlib import aclosing, asynccontextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -343,8 +349,10 @@ class ExecutionHandler:
         msg = f"Starting ensemble '{name}' with {total_agents} agents"
         await reporter.info(msg)
 
-        async for event in run.executor.execute_streaming(run.config, input_data):
-            await self.handle_streaming_event(event, reporter, total_agents, state)
+        events = run.executor.execute_streaming(run.config, input_data)
+        async with aclosing(events):
+            async for event in events:
+                await self.handle_streaming_event(event, reporter, total_agents, state)
 
         result = state.get("result", {})
         if not isinstance(result, dict):
@@ -471,7 +479,7 @@ class ExecutionHandler:
 
     async def invoke_streaming(
         self, params: dict[str, Any]
-    ) -> AsyncIterator[dict[str, Any]]:
+    ) -> AsyncGenerator[dict[str, Any], None]:
         """Invoke ensemble with streaming progress.
 
         Args:
@@ -485,10 +493,10 @@ class ExecutionHandler:
             async with self._prepared(
                 _request_data(params), self._lookup_in_tiers, "Ensemble not found"
             ) as run:
-                async for event in run.executor.execute_streaming(
-                    run.config, input_data
-                ):
-                    yield event
+                events = run.executor.execute_streaming(run.config, input_data)
+                async with aclosing(events):
+                    async for event in events:
+                        yield event
         except RunRefusedError as refusal:
             yield {"type": "execution_failed", "data": {"error": refusal.error}}
 

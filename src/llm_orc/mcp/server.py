@@ -9,7 +9,8 @@ This module implements the MCP server following ADR-009, providing:
 from __future__ import annotations
 
 import json
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncGenerator, Awaitable, Callable
+from contextlib import aclosing
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol
 
@@ -1145,10 +1146,12 @@ class MCPServer:
 
     async def invoke_streaming(
         self, params: dict[str, Any]
-    ) -> AsyncIterator[dict[str, Any]]:
+    ) -> AsyncGenerator[dict[str, Any], None]:
         """Invoke ensemble with streaming progress."""
-        async for event in self._service.invoke_streaming(params):
-            yield event
+        events = self._service.invoke_streaming(params)
+        async with aclosing(events):
+            async for event in events:
+                yield event
 
     async def _help_tool(self, arguments: dict[str, Any]) -> dict[str, Any]:
         """Get help documentation.
