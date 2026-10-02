@@ -564,3 +564,111 @@ class TestAReplacedBundleDoesNotReachARunInFlight:
 
 def _both(x_source: str) -> dict[str, str]:
     return {"tools/x.py": x_source, "tools/y.py": _script_source("y")}
+
+
+class TestTheOtherSurfacesKnowBundles:
+    def test_the_listing_shows_a_bundle_root_with_source_bundle(
+        self, client: TestClient
+    ) -> None:
+        _persisted(client)
+
+        listed = {e["name"]: e for e in client.get("/api/ensembles").json()}
+
+        assert listed["pack"]["source"] == "bundle"
+        assert listed["pack"]["agent_count"] == 2
+        assert listed["pack"]["description"] == "a closure"
+
+    def test_a_corrupt_bundle_is_left_out_of_the_listing(
+        self, client: TestClient
+    ) -> None:
+        _persisted(client)
+        _bundle_file().write_text("{not json")
+
+        listed = {e["name"] for e in client.get("/api/ensembles").json()}
+
+        assert "pack" not in listed
+
+    def test_the_runnable_check_answers_with_the_report_and_leaves_no_layer(
+        self, client: TestClient, state_dir: Path
+    ) -> None:
+        _persisted(client)
+
+        response = client.get("/api/ensembles/pack/runnable")
+
+        assert response.status_code == 200, response.text
+        body = response.json()
+        assert body["ensemble"] == "pack"
+        assert body["runnable"] is True
+        deps = {d["name"]: d["status"] for d in body["dependencies"]}
+        assert deps["tools/x.py"] == "ready"
+        assert deps["kid"] == "ready"
+        assert _runs(state_dir) == []
+
+    def test_the_runnable_check_reports_what_the_host_lacks_for_a_stored_bind(
+        self, client: TestClient, project: Path, state_dir: Path
+    ) -> None:
+        profile = project / ".llm-orc" / "profiles" / "b.yaml"
+        _profile(project / ".llm-orc", "b", model="mock-other")
+        _run(
+            client,
+            {"ensemble": ROLES, "bind": {"a": "b"}, "input": "hi", "persist": "global"},
+        )
+        profile.unlink()
+
+        body = client.get("/api/ensembles/roles/runnable").json()
+
+        assert body["runnable"] is False
+        rows = [d for d in body["dependencies"] if d["name"] == "b"]
+        assert [(r["status"], r["via"]) for r in rows] == [
+            ("missing_profile", ["bind:a"])
+        ]
+        assert _runs(state_dir) == []
+
+    def test_the_runnable_check_of_a_tier_ensemble_is_as_before(
+        self, client: TestClient, project: Path
+    ) -> None:
+        _ensemble(project / ".llm-orc", "plain", [{"name": "s", "script": "echo hi"}])
+
+        body = client.get("/api/ensembles/plain/runnable").json()
+
+        assert body["runnable"] is True
+
+    def test_delete_with_scope_global_removes_the_bundle_and_the_name_stops_resolving(
+        self, client: TestClient
+    ) -> None:
+        _persisted(client)
+
+        response = client.delete("/api/ensembles/pack", params={"scope": "global"})
+
+        assert response.status_code == 200, response.text
+        assert response.json()["deleted"] is True
+        assert not _bundle_file().exists()
+        with pytest.raises(ValueError, match="does not exist"):
+            _run_named(client, "pack")
+
+    def test_delete_with_scope_project_does_not_touch_a_bundle(
+        self, client: TestClient
+    ) -> None:
+        _persisted(client)
+
+        with pytest.raises(ValueError, match="not found"):
+            client.delete("/api/ensembles/pack", params={"scope": "project"})
+
+        assert _bundle_file().exists()
+
+    def test_validate_says_the_name_is_a_bundle(self, client: TestClient) -> None:
+        _persisted(client)
+
+        with pytest.raises(ValueError, match="bundle"):
+            client.post("/api/ensembles/pack/validate")
+
+    async def test_promote_says_the_name_is_a_bundle(
+        self, client: TestClient, service: OrchestraService
+    ) -> None:
+        _persisted(client)
+
+        with pytest.raises(ValueError, match="bundle"):
+            await service.promote_ensemble(
+                {"ensemble_name": "pack", "destination": "global", "confirm": True}
+            )
+        assert not (resolve_global_config_dir() / "ensembles" / "pack.yaml").exists()

@@ -10,6 +10,11 @@ from llm_orc.core.config.config_manager import ConfigurationManager
 from llm_orc.core.config.ensemble_config import EnsembleLoader
 from llm_orc.core.config.state import ARTIFACTS_DIRNAME, resolve_state_dir
 from llm_orc.mcp.project_context import ProjectContext
+from llm_orc.services.handlers.bundle_store import (
+    BUNDLE_SOURCE,
+    BundleError,
+    BundleStore,
+)
 
 
 def _serialize_agent(agent: Any) -> dict[str, Any]:
@@ -74,10 +79,14 @@ class ResourceHandler:
         self,
         config_manager: ConfigurationManager,
         ensemble_loader: EnsembleLoader,
+        bundle_store: BundleStore | None = None,
     ) -> None:
         """Initialize with configuration manager and ensemble loader."""
         self._config_manager = config_manager
         self._ensemble_loader = ensemble_loader
+        self._bundles = bundle_store or BundleStore(
+            lambda: self._config_manager.global_config_dir
+        )
 
     def set_project_context(self, ctx: ProjectContext) -> None:
         """Update handler to use new project context."""
@@ -149,7 +158,29 @@ class ResourceHandler:
                 except Exception:
                     continue
 
-        return ensembles
+        return [*ensembles, *self._bundle_entries()]
+
+    def _bundle_entries(self) -> list[dict[str, Any]]:
+        """Each readable bundle as a root with source ``bundle``."""
+        entries: list[dict[str, Any]] = []
+        for name in self._bundles.names():
+            try:
+                stored = self._bundles.read(name)
+            except BundleError:
+                continue
+            if stored is None:
+                continue
+            root = stored["ensemble"]
+            entries.append(
+                {
+                    "name": name,
+                    "source": BUNDLE_SOURCE,
+                    "relative_path": f"bundles/{name}.json",
+                    "agent_count": len(root.get("agents", [])),
+                    "description": root.get("description", ""),
+                }
+            )
+        return entries
 
     def determine_source(self, ensemble_dir: Path) -> str:
         """The tier an ensemble directory belongs to.

@@ -25,6 +25,7 @@ from llm_orc.core.execution.scripting.resolver import ScriptResolver
 from llm_orc.mcp.project_context import ProjectContext
 from llm_orc.models.base import HTTPConnectionPool
 from llm_orc.services.handlers.artifact_handler import ArtifactHandler
+from llm_orc.services.handlers.bundle_store import BundleStore
 from llm_orc.services.handlers.ensemble_crud_handler import EnsembleCrudHandler
 from llm_orc.services.handlers.execution_handler import (
     ExecutionHandler,
@@ -80,9 +81,12 @@ class OrchestraService:
         # Configure HTTP connection pool with project performance settings
         self._configure_http_pool()
 
+        # Bundles live under the global config dir, which no project switch
+        # changes; the lookup follows the service's current manager anyway.
+        self._bundle_store = BundleStore(lambda: self.config_manager.global_config_dir)
         self._help_handler = HelpHandler()
         self._resource_handler = ResourceHandler(
-            self.config_manager, self.ensemble_loader
+            self.config_manager, self.ensemble_loader, self._bundle_store
         )
         self._profile_handler = ProfileHandler(self.config_manager)
         self._artifact_handler = ArtifactHandler(config_manager=self.config_manager)
@@ -100,6 +104,7 @@ class OrchestraService:
             self.config_manager,
             self.find_ensemble_by_name,
             self._profile_handler.get_all_profiles,
+            is_bundle=self._bundle_store.has,
         )
         self._execution_handler = ExecutionHandler(
             self.config_manager,
@@ -109,12 +114,14 @@ class OrchestraService:
             self.find_ensemble_by_name,
             preflight_fn=self._provider_handler.preflight,
             layer_executor_fn=self._get_layer_executor,
+            bundle_store=self._bundle_store,
         )
         self._ensemble_crud_handler = EnsembleCrudHandler(
             self.config_manager,
             self.ensemble_loader,
             self.find_ensemble_by_name,
             self._resource_handler.read_artifact,
+            self._bundle_store,
         )
         self._promotion_handler = PromotionHandler(
             self.config_manager,
@@ -122,6 +129,7 @@ class OrchestraService:
             self._library_handler,
             self._provider_handler,
             self.find_ensemble_by_name,
+            is_bundle=self._bundle_store.has,
         )
 
     @property
@@ -473,7 +481,12 @@ class OrchestraService:
     async def check_ensemble_runnable(
         self, arguments: dict[str, Any]
     ) -> dict[str, Any]:
-        return await self._provider_handler.check_ensemble_runnable(arguments)
+        with self._execution_handler.bundle_root(
+            arguments.get("ensemble_name"), self.find_ensemble_by_name
+        ) as root:
+            return await self._provider_handler.check_ensemble_runnable(
+                arguments, root=root
+            )
 
     # === Promotion ===
 

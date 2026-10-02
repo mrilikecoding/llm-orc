@@ -23,6 +23,8 @@ from llm_orc.services.handlers.run_request import (
     check_plain,
 )
 
+#: What a listing calls a root that a bundle holds.
+BUNDLE_SOURCE = "bundle"
 _SUFFIX = ".json"
 _TEMP_SUFFIX = ".tmp"
 _STORED_KEYS = {"ensemble", "ensembles", "profiles", "scripts", "bind"}
@@ -57,7 +59,7 @@ class BundleStore:
 
     @property
     def directory(self) -> Path:
-        return self._root() / "bundles"
+        return Path(self._root()) / "bundles"
 
     def _path(self, name: str) -> Path | None:
         """The file of ``name``; None when it is not one plain file name."""

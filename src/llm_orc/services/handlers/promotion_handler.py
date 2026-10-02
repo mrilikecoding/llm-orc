@@ -15,6 +15,7 @@ from llm_orc.core.config.config_manager import ConfigurationManager
 from llm_orc.core.config.ensemble_config import EnsembleConfig
 from llm_orc.mcp.project_context import ProjectContext
 from llm_orc.mcp.utils import get_agent_attr as _get_agent_attr
+from llm_orc.services.handlers.bundle_store import not_a_tier_ensemble
 from llm_orc.services.handlers.library_handler import LibraryHandler
 from llm_orc.services.handlers.profile_handler import ProfileHandler
 from llm_orc.services.handlers.provider_handler import ProviderHandler
@@ -30,6 +31,8 @@ class PromotionHandler:
         library_handler: LibraryHandler,
         provider_handler: ProviderHandler,
         find_ensemble: Callable[[str], EnsembleConfig | None],
+        *,
+        is_bundle: Callable[[str], bool] | None = None,
     ) -> None:
         """Initialize with dependencies.
 
@@ -39,16 +42,24 @@ class PromotionHandler:
             library_handler: Library handler for library directory resolution.
             provider_handler: Provider handler for runnability checks.
             find_ensemble: Callback to find ensemble by name.
+            is_bundle: Whether a name is a bundle, which no tier holds.
         """
         self._config_manager = config_manager
         self._profile_handler = profile_handler
         self._library_handler = library_handler
         self._provider_handler = provider_handler
         self._find_ensemble = find_ensemble
+        self._is_bundle = is_bundle or (lambda name: False)
 
     def set_project_context(self, ctx: ProjectContext) -> None:
         """Update handler to use new project context."""
         self._config_manager = ctx.config_manager
+
+    def _not_found(self, ensemble_name: str) -> ValueError:
+        """Why a name is not a tier ensemble: a bundle says so plainly."""
+        if self._is_bundle(ensemble_name):
+            return ValueError(not_a_tier_ensemble(ensemble_name))
+        return ValueError(f"Ensemble not found: {ensemble_name}")
 
     # =========================================================================
     # Public tool methods
@@ -77,7 +88,7 @@ class PromotionHandler:
 
         found = self._find_ensemble_file(ensemble_name)
         if not found:
-            raise ValueError(f"Ensemble not found: {ensemble_name}")
+            raise self._not_found(ensemble_name)
         source_path, source_tier = found
 
         dest_ensembles, dest_profiles = self._get_tier_dirs(destination)
@@ -154,7 +165,7 @@ class PromotionHandler:
 
         config = self._find_ensemble(ensemble_name)
         if not config:
-            raise ValueError(f"Ensemble not found: {ensemble_name}")
+            raise self._not_found(ensemble_name)
 
         found = self._find_ensemble_file(ensemble_name)
         source_tier = found[1] if found else "unknown"
@@ -208,7 +219,7 @@ class PromotionHandler:
 
         config = self._find_ensemble(ensemble_name)
         if not config:
-            raise ValueError(f"Ensemble not found: {ensemble_name}")
+            raise self._not_found(ensemble_name)
 
         dest_ensembles, _ = self._get_tier_dirs(destination)
         already_exists = (dest_ensembles / f"{ensemble_name}.yaml").exists()
@@ -348,7 +359,7 @@ class PromotionHandler:
         """
         config = self._find_ensemble(ensemble_name)
         if not config:
-            raise ValueError(f"Ensemble not found: {ensemble_name}")
+            raise self._not_found(ensemble_name)
 
         profiles: set[str] = set()
         for agent in config.agents:
