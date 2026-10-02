@@ -82,7 +82,7 @@ and paid comparison runs within reason; cheaper subagents; meter usage).
 llm-orc is a machine-agnostic tool (practitioner, 2026-10-01): files for
 one machine's deployment do not belong in this repo. Two things were
 removed from every commit that carried them: `deploy/remote-host/` (a launchd
-unit and setup notes, moved to the homelab repo) and the second
+unit and setup notes, now in a private notes repo) and the second
 `.mcp.json` entry that pointed at one host's serve (now a user-level MCP
 entry on the practitioner's laptop). The 219 commits since 2026-09-16
 have new hashes (three that touched only `deploy/remote-host/` are gone) and
@@ -139,9 +139,11 @@ with the web UI's HTML; the plain name works.
 to the laptop's global tier, so local `make wheel-check` is green.
 
 **Mini cut-over done (2026-10-01, on the practitioner's go).** The
-deploy procedure is a script in the homelab repo (`llm-orc-deploy.sh`,
-with the unit rendered from a template and that machine's `config.sh`),
-run over ssh. Before it the unit's working directory was still the old
+deploy procedure is a generic script in the homelab repo
+(`llm-orc-deploy.sh`, the unit rendered from a template and the
+machine's own untracked `config.sh`), run over ssh. The homelab repo is
+machine agnostic too; what is true of one host lives in a private notes
+repo. Before it the unit's working directory was still the old
 checkout, whose `.llm-orc` shadowed the packaged serving project (227
 ensembles listed, 79 duplicate names, the checkout's router preset).
 After it: the serve runs 0.22.0 from a plain directory, 126 ensembles
@@ -227,7 +229,7 @@ This is Next up 2's owed #90 gate, now measured for T1.
   (`~/Development/llm-orc-proxy`, nginx → `host.lima.internal:8765`;
   edge nginx set to 3600 s / buffering off / 50 m body);
   http://llm-orc.remote.example answers 502 until the serve exists on
-  remote-host. The launchd unit and setup notes live in the homelab repo.
+  remote-host. The launchd unit and setup notes live outside this repo.
 - **#202 (2026-09-22, PR #203 merged as `a5c4bc7d`, released v0.20.6,
   formula bumped).** Core-engine fix outside the serving track but landing
   on it: `ensemble:`/`loop:`/`dispatch:` children now share one input
@@ -303,8 +305,8 @@ Live rows (plan doc): wheel in a fresh venv, serve from an empty dir;
 `research-dossier` (global) → packaged `web-searcher` ×5 → dossier in
 87 s, artifacts in the state dir; a real `opencode run` turn drove three
 rounds to an honest T1 refusal with 0 bytecode files under the packaged
-path. **Owed:** mini cut-over (practitioner; checklist in the homelab
-repo's `docs/llm-orc-serve.md`: move `*.local.yaml` overrides to
+path. **Owed then, done 2026-10-01:** mini cut-over (move `*.local.yaml`
+overrides to
 `~/.config/llm-orc/`, `~/.llm-orc` absent, plist `WorkingDirectory` +
 `brew upgrade` in one kickstart; the 15 library ensembles drop out unless
 `LLM_ORC_LIBRARY_PATH` names the submodule). Released as v0.22.0 on
@@ -385,7 +387,7 @@ parameter is the `Scope` literal so `/mcp` advertises the enum.
 
 1. **Serve is up on remote-host (2026-09-16 afternoon).** launchd agent,
    v0.20.0 from origin main, llama.cpp b10964 x64 binary (no Intel brew
-   bottles; see the homelab repo's `docs/llm-orc-serve.md`). http://llm-orc.remote.example
+   bottles; the upstream binary instead). http://llm-orc.remote.example
    answers 200; four tiers pulled over the tailnet; acceptance 1 and 2 of
    the handoff pass (tool call parsed through the tailnet URL). Measured
    on the box (i7-8700B, CPU-only): qwen3-8b 23 prompt tok/s, 4-6 gen
