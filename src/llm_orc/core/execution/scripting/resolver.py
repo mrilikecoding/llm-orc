@@ -265,6 +265,17 @@ class ScriptResolver:
         resolved, _ = self.resolve_and_classify(script_ref)
         return resolved
 
+    @staticmethod
+    def underscored(script_ref: str) -> str:
+        """The hyphen-to-underscore form the search also tries."""
+        return script_ref.replace("-", "_")
+
+    @classmethod
+    def unprefixed(cls, script_ref: str) -> str:
+        """``script_ref`` without a leading ``scripts/``, a form the
+        search also tries."""
+        return script_ref.removeprefix(f"{cls.SCRIPTS_DIR}/")
+
     def _try_resolve_with_search_paths(self, script_ref: str) -> str | None:
         """Try to resolve script using library-aware search paths.
 
@@ -285,18 +296,16 @@ class ScriptResolver:
                 return str(candidate)
 
             # Try hyphen-to-underscore normalization
-            normalized_ref = script_ref.replace("-", "_")
+            normalized_ref = self.underscored(script_ref)
             if normalized_ref != script_ref:
                 candidate_norm = search_dir / normalized_ref
                 if candidate_norm.exists():
                     return str(candidate_norm)
 
             # Try without "scripts/" prefix for backward compatibility
-            scripts_prefix = f"{self.SCRIPTS_DIR}/"
-            if script_ref.startswith(scripts_prefix):
-                candidate_no_prefix = search_dir / script_ref.removeprefix(
-                    scripts_prefix
-                )
+            unprefixed_ref = self.unprefixed(script_ref)
+            if unprefixed_ref != script_ref:
+                candidate_no_prefix = search_dir / unprefixed_ref
                 if candidate_no_prefix.exists():
                     return str(candidate_no_prefix)
 
