@@ -214,12 +214,14 @@ is `input_data`):
   "scripts": {"probe/check.py": "print('...')"},
   "bind": {"reviewer": "seat"},
   "pull": false,
+  "persist": "global",
   "input": "text for the ensemble"
 }
 ```
 
 The root is `ensemble` (inline, as above) or `ensemble_name` (installed,
-in its place), never both. `POST /api/ensembles/{name}/execute` takes the same body without a
+in its place), never both. `persist` is optional, takes only `global` and
+needs an inline root (see Bundles). `POST /api/ensembles/{name}/execute` takes the same body without a
 root: the path names it, and a body that also carries `ensemble_name` or
 `ensemble` is a 422. Both REST bodies reject unknown keys with a 422, so a
 misspelled `bind` cannot run the call without its binding. The MCP tool
@@ -235,8 +237,8 @@ as `x.py` and `scripts/x.py` (the resolver also tries a reference without
 a leading `scripts/` and with hyphens as underscores): the first match
 would win and the other script would be silently unused.
 
-Every run through REST or MCP is preflighted first, named ensembles
-included (`/v1/chat/completions` and the local CLI are not gated). The
+Every run through REST, MCP or the CLI is preflighted first, named ensembles
+included (`/v1/chat/completions` is not gated). The
 gate is the preflight above, run over the request's own layer. A
 `pullable` model blocks unless `pull: true`, which downloads each one,
 waits for the router to load it, and resolves it only if the router
@@ -254,8 +256,9 @@ the call returns (HTTP 200, like any run outcome):
 or `invalid_request` (the request is malformed: both roots, a script key
 that escapes its directory, names that collide, a `bind` key no profile
 names). A success
-keeps its usual keys and adds `bindings` (the binds applied) and `pulled`
-(the models downloaded) when they are not empty.
+keeps its usual keys, which include `metadata` (the executor's usage and
+durations), and adds `bindings` (the binds applied), `pulled` (the models
+downloaded) and `persisted` (the bundle stored) when they are not empty.
 
 `bind` maps a profile name the closure uses to another profile. The run
 sees the first name as a copy of the second's definition, looked up after
@@ -276,18 +279,192 @@ refused.
 Scripts are written at their key inside the run's own directory and run
 from there. A script imports only what ships beside it in `scripts`; there
 is no fall-through to a helper of the same path on the host, because that
-would mix versions and still report success. Preflight does not read
-imports, so a missing helper fails the script at run time. Nothing
+would mix versions and still report success. Preflight reads a
+script's files block (next section) but not its imports, so a helper the
+block does not list fails the script at run time. Nothing
 persists: the run directory is removed on success, refusal, error and
 cancellation, and an inline root saves no artifact (an installed root
 keeps its own). A cancelled run (a cancelled call or a closed stream) kills
 each script and the processes in its process group before the directory is
 removed; a process that left the group is not tracked.
 
+Both REST execute routes cancel the run when the client disconnects, and
+answer 499 to a connection that is already gone. So a Ctrl-C in the CLI
+stops the scripts on the serve and removes the run layer.
+
 Trust: injected scripts run unsandboxed as the serve's user, and an inline
 profile can point the host at any endpoint. llm-orc does not sandbox any
 of it, so the boundary is who can reach the port. A serve with clients it
 does not trust needs more than this; issue #205 tracks that design.
+
+## A script's files block
+
+A script lists the files it needs beside it in a comment block, in the form
+PEP 723 reserves for tools:
+
+```python
+# /// llm-orc
+# files = ["_helpers.py", "lib/parse.py"]
+# ///
+```
+
+The opening line is `# /// llm-orc` (`// /// llm-orc` in a script whose
+comments start with `//`), the body is TOML with one key, `files`, and
+`# ///` closes it. Every line of the block starts with the same comment
+leader. The first block in the file is the one read, and a script with no
+block lists nothing.
+
+Each path is relative to the script's own directory: no `..`, no leading
+`/`, no backslash, no empty or `.` segment. A listed file can carry a block
+of its own, and the files it lists are followed.
+
+Nothing is inferred from imports. The list is what a closure carries, and
+preflight and `invoke --remote` read the same list. A listed file is looked
+for beside the script that resolved and nowhere else, so a host file at the
+same relative path in another tier never stands in for it.
+
+Preflight reports a listed file that is not beside its script as
+`missing_script` with resolve `ship`, on a row named for the file's path
+next to the script (`tools/_helpers.py` for `_helpers.py` listed by
+`tools/x.py`). A block that does not parse, has a key other than `files`,
+or lists a path that breaks the rule leaves the script itself
+`missing_script`, with the reason in `detail`. There is no new status.
+
+An import the block does not list works wherever the sibling file happens
+to be and fails by name on a remote that lacks it.
+
+## Running a local ensemble on a remote
+
+`llm-orc invoke <ensemble> --remote <name|url>` ships a local ensemble and
+what it needs to another serve and runs it there. A value with `://` is a
+URL. Any other value is a name from `remotes` in the global `config.yaml`
+(`$XDG_CONFIG_HOME/llm-orc/`):
+
+```yaml
+remotes:
+  remote-host:
+    url: https://llm-orc.remote.example
+```
+
+A project config's `remotes` is not read, so a checked-in file cannot point
+a run at a host you did not configure. An unknown name is an error that
+lists the known names. When a name is looked up, a `remotes` that is not a
+mapping, or an entry without a string `url`, is an error.
+
+The request is the one in the previous section, sent as a single POST to
+`<url>/api/ensembles/execute`. It carries:
+
+- the root and every child ensemble that resolves locally, as the YAML
+  files were written, under the name the parent references them by;
+- every script and listed file, from whichever tier resolved it (project,
+  library, global or packaged), so the remote runs the caller's scripts;
+- the input, `--bind`, `--pull` and `--persist`;
+- the local definition of each profile named with `--with-profile NAME`
+  (repeatable), as an inline profile.
+
+Profiles stay behind unless asked for, since a host binds roles to its own
+models. Anything that does not resolve locally is not sent, and the
+remote's preflight judges it. A `${...}` dispatch target reads `dynamic`
+and is left to the remote.
+
+These are refused before anything is sent, with exit 1: `--max-concurrent`,
+an unknown remote, a `--with-profile` name with no local profile, a script
+given as an absolute path, a script that is a bare file name in the working
+directory (the remote would read it as inline shell), a script that is not
+UTF-8 text, an ensemble or profile that is not plain data, an interactive
+script, and
+a request the remote's validator would refuse. `--with-profile` and
+`--persist` without `--remote` are usage errors (exit 2).
+
+The CLI prints a remote result the way it prints a local one, in rich,
+`--output-format text` or `--output-format json`. Rich mode shows
+`Running on <remote>... Ns` on stderr while the run is out. A refusal
+prints `Run refused (<kind>): <message>` and, for `not_equipped`, the
+dependency report as a table; JSON mode prints the refusal envelope. An
+answer is a result only if it is HTTP 200 and a JSON object with a `status`
+of `success` or `error` and a boolean `has_errors`. Anything else is an
+error naming the remote and the status code: a 422 from an older serve, a
+404, or the web UI's page answered with 200 for an unknown API path.
+
+Exit codes: 0 for `status: success`, 1 for `status: error` (a failed run,
+a refusal, a closure that cannot ship, an unreachable remote, an answer that is not a
+result), 130 for Ctrl-C. Ctrl-C closes the connection, and the serve then
+cancels the run.
+
+A run on a profile the remote lacks, then the same run bound to one it has
+(shown with `--output-format text`; rich draws the table as a box):
+
+```
+$ llm-orc invoke review "the diff" --remote remote-host --output-format text
+Run refused (not_equipped): this host cannot run the ensemble, unmet: seat (missing_profile)
+kind     name  status           via           resolve
+profile  seat  missing_profile  review.write  bind
+
+$ llm-orc invoke review "the diff" --remote remote-host --bind seat=general
+Bindings applied: seat -> general
+...
+```
+
+## Local runs: bind, pull and the gate
+
+`--bind NAME=TARGET` (repeatable) and `--pull` work on a local
+`llm-orc invoke` and mean what `bind` and `pull` mean in the request. A
+value without `=`, or a name bound twice, is a usage error. `--config-dir`
+is still the directory the root is looked up in.
+
+Breaking change for local CLI callers: `llm-orc invoke` and
+`llm-orc validate run` now go through the same preflight gate as REST and
+MCP. An ensemble the host cannot run is refused before any agent starts:
+the CLI prints the refusal and the dependency table and exits 1. A local
+model that is listed but not downloaded now blocks until the call carries
+`--pull`, which downloads it first. `validate run` has no `--pull` or
+`--bind`. Before, the CLI ran the ensemble with no check.
+
+## Bundles
+
+A request with `persist: global` (`--persist global` on `invoke --remote`)
+stores the closure it carries on the serve, and runs it. It needs an inline
+root whose name is one plain file name, and it passes the same validation
+and gate as any run. If the gate refuses, nothing is written. The run goes
+on as a named run, so its artifact is kept, and the result names the bundle
+in `persisted`.
+
+A bundle is one stored request: `bundles/<root name>.json` under the global
+config directory, holding the root, `ensembles`, `profiles`, `scripts` and
+`bind`. It does not hold `input`, `pull` or `persist`. It is used only when
+its root is run by name (REST, MCP or the host's CLI). The run lays the
+bundle's contents into a run layer for that run, gates it, runs it and
+removes the layer, as for an inline request. Listings show the root with
+source `bundle`, and the runnable check of its name reports over the same
+layer.
+
+A bundle shadows nothing on the host. Copying its scripts and children into
+the global tier would hide the host's own packaged ensembles and scripts of
+the same names from every ensemble on the host, `/v1` included, at the
+caller's version. Here its children and scripts resolve for its own root
+only.
+
+Names resolve through the tiers (project, library, global, packaged) first
+and bundles after. So a tier file added later under a bundle's name wins,
+and persisting a root name that a tier already resolves is refused with
+`invalid_request`, naming the tier. Persisting again replaces the bundle
+(written beside and renamed, so a failure keeps the old one).
+`delete_ensemble` with `scope: global` removes it, unless the global tier
+holds an ensemble file of that name, which is what that delete then means.
+`persist` on a run by name is `invalid_request`, and the named execute route
+rejects it with a 422. `validate` and promote answer that a bundle is not a
+tier ensemble.
+
+A caller's injections lay over the stored ones key by key. A `bind` or an
+inline profile for a role replaces the stored definition of that role, and
+a per-run `bind` overrides a stored one without changing the bundle. The
+union goes through the validator, so an injection that meets a stored name
+in another spelling (`Kid` against `kid`, `x.py` against `scripts/x.py`) is
+`invalid_request`.
+
+A bundle runs as a root. It is not a child of a host ensemble: a host
+ensemble cannot reach a child or script that only a bundle holds. A bundle
+keeps its copies until it is persisted again.
 
 ## Operator seat configuration
 
