@@ -1,18 +1,19 @@
 """``run_remote``'s failures say whether anything was sent (Arc 5,
-Task 10). Through the real function on a real service's lookups, with the
-one transport seam replaced by canned answers. Nothing opens a
-connection."""
+Task 10). Through the real coroutine on a real service's lookups, with the
+one transport seam, ``remote_run.transport``, replaced by canned answers. Nothing
+opens a connection."""
 
 # ruff: noqa: F811  (imported fixtures are redefined as test parameters)
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 from pathlib import Path
 from typing import Any
 
+import httpx
 import pytest
-import requests
 import yaml
 
 from llm_orc.services import remote_run
@@ -48,23 +49,25 @@ def remotes() -> None:
 def _run(
     service: OrchestraService, root: str = "top", remote: str = "remote-host"
 ) -> dict[str, Any]:
-    return run_remote(
-        root,
-        remote,
-        find_root=service.find_ensemble_by_name,
-        config_manager=service.config_manager,
-        project_dir=service.project_path,
-        input_text="hi",
+    return asyncio.run(
+        run_remote(
+            root,
+            remote,
+            find_root=service.find_ensemble_by_name,
+            config_manager=service.config_manager,
+            project_dir=service.project_path,
+            input_text="hi",
+        )
     )
 
 
 def _answer(monkeypatch: pytest.MonkeyPatch, answer: Canned | BaseException) -> None:
-    def post(url: str, request: Any) -> Any:
+    def handle(request: httpx.Request) -> httpx.Response:
         if isinstance(answer, BaseException):
             raise answer
-        return answer
+        return httpx.Response(answer.status_code, text=answer.text)
 
-    monkeypatch.setattr(remote_run, "post_run", post)
+    monkeypatch.setattr(remote_run, "transport", httpx.MockTransport(handle))
 
 
 class TestTheKindOfAFailure:
@@ -104,7 +107,7 @@ class TestTheKindOfAFailure:
     @pytest.mark.parametrize(
         "answer",
         [
-            requests.ConnectionError("connection refused"),
+            httpx.ConnectError("connection refused"),
             Canned(200, "<!doctype html>"),
             Canned(422, '{"detail": "extra inputs are not permitted"}'),
         ],

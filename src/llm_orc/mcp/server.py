@@ -8,7 +8,6 @@ This module implements the MCP server following ADR-009, providing:
 
 from __future__ import annotations
 
-import asyncio
 import json
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import aclosing
@@ -1187,8 +1186,7 @@ class MCPServer:
         """Run the named local root on ``remote`` and return its result."""
         service = self._service
         try:
-            return await asyncio.to_thread(
-                run_remote,
+            return await run_remote(
                 ensemble_name,
                 remote,
                 find_root=service.find_ensemble_by_name,

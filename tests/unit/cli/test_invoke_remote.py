@@ -1,27 +1,28 @@
 """``llm-orc invoke --remote`` (Arc 5, Task 8). The real command through
-``CliRunner`` on a temp project. The one transport seam is replaced by a
-function that calls a second real service's REST ``TestClient`` (its own
-project, config and state dirs), or by canned responses. Nothing here
-opens a connection."""
+``CliRunner`` on a temp project. The one transport seam,
+``remote_run.transport``, is an ``httpx`` transport: the second real
+service's ASGI app (its own project, config and state dirs), or canned
+responses. The real client code runs on it, and nothing here opens a
+connection."""
 
 # ruff: noqa: F811  (imported fixtures are redefined as test parameters)
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import os
-import time
+import signal
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 from unittest import mock
 
+import httpx
 import pytest
-import requests
 import yaml
 from click.testing import CliRunner, Result
-from fastapi.testclient import TestClient
 
 import llm_orc.web.api as web_api
 from llm_orc.cli import cli
@@ -62,6 +63,36 @@ def remotes(in_project: Path) -> None:
     path.write_text(yaml.safe_dump({"remotes": {"remote-host": {"url": REMOTE_URL}}}))
 
 
+class _Recording(httpx.AsyncBaseTransport):
+    """Records each request as (url, JSON body), then passes it on."""
+
+    def __init__(
+        self,
+        inner: httpx.AsyncBaseTransport,
+        calls: list[tuple[str, dict[str, Any]]],
+    ) -> None:
+        self._inner = inner
+        self._calls = calls
+
+    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+        self._calls.append((str(request.url), json.loads(request.content)))
+        assert str(request.url) == REMOTE_URL + "/api/ensembles/execute"
+        return await self._inner.handle_async_request(request)
+
+
+class Delayed(httpx.AsyncBaseTransport):
+    """Holds each request for ``seconds`` (the loop stays free) before
+    passing it on."""
+
+    def __init__(self, inner: httpx.AsyncBaseTransport, seconds: float) -> None:
+        self._inner = inner
+        self._seconds = seconds
+
+    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+        await asyncio.sleep(self._seconds)
+        return await self._inner.handle_async_request(request)
+
+
 class Remote:
     """A second real service on its own project, config and state dirs."""
 
@@ -73,6 +104,9 @@ class Remote:
         self.config.mkdir()
         self.state.mkdir()
         self.calls: list[tuple[str, dict[str, Any]]] = []
+        self.transport: httpx.AsyncBaseTransport = _Recording(
+            httpx.ASGITransport(app=self.asgi), self.calls
+        )
         with self._env():
             self.service = OrchestraService()
             status = self.service.handle_set_project(str(self.project))["status"]
@@ -87,17 +121,29 @@ class Remote:
         with mock.patch.dict(os.environ, env):
             yield
 
-    def post(self, url: str, request: dict[str, Any]) -> Any:
-        """The transport seam, answered by the second service's REST app."""
-        self.calls.append((url, request))
-        assert url == REMOTE_URL + "/api/ensembles/execute"
+    async def asgi(self, scope: Any, receive: Any, send: Any) -> None:
+        """The second service's REST app, with its own service and dirs
+        in place for as long as it handles the request."""
         previous = web_api._orchestra_service
         web_api._orchestra_service = self.service
         try:
-            with self._env(), TestClient(create_app()) as client:
-                return client.post("/api/ensembles/execute", json=request)
+            with self._env():
+                await create_app()(scope, receive, send)
         finally:
             web_api._orchestra_service = previous
+
+    def post_rest(self, request: dict[str, Any]) -> Any:
+        """A direct REST call to the second service, outside the seam;
+        the JSON answer."""
+
+        async def call() -> Any:
+            async with httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=self.asgi), base_url=REMOTE_URL
+            ) as client:
+                response = await client.post(remote_run.EXECUTE_PATH, json=request)
+                return response.json()
+
+        return asyncio.run(call())
 
     def tree(self) -> dict[str, str]:
         """Every file and empty directory under the remote's three trees,
@@ -123,7 +169,7 @@ def remote(
     tmp_path: Path, remotes: None, listing: Any, monkeypatch: pytest.MonkeyPatch
 ) -> Remote:
     remote = Remote(tmp_path)
-    monkeypatch.setattr(remote_run, "post_run", remote.post)
+    monkeypatch.setattr(remote_run, "transport", remote.transport)
     return remote
 
 
@@ -143,13 +189,13 @@ def _canned(
 ) -> list[tuple[str, dict[str, Any]]]:
     calls: list[tuple[str, dict[str, Any]]] = []
 
-    def post(url: str, request: dict[str, Any]) -> Any:
-        calls.append((url, request))
+    def handle(request: httpx.Request) -> httpx.Response:
+        calls.append((str(request.url), json.loads(request.content)))
         if isinstance(answer, BaseException):
             raise answer
-        return answer
+        return httpx.Response(answer.status_code, text=answer.text)
 
-    monkeypatch.setattr(remote_run, "post_run", post)
+    monkeypatch.setattr(remote_run, "transport", httpx.MockTransport(handle))
     return calls
 
 
@@ -239,10 +285,7 @@ class TestPersistingOnTheRemote:
         assert result.exit_code == 0, result.output
         assert bundle.is_file()
         before = remote.tree()
-        by_name = remote.post(
-            REMOTE_URL + remote_run.EXECUTE_PATH,
-            {"ensemble_name": "top", "input": "hi"},
-        ).json()
+        by_name = remote.post_rest({"ensemble_name": "top", "input": "hi"})
         assert by_name["status"] == "success"
         assert by_name["deliverable"] == json.loads(result.stdout)["deliverable"]
         assert hashlib.sha256(bundle.read_bytes()).hexdigest() == before[str(bundle)]
@@ -349,7 +392,7 @@ class TestAnAnswerThatIsNotAResult:
                 Canned(422, '{"detail": "extra inputs are not permitted: persist"}'),
                 "extra inputs are not permitted: persist",
             ),
-            (requests.ConnectionError("connection refused"), "connection refused"),
+            (httpx.ConnectError("connection refused"), "connection refused"),
         ],
         ids=["html", "no-status", "no-has-errors", "404", "422", "unreachable"],
     )
@@ -508,13 +551,7 @@ class TestWhileWaiting:
     ) -> None:
         _write_top(in_project)
         monkeypatch.setattr("llm_orc.cli_commands.WAIT_TICK_S", 0.01)
-        post = remote.post
-
-        def slow(url: str, request: dict[str, Any]) -> Any:
-            time.sleep(0.1)
-            return post(url, request)
-
-        monkeypatch.setattr(remote_run, "post_run", slow)
+        monkeypatch.setattr(remote_run, "transport", Delayed(remote.transport, 0.1))
 
         result = _remote_invoke()
 
@@ -542,18 +579,73 @@ class TestWhileWaiting:
 
         assert result.exit_code == 130
 
+    def test_ctrl_c_closes_the_connection(
+        self, in_project: Path, remotes: None, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A real SIGINT while the request is out: the awaiting task is
+        cancelled, so the transport sees the cancellation (a real client
+        closes its connection there) and the command exits 130."""
+        _write_top(in_project)
+        closed: list[bool] = []
+
+        class Hung(httpx.AsyncBaseTransport):
+            async def handle_async_request(
+                self, request: httpx.Request
+            ) -> httpx.Response:
+                signal.raise_signal(signal.SIGINT)
+                try:
+                    await asyncio.sleep(30)
+                except asyncio.CancelledError:
+                    closed.append(True)
+                    raise
+                raise AssertionError("the request was not cancelled")
+
+        monkeypatch.setattr(remote_run, "transport", Hung())
+
+        result = _remote_invoke("--output-format", "text")
+
+        assert result.exit_code == 130
+        assert closed == [True]
+
 
 def test_the_post_is_one_request_with_a_connect_timeout_and_no_read_timeout(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    seen: list[tuple[str, dict[str, Any], Any]] = []
+    seen: list[httpx.Request] = []
 
-    def post(url: str, *, json: dict[str, Any], timeout: Any) -> Any:
-        seen.append((url, json, timeout))
-        return Canned(200, "{}")
+    def handle(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, json={})
 
-    monkeypatch.setattr(requests, "post", post)
+    monkeypatch.setattr(remote_run, "transport", httpx.MockTransport(handle))
 
-    remote_run.post_run(REMOTE_URL + "/api/ensembles/execute", {"a": 1})
+    asyncio.run(remote_run.post_run(REMOTE_URL + "/api/ensembles/execute", {"a": 1}))
 
-    assert seen == [(REMOTE_URL + "/api/ensembles/execute", {"a": 1}, (10, None))]
+    (request,) = seen
+    assert str(request.url) == REMOTE_URL + "/api/ensembles/execute"
+    assert json.loads(request.content) == {"a": 1}
+    assert request.extensions["timeout"] == {
+        "connect": 10,
+        "read": None,
+        "write": None,
+        "pool": None,
+    }
+
+
+def test_a_redirect_is_not_followed_and_is_not_a_result(
+    in_project: Path, remotes: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _write_top(in_project)
+    seen: list[str] = []
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        seen.append(str(request.url))
+        return httpx.Response(307, headers={"location": "https://other.example/x"})
+
+    monkeypatch.setattr(remote_run, "transport", httpx.MockTransport(handle))
+
+    result = _remote_invoke("--output-format", "text")
+
+    assert result.exit_code == 1, result.output
+    assert "307" in result.output
+    assert seen == [REMOTE_URL + "/api/ensembles/execute"]

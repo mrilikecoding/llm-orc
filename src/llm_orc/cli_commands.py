@@ -467,17 +467,19 @@ def _invoke_remote(ensemble_name: str, invocation: RemoteInvocation) -> bool:
         raise _not_found(service, ensemble_name)
     try:
         with _waiting_on(invocation.remote, invocation.output_format):
-            document = run_remote(
-                ensemble_name,
-                invocation.remote,
-                find_root=lambda _name: root,
-                config_manager=service.config_manager,
-                project_dir=service.project_path,
-                input_text=invocation.input_data,
-                with_profiles=invocation.with_profiles,
-                bind=invocation.bind,
-                pull=invocation.pull,
-                persist=invocation.persist,
+            document = asyncio.run(
+                run_remote(
+                    ensemble_name,
+                    invocation.remote,
+                    find_root=lambda _name: root,
+                    config_manager=service.config_manager,
+                    project_dir=service.project_path,
+                    input_text=invocation.input_data,
+                    with_profiles=invocation.with_profiles,
+                    bind=invocation.bind,
+                    pull=invocation.pull,
+                    persist=invocation.persist,
+                )
             )
     except RemoteRunError as e:
         raise click.ClickException(str(e)) from e
