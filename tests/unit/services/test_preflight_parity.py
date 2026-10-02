@@ -218,7 +218,10 @@ class TestTheGateOnARunLayerView:
         manager: ConfigurationManager,
     ) -> Preflight:
         return await service._provider_handler.preflight(
-            root, root.name, manager, service.project_path
+            root,
+            root.name,
+            config_manager=manager,
+            project_dir=service.project_path,
         )
 
     @staticmethod
@@ -372,3 +375,46 @@ class TestTheGateOnARunLayerView:
         assert probed == ["http://inline.test/v1/models"]
         assert self._statuses_of(gated_view)["theirs"] == "ready"
         assert self._statuses_of(gated_base)["theirs"] == "missing_profile"
+
+
+class TestThePairIsOneThing:
+    """A view with no project dir would resolve scripts against the cwd
+    while the executor uses the service's project path: gate ready, run
+    failed. Half a pair is an error, not a fallback."""
+
+    async def _root(self, project: Path) -> EnsembleConfig:
+        path = project / ".llm-orc" / "ensembles" / "top.yaml"
+        _ensemble(path, "top", [{"name": "w", "model": "mock-a", "provider": "mock"}])
+        return EnsembleLoader().load_from_file(str(path))
+
+    async def test_a_manager_without_a_project_dir_is_refused(
+        self, project: Path
+    ) -> None:
+        service = _service(project)
+        root = await self._root(project)
+
+        with pytest.raises(ValueError, match="both"):
+            await service._provider_handler.preflight(
+                root, "top", config_manager=service.config_manager
+            )
+
+    async def test_a_project_dir_without_a_manager_is_refused(
+        self, project: Path
+    ) -> None:
+        service = _service(project)
+        root = await self._root(project)
+
+        with pytest.raises(ValueError, match="both"):
+            await service._provider_handler.preflight(
+                root, "top", project_dir=service.project_path
+            )
+
+    async def test_an_explicit_no_project_is_a_whole_pair(self, project: Path) -> None:
+        service = _service(project)
+        root = await self._root(project)
+
+        outcome = await service._provider_handler.preflight(
+            root, "top", config_manager=service.config_manager, project_dir=None
+        )
+
+        assert outcome.closure.dependencies
