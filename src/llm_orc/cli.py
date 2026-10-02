@@ -205,9 +205,13 @@ def invoke(
     """Invoke an ensemble of agents.
 
     \b
+    Download a model this host lacks but can pull, then run:
+      llm-orc invoke review "the diff" --pull
+    Run a profile name on another profile:
+      llm-orc invoke review "the diff" --bind seat=other
     Run on another serve, shipping the ensemble and what it needs:
       llm-orc invoke review "the diff" --remote remote-host
-    A profile the remote lacks: run it on one the remote has, or ship yours:
+    A profile the remote lacks: bind it to one the remote has, or ship yours:
       llm-orc invoke review --remote remote-host --bind seat=other
       llm-orc invoke review --remote remote-host --with-profile seat
     Keep the shipped ensemble on the remote, to run it there by name:
