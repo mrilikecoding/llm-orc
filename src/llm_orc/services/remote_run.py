@@ -160,6 +160,12 @@ async def run_remote(
     client = build_client(remote)
     try:
         response = await post_run(client, base_url + EXECUTE_PATH, request)
+    except httpx.InvalidURL as e:
+        raise RemoteRunError(
+            remote,
+            f"{base_url!r} is not a usable URL: {e}; nothing was sent",
+            kind=INVALID_REQUEST,
+        ) from e
     except (httpx.HTTPError, ExceptionGroup) as e:
         raise RemoteRunError(
             remote, f"could not reach {base_url}: {_first_leaf(e)}"

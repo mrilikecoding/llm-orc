@@ -510,6 +510,48 @@ class TestAMalformedRemoteUrl:
         assert "Traceback" not in result.output
         assert isinstance(result.exception, SystemExit)
 
+    def test_a_tab_given_to_the_flag_exits_1_naming_the_character(
+        self, in_project: Path
+    ) -> None:
+        _write_top(in_project)
+
+        result = _invoke("--remote", REMOTE_URL + "\t", "--output-format", "text")
+
+        assert result.exit_code == 1, result.output
+        assert "not allowed in a URL" in result.output
+        assert "'\\t'" in result.output
+        assert "Traceback" not in result.output
+        assert isinstance(result.exception, SystemExit)
+
+    def test_a_config_url_ending_in_a_newline_exits_1_naming_it(
+        self, in_project: Path
+    ) -> None:
+        _write_top(in_project)
+        path = Path(os.environ["XDG_CONFIG_HOME"]) / "llm-orc" / "config.yaml"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(f"remotes:\n  remote-host:\n    url: |\n      {REMOTE_URL}\n")
+
+        result = _remote_invoke("--output-format", "text")
+
+        assert result.exit_code == 1, result.output
+        assert "remote-host" in result.output
+        assert "not allowed in a URL" in result.output
+        assert "'\\n'" in result.output
+        assert isinstance(result.exception, SystemExit)
+
+    def test_a_url_the_resolver_passes_and_httpx_refuses_exits_1(
+        self, in_project: Path
+    ) -> None:
+        """The catch in ``run_remote`` is the named guard for this class."""
+        _write_top(in_project)
+
+        result = _invoke("--remote", "http://\u2603", "--output-format", "text")
+
+        assert result.exit_code == 1, result.output
+        assert "not a usable URL" in result.output
+        assert "Traceback" not in result.output
+        assert isinstance(result.exception, SystemExit)
+
 
 # Environments in which building ``httpx.AsyncClient(trust_env=True)``
 # raises before anything is sent: (variable, value, what the message must
