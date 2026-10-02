@@ -102,10 +102,10 @@ class TestWriteAndRead:
         def failing_replace(src: Any, dst: Any) -> None:
             raise OSError(28, "No space left on device")
 
-        monkeypatch.setattr(os, "replace", failing_replace)
-        with pytest.raises(BundleError, match="No space"):
-            store.write("pack", _stored(scripts={"tools/x.py": "print(2)\n"}))
-        monkeypatch.undo()
+        with monkeypatch.context() as failing:
+            failing.setattr(os, "replace", failing_replace)
+            with pytest.raises(BundleError, match="No space"):
+                store.write("pack", _stored(scripts={"tools/x.py": "print(2)\n"}))
 
         files = sorted((tmp_path / "global" / "bundles").iterdir())
         assert [p.name for p in files] == ["pack.json"]

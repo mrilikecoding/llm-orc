@@ -27,6 +27,11 @@ from llm_orc.core.config.state import resolve_state_dir
 from llm_orc.core.execution.artifact_manager import ArtifactManager
 from llm_orc.core.execution.results_processor import caller_status
 from llm_orc.mcp.project_context import ProjectContext
+from llm_orc.services.handlers.bundle_store import (
+    BundleError,
+    BundleStore,
+    stored_form,
+)
 from llm_orc.services.handlers.preflight import DependencyReport, is_runnable
 from llm_orc.services.handlers.run_preparation import (
     INVALID_REQUEST,
@@ -64,6 +69,7 @@ _REQUEST_KEYS = (
     "scripts",
     "bind",
     "pull",
+    "persist",
 )
 
 
@@ -76,6 +82,7 @@ class PreparedRun:
     inline: bool = False
     bindings: dict[str, str] = field(default_factory=dict)
     pulled: list[str] = field(default_factory=list)
+    persisted: str | None = None
 
 
 @dataclass
@@ -112,6 +119,7 @@ class ExecutionHandler:
         *,
         preflight_fn: PreflightFn,
         layer_executor_fn: LayerExecutorFn,
+        bundle_store: BundleStore | None = None,
     ) -> None:
         """Initialize with dependencies.
 
@@ -124,6 +132,8 @@ class ExecutionHandler:
             preflight_fn: The gate every run passes (``ProviderHandler.preflight``).
             layer_executor_fn: Builds the executor of a run with a layer from
                 its config manager view and whether to save artifacts.
+            bundle_store: Where persisted closures are kept; the config
+                manager's global config directory when omitted.
         """
         self._config_manager = config_manager
         self._ensemble_loader = ensemble_loader
@@ -132,6 +142,9 @@ class ExecutionHandler:
         self._find_ensemble = find_ensemble_fn
         self._preflight = preflight_fn
         self._layer_executor = layer_executor_fn
+        self._bundles = bundle_store or BundleStore(
+            lambda: self._config_manager.global_config_dir
+        )
         self._project_path: Path | None = None
 
     def set_project_context(self, ctx: ProjectContext) -> None:
@@ -199,6 +212,7 @@ class ExecutionHandler:
         cancellation.
         """
         request = _parse(data)
+        self._refuse_shadowed_persist(request, lookup)
         with self._run_dir(request) as run_dir:
             yield await self._prepare(request, run_dir, lookup, missing)
 
@@ -227,7 +241,7 @@ class ExecutionHandler:
     ) -> PreparedRun:
         root = self._materialize(request, run_dir, lookup, missing)
         layer, manager, config = root.layer, root.manager, root.config
-        inline = request.ensemble is not None
+        inline = request.ensemble is not None and request.persist is None
         outcome = await self._gate(config, root.ref, manager)
         stray = unnamed_bind_keys(request.bind, outcome.closure.dependencies)
         if stray:
@@ -241,10 +255,41 @@ class ExecutionHandler:
             reports, pulled = await pull_pullable(reports, manager.get_model_profiles())
         if not is_runnable(reports):
             raise RunRefusedError(NOT_EQUIPPED, _unmet_message(reports), reports)
+        persisted = self._persist(request)
         if layer.view is None:
             return PreparedRun(config, self._get_executor(), inline, {}, pulled)
         executor = self._layer_executor(layer.view, not inline)
-        return PreparedRun(config, executor, inline, layer.applied, pulled)
+        return PreparedRun(config, executor, inline, layer.applied, pulled, persisted)
+
+    def _refuse_shadowed_persist(
+        self, request: RunRequest, lookup: Callable[[str], Any]
+    ) -> None:
+        """A bundle is never born shadowed: a root name some tier already
+        resolves is refused, naming the tier (ruling 9)."""
+        if request.persist is None or request.ensemble is None:
+            return
+        name = request.ensemble["name"]
+        found = lookup(name)
+        if found is None:
+            return
+        source = getattr(found, "source_path", None)
+        tier = self._config_manager.classify_tier(Path(source)) if source else ""
+        where = f"the {tier} tier" if tier not in ("", "unknown") else "a tier"
+        raise RunRefusedError(
+            INVALID_REQUEST,
+            f"cannot persist {name!r}: {where} already has an ensemble of that name",
+        )
+
+    def _persist(self, request: RunRequest) -> str | None:
+        """Store the request that just passed the gate; the name stored."""
+        if request.persist is None or request.ensemble is None:
+            return None
+        name = str(request.ensemble["name"])
+        try:
+            self._bundles.write(name, stored_form(request))
+        except BundleError as e:
+            raise RunRefusedError(INVALID_REQUEST, str(e)) from e
+        return name
 
     def _materialize(
         self,
@@ -518,12 +563,15 @@ class ExecutionHandler:
 
 def _run_record(run: PreparedRun) -> dict[str, Any]:
     """What the run was asked to do that the caller should see: the
-    bindings applied and the models pulled, when there are any."""
+    bindings applied, the models pulled and the bundle stored, when there
+    are any."""
     record: dict[str, Any] = {}
     if run.bindings:
         record["bindings"] = run.bindings
     if run.pulled:
         record["pulled"] = run.pulled
+    if run.persisted:
+        record["persisted"] = run.persisted
     return record
 
 
