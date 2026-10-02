@@ -31,6 +31,8 @@ from llm_orc.services.handlers.preflight import (
 
 NOT_EQUIPPED = "not_equipped"
 INVALID_REQUEST = "invalid_request"
+#: A remote that could not be reached or did not answer with a result.
+REMOTE_ERROR = "remote_error"
 
 #: What loading an ensemble definition can raise: a file that is not YAML,
 #: or YAML that is not an ensemble.
