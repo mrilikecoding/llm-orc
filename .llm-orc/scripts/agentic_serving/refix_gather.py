@@ -12,6 +12,10 @@ in the prior code, ``needs_model_edit`` signals the fallback (fails CLOSED
 to the model edit rather than guess).
 """
 
+# /// llm-orc
+# files = ["_helpers.py"]
+# ///
+
 from __future__ import annotations
 
 import json

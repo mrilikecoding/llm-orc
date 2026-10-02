@@ -15,6 +15,10 @@ fails to load is rejected here, the original preserved; the client's own
 pytest re-run remains the semantic verifier once a loadable fix ships.
 """
 
+# /// llm-orc
+# files = ["_helpers.py"]
+# ///
+
 from __future__ import annotations
 
 import ast

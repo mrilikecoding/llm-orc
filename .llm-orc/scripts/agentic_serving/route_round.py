@@ -12,6 +12,10 @@ wrong accept.
 Emits JSON: {target, round_input}
 """
 
+# /// llm-orc
+# files = ["_helpers.py"]
+# ///
+
 from __future__ import annotations
 
 import json

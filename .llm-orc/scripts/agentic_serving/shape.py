@@ -14,6 +14,10 @@ returns raw prose), the raw terminal text is the deliverable — shape degrades
 gracefully rather than requiring every seat to envelope first.
 """
 
+# /// llm-orc
+# files = ["_helpers.py"]
+# ///
+
 from __future__ import annotations
 
 import json

@@ -9,6 +9,10 @@ restores that contract deterministically (the dispatch sibling of
 ``loop_unwrap``).
 """
 
+# /// llm-orc
+# files = ["_helpers.py"]
+# ///
+
 from __future__ import annotations
 
 import json
