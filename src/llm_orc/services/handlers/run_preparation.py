@@ -41,14 +41,16 @@ LOAD_ERRORS = (
 )
 
 
-_ABSOLUTE_PATH = re.compile(r"(?<![\w.])/(?:[\w.\-~ ]+/)*[\w.\-]+")
+# Not the slashes of a URL: a "//" and what follows a ":/" are left alone.
+_ABSOLUTE_PATH = re.compile(r"(?<![\w.])(?<!:/)/(?!/)(?:[\w.\-~ ]+/)*[\w.\-]+")
 
 
 def load_problem(error: Exception) -> str:
     """What was wrong with a definition that did not load, without the
     host path of the file it was read from: the serve's user and home
     must not reach a caller. A YAML error keeps the parser's problem and
-    its line and column; any other text has absolute paths replaced."""
+    its line and column; a missing key is named as such; any other text
+    has absolute paths replaced."""
     if isinstance(error, yaml.MarkedYAMLError):
         parts = [error.context, error.problem]
         text = " ".join(str(part) for part in parts if part)
@@ -56,6 +58,8 @@ def load_problem(error: Exception) -> str:
         if mark is not None:
             text += f" (line {mark.line + 1}, column {mark.column + 1})"
         return text
+    if isinstance(error, KeyError) and error.args:
+        return f"missing key {error.args[0]!r}"
     return _ABSOLUTE_PATH.sub("<path>", str(error))
 
 
