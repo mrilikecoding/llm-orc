@@ -796,6 +796,31 @@ class TestMalformedRequestsWriteNothing:
         assert _runs(state_dir) == []
 
 
+class TestKeysOneReferenceResolvesToFoldTogether:
+    async def test_two_script_keys_differing_by_case_run_nothing(
+        self, service: OrchestraService, tmp_path: Path
+    ) -> None:
+        """The disk folds case, so ``X.py`` and ``scripts/x.py`` are one
+        reference's two candidates; the second used to silently win."""
+        ran = tmp_path / "ran.txt"
+        script = f'open(r"{ran}", "a").write("ran")\nprint(1)\n'
+        request = _inline_request(
+            scripts={"X.py": script, "scripts/x.py": script},
+        )
+        request["ensemble"] = {
+            **INLINE,
+            "agents": [
+                {"name": "s", "script": "X.py"},
+                {"name": "w", "model_profile": "inline-seat"},
+            ],
+        }
+
+        result = await service.invoke(request)
+
+        assert result["error"]["kind"] == "invalid_request", result
+        assert not ran.exists()
+
+
 class TestNamesThatFoldTogetherAreRefused:
     async def test_a_child_named_like_the_root_in_another_case_runs_nothing(
         self,
