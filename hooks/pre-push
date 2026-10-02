@@ -1,0 +1,23 @@
+#!/bin/bash
+# Pre-push hook for llm-orc
+# Runs make lint before allowing a push, so a tree that arrived without a
+# commit in this clone (a reset, a fetch, a history rewrite) is linted too.
+# Lint only: the test suite is CI's job and too slow for every push.
+# Can be bypassed with: git push --no-verify
+
+set -e
+
+echo "🔍 Running pre-push checks..."
+
+# Change to the repository root (llm-orc directory)
+cd "$(git rev-parse --show-toplevel)"
+
+if make lint; then
+    echo "✅ Pre-push checks passed"
+    exit 0
+else
+    echo "❌ Pre-push checks failed"
+    echo "💡 If formatting issues, run: make format && git add -u"
+    echo "🚫 To bypass this check, use: git push --no-verify"
+    exit 1
+fi
