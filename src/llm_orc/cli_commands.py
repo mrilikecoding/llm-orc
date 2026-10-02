@@ -568,12 +568,12 @@ def list_ensembles_command(config_dir: str | None) -> None:
 
     service = _get_service()
     ensemble_dirs = service.config_manager.get_ensembles_dirs()
-    if not ensemble_dirs:
+    grouped = service.list_ensembles_grouped()
+    if not ensemble_dirs and not grouped["bundle"]:
         click.echo("No ensemble directories found.")
         click.echo("Run 'llm-orc config init' to set up local configuration.")
         return
 
-    grouped = service.list_ensembles_grouped()
     if not any(grouped.values()):
         click.echo("No ensembles found in any configured directories:")
         for dir_path in ensemble_dirs:
