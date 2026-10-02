@@ -73,6 +73,43 @@ class TestAUrl:
         assert resolve_remote("remote-host", _manager(tmp_path)) == REMOTE_URL
 
 
+class TestOnlyHttpAndHttpsWithAHostAndAPort:
+    @pytest.mark.parametrize(
+        ("value", "named"),
+        [
+            ("ftp://host.example", "ftp"),
+            ("socks5://host.example", "socks5"),
+            ("http:///x", "host"),
+            ("http://[::1", "http://[::1"),
+            ("https://host.example:65536", "port"),
+            ("https://host.example:80800", "port"),
+            ("https://host.example:0", "port"),
+            ("https://host.example:abc", "port"),
+        ],
+    )
+    def test_anything_else_is_refused_naming_what_is_wrong(
+        self, tmp_path: Path, value: str, named: str
+    ) -> None:
+        with pytest.raises(RemoteError) as raised:
+            resolve_remote(value, _manager(tmp_path))
+
+        assert named in str(raised.value)
+        assert value in str(raised.value)
+
+    @pytest.mark.parametrize(
+        "value",
+        ["http://host.example", "https://host.example:8443/base", "http://[::1]:80"],
+    )
+    def test_a_good_url_passes(self, tmp_path: Path, value: str) -> None:
+        assert resolve_remote(value, _manager(tmp_path)) == value
+
+    def test_a_configured_url_is_checked_too(self, tmp_path: Path) -> None:
+        _global({"remotes": {"remote-host": {"url": "ftp://host.example"}}})
+
+        with pytest.raises(RemoteError, match="remote-host.*ftp"):
+            resolve_remote("remote-host", _manager(tmp_path))
+
+
 class TestOnlyTheGlobalConfigIsRead:
     def test_a_project_remote_does_not_resolve(self, tmp_path: Path) -> None:
         _global({"remotes": {"remote-host": {"url": REMOTE_URL}}})
