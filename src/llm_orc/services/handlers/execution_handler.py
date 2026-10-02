@@ -17,8 +17,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-import yaml
-
 from llm_orc.core.config.config_manager import ConfigurationManager
 from llm_orc.core.config.ensemble_config import (
     EnsembleLoader,
@@ -31,6 +29,7 @@ from llm_orc.mcp.project_context import ProjectContext
 from llm_orc.services.handlers.preflight import DependencyReport, is_runnable
 from llm_orc.services.handlers.run_preparation import (
     INVALID_REQUEST,
+    LOAD_ERRORS,
     NOT_EQUIPPED,
     RunRefusedError,
     only_pullable_unmet,
@@ -62,14 +61,6 @@ _REQUEST_KEYS = (
     "scripts",
     "bind",
     "pull",
-)
-_PARSE_ERRORS = (
-    KeyError,
-    TypeError,
-    ValueError,
-    AttributeError,
-    OSError,
-    yaml.YAMLError,
 )
 
 
@@ -278,7 +269,7 @@ class ExecutionHandler:
                 str(root_path),
                 search_dirs=child_ensemble_search_dirs(self._project_path, manager),
             )
-        except _PARSE_ERRORS as e:
+        except LOAD_ERRORS as e:
             raise RunRefusedError(
                 INVALID_REQUEST, f"the inline ensemble does not load: {e}"
             ) from e
@@ -293,7 +284,7 @@ class ExecutionHandler:
                 config_manager=manager,
                 project_dir=self._project_path,
             )
-        except _PARSE_ERRORS as e:
+        except LOAD_ERRORS as e:
             raise RunRefusedError(
                 INVALID_REQUEST, f"a child ensemble does not load: {e}"
             ) from e

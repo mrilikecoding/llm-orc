@@ -14,6 +14,8 @@ import asyncio
 from collections.abc import Mapping, Sequence
 from typing import Any
 
+import yaml
+
 from llm_orc.core.config.closure import Dependency
 from llm_orc.providers.llama_server import PULL_POLL_S, PULL_TIMEOUT_S, router_client
 from llm_orc.services.handlers.preflight import (
@@ -25,6 +27,17 @@ from llm_orc.services.handlers.preflight import (
 
 NOT_EQUIPPED = "not_equipped"
 INVALID_REQUEST = "invalid_request"
+
+#: What loading an ensemble definition can raise: a file that is not YAML,
+#: or YAML that is not an ensemble.
+LOAD_ERRORS = (
+    KeyError,
+    TypeError,
+    ValueError,
+    AttributeError,
+    OSError,
+    yaml.YAMLError,
+)
 
 
 class RunRefusedError(Exception):
