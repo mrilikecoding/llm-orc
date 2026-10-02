@@ -515,6 +515,33 @@ class TestNamesThatFoldTogetherAreRefused:
         assert _runs(state_dir) == []
 
 
+class TestAScriptKeyIsReachable:
+    async def test_a_bare_key_is_refused_and_the_hosts_program_does_not_run(
+        self, project: Path, service: OrchestraService, state_dir: Path
+    ) -> None:
+        # Without path syntax the resolver reads "date" as inline shell
+        # content and would run the host's /bin/date for the agent.
+        before = _trees(project, state_dir)
+
+        result = await service.invoke(
+            {
+                "ensemble": {
+                    "name": "top",
+                    "description": "top",
+                    "agents": [{"name": "d", "script": "date"}],
+                },
+                "scripts": {"date": "echo injected"},
+                "input": "hi",
+            }
+        )
+
+        assert result["error"]["kind"] == "invalid_request", result
+        assert "'date'" in result["error"]["message"]
+        assert result["results"] == {}
+        assert _trees(project, state_dir) == before
+        assert _runs(state_dir) == []
+
+
 class TestArtifacts:
     async def test_an_inline_root_saves_none_and_a_named_root_keeps_its_own(
         self, project: Path, service: OrchestraService, state_dir: Path
