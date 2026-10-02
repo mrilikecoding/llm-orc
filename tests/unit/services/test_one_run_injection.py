@@ -382,6 +382,48 @@ class TestTheRunDirIsAlwaysRemoved:
         assert _runs(state_dir) == []
 
 
+class TestClosingTheStream:
+    async def test_the_run_is_cancelled_and_the_run_dir_stays_removed(
+        self,
+        service: OrchestraService,
+        state_dir: Path,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        started = tmp_path / "started.txt"
+        sleeper = (
+            "import sys, time\n"
+            "sys.stdin.read()\n"
+            f'open(r"{started}", "w").write("x")\n'
+            "time.sleep(60)\n"
+        )
+        tasks: list[asyncio.Task[Any]] = []
+        real_execute = EnsembleExecutor.execute
+
+        async def execute(self: Any, config: Any, input_data: str = "") -> Any:
+            task = asyncio.current_task()
+            assert task is not None
+            tasks.append(task)
+            return await real_execute(self, config, input_data)
+
+        monkeypatch.setattr(EnsembleExecutor, "execute", execute)
+        stream = service.invoke_streaming(
+            _inline_request(scripts={"probe/x.py": sleeper})
+        )
+
+        await stream.__anext__()
+        for _ in range(200):
+            if started.exists():
+                break
+            await asyncio.sleep(0.05)
+        assert started.exists()
+        assert len(_runs(state_dir)) == 1
+        await stream.aclose()
+
+        assert [t.done() for t in tasks] == [True]
+        assert _runs(state_dir) == []
+
+
 class TestRunsStayApart:
     async def test_two_concurrent_runs_each_see_their_own_content(
         self,

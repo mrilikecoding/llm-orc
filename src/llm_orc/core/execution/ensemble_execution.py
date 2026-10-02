@@ -470,13 +470,20 @@ class EnsembleExecutor:
         start_time = time.time()
         execution_task = asyncio.create_task(self.execute(config, input_data))
 
-        # Merge events from progress tracker and performance queue
-        async for event in self._merge_streaming_events(
-            self._streaming_progress_tracker.track_execution_progress(
-                config, execution_task, start_time
-            )
-        ):
-            yield event
+        # Merge events from progress tracker and performance queue. A caller
+        # that stops reading leaves the task running, and its script
+        # subprocesses go on writing into the run layer: cancel it and wait.
+        try:
+            async for event in self._merge_streaming_events(
+                self._streaming_progress_tracker.track_execution_progress(
+                    config, execution_task, start_time
+                )
+            ):
+                yield event
+        finally:
+            if not execution_task.done():
+                execution_task.cancel()
+                await asyncio.gather(execution_task, return_exceptions=True)
 
     async def _merge_streaming_events(
         self, progress_events: AsyncGenerator[dict[str, Any], None]

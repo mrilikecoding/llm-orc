@@ -7,7 +7,8 @@ MCP and web ports.
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator, Mapping
+from collections.abc import AsyncGenerator, Mapping
+from contextlib import aclosing
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -361,10 +362,12 @@ class OrchestraService:
 
     async def invoke_streaming(
         self, params: dict[str, Any]
-    ) -> AsyncIterator[dict[str, Any]]:
+    ) -> AsyncGenerator[dict[str, Any], None]:
         """Yield streaming events from execution."""
-        async for event in self._execution_handler.invoke_streaming(params):
-            yield event
+        events = self._execution_handler.invoke_streaming(params)
+        async with aclosing(events):
+            async for event in events:
+                yield event
 
     # === Validation ===
 
