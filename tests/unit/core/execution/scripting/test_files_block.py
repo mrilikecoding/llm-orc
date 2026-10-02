@@ -86,6 +86,8 @@ class TestListedFiles:
     def test_a_first_block_that_does_not_parse_is_the_error_whatever_follows(
         self,
     ) -> None:
+        """A guard for documented behavior, not a regression pin: it
+        passes against the parser as it was before the first-block fix."""
         source = (
             "# /// llm-orc\n# files = [\n# ///\n"
             '# /// llm-orc\n# files = ["b.py"]\n# ///\n'
