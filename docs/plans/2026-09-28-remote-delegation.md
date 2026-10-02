@@ -712,6 +712,52 @@ depends on it.
 - At the end: no file under the cwd, `runs/` empty, serve stopped by
   PID, ports 8766 and 8790 free.
 
+**Review rounds and the re-run (2026-10-02).** A whole-branch review and
+three scoped re-reviews followed, each author-independent, each
+CHANGES REQUIRED until the last. What they changed in the request
+contract, beyond the rulings above:
+
+- Names in one request must be distinct ignoring case and Unicode
+  normalization (the host's disk folds them); a root `Kid` with a child
+  `kid` had run the child as the root.
+- A script key needs path syntax (a `/` or a script extension), and two
+  keys one reference reaches (`x.py` and `scripts/x.py`, or the
+  hyphen/underscore pair) are `invalid_request`. A bare key `date` had
+  run the host's `date`.
+- `pull` happens only when every unmet dependency is `pullable`, and
+  stops at the first pull that does not end `loaded`.
+- A request with no root, and a bind write that fails, are
+  `invalid_request`, not a 500.
+- The run's gate probes only the OpenAI-compatible endpoints its closure
+  uses, together; the read endpoint still probes the host's.
+- A refusal names the reference and the problem, never a host path.
+- A cancelled run's script and its process group are killed before the
+  run directory is removed. Every script agent's subprocess now leads
+  its own group; a timeout kills the group; only the worker thread
+  reaps the child. Lesson, binding: `Popen.communicate` cannot resume
+  sending input after a timeout, so it is called once. A fix wave that
+  sliced it stalled every script with an input past the pipe buffer
+  until its timeout, and the suite stayed green; the wall time (one test
+  at 302 s) was the only signal.
+
+The live row was re-run at `67262bf1` with the same setup (the pull
+model is now `smollm2-135m-b` from `bartowski/SmolLM2-135M-Instruct-GGUF`,
+since the first run had downloaded the other). Every row above repeated
+with the same outcome. Added rows:
+
+- `Kid`/`kid`, `x.py` + `scripts/x.py`, `X.py` + `scripts/x.py`, a bare
+  key `date`, and a body with no root: each `invalid_request` with a
+  message naming the keys, `runs/` empty.
+- `pull: true` with one `pullable` profile and one missing profile:
+  `not_equipped` in under 0.1 s listing both; the pullable model was
+  still `unloaded`, no download started.
+- An injected script that sleeps 0.7 s before reading a 300 KB input:
+  `success` in 0.8 s, the full length read.
+- A client that disconnects mid-run (`curl` killed while an injected
+  script slept 20 s): the run is NOT cancelled. The script ran to its
+  end, and `runs/` was empty once it finished. A plain REST request is
+  not tied to its connection; recorded on #191.
+
 ### Arc 5: CLI as the remote client (Sonnet, ~1-2 days, after Arc 4)
 
 - `llm-orc invoke <ensemble> --remote <url> [--bind a=b] [--pull]
