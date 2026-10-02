@@ -277,7 +277,9 @@ class ProviderHandler:
                 )
             )
         closure = walk_closure(config, find_child, profiles, root_ref=root_ref)
-        probed = profiles if probe_host else _probed_by(closure, profiles)
+        probed = _probed_by(closure, profiles)
+        if probe_host:
+            probed = {**profiles, **probed}
         provider_status = await self.get_provider_status(
             {}, profiles=probed, config_manager=manager
         )

@@ -592,6 +592,31 @@ class TestTheGateProbesOnlyWhatTheRunUses:
         assert probed == ["https://api.openai.com/v1/models"]
         assert is_runnable(outcome.reports)
 
+    async def test_the_read_path_and_the_gate_agree_on_an_inline_model(
+        self, project: Path, probed: list[str]
+    ) -> None:
+        """The host has profiles at other endpoints but none at the default
+        one the inline model runs against: both paths probe it, so both
+        give the same statuses."""
+        service = _service(project)
+        _ensemble(
+            project / ".llm-orc" / "ensembles" / "inline-model.yaml",
+            "inline-model",
+            [{"name": "w", "model": "their-model", "provider": "openai-compatible"}],
+        )
+        root = service.find_ensemble_by_name("inline-model")
+        gate = await service._provider_handler.preflight(
+            root,
+            "inline-model",
+            config_manager=service.config_manager,
+            project_dir=service.project_path,
+        )
+
+        read = await _statuses(service, "inline-model")
+
+        assert read == {r.name: r.status.value for r in gate.reports}
+        assert set(read.values()) == {"ready"}
+
     async def test_a_closure_probes_its_own_endpoints_together_and_no_others(
         self, project: Path, probed: list[str]
     ) -> None:
