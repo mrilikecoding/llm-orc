@@ -9,7 +9,6 @@ passes, replayed through the same injection path on each named run.
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import json
 import os
 import threading
@@ -849,21 +848,42 @@ class TestTheOtherSurfacesKnowBundles:
         assert second.json()["bundle"] == "pack"
         assert not _bundle_file().exists()
 
-    def test_a_global_yml_file_also_spares_the_bundle_on_a_delete(
+    def test_a_global_yml_file_and_a_bundle_of_one_name_go_one_delete_each(
         self, client: TestClient
     ) -> None:
         """The loader reads ``.yml`` as it reads ``.yaml``, so a tier file
-        with either extension is what the delete of that name means."""
+        with either extension is what the delete of that name means, and
+        the delete can remove it."""
         _persisted(client)
         tier_file = resolve_global_config_dir() / "ensembles" / "pack.yml"
         _write_tier_yml(tier_file)
 
-        # Removing a ``.yml`` file is not something delete does (it looks
-        # for ``.yaml``), so it may raise; what this pins is the bundle.
-        with contextlib.suppress(ValueError):
+        first = client.delete("/api/ensembles/pack", params={"scope": "global"})
+
+        assert first.status_code == 200, first.text
+        assert "bundle" not in first.json()
+        assert not tier_file.exists()
+        assert _bundle_file().exists()
+
+        second = client.delete("/api/ensembles/pack", params={"scope": "global"})
+
+        assert second.json()["bundle"] == "pack"
+        assert not _bundle_file().exists()
+
+    def test_a_tier_root_in_a_subdirectory_spares_the_bundle_on_a_delete(
+        self, client: TestClient
+    ) -> None:
+        """A tier root the flat-file check cannot see still resolves the
+        name, so the delete is the tier delete (which cannot find it by
+        name, as before) and the bundle behind it stays."""
+        _persisted(client)
+        nested = resolve_global_config_dir() / "ensembles" / "sub" / "pack.yaml"
+        _write_tier_yml(nested)
+
+        with pytest.raises(ValueError, match="not found"):
             client.delete("/api/ensembles/pack", params={"scope": "global"})
 
-        assert tier_file.exists()
+        assert nested.exists()
         assert _bundle_file().exists()
 
     def test_delete_with_scope_project_does_not_touch_a_bundle(
