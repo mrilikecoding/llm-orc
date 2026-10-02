@@ -75,11 +75,14 @@ async def test_a_local_run_prints_what_its_document_prints(
     executor = AsyncMock()
     raw = {k: v for k, v in DOCUMENT.items() if k != "has_errors"}
     executor.execute = AsyncMock(return_value={**raw, "status": "completed"})
-    config = SimpleNamespace(agents=AGENTS, to_dict=lambda: {"name": "top"})
+    config = SimpleNamespace(
+        agents=AGENTS, raw_output=False, to_dict=lambda: {"name": "top"}
+    )
 
     await run_standard_execution(executor, config, "hi", output_format, True)
     local = capsys.readouterr().out
-    display_result(DOCUMENT, AGENTS, output_format, True, config)
+    document = {**DOCUMENT, "raw_output": False}
+    display_result(document, AGENTS, output_format, True, config)
     from_document = capsys.readouterr().out
 
     assert local == from_document

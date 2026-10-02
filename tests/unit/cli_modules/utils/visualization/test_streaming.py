@@ -124,6 +124,7 @@ class TestRunStandardExecution:
         }
         executor.execute = AsyncMock(return_value=result)
         ensemble_config = Mock()
+        ensemble_config.raw_output = False
         input_data = "Test input"
 
         has_errors = await run_standard_execution(
@@ -132,7 +133,13 @@ class TestRunStandardExecution:
 
         executor.execute.assert_called_once_with(ensemble_config, input_data)
         mock_json_display.assert_called_once_with(
-            {**result, "status": "success", "has_errors": False}, ensemble_config
+            {
+                **result,
+                "status": "success",
+                "has_errors": False,
+                "raw_output": False,
+            },
+            ensemble_config,
         )
         assert has_errors is False
 
