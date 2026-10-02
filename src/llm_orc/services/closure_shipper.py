@@ -233,7 +233,16 @@ def _require_unanswered(
     reached: Mapping[str, Path],
 ) -> None:
     """A reference left to the remote must not resolve inside the layer:
-    the remote would run a file this ship carries, shadowing its own."""
+    the remote would run a file this ship carries, shadowing its own.
+
+    A left-out script reference is held to the rule a found one is: the
+    remote could reach a file outside its run directory with a ``..``.
+    """
+    if item.kind == "script":
+        try:
+            check_relative(item.reference, "script reference")
+        except ValueError as e:
+            raise ShipError(f"{item.label}: {e}") from e
     there = _layer_answer(item, layer, resolver, reached)
     if there is not None:
         raise ShipError(
@@ -261,7 +270,9 @@ def _layer_answer(
         resolved, _is_file = resolver.resolve_and_classify(item.reference)
     except ScriptNotFoundError:
         return None
-    return Path(resolved)
+    answer = Path(resolved)
+    # A file the layer does not hold is not the layer's answer.
+    return answer if Path(os.path.normpath(answer)).is_relative_to(layer) else None
 
 
 def _remote_path(

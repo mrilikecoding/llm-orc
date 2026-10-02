@@ -27,6 +27,7 @@ from llm_orc.core.execution.scripting.resolver import ScriptResolver
 from llm_orc.services.closure_shipper import (
     LeftOut,
     ShipError,
+    _layer_answer,
     ship_closure,
     ship_closure_reporting,
 )
@@ -921,6 +922,54 @@ class TestAReferenceLeftToTheRemoteIsNotAnsweredByAShippedFile:
 
         with pytest.raises(ShipError, match="file 'h.py' listed by script.*carries"):
             _ship(service, "top")
+
+
+class TestALeftOutReferenceThatIsNotRelative:
+    """A reference the walk did not find is still a reference the remote
+    would resolve, so it is held to the same relative-path rule as a found
+    one, and a file outside the layer is never the layer's answer."""
+
+    def test_a_dot_dot_reference_is_refused_even_with_a_file_beside_the_layer(
+        self,
+        project: Path,
+        service: OrchestraService,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """``../../stray.py`` from the temporary layer's ``scripts``
+        (there because ``ok.py`` ships) reaches ``stray.py`` in the
+        directory that holds the layer."""
+        base = tmp_path / "tmp-root"
+        _write(base / "stray.py", "print('stray')\n")
+        monkeypatch.setattr(tempfile, "tempdir", str(base))
+        _scripts(project, "ok.py")
+        _uses(project, "ok.py", "../../stray.py")
+
+        with pytest.raises(ShipError, match="script '../../stray.py'"):
+            _ship(service, "top")
+
+    @pytest.mark.parametrize("reference", ["./tools/x.py", "a/../b.py", "a\\b.py"])
+    def test_any_reference_that_fails_check_relative_is_refused(
+        self, project: Path, service: OrchestraService, reference: str
+    ) -> None:
+        _uses(project, reference)
+
+        with pytest.raises(ShipError, match="not a relative path"):
+            _ship(service, "top")
+
+    def test_a_resolution_outside_the_layer_is_not_an_answer(
+        self, tmp_path: Path
+    ) -> None:
+        layer = tmp_path / "layer"
+        (layer / "scripts").mkdir(parents=True)
+        _write(tmp_path / "stray.py", "print('stray')\n")
+        resolver = ScriptResolver(
+            search_paths=[str(layer / ScriptResolver.SCRIPTS_DIR), str(layer)]
+        )
+
+        answer = _layer_answer(LeftOut("script", "../../stray.py"), layer, resolver, {})
+
+        assert answer is None
 
 
 class TestASymlinkedScript:
