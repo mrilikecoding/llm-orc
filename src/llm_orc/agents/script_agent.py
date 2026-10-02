@@ -9,7 +9,6 @@ import subprocess
 import sys
 import tempfile
 import threading
-import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -66,9 +65,15 @@ class _Child:
             if self._process is not None and self._process.poll() is None:
                 _kill_group(self._process)
 
-    @property
-    def cancelled(self) -> bool:
-        return self._cancelled
+    def reap(self, timeout: float) -> None:
+        """Wait briefly for the (already killed) child; never raises."""
+        process = self._process
+        if process is None:
+            return
+        try:
+            process.wait(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            pass
 
 
 def _kill_group(process: subprocess.Popen[str]) -> None:
@@ -77,42 +82,6 @@ def _kill_group(process: subprocess.Popen[str]) -> None:
         os.killpg(process.pid, signal.SIGKILL)
     except (ProcessLookupError, PermissionError):
         process.kill()
-
-
-class _CancelledError(Exception):
-    """The call was cancelled while the child ran; nothing reads this."""
-
-
-_CANCEL_POLL_SECONDS = 0.1
-
-
-def _communicate(
-    child: _Child,
-    process: subprocess.Popen[str],
-    stdin_data: Any,
-    timeout: float | None,
-) -> tuple[Any, Any]:
-    """``process.communicate(stdin_data, timeout)`` that a cancel can end.
-
-    A cancel kills the group, but a descendant outside it can keep the
-    output pipes open, and a plain ``communicate`` then reads until that
-    descendant exits. So the read runs in short slices and gives up once
-    the call is cancelled. ``communicate`` keeps what it has read between
-    calls, and takes its input only on the first.
-    """
-    deadline = None if timeout is None else time.monotonic() + timeout
-    while True:
-        if child.cancelled:
-            raise _CancelledError
-        window = _CANCEL_POLL_SECONDS
-        if deadline is not None:
-            window = min(window, max(deadline - time.monotonic(), 0))
-        try:
-            return process.communicate(stdin_data, timeout=window)
-        except subprocess.TimeoutExpired:
-            if deadline is not None and time.monotonic() >= deadline:
-                raise
-            stdin_data = None
 
 
 def _run_child(
@@ -138,7 +107,7 @@ def _run_child(
         return None
     with process:
         try:
-            stdout, stderr = _communicate(child, process, stdin_data, timeout)
+            stdout, stderr = process.communicate(stdin_data, timeout=timeout)
         except subprocess.TimeoutExpired as exc:
             _kill_group(process)
             # Reap, as subprocess.run does; reading to EOF would wait on a
@@ -158,6 +127,9 @@ def _run_child(
     return subprocess.CompletedProcess(process.args, returncode or 0, stdout, stderr)
 
 
+_CANCEL_GRACE_SECONDS = 1.0
+
+
 async def _run_subprocess(
     *args: Any, **kwargs: Any
 ) -> subprocess.CompletedProcess[str]:
@@ -166,9 +138,11 @@ async def _run_subprocess(
     Exceptions propagate exactly as ``subprocess.run`` raises them, which
     is what keeps ``ScriptAgent.execute``'s TimeoutExpired/CalledProcessError
     envelopes intact. The child leads its own process group. When the
-    awaiting task is cancelled the group is killed and the worker thread has
-    finished before the cancellation propagates, so a cancelled run leaves
-    no process behind to outlive the directory its caller then removes.
+    awaiting task is cancelled the group is killed and the worker thread gets
+    a short grace to finish. A descendant outside the group can keep the
+    pipes open past that; the child itself is reaped and the cancellation
+    propagates, and the blocked thread ends when that descendant lets go
+    (or the script's timeout fires), its result discarded.
     """
     loop = asyncio.get_running_loop()
     child = _Child()
@@ -179,13 +153,17 @@ async def _run_subprocess(
     except asyncio.CancelledError:
         child.cancel()
         future.cancel()
-        while not waiting.done():
+        # Whatever the worker ends with belongs to a cancelled call: consume
+        # it so a late failure is not logged, and never hand it to anyone.
+        waiting.add_done_callback(lambda done: done.cancelled() or done.exception())
+        deadline = loop.time() + _CANCEL_GRACE_SECONDS
+        while not waiting.done() and loop.time() < deadline:
             try:
-                await asyncio.wait([waiting])
+                await asyncio.wait([waiting], timeout=deadline - loop.time())
             except asyncio.CancelledError:
                 continue
-        if not waiting.cancelled():
-            waiting.exception()
+        if not waiting.done():
+            child.reap(_CANCEL_GRACE_SECONDS)
         raise
     if result is None:
         raise asyncio.CancelledError
