@@ -9,6 +9,7 @@ script's own directory lacks (Arc 5 ruling 8, Arc 4 ruling 7).
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 
 from llm_orc.core.config.closure import Dependency, ScriptListing
@@ -21,6 +22,16 @@ from llm_orc.core.execution.scripting.resolver import (
 _ABSENT = ScriptListing(False)
 
 
+@dataclass(frozen=True)
+class LocatedScript:
+    """A script or listed file the walk found: the dependency, the file,
+    and for a listed file the file of the script that lists it."""
+
+    dep: Dependency
+    path: Path
+    owner: Path | None = None
+
+
 class ScriptFileLocator:
     """Reads the block of each script the walk hands it. The walk visits
     a script before the files it lists, so an owner's path is known when
@@ -29,12 +40,16 @@ class ScriptFileLocator:
     def __init__(self, resolver: ScriptResolver) -> None:
         self._resolver = resolver
         self._located: dict[str, Path] = {}
+        #: Every file found, in walk order (a script before what it lists).
+        self.found: list[LocatedScript] = []
 
     def __call__(self, dep: Dependency) -> ScriptListing:
         path = self._locate(dep)
         if path is None:
             return _ABSENT
+        owner = self._located.get(dep.beside) if dep.beside is not None else None
         self._located[dep.name] = path
+        self.found.append(LocatedScript(dep, path, owner))
         return ScriptListing(True, _read_block(path))
 
     def _locate(self, dep: Dependency) -> Path | None:
