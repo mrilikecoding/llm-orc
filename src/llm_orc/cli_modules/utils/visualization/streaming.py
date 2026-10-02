@@ -105,8 +105,10 @@ async def run_standard_execution(
     """
     # Execute and get the result dict with "results" and "metadata"
     result = await executor.execute(ensemble_config, input_data)
+    document = _result_document(result, record)
+    document["raw_output"] = bool(ensemble_config.raw_output)
     return display_result(
-        _result_document(result, record),
+        document,
         ensemble_config.agents,
         output_format,
         detailed,

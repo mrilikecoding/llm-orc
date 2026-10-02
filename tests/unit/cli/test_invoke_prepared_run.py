@@ -21,6 +21,7 @@ from tests.unit.services.test_one_run_injection import (  # noqa: F401
     _ensemble,
     _marker_script,
     _profile,
+    _yaml,
     listing,
     project,
     service,
@@ -179,6 +180,37 @@ class TestPull:
         assert pulls == ["mock-seat"]
 
 
+class TestRawOutputAgrees:
+    @pytest.mark.parametrize("raw", [True, False])
+    def test_the_local_json_document_carries_raw_output_as_rest_does(
+        self, in_project: Path, client: TestClient, raw: bool
+    ) -> None:
+        scripts = in_project / ".llm-orc" / "scripts"
+        scripts.mkdir(parents=True, exist_ok=True)
+        (scripts / "say.py").write_text(
+            "import json, sys\nsys.stdin.read()\n"
+            'print(json.dumps({"success": True, "data": "hello"}))\n'
+        )
+        _yaml(
+            in_project / ".llm-orc" / "ensembles" / "top.yaml",
+            {
+                "name": "top",
+                "description": "top",
+                "raw_output": raw,
+                "agents": [{"name": "a", "script": "say.py"}],
+            },
+        )
+
+        local = _invoke("--output-format", "json")
+        over_rest = client.post(
+            "/api/ensembles/execute", json={"ensemble_name": "top", "input": "hi"}
+        ).json()
+
+        assert local.exit_code == 0, local.output
+        assert over_rest["raw_output"] is raw
+        assert json.loads(local.output)["raw_output"] is raw
+
+
 class TestARunnableEnsembleIsUnchanged:
     def test_the_json_document_keeps_its_keys(self, in_project: Path) -> None:
         _ensemble(
@@ -195,4 +227,5 @@ class TestARunnableEnsembleIsUnchanged:
             "status",
             "has_errors",
             "deliverable",
+            "raw_output",
         }
