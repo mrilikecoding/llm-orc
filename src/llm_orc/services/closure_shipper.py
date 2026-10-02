@@ -22,7 +22,10 @@ import yaml
 
 from llm_orc.core.config.closure import Closure, walk_closure
 from llm_orc.core.config.config_manager import ConfigurationManager
-from llm_orc.core.config.ensemble_config import EnsembleConfig
+from llm_orc.core.config.ensemble_config import (
+    EnsembleConfig,
+    _find_ensemble_in_dirs,
+)
 from llm_orc.core.execution.scripting.relative_path import check_relative
 from llm_orc.core.execution.scripting.resolver import (
     ScriptNotFoundError,
@@ -103,7 +106,7 @@ def ship_closure_reporting(
 ) -> tuple[dict[str, Any], list[LeftOut]]:
     """``ship_closure``'s request with what it left out, in walk order.
     Inline shell content is not left out: it stays in the definition."""
-    request, closure, resolver = _build(
+    return _build(
         root_name,
         find_root,
         config_manager,
@@ -114,7 +117,6 @@ def ship_closure_reporting(
         persist,
         input_text,
     )
-    return request, _left_out(closure, resolver)
 
 
 def _left_out(closure: Closure, resolver: ScriptResolver) -> list[LeftOut]:
@@ -142,7 +144,7 @@ def _build(
     pull: bool,
     persist: str | None,
     input_text: str,
-) -> tuple[dict[str, Any], Closure, ScriptResolver]:
+) -> tuple[dict[str, Any], list[LeftOut]]:
     root = find_root(root_name)
     if root is None:
         raise ShipError(f"ensemble {root_name!r} was not found")
@@ -181,8 +183,9 @@ def _build(
     if persist is not None:
         request["persist"] = persist
     _require_valid(request)
-    _prove_reachable(request, locator.found)
-    return request, closure, view.resolver
+    left_out = _left_out(closure, view.resolver)
+    _prove_reachable(request, locator.found, left_out)
+    return request, left_out
 
 
 def _require_valid(request: Mapping[str, Any]) -> None:
@@ -194,13 +197,16 @@ def _require_valid(request: Mapping[str, Any]) -> None:
 
 
 def _prove_reachable(
-    request: Mapping[str, Any], found: Sequence[LocatedScript]
+    request: Mapping[str, Any],
+    found: Sequence[LocatedScript],
+    left_out: Sequence[LeftOut],
 ) -> None:
     """The run's own resolver, over the request materialized into a
     temporary layer, reaches the local file for every reference and every
     listed file. The shipping keys are derived from the reference; this
     proves the derivation against the real search instead of restating
-    it."""
+    it. It also proves the converse: nothing left to the remote resolves
+    to a file the layer carries (ruling 6)."""
     with tempfile.TemporaryDirectory(prefix="llm-orc-ship-") as name:
         layer = Path(name)
         try:
@@ -216,6 +222,46 @@ def _prove_reachable(
             there = _remote_path(item, label, resolver, reached)
             reached[item.dep.name] = there
             _require_same_bytes(label, item.path, there, layer)
+        for left in left_out:
+            _require_unanswered(left, layer, resolver, reached)
+
+
+def _require_unanswered(
+    item: LeftOut,
+    layer: Path,
+    resolver: ScriptResolver,
+    reached: Mapping[str, Path],
+) -> None:
+    """A reference left to the remote must not resolve inside the layer:
+    the remote would run a file this ship carries, shadowing its own."""
+    there = _layer_answer(item, layer, resolver, reached)
+    if there is not None:
+        raise ShipError(
+            f"{item.label} is left to the remote but would reach "
+            f"{Path(os.path.normpath(there)).relative_to(layer).as_posix()!r}, "
+            "a file this ship "
+            "carries under another reference"
+        )
+
+
+def _layer_answer(
+    item: LeftOut,
+    layer: Path,
+    resolver: ScriptResolver,
+    reached: Mapping[str, Path],
+) -> Path | None:
+    if item.kind == "ensemble":
+        found = _find_ensemble_in_dirs(item.reference, [str(layer / "ensembles")])
+        return Path(found.source_path) if found and found.source_path else None
+    if item.kind == "file":
+        assert item.owner is not None
+        beside = reached[item.owner].parent / item.reference
+        return beside if beside.exists() else None
+    try:
+        resolved, _is_file = resolver.resolve_and_classify(item.reference)
+    except ScriptNotFoundError:
+        return None
+    return Path(resolved)
 
 
 def _remote_path(
