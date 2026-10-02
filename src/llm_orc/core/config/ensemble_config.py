@@ -748,13 +748,17 @@ def child_ensemble_search_dirs(
 ) -> list[str]:
     """Where a child ensemble reference resolves, in order.
 
-    The project dir's ``ensembles/``, the project dir itself, the local
-    dot-dir's ``ensembles/`` when it exists, then every configuration
-    tier (#196: a global ensemble's child may be packaged, a project's
-    child may be global). The executor resolves children against this
-    list with ``_find_ensemble_in_dirs``; preflight must use the same.
+    A run layer's ``ensembles/`` first (Arc 4), the project dir's
+    ``ensembles/``, the project dir itself, the local dot-dir's
+    ``ensembles/`` when it exists, then every configuration tier (#196:
+    a global ensemble's child may be packaged, a project's child may be
+    global). The executor resolves children against this list with
+    ``_find_ensemble_in_dirs``; preflight must use the same.
     """
     search_dirs: list[str] = []
+    run_dir = config_manager.run_layer_dir
+    if run_dir:
+        search_dirs.append(str(run_dir / "ensembles"))
     if project_dir:
         search_dirs.append(str(project_dir / "ensembles"))
         search_dirs.append(str(project_dir))

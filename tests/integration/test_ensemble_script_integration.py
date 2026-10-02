@@ -20,6 +20,7 @@ def mock_expensive_dependencies() -> Generator[None, None, None]:
     mock_config_manager = Mock()
     # Artifacts and the cache resolve through the state rule (#196).
     mock_config_manager.local_config_dir = None
+    mock_config_manager.run_layer_dir = None
     mock_config_manager.load_performance_config.return_value = {
         "execution": {"default_timeout": 60},
         "concurrency": {"max_concurrent_agents": 5},

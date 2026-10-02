@@ -294,6 +294,7 @@ class EnsembleExecutor:
             self._emit_performance_event,
             self._project_dir,
             performance_config=self._performance_config,
+            run_dir=self._config_manager.run_layer_dir,
         )
 
         self._llm_agent_runner = LlmAgentRunner(
@@ -409,8 +410,14 @@ class EnsembleExecutor:
             cache_config = {}
         defaults = ScriptCacheConfig()
 
+        # A run with a layer never caches: an entry's identity would name
+        # a path that is deleted when the run ends (Arc 4).
+        enabled = cache_config.get("enabled", defaults.enabled)
+        if self._config_manager.run_layer_dir is not None:
+            enabled = False
+
         return ScriptCacheConfig(
-            enabled=cache_config.get("enabled", defaults.enabled),
+            enabled=enabled,
             ttl_seconds=cache_config.get("ttl_seconds", defaults.ttl_seconds),
             max_size=cache_config.get("max_size", defaults.max_size),
             persist_to_artifacts=cache_config.get(

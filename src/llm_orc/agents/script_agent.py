@@ -51,17 +51,23 @@ async def _run_subprocess(
     )
 
 
-def _bytecode_environment(project_dir: Path | None) -> dict[str, str]:
+def _bytecode_environment(
+    project_dir: Path | None, run_dir: Path | None = None
+) -> dict[str, str]:
     """Send a script's bytecode to the state dir, never beside the script.
 
     A serving script imports its sibling ``_helpers``; run in place, the
     interpreter would write ``__pycache__`` under the read-only packaged
     tier (#196). Every subprocess environment in this module starts from
     ``self.environment``, so setting it here covers every run path. A
-    caller's own ``PYTHONPYCACHEPREFIX`` wins.
+    caller's own ``PYTHONPYCACHEPREFIX`` wins. A run with a layer
+    keeps it under the run directory instead: the state dir's copy
+    mirrors absolute paths and would outlive the run (Arc 4).
     """
     if "PYTHONPYCACHEPREFIX" in os.environ:
         return {}
+    if run_dir is not None:
+        return {"PYTHONPYCACHEPREFIX": str(run_dir / PYCACHE_DIRNAME)}
     local = ConfigurationManager(
         project_dir=project_dir, provision=False
     ).local_config_dir
@@ -169,7 +175,7 @@ class ScriptAgent:
         configured_timeout = config.get("timeout_seconds")
         self.timeout = 60 if configured_timeout is None else configured_timeout
         self.environment = {
-            **_bytecode_environment(project_dir),
+            **_bytecode_environment(project_dir, run_dir),
             **config.get("environment", {}),
         }
 
