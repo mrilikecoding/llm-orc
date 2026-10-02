@@ -11,6 +11,7 @@ import pytest
 
 from llm_orc.cli_commands import invoke_ensemble
 from llm_orc.schemas.agent_config import LlmAgentConfig
+from tests.unit.cli.prepared_service import use_prepared_run
 
 
 class TestInvokeEnsembleComplexityRefactor:
@@ -65,7 +66,7 @@ class TestInvokeEnsembleComplexityRefactor:
         mock_service = Mock()
         mock_service.config_manager = mock_config_manager
         mock_service.find_ensemble_by_name.return_value = mock_ensemble_config
-        mock_service._get_executor.return_value = mock_executor
+        use_prepared_run(mock_service, mock_executor)
 
         with patch("llm_orc.cli_commands._get_service", return_value=mock_service):
             invoke_ensemble(
@@ -103,7 +104,7 @@ class TestInvokeEnsembleComplexityRefactor:
 
         mock_service = Mock()
         mock_service.config_manager = mock_config_manager
-        mock_service._get_executor.return_value = mock_executor
+        use_prepared_run(mock_service, mock_executor)
         mock_service.find_ensemble_in_dir.return_value = mock_ensemble_config
 
         with patch("llm_orc.cli_commands._get_service", return_value=mock_service):
@@ -143,7 +144,7 @@ class TestInvokeEnsembleComplexityRefactor:
         mock_service = Mock()
         mock_service.config_manager = mock_config_manager
         mock_service.find_ensemble_by_name.return_value = mock_ensemble_config
-        mock_service._get_executor.return_value = mock_executor
+        use_prepared_run(mock_service, mock_executor)
 
         with patch("llm_orc.cli_commands._get_service", return_value=mock_service):
             invoke_ensemble(
@@ -177,7 +178,7 @@ class TestInvokeEnsembleComplexityRefactor:
         mock_service = Mock()
         mock_service.config_manager = mock_config_manager
         mock_service.find_ensemble_by_name.return_value = mock_ensemble_config
-        mock_service._get_executor.return_value = mock_executor
+        use_prepared_run(mock_service, mock_executor)
 
         with (
             patch("llm_orc.cli_commands._get_service", return_value=mock_service),
@@ -221,13 +222,12 @@ class TestInvokeEnsembleComplexityRefactor:
         mock_service = Mock()
         mock_service.config_manager = mock_config_manager
         mock_service.find_ensemble_by_name.return_value = mock_ensemble_config
-        mock_service._get_executor.return_value = mock_executor
+        use_prepared_run(mock_service, mock_executor)
 
         with (
             patch("llm_orc.cli_commands._get_service", return_value=mock_service),
             patch("llm_orc.cli_commands.run_standard_execution") as mock_standard,
             patch("llm_orc.cli_commands.run_streaming_execution") as mock_streaming,
-            patch("llm_orc.cli_commands.asyncio.run"),
         ):
             invoke_ensemble(
                 ensemble_name="test",
@@ -268,13 +268,12 @@ class TestInvokeEnsembleComplexityRefactor:
         mock_service = Mock()
         mock_service.config_manager = mock_config_manager
         mock_service.find_ensemble_by_name.return_value = mock_ensemble_config
-        mock_service._get_executor.return_value = mock_executor
+        use_prepared_run(mock_service, mock_executor)
 
         with (
             patch("llm_orc.cli_commands._get_service", return_value=mock_service),
             patch("llm_orc.cli_commands.run_standard_execution") as mock_standard,
             patch("llm_orc.cli_commands.run_streaming_execution") as mock_streaming,
-            patch("llm_orc.cli_commands.asyncio.run"),
         ):
             invoke_ensemble(
                 ensemble_name="test",
@@ -315,7 +314,7 @@ class TestInvokeEnsembleComplexityRefactor:
         mock_service = Mock()
         mock_service.config_manager = mock_config_manager
         mock_service.find_ensemble_by_name.return_value = mock_ensemble_config
-        mock_service._get_executor.return_value = mock_executor
+        use_prepared_run(mock_service, mock_executor)
 
         with (
             patch("llm_orc.cli_commands._get_service", return_value=mock_service),
@@ -324,7 +323,6 @@ class TestInvokeEnsembleComplexityRefactor:
                 return_value=mock_input_handler,
             ),
             patch("llm_orc.cli_commands.run_streaming_execution") as mock_streaming,
-            patch("llm_orc.cli_commands.asyncio.run"),
         ):
             invoke_ensemble(
                 ensemble_name="test",
@@ -447,7 +445,7 @@ class TestInvokeEnsembleRefactoredFunctions:
 
         assert result is True  # Falls back to CLI flag
 
-    def test_execute_ensemble_interactive(self) -> None:
+    async def test_execute_ensemble_interactive(self) -> None:
         """Test helper function to execute ensemble with interactive scripts."""
         from llm_orc.cli_commands import _execute_ensemble_with_mode
 
@@ -455,11 +453,10 @@ class TestInvokeEnsembleRefactoredFunctions:
         mock_ensemble_config = Mock()
 
         with (
-            patch("llm_orc.cli_commands.asyncio.run") as mock_asyncio,
             patch("llm_orc.cli_commands.run_streaming_execution") as mock_streaming,
             patch("llm_orc.cli_commands.run_standard_execution") as mock_standard,
         ):
-            _execute_ensemble_with_mode(
+            await _execute_ensemble_with_mode(
                 mock_executor,
                 mock_ensemble_config,
                 "test input",
@@ -471,9 +468,8 @@ class TestInvokeEnsembleRefactoredFunctions:
 
         mock_streaming.assert_called_once()
         mock_standard.assert_not_called()
-        mock_asyncio.assert_called_once()
 
-    def test_execute_ensemble_streaming(self) -> None:
+    async def test_execute_ensemble_streaming(self) -> None:
         """Test helper function to execute ensemble with streaming."""
         from llm_orc.cli_commands import _execute_ensemble_with_mode
 
@@ -481,11 +477,10 @@ class TestInvokeEnsembleRefactoredFunctions:
         mock_ensemble_config = Mock()
 
         with (
-            patch("llm_orc.cli_commands.asyncio.run") as mock_asyncio,
             patch("llm_orc.cli_commands.run_streaming_execution") as mock_streaming,
             patch("llm_orc.cli_commands.run_standard_execution") as mock_standard,
         ):
-            _execute_ensemble_with_mode(
+            await _execute_ensemble_with_mode(
                 mock_executor,
                 mock_ensemble_config,
                 "test input",
@@ -497,9 +492,8 @@ class TestInvokeEnsembleRefactoredFunctions:
 
         mock_streaming.assert_called_once()
         mock_standard.assert_not_called()
-        mock_asyncio.assert_called_once()
 
-    def test_execute_ensemble_standard(self) -> None:
+    async def test_execute_ensemble_standard(self) -> None:
         """Test helper function to execute ensemble with standard execution."""
         from llm_orc.cli_commands import _execute_ensemble_with_mode
 
@@ -507,11 +501,10 @@ class TestInvokeEnsembleRefactoredFunctions:
         mock_ensemble_config = Mock()
 
         with (
-            patch("llm_orc.cli_commands.asyncio.run") as mock_asyncio,
             patch("llm_orc.cli_commands.run_streaming_execution") as mock_streaming,
             patch("llm_orc.cli_commands.run_standard_execution") as mock_standard,
         ):
-            _execute_ensemble_with_mode(
+            await _execute_ensemble_with_mode(
                 mock_executor,
                 mock_ensemble_config,
                 "test input",
@@ -523,4 +516,3 @@ class TestInvokeEnsembleRefactoredFunctions:
 
         mock_standard.assert_called_once()
         mock_streaming.assert_not_called()
-        mock_asyncio.assert_called_once()

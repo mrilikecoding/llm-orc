@@ -27,6 +27,7 @@ from llm_orc.cli_modules.commands.auth_commands import (
     test_token_refresh as refresh_token_test,
 )
 from llm_orc.schemas.agent_config import LlmAgentConfig, ScriptAgentConfig
+from tests.unit.cli.prepared_service import use_prepared_run
 
 
 class TestInvokeEnsemble:
@@ -81,7 +82,7 @@ class TestInvokeEnsemble:
         mock_service = Mock()
         mock_service.config_manager = mock_config_manager
         mock_service.find_ensemble_by_name.return_value = mock_ensemble_config
-        mock_service._get_executor.return_value = mock_executor
+        use_prepared_run(mock_service, mock_executor)
 
         # Mock the executor.execute method to return expected structure
         mock_executor.execute = AsyncMock(
@@ -126,7 +127,7 @@ class TestInvokeEnsemble:
         """Test ensemble invocation with custom config directory."""
         mock_service = Mock()
         mock_service.config_manager = mock_config_manager
-        mock_service._get_executor.return_value = mock_executor
+        use_prepared_run(mock_service, mock_executor)
         mock_service.find_ensemble_in_dir.return_value = mock_ensemble_config
 
         # Mock the executor.execute method to return expected structure
@@ -177,6 +178,7 @@ class TestInvokeEnsemble:
         mock_service = Mock()
         mock_service.config_manager = mock_config_manager
         mock_service.find_ensemble_by_name.return_value = None
+        use_prepared_run(mock_service, Mock())
 
         with (
             patch(
@@ -207,6 +209,7 @@ class TestInvokeEnsemble:
         mock_service = Mock()
         mock_service.config_manager = mock_config_manager
         mock_service.find_ensemble_by_name.return_value = None
+        use_prepared_run(mock_service, Mock())
 
         with (
             patch(
@@ -239,7 +242,7 @@ class TestInvokeEnsemble:
         mock_service = Mock()
         mock_service.config_manager = mock_config_manager
         mock_service.find_ensemble_by_name.return_value = mock_ensemble_config
-        mock_service._get_executor.return_value = mock_executor
+        use_prepared_run(mock_service, mock_executor)
 
         # Mock the executor.execute method to return expected structure
         mock_executor.execute = AsyncMock(
@@ -283,7 +286,7 @@ class TestInvokeEnsemble:
         mock_service = Mock()
         mock_service.config_manager = mock_config_manager
         mock_service.find_ensemble_by_name.return_value = mock_ensemble_config
-        mock_service._get_executor.return_value = mock_executor
+        use_prepared_run(mock_service, mock_executor)
 
         # Mock the executor.execute method to return expected structure
         mock_executor.execute = AsyncMock(
@@ -327,7 +330,7 @@ class TestInvokeEnsemble:
         mock_service = Mock()
         mock_service.config_manager = mock_config_manager
         mock_service.find_ensemble_by_name.return_value = mock_ensemble_config
-        mock_service._get_executor.return_value = mock_executor
+        use_prepared_run(mock_service, mock_executor)
 
         # Mock the executor.execute method to return expected structure
         mock_executor.execute = AsyncMock(
@@ -379,7 +382,7 @@ class TestInvokeEnsemble:
         mock_service = Mock()
         mock_service.config_manager = mock_config_manager
         mock_service.find_ensemble_by_name.return_value = mock_ensemble_config
-        mock_service._get_executor.return_value = mock_executor
+        use_prepared_run(mock_service, mock_executor)
 
         # Mock the executor.execute method to return expected structure
         mock_executor.execute = AsyncMock(
@@ -430,14 +433,13 @@ class TestInvokeEnsemble:
         mock_service = Mock()
         mock_service.config_manager = mock_config_manager
         mock_service.find_ensemble_by_name.return_value = mock_ensemble_config
-        mock_service._get_executor.return_value = mock_executor
+        use_prepared_run(mock_service, mock_executor)
 
         with (
             patch(
                 "llm_orc.cli_commands._get_service",
                 return_value=mock_service,
             ),
-            patch("llm_orc.cli_commands.asyncio.run") as mock_asyncio_run,
             patch(
                 "llm_orc.cli_commands.run_streaming_execution"
             ) as mock_streaming_exec,
@@ -460,9 +462,6 @@ class TestInvokeEnsemble:
             # Should call streaming execution
             mock_streaming_exec.assert_called_once()
 
-            # Verify asyncio.run was called with the streaming function
-            mock_asyncio_run.assert_called_once()
-
     def test_invoke_ensemble_streaming_from_config(
         self,
         mock_config_manager: Mock,
@@ -478,14 +477,13 @@ class TestInvokeEnsemble:
         mock_service = Mock()
         mock_service.config_manager = mock_config_manager
         mock_service.find_ensemble_by_name.return_value = mock_ensemble_config
-        mock_service._get_executor.return_value = mock_executor
+        use_prepared_run(mock_service, mock_executor)
 
         with (
             patch(
                 "llm_orc.cli_commands._get_service",
                 return_value=mock_service,
             ),
-            patch("llm_orc.cli_commands.asyncio.run"),
             patch(
                 "llm_orc.cli_commands.run_streaming_execution"
             ) as mock_streaming_exec,
@@ -515,7 +513,7 @@ class TestInvokeEnsemble:
         mock_service = Mock()
         mock_service.config_manager = mock_config_manager
         mock_service.find_ensemble_by_name.return_value = mock_ensemble_config
-        mock_service._get_executor.return_value = mock_executor
+        use_prepared_run(mock_service, mock_executor)
 
         # Mock the executor.execute method to return expected structure
         mock_executor.execute = AsyncMock(
@@ -578,7 +576,7 @@ class TestInvokeEnsemble:
         mock_service = Mock()
         mock_service.config_manager = mock_config_manager
         mock_service.find_ensemble_by_name.return_value = mock_ensemble_config
-        mock_service._get_executor.return_value = mock_executor
+        use_prepared_run(mock_service, mock_executor)
 
         # Text output should not call load_performance_config at all
         # So we don't need to mock it
@@ -635,7 +633,7 @@ class TestInvokeEnsemble:
         mock_service = Mock()
         mock_service.config_manager = mock_config_manager
         mock_service.find_ensemble_by_name.return_value = mock_ensemble_config
-        mock_service._get_executor.return_value = mock_executor
+        use_prepared_run(mock_service, mock_executor)
 
         # Mock asyncio.run to raise an exception
         execution_error = Exception("Execution failed")
@@ -689,7 +687,7 @@ class TestInvokeEnsemble:
         mock_service = Mock()
         mock_service.config_manager = mock_config_manager
         mock_service.find_ensemble_by_name.return_value = mock_ensemble_config
-        mock_service._get_executor.return_value = mock_executor
+        use_prepared_run(mock_service, mock_executor)
 
         with (
             patch(
@@ -1551,7 +1549,7 @@ class TestInteractiveScriptIntegration:
         mock_service.find_ensemble_by_name.return_value = (
             mock_interactive_ensemble_config
         )
-        mock_service._get_executor.return_value = mock_executor
+        use_prepared_run(mock_service, mock_executor)
 
         with (
             patch(
@@ -1622,7 +1620,7 @@ class TestInteractiveScriptIntegration:
         mock_service = Mock()
         mock_service.config_manager = mock_config_manager
         mock_service.find_ensemble_by_name.return_value = non_interactive_config
-        mock_service._get_executor.return_value = mock_executor
+        use_prepared_run(mock_service, mock_executor)
 
         with (
             patch(

@@ -95,6 +95,7 @@ async def run_standard_execution(
     input_data: str,
     output_format: str = "rich",
     detailed: bool = True,
+    record: dict[str, Any] | None = None,
 ) -> bool:
     """Run standard execution without streaming.
 
@@ -108,7 +109,8 @@ async def run_standard_execution(
 
     if output_format == "json":
         # Display JSON results
-        _display_json_results(result, ensemble_config)
+        document = {**result, **{k: v for k, v in (record or {}).items() if v}}
+        _display_json_results(document, ensemble_config)
     elif output_format == "text":
         # Use plain text output for clean piping
         display_plain_text_results(
@@ -394,6 +396,8 @@ def _display_json_results(result: dict[str, Any], ensemble_config: Any) -> None:
             "has_errors": has_errors,
             "deliverable": result.get("deliverable"),
         }
+        # Bindings applied and models pulled, only when there are any.
+        output.update({k: result[k] for k in ("bindings", "pulled") if k in result})
 
         click.echo(json.dumps(output, indent=2, default=str))
     except Exception as e:

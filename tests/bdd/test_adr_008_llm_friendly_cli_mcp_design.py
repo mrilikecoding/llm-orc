@@ -387,8 +387,18 @@ agents:
 
 @given(parsers.parse('the library directory "{dir_path}" exists with a valid ensemble'))
 def library_valid_ensemble(cli_context: dict[str, Any], dir_path: str) -> None:
-    """Create a library ensemble with valid configuration."""
-    library_ensemble_directory(cli_context, dir_path)
+    """Create a library ensemble this host can run: invoke refuses an
+    ensemble whose profile is missing before any agent starts."""
+    full_path = cli_context["test_dir"] / dir_path
+    full_path.mkdir(parents=True, exist_ok=True)
+    (full_path / "ensemble.yaml").write_text(
+        """name: test-ensemble
+description: Test ensemble for discovery
+agents:
+  - name: test-agent
+    script: "echo '{}'"
+"""
+    )
 
 
 @given(parsers.parse('a local ensemble "{name}" exists in "{dir_path}"'))

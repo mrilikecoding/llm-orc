@@ -48,6 +48,8 @@ class TestMainCLI:
                 None,  # max_concurrent (default)
                 True,  # detailed (default)
                 input_file=None,
+                bind={},
+                pull=False,
             )
             assert result.exit_code == 0
 
@@ -101,6 +103,8 @@ class TestMainCLI:
                 5,  # max_concurrent
                 True,  # detailed
                 input_file=None,
+                bind={},
+                pull=False,
             )
             assert result.exit_code == 0
 
@@ -132,6 +136,8 @@ class TestMainCLI:
                 None,  # max_concurrent (default)
                 True,  # detailed (default)
                 input_file=None,
+                bind={},
+                pull=False,
             )
 
     def test_invoke_command_output_format_choices(self) -> None:
