@@ -9,6 +9,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -62,8 +63,12 @@ class _Child:
     def cancel(self) -> None:
         with self._lock:
             self._cancelled = True
-            if self._process is not None:
+            if self._process is not None and self._process.poll() is None:
                 _kill_group(self._process)
+
+    @property
+    def cancelled(self) -> bool:
+        return self._cancelled
 
 
 def _kill_group(process: subprocess.Popen[str]) -> None:
@@ -72,6 +77,42 @@ def _kill_group(process: subprocess.Popen[str]) -> None:
         os.killpg(process.pid, signal.SIGKILL)
     except (ProcessLookupError, PermissionError):
         process.kill()
+
+
+class _CancelledError(Exception):
+    """The call was cancelled while the child ran; nothing reads this."""
+
+
+_CANCEL_POLL_SECONDS = 0.1
+
+
+def _communicate(
+    child: _Child,
+    process: subprocess.Popen[str],
+    stdin_data: Any,
+    timeout: float | None,
+) -> tuple[Any, Any]:
+    """``process.communicate(stdin_data, timeout)`` that a cancel can end.
+
+    A cancel kills the group, but a descendant outside it can keep the
+    output pipes open, and a plain ``communicate`` then reads until that
+    descendant exits. So the read runs in short slices and gives up once
+    the call is cancelled. ``communicate`` keeps what it has read between
+    calls, and takes its input only on the first.
+    """
+    deadline = None if timeout is None else time.monotonic() + timeout
+    while True:
+        if child.cancelled:
+            raise _CancelledError
+        window = _CANCEL_POLL_SECONDS
+        if deadline is not None:
+            window = min(window, max(deadline - time.monotonic(), 0))
+        try:
+            return process.communicate(stdin_data, timeout=window)
+        except subprocess.TimeoutExpired:
+            if deadline is not None and time.monotonic() >= deadline:
+                raise
+            stdin_data = None
 
 
 def _run_child(
@@ -97,12 +138,14 @@ def _run_child(
         return None
     with process:
         try:
-            stdout, stderr = process.communicate(stdin_data, timeout=timeout)
+            stdout, stderr = _communicate(child, process, stdin_data, timeout)
         except subprocess.TimeoutExpired as exc:
             _kill_group(process)
-            stdout, stderr = process.communicate()
+            # Reap, as subprocess.run does; reading to EOF would wait on a
+            # descendant outside the group that holds the pipes.
+            process.wait()
             raise subprocess.TimeoutExpired(
-                process.args, timeout, output=stdout, stderr=stderr
+                process.args, timeout, output=exc.output, stderr=exc.stderr
             ) from exc
         except BaseException:
             _kill_group(process)

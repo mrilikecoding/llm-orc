@@ -18,6 +18,8 @@ from llm_orc.agents.script_agent import (
     SCRIPT_POOL_SIZE,
     SCRIPT_POOL_THREAD_PREFIX,
     ScriptAgent,
+    _Child,
+    _run_subprocess,
 )
 
 
@@ -945,6 +947,109 @@ class TestScriptAgentsOffTheEventLoop:
         assert len(results) == count
         for raw in results:
             assert json.loads(raw)["ok"] == 1
+
+
+class TestAScriptNeverHangsOnItsDescendants:
+    """A descendant that left the process group and holds the output pipes
+    must not delay a timeout or a cancel (subprocess.run reaps with wait()
+    after a timeout; it never reads to EOF)."""
+
+    @pytest.fixture
+    def marks(self, tmp_path: Path) -> Any:
+        """Pid files of everything a test starts; all killed afterwards."""
+        yield tmp_path
+        for mark in tmp_path.glob("*.pid"):
+            if mark.read_text().strip():
+                try:
+                    os.kill(int(mark.read_text()), 9)
+                except ProcessLookupError:
+                    pass
+
+    def _foreign_holder(self, marks: Path) -> list[str]:
+        """A script that starts a descendant in its own session; the
+        descendant inherits stdout and sleeps 8 seconds."""
+        body = (
+            "import os, subprocess, sys, time\n"
+            "kid = subprocess.Popen([sys.executable, '-c',"
+            " 'import time; time.sleep(8)'], start_new_session=True)\n"
+            f"open(r'{marks / 'foreign.pid'}', 'w').write(str(kid.pid))\n"
+            f"open(r'{marks / 'self.pid'}', 'w').write(str(os.getpid()))\n"
+            "time.sleep(30)\n"
+        )
+        return [sys.executable, "-c", body]
+
+    def test_a_timeout_returns_promptly_whatever_holds_the_pipes(
+        self, marks: Path
+    ) -> None:
+        argv = self._foreign_holder(marks)
+
+        async def run() -> float:
+            started = time.monotonic()
+            with pytest.raises(subprocess.TimeoutExpired):
+                await _run_subprocess(argv, capture_output=True, text=True, timeout=1)
+            return time.monotonic() - started
+
+        assert asyncio.run(run()) < 3
+
+    def test_a_cancel_returns_promptly_whatever_holds_the_pipes(
+        self, marks: Path
+    ) -> None:
+        argv = self._foreign_holder(marks)
+
+        async def run() -> float:
+            task = asyncio.ensure_future(
+                _run_subprocess(argv, capture_output=True, text=True)
+            )
+            for _ in range(100):
+                if (marks / "foreign.pid").exists() and (
+                    marks / "foreign.pid"
+                ).read_text():
+                    break
+                await asyncio.sleep(0.05)
+            started = time.monotonic()
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+            return time.monotonic() - started
+
+        assert asyncio.run(run()) < 3
+
+    def test_a_timeout_kills_the_whole_group(self, marks: Path) -> None:
+        body = (
+            "import subprocess, time\n"
+            "kid = subprocess.Popen(['sleep', '30'])\n"
+            f"open(r'{marks / 'kid.pid'}', 'w').write(str(kid.pid))\n"
+            "time.sleep(30)\n"
+        )
+
+        async def run() -> None:
+            with pytest.raises(subprocess.TimeoutExpired):
+                await _run_subprocess(
+                    [sys.executable, "-c", body],
+                    capture_output=True,
+                    text=True,
+                    timeout=1,
+                )
+
+        asyncio.run(run())
+        pid = int((marks / "kid.pid").read_text())
+        for _ in range(40):
+            try:
+                os.kill(pid, 0)
+            except ProcessLookupError:
+                return
+            time.sleep(0.05)
+        raise AssertionError("the grandchild outlived the timeout")
+
+    def test_cancel_does_not_signal_a_reaped_child(self) -> None:
+        child = _Child()
+        process = child.start(("true",), {})
+        process.wait()
+
+        with patch("llm_orc.agents.script_agent.os.killpg") as killpg:
+            child.cancel()
+
+        killpg.assert_not_called()
 
 
 class TestOnePredicateFileVsInline:

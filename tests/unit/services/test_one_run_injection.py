@@ -509,6 +509,21 @@ class TestACancelledRunKillsItsScripts:
                 except ProcessLookupError:
                     pass
 
+    def _foreign_request(self, pids: dict[str, Path]) -> Any:
+        """A script whose descendant leaves the process group, inherits
+        stdout and sleeps 8 s. It is outside the group by construction, so
+        the fixture's finalizer is what removes it."""
+        script = (
+            "import os, subprocess, sys, time\n"
+            "sys.stdin.read()\n"
+            "kid = subprocess.Popen([sys.executable, '-c',"
+            " 'import time; time.sleep(8)'], start_new_session=True)\n"
+            f'open(r"{pids["child"]}", "w").write(str(kid.pid))\n'
+            f'open(r"{pids["script"]}", "w").write(str(os.getpid()))\n'
+            "time.sleep(30)\n"
+        )
+        return _inline_request(scripts={"probe/x.py": script})
+
     def _request(
         self, pids: dict[str, Path], *, spawn: bool = False, nap: float = 1.0
     ) -> Any:
@@ -608,6 +623,38 @@ class TestACancelledRunKillsItsScripts:
 
         assert "timed out" in result["results"]["s"]["error"].lower()
         assert await _gone(await _read_pid(pids["script"]))
+
+    async def test_a_foreign_descendant_does_not_delay_a_timeout(
+        self, service: OrchestraService, pids: Any
+    ) -> None:
+        request = self._foreign_request(pids)
+        request["ensemble"] = {
+            **INLINE,
+            "agents": [
+                {"name": "s", "script": "probe/x.py", "timeout_seconds": 1},
+                {"name": "w", "model_profile": "inline-seat"},
+            ],
+        }
+
+        started = time.monotonic()
+        result = await service.invoke(request)
+
+        assert time.monotonic() - started < 3
+        assert "timed out" in result["results"]["s"]["error"].lower()
+
+    async def test_a_foreign_descendant_does_not_delay_a_cancel(
+        self, service: OrchestraService, pids: Any
+    ) -> None:
+        task = asyncio.create_task(service.invoke(self._foreign_request(pids)))
+        await _read_pid(pids["script"])
+        await _read_pid(pids["child"])
+
+        started = time.monotonic()
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+        assert time.monotonic() - started < 3
 
     async def test_a_failing_reporter_closes_the_executor_stream(
         self, service: OrchestraService, state_dir: Path, pids: Any
