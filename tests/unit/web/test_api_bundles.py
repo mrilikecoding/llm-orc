@@ -530,13 +530,29 @@ class TestStoredBindings:
         assert _run_named(client, "roles")["bindings"] == {"a": "b"}
 
 
-def _sleeping(tag: str, started: Path, seconds: float) -> str:
+def _reader(wait: tuple[Path, Path] | None = None) -> str:
+    """A script that lists ``_data.txt``, optionally announces itself at
+    ``started`` and waits for ``go``, and only then reads the file beside
+    it: a run in flight that shares anything with a later persist sees
+    the later content."""
+    pause = ""
+    if wait is not None:
+        started, go = wait
+        pause = (
+            f'pathlib.Path(r"{started}").write_text("up")\n'
+            "deadline = time.monotonic() + 30\n"
+            f'while not pathlib.Path(r"{go}").exists() '
+            "and time.monotonic() < deadline:\n"
+            "    time.sleep(0.01)\n"
+        )
     return (
+        '# /// llm-orc\n# files = ["_data.txt"]\n# ///\n'
         "import json, pathlib, sys, time\n"
         "sys.stdin.read()\n"
-        f'pathlib.Path(r"{started}").write_text("up")\n'
-        f"time.sleep({seconds})\n"
-        f'print(json.dumps({{"success": True, "data": {{"tag": "{tag}"}}}}))\n'
+        + pause
+        + "here = pathlib.Path(__file__).resolve().parent\n"
+        'data = (here / "_data.txt").read_text()\n'
+        'print(json.dumps({"success": True, "data": {"tag": data}}))\n'
     )
 
 
@@ -544,9 +560,13 @@ class TestAReplacedBundleDoesNotReachARunInFlight:
     def test_the_run_ends_with_the_content_it_started_with(
         self, client: TestClient, tmp_path: Path
     ) -> None:
-        started = tmp_path / "started.txt"
-        _persisted(client, scripts=_both(_sleeping("v1", started, 0.3)))
+        started, go = tmp_path / "started.txt", tmp_path / "go.txt"
+        go.write_text("go")
+        _persisted(
+            client, scripts=_both(_reader((started, go)), {"tools/_data.txt": "v1"})
+        )
         started.unlink()
+        go.unlink()
         results: list[dict[str, Any]] = []
         runner = threading.Thread(
             target=lambda: results.append(_run_named(client, "pack"))
@@ -557,15 +577,20 @@ class TestAReplacedBundleDoesNotReachARunInFlight:
         while not started.exists() and time.monotonic() < deadline:
             time.sleep(0.01)
         assert started.exists(), "the named run never reached its script"
-        _persisted(client, scripts=_both(_script_source("v2")))
+        _persisted(client, scripts=_both(_reader(), {"tools/_data.txt": "v2"}))
+        go.write_text("go")
         runner.join(timeout=30)
 
         assert [_tag(r, "s") for r in results] == ["v1"]
         assert _tag(_run_named(client, "pack"), "s") == "v2"
 
 
-def _both(x_source: str) -> dict[str, str]:
-    return {"tools/x.py": x_source, "tools/y.py": _script_source("y")}
+def _both(x_source: str, more: dict[str, str] | None = None) -> dict[str, str]:
+    return {
+        "tools/x.py": x_source,
+        "tools/y.py": _script_source("y"),
+        **(more or {}),
+    }
 
 
 class TestTheOtherSurfacesKnowBundles:
@@ -700,6 +725,29 @@ class TestTheOtherSurfacesKnowBundles:
 
         assert _bundle_file().exists()
         assert _run_named(client, "pack")["status"] == "success"
+
+    def test_a_global_tier_file_and_a_bundle_of_one_name_go_one_delete_each(
+        self, client: TestClient
+    ) -> None:
+        """The tier file is what a delete of that name means; the bundle
+        it shadows goes on the next one."""
+        _persisted(client)
+        tier_file = resolve_global_config_dir() / "ensembles" / "pack.yaml"
+        _ensemble(
+            resolve_global_config_dir(), "pack", [{"name": "t", "script": "echo hi"}]
+        )
+
+        first = client.delete("/api/ensembles/pack", params={"scope": "global"})
+
+        assert first.status_code == 200, first.text
+        assert "bundle" not in first.json()
+        assert not tier_file.exists()
+        assert _bundle_file().exists()
+
+        second = client.delete("/api/ensembles/pack", params={"scope": "global"})
+
+        assert second.json()["bundle"] == "pack"
+        assert not _bundle_file().exists()
 
     def test_delete_with_scope_project_does_not_touch_a_bundle(
         self, client: TestClient
