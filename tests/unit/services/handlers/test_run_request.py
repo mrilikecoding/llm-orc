@@ -147,6 +147,12 @@ COLLISIONS = {
     "a script key is a directory of another, folded": {
         "scripts": {"A.py": "x", "a.py/b.py": "y"}
     },
+    "one reference reaches two keys (scripts/ prefix)": {
+        "scripts": {"x.py": "a", "scripts/x.py": "b"}
+    },
+    "one reference reaches two keys (hyphen form)": {
+        "scripts": {"my-tool.py": "a", "scripts/my_tool.py": "b"}
+    },
     "a script lands inside a profile file": {
         "profiles": {"a": {"model": "m"}},
         "scripts": {"profiles/a.yaml/z.py": "x"},
