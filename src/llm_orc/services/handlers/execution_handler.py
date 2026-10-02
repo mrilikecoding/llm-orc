@@ -162,6 +162,7 @@ class ExecutionHandler:
                 return {
                     "results": result.get("results", {}),
                     "deliverable": result.get("deliverable"),
+                    "metadata": result.get("metadata", {}),
                     "status": status,
                     "has_errors": has_errors,
                     "raw_output": run.config.raw_output,
@@ -379,6 +380,7 @@ class ExecutionHandler:
             state["result"] = {
                 "results": results,
                 "deliverable": deliverable,
+                "metadata": event_data.get("metadata", {}),
                 "status": status,
                 "has_errors": has_errors,
             }
