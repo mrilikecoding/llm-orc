@@ -41,6 +41,13 @@ CONNECT_TIMEOUT_S = 10
 transport: httpx.AsyncBaseTransport | None = None
 EXECUTE_PATH = "/api/ensembles/execute"
 _SHOWN_BODY_CHARS = 200
+_CLIENT_ENVIRONMENT = (
+    "HTTP_PROXY",
+    "HTTPS_PROXY",
+    "ALL_PROXY",
+    "SSL_CERT_FILE",
+    "SSL_CERT_DIR",
+)
 
 
 class RemoteRunError(RuntimeError):
@@ -68,15 +75,39 @@ class RemoteRunError(RuntimeError):
         super().__init__(f"Remote '{remote}'{code}: {detail}")
 
 
-async def post_run(url: str, request: Mapping[str, Any]) -> httpx.Response:
-    """POST the request once: connect timeout only, no read timeout, no
-    redirect followed, no retry, the environment's proxy settings kept."""
-    async with httpx.AsyncClient(
-        transport=transport,
-        timeout=httpx.Timeout(None, connect=CONNECT_TIMEOUT_S),
-        follow_redirects=False,
-        trust_env=True,
-    ) as client:
+def build_client(remote: str) -> httpx.AsyncClient:
+    """The client a run posts with: connect timeout only, no read timeout,
+    no redirect followed, the environment's proxy and TLS settings kept.
+
+    Building it reads those settings, and a bad one raises (a SOCKS proxy
+    without its package, a proxy URL of the wrong scheme, a CA file that is
+    not there). Nothing has been sent then, so any failure becomes
+    ``RemoteRunError`` of kind ``invalid_request``.
+    """
+    try:
+        return httpx.AsyncClient(
+            transport=transport,
+            timeout=httpx.Timeout(None, connect=CONNECT_TIMEOUT_S),
+            follow_redirects=False,
+            trust_env=True,
+        )
+    except Exception as e:
+        raise RemoteRunError(
+            remote,
+            f"the HTTP client could not be set up ({type(e).__name__}: "
+            f"{str(e) or 'no detail'}); check the proxy and TLS variables "
+            f"({', '.join(_CLIENT_ENVIRONMENT)}); nothing was sent",
+            kind=INVALID_REQUEST,
+        ) from e
+
+
+async def post_run(
+    client: httpx.AsyncClient, url: str, request: Mapping[str, Any]
+) -> httpx.Response:
+    """POST the request once on ``client``, which is closed afterwards.
+    The POST sits inside the client's ``async with``, so cancelling the
+    awaiting task closes the connection."""
+    async with client:
         return await client.post(url, json=request)
 
 
@@ -103,7 +134,9 @@ async def run_remote(
     Raises:
         RemoteRunError: the remote is unknown, the closure cannot be
             shipped or holds an interactive script (nothing is sent), or
-            the answer is not a result document.
+            the answer is not a result document. ``kind`` is
+            ``invalid_request`` for everything refused before a send,
+            including a client that could not be built.
     """
     try:
         base_url = resolve_remote(remote, config_manager)
@@ -124,19 +157,21 @@ async def run_remote(
     )
     if left_out and on_left_out is not None:
         on_left_out(left_out)
+    client = build_client(remote)
     try:
-        response = await post_run(base_url + EXECUTE_PATH, request)
-    except httpx.InvalidURL as e:
+        response = await post_run(client, base_url + EXECUTE_PATH, request)
+    except (httpx.HTTPError, ExceptionGroup) as e:
         raise RemoteRunError(
-            remote,
-            f"{base_url!r} is not a usable URL: {e}; nothing was sent",
-            kind=INVALID_REQUEST,
-        ) from e
-    except httpx.HTTPError as e:
-        raise RemoteRunError(
-            remote, f"could not reach {base_url}: {str(e) or type(e).__name__}"
+            remote, f"could not reach {base_url}: {_first_leaf(e)}"
         ) from e
     return _result_document(remote, response)
+
+
+def _first_leaf(error: BaseException) -> str:
+    """The message of the first exception inside any exception groups."""
+    while isinstance(error, BaseExceptionGroup):
+        error = error.exceptions[0]
+    return str(error) or type(error).__name__
 
 
 def _ship_checked(

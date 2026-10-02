@@ -511,6 +511,110 @@ class TestAMalformedRemoteUrl:
         assert isinstance(result.exception, SystemExit)
 
 
+# Environments in which building ``httpx.AsyncClient(trust_env=True)``
+# raises before anything is sent: (variable, value, what the message must
+# name). ``HTTP_PROXY`` is read for an http URL only by the client, but a
+# malformed one fails the build for every URL.
+CLIENT_SETUP_FAILURES = [
+    ("ALL_PROXY", "socks5://127.0.0.1:1080", "ALL_PROXY"),
+    ("HTTPS_PROXY", "ftp://proxy.example", "HTTPS_PROXY"),
+    ("SSL_CERT_FILE", "/nonexistent/ca.pem", "SSL_CERT_FILE"),
+    ("HTTP_PROXY", "http://[::1", "HTTP_PROXY"),
+]
+CLIENT_SETUP_IDS = ["socks-proxy", "ftp-proxy", "stale-ca-file", "bad-http-proxy"]
+# A remote the resolver refuses: (value given to --remote, what is wrong).
+BAD_REMOTE_URLS = [
+    ("http://127.0.0.1:80800", "port"),
+    ("ftp://host.example", "http"),
+    ("http:///x", "host"),
+    ("http://[::1", "http://[::1"),
+]
+
+
+@pytest.fixture
+def no_connection(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A request that reaches the real transport fails the test loudly."""
+
+    async def refuse(*_: Any, **__: Any) -> httpx.Response:
+        raise AssertionError("a connection was opened")
+
+    monkeypatch.setattr(httpx.AsyncHTTPTransport, "handle_async_request", refuse)
+
+
+@pytest.mark.usefixtures("no_connection")
+class TestAClientThatCannotBeBuilt:
+    """The real client, no transport seam: the environment's proxy and TLS
+    settings can make building it raise. Nothing was sent, so the answer
+    is a message naming the likely cause, never a traceback."""
+
+    @pytest.mark.parametrize(
+        ("variable", "value", "named"), CLIENT_SETUP_FAILURES, ids=CLIENT_SETUP_IDS
+    )
+    def test_it_exits_1_and_points_at_the_environment(
+        self,
+        in_project: Path,
+        remotes: None,
+        monkeypatch: pytest.MonkeyPatch,
+        variable: str,
+        value: str,
+        named: str,
+    ) -> None:
+        _write_top(in_project)
+        monkeypatch.setenv(variable, value)
+
+        result = _remote_invoke("--output-format", "text")
+
+        assert result.exit_code == 1, result.output
+        assert isinstance(result.exception, SystemExit)
+        assert "Traceback" not in result.output
+        assert "could not be set up" in result.output
+        assert named in result.output
+        assert "nothing was sent" in result.output
+        assert "remote-host" in result.output
+
+
+@pytest.mark.usefixtures("no_connection")
+class TestARemoteTheResolverRefuses:
+    @pytest.mark.parametrize(
+        ("bad", "named"), BAD_REMOTE_URLS, ids=["port", "scheme", "host", "bracket"]
+    )
+    def test_it_exits_1_before_a_client_exists(
+        self, in_project: Path, bad: str, named: str
+    ) -> None:
+        _write_top(in_project)
+
+        result = _invoke("--remote", bad, "--output-format", "text")
+
+        assert result.exit_code == 1, result.output
+        assert isinstance(result.exception, SystemExit)
+        assert "Traceback" not in result.output
+        assert named in result.output
+        assert "could not be set up" not in result.output
+
+
+class TestAnExceptionGroupFromThePost:
+    def test_it_is_a_remote_error_naming_the_first_leaf(
+        self, in_project: Path, remotes: None, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _write_top(in_project)
+
+        async def post(*_: Any) -> httpx.Response:
+            raise ExceptionGroup(
+                "unhandled errors in a TaskGroup",
+                [OverflowError("bind failed"), ValueError("other")],
+            )
+
+        monkeypatch.setattr(remote_run, "post_run", post)
+
+        result = _remote_invoke("--output-format", "text")
+
+        assert result.exit_code == 1, result.output
+        assert isinstance(result.exception, SystemExit)
+        assert "could not reach" in result.output
+        assert "bind failed" in result.output
+        assert "other" not in result.output
+
+
 class TestTheExitCodeFollowsTheStatus:
     @pytest.mark.parametrize("fmt", ["text", "json", "rich"])
     def test_status_error_exits_1_even_when_has_errors_is_false(
@@ -714,7 +818,13 @@ def test_the_post_is_one_request_with_a_connect_timeout_and_no_read_timeout(
 
     monkeypatch.setattr(remote_run, "transport", httpx.MockTransport(handle))
 
-    asyncio.run(remote_run.post_run(REMOTE_URL + "/api/ensembles/execute", {"a": 1}))
+    asyncio.run(
+        remote_run.post_run(
+            remote_run.build_client("remote-host"),
+            REMOTE_URL + "/api/ensembles/execute",
+            {"a": 1},
+        )
+    )
 
     (request,) = seen
     assert str(request.url) == REMOTE_URL + "/api/ensembles/execute"

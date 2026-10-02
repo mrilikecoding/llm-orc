@@ -28,6 +28,9 @@ from llm_orc.services import closure_shipper, remote_run
 from llm_orc.services.orchestra_service import OrchestraService
 from llm_orc.web.server import create_app
 from tests.unit.cli.test_invoke_remote import (  # noqa: F401
+    BAD_REMOTE_URLS,
+    CLIENT_SETUP_FAILURES,
+    CLIENT_SETUP_IDS,
     REMOTE_URL,
     Canned,
     Delayed,
@@ -36,6 +39,7 @@ from tests.unit.cli.test_invoke_remote import (  # noqa: F401
     _write_top,
     _write_top_with_remote_only_child,
     in_project,
+    no_connection,
     remote,
     remotes,
 )
@@ -383,6 +387,55 @@ class TestAMalformedRemoteUrl:
         assert result["error"]["kind"] == "invalid_request"
         assert "http://[::1" in result["error"]["message"]
         assert calls == []
+
+
+@pytest.mark.usefixtures("no_connection")
+class TestAClientThatCannotBeBuilt:
+    @pytest.mark.parametrize(
+        ("variable", "value", "named"), CLIENT_SETUP_FAILURES, ids=CLIENT_SETUP_IDS
+    )
+    def test_the_tool_returns_an_invalid_request_envelope(
+        self,
+        project: Path,
+        stdio_tool: ToolCall,
+        monkeypatch: pytest.MonkeyPatch,
+        remotes: None,
+        variable: str,
+        value: str,
+        named: str,
+    ) -> None:
+        _write_top(project)
+        monkeypatch.setenv(variable, value)
+
+        result = stdio_tool(
+            "invoke",
+            {"ensemble_name": "top", "input_data": "hi", "remote": "remote-host"},
+        )
+
+        assert result["status"] == "error"
+        assert result["error"]["kind"] == "invalid_request"
+        assert "could not be set up" in result["error"]["message"]
+        assert named in result["error"]["message"]
+        assert "nothing was sent" in result["error"]["message"]
+
+
+@pytest.mark.usefixtures("no_connection")
+class TestARemoteTheResolverRefuses:
+    @pytest.mark.parametrize(
+        ("bad", "named"), BAD_REMOTE_URLS, ids=["port", "scheme", "host", "bracket"]
+    )
+    def test_the_tool_returns_an_invalid_request_envelope(
+        self, project: Path, stdio_tool: ToolCall, bad: str, named: str
+    ) -> None:
+        _write_top(project)
+
+        result = stdio_tool(
+            "invoke", {"ensemble_name": "top", "input_data": "hi", "remote": bad}
+        )
+
+        assert result["status"] == "error"
+        assert result["error"]["kind"] == "invalid_request"
+        assert named in result["error"]["message"]
 
 
 class _Ticks:
