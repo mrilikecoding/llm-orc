@@ -722,9 +722,16 @@ def artifacts_show(name: str, format_type: str, execution: str | None) -> None:
     default=None,
     help="Directory containing ensemble configurations",
 )
-def run(ensemble_name: str, verbose: bool, config_dir: str | None) -> None:
+@_bind_and_pull_options
+def run(
+    ensemble_name: str,
+    verbose: bool,
+    config_dir: str | None,
+    bind: dict[str, str],
+    pull: bool,
+) -> None:
     """Validate a single ensemble."""
-    validate_ensemble(ensemble_name, verbose, config_dir)
+    validate_ensemble(ensemble_name, verbose, config_dir, bind, pull)
 
 
 @validate.command()

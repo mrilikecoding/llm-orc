@@ -1,6 +1,7 @@
 """Validation CLI commands."""
 
 import asyncio
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
@@ -60,13 +61,20 @@ def _resolve_ensemble_dirs(
 
 
 async def _gated_execute(
-    service: OrchestraService, ensemble_name: str, ensemble_config: Any
+    service: OrchestraService,
+    ensemble_name: str,
+    ensemble_config: Any,
+    bind: Mapping[str, str],
+    pull: bool,
 ) -> dict[str, Any]:
     """Run the ensemble through the preparation step ``invoke``, REST and
     MCP use, so one the host cannot run is refused before any agent starts."""
-    async with service.prepared_run(
-        {"ensemble_name": ensemble_name}, lambda _name: ensemble_config
-    ) as run:
+    request: dict[str, Any] = {"ensemble_name": ensemble_name}
+    if bind:
+        request["bind"] = dict(bind)
+    if pull:
+        request["pull"] = True
+    async with service.prepared_run(request, lambda _name: ensemble_config) as run:
         result: dict[str, Any] = await run.executor.execute(
             run.config, "validation test input"
         )
@@ -74,7 +82,11 @@ async def _gated_execute(
 
 
 def validate_ensemble(
-    ensemble_name: str, verbose: bool, config_dir: str | None
+    ensemble_name: str,
+    verbose: bool,
+    config_dir: str | None,
+    bind: Mapping[str, str] | None = None,
+    pull: bool = False,
 ) -> None:
     """Validate a single ensemble in test mode.
 
@@ -82,6 +94,8 @@ def validate_ensemble(
         ensemble_name: Name of the ensemble to validate
         verbose: Show detailed validation output
         config_dir: Custom config directory path
+        bind: Profile names to run on other profiles (``--bind``)
+        pull: Download a model the host can pull before the run (``--pull``)
 
     Raises:
         SystemExit: Exit with code 0 on pass, 1 on fail
@@ -108,7 +122,7 @@ def validate_ensemble(
 
     try:
         result_dict = asyncio.run(
-            _gated_execute(service, ensemble_name, ensemble_config)
+            _gated_execute(service, ensemble_name, ensemble_config, bind or {}, pull)
         )
         execution_result = _build_execution_result(result_dict, ensemble_name)
         validation_config = ValidationConfig.model_validate(ensemble_config.validation)
