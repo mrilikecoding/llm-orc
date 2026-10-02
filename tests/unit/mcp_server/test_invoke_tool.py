@@ -104,6 +104,21 @@ def tool(
         yield call
 
 
+@pytest.fixture
+def stdio_tool(service: OrchestraService) -> ToolCall:
+    """Call an MCP tool on a server built the way ``llm-orc mcp serve``
+    builds it (no mount, nothing to refuse ``remote``); the structured
+    result."""
+    server = MCPServer(service=service)
+
+    def call(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+        _, structured = asyncio.run(server._mcp.call_tool(name, arguments))
+        assert isinstance(structured, dict)
+        return structured
+
+    return call
+
+
 def _raw_root(project: Path) -> None:
     scripts = project / ".llm-orc" / "scripts"
     scripts.mkdir(parents=True, exist_ok=True)
@@ -155,13 +170,13 @@ class TestRemoteRun:
         self,
         project: Path,
         remote: Remote,
-        tool: ToolCall,
+        stdio_tool: ToolCall,
         tmp_path: Path,
     ) -> None:
         record = tmp_path / "where.txt"
         _where_script(project, record)
 
-        result = tool(
+        result = stdio_tool(
             "invoke",
             {"ensemble_name": "top", "input_data": "hi", "remote": "remote-host"},
         )
@@ -173,11 +188,11 @@ class TestRemoteRun:
         assert Path(record.read_text()).is_relative_to(remote.state / "runs")
 
     def test_a_profile_the_remote_lacks_returns_its_not_equipped_envelope(
-        self, project: Path, remote: Remote, tool: ToolCall
+        self, project: Path, remote: Remote, stdio_tool: ToolCall
     ) -> None:
         _write_top(project, with_profile=True)
 
-        result = tool(
+        result = stdio_tool(
             "invoke",
             {"ensemble_name": "top", "input_data": "hi", "remote": "remote-host"},
         )
@@ -188,12 +203,12 @@ class TestRemoteRun:
         assert rows["seat"] == "missing_profile"
 
     def test_bind_travels_and_the_run_carries_its_bindings(
-        self, project: Path, remote: Remote, tool: ToolCall
+        self, project: Path, remote: Remote, stdio_tool: ToolCall
     ) -> None:
         _write_top(project, with_profile=True)
         _profile(remote.project / ".llm-orc", "other", model="mock-other")
 
-        result = tool(
+        result = stdio_tool(
             "invoke",
             {
                 "ensemble_name": "top",
@@ -207,11 +222,11 @@ class TestRemoteRun:
         assert result["bindings"] == {"seat": "other"}
 
     def test_with_profiles_ships_the_definition(
-        self, project: Path, remote: Remote, tool: ToolCall
+        self, project: Path, remote: Remote, stdio_tool: ToolCall
     ) -> None:
         _write_top(project, with_profile=True)
 
-        result = tool(
+        result = stdio_tool(
             "invoke",
             {
                 "ensemble_name": "top",
@@ -225,11 +240,11 @@ class TestRemoteRun:
         assert "seat" in remote.calls[0][1]["profiles"]
 
     def test_persist_global_leaves_the_bundle_on_the_second_service(
-        self, project: Path, remote: Remote, tool: ToolCall
+        self, project: Path, remote: Remote, stdio_tool: ToolCall
     ) -> None:
         _write_top(project)
 
-        result = tool(
+        result = stdio_tool(
             "invoke",
             {
                 "ensemble_name": "top",
@@ -244,11 +259,11 @@ class TestRemoteRun:
         assert not (resolve_global_config_dir() / "bundles").exists()
 
     def test_the_remote_name_is_a_name_in_the_config_or_a_url(
-        self, project: Path, remote: Remote, tool: ToolCall
+        self, project: Path, remote: Remote, stdio_tool: ToolCall
     ) -> None:
         _write_top(project)
 
-        result = tool(
+        result = stdio_tool(
             "invoke",
             {"ensemble_name": "top", "input_data": "hi", "remote": REMOTE_URL},
         )
@@ -272,14 +287,14 @@ class TestARemoteThatDoesNotAnswer:
     def test_an_unknown_remote_is_invalid_and_lists_the_known_names(
         self,
         project: Path,
-        tool: ToolCall,
+        stdio_tool: ToolCall,
         monkeypatch: pytest.MonkeyPatch,
         remotes: None,
     ) -> None:
         _write_top(project)
         calls = _canned(monkeypatch, Canned(200, "{}"))
 
-        result = tool(
+        result = stdio_tool(
             "invoke",
             {"ensemble_name": "top", "input_data": "hi", "remote": "nowhere"},
         )
@@ -299,7 +314,7 @@ class TestARemoteThatDoesNotAnswer:
     def test_no_answer_or_no_result_is_a_remote_error_naming_it(
         self,
         project: Path,
-        tool: ToolCall,
+        stdio_tool: ToolCall,
         monkeypatch: pytest.MonkeyPatch,
         remotes: None,
         answer: Canned | BaseException,
@@ -307,7 +322,7 @@ class TestARemoteThatDoesNotAnswer:
         _write_top(project)
         _canned(monkeypatch, answer)
 
-        result = tool(
+        result = stdio_tool(
             "invoke",
             {"ensemble_name": "top", "input_data": "hi", "remote": "remote-host"},
         )
@@ -436,7 +451,7 @@ class TestARefusalBeforeAnythingIsSent:
     def test_an_inline_part_with_remote_is_invalid_and_nothing_is_sent(
         self,
         project: Path,
-        tool: ToolCall,
+        stdio_tool: ToolCall,
         monkeypatch: pytest.MonkeyPatch,
         remotes: None,
         inline: dict[str, Any],
@@ -444,7 +459,7 @@ class TestARefusalBeforeAnythingIsSent:
         _write_top(project)
         calls = _canned(monkeypatch, Canned(200, "{}"))
 
-        result = tool(
+        result = stdio_tool(
             "invoke",
             {
                 "ensemble_name": "top",
@@ -459,12 +474,12 @@ class TestARefusalBeforeAnythingIsSent:
         assert calls == []
 
     def test_with_profiles_without_remote_is_invalid(
-        self, project: Path, tool: ToolCall, monkeypatch: pytest.MonkeyPatch
+        self, project: Path, stdio_tool: ToolCall, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         _write_top(project)
         calls = _canned(monkeypatch, Canned(200, "{}"))
 
-        result = tool(
+        result = stdio_tool(
             "invoke",
             {"ensemble_name": "top", "input_data": "hi", "with_profiles": ["seat"]},
         )
@@ -475,16 +490,46 @@ class TestARefusalBeforeAnythingIsSent:
 
     def test_remote_without_a_name_is_invalid(
         self,
-        tool: ToolCall,
+        stdio_tool: ToolCall,
         monkeypatch: pytest.MonkeyPatch,
         remotes: None,
     ) -> None:
         calls = _canned(monkeypatch, Canned(200, "{}"))
 
-        result = tool("invoke", {"input_data": "hi", "remote": "remote-host"})
+        result = stdio_tool("invoke", {"input_data": "hi", "remote": "remote-host"})
 
         assert result["error"]["kind"] == "invalid_request"
         assert "ensemble_name" in result["error"]["message"]
+        assert calls == []
+
+
+class TestAServeIsNotARelay:
+    @pytest.mark.parametrize(
+        "extra",
+        [
+            {"remote": "remote-host"},
+            {"remote": REMOTE_URL},
+            {"with_profiles": ["seat"]},
+        ],
+        ids=["name", "url", "with_profiles"],
+    )
+    def test_the_mounted_mcp_refuses_remote_and_sends_nothing(
+        self,
+        project: Path,
+        tool: ToolCall,
+        monkeypatch: pytest.MonkeyPatch,
+        remotes: None,
+        extra: dict[str, Any],
+    ) -> None:
+        _write_top(project)
+        calls = _canned(monkeypatch, Canned(200, "{}"))
+
+        result = tool("invoke", {"ensemble_name": "top", "input_data": "hi", **extra})
+
+        assert result["status"] == "error"
+        assert result["error"]["kind"] == "invalid_request"
+        assert "does not relay" in result["error"]["message"]
+        assert "call that remote yourself" in result["error"]["message"]
         assert calls == []
 
 

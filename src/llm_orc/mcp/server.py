@@ -31,6 +31,12 @@ if TYPE_CHECKING:
     from llm_orc.core.execution.ensemble_execution import EnsembleExecutor
 
 
+_NOT_A_RELAY = (
+    "this serve does not relay: remote and with_profiles are not accepted "
+    "here, so call that remote yourself"
+)
+
+
 def _remote_problem(
     remote: str | None,
     ensemble_name: str | None,
@@ -110,6 +116,7 @@ class MCPServer:
         config_manager: ConfigurationManager | None = None,
         executor: EnsembleExecutor | None = None,
         service: OrchestraService | None = None,
+        relay: bool = True,
     ) -> None:
         """Initialize MCP server.
 
@@ -117,7 +124,11 @@ class MCPServer:
             config_manager: Configuration manager instance. Creates default if None.
             executor: Ensemble executor instance. Creates default if None.
             service: OrchestraService instance. Creates default if None.
+            relay: Whether ``invoke`` may run a root on another serve
+                (``remote``). The stdio server does; the one a serve mounts
+                does not, since a serve is not a relay.
         """
+        self._relay = relay
         if service is not None:
             self._service = service
         else:
@@ -290,6 +301,8 @@ class MCPServer:
                 remote: Run the named ensemble and its closure on this remote
                 with_profiles: Local profiles to ship to the remote (needs remote)
             """
+            if not self._relay and (remote is not None or with_profiles):
+                return RunRefusedError(INVALID_REQUEST, _NOT_A_RELAY).envelope()
             parts = {
                 "ensemble": ensemble,
                 "ensembles": ensembles,
