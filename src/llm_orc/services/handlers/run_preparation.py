@@ -122,6 +122,14 @@ class MaterializedRoot:
     extra_reports: list[DependencyReport] = field(default_factory=list)
 
 
+class RootNotFoundError(ValueError):
+    """A named root that no tier and no bundle holds."""
+
+    def __init__(self, message: str, name: str) -> None:
+        super().__init__(message)
+        self.name = name
+
+
 def unmet_binding_rows(unmet: Sequence[tuple[str, str]]) -> list[DependencyReport]:
     """A ``missing_profile`` row for each bind target the host lacks,
     reached ``via`` the binding, whether or not the host has the key."""

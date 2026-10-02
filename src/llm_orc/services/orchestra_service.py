@@ -25,7 +25,7 @@ from llm_orc.core.execution.scripting.resolver import ScriptResolver
 from llm_orc.mcp.project_context import ProjectContext
 from llm_orc.models.base import HTTPConnectionPool
 from llm_orc.services.handlers.artifact_handler import ArtifactHandler
-from llm_orc.services.handlers.bundle_store import BundleStore
+from llm_orc.services.handlers.bundle_store import BundleError, BundleStore
 from llm_orc.services.handlers.ensemble_crud_handler import EnsembleCrudHandler
 from llm_orc.services.handlers.execution_handler import (
     ExecutionHandler,
@@ -231,18 +231,33 @@ class OrchestraService:
         return self.ensemble_loader._find_ensemble_in_dirs(reference, search_dirs)
 
     def list_ensembles_grouped(self) -> dict[str, list[Any]]:
-        """List all ensembles grouped by tier (local, library, global, packaged)."""
+        """List all ensembles grouped by tier (local, library, global,
+        packaged), and the roots of the bundles apart from the tiers."""
         groups: dict[str, list[Any]] = {
             "local": [],
             "library": [],
             "global": [],
             "packaged": [],
+            "bundle": self._bundle_roots(),
         }
         for dir_path in self.config_manager.get_ensembles_dirs():
             ensembles = self.ensemble_loader.list_ensembles(str(dir_path))
             tier = self.config_manager.classify_tier(dir_path)
             groups.get(tier, groups["global"]).extend(ensembles)
         return groups
+
+    def _bundle_roots(self) -> list[EnsembleConfig]:
+        """The root of each readable bundle, for a listing."""
+        roots: list[EnsembleConfig] = []
+        for name in self._bundle_store.names():
+            try:
+                stored = self._bundle_store.read(name)
+            except BundleError:
+                continue
+            if stored is not None:
+                description = stored["ensemble"].get("description", "")
+                roots.append(EnsembleConfig(name=name, description=description))
+        return roots
 
     def find_ensemble_in_dir(self, ensemble_name: str, dir_path: str) -> Any:
         """Find an ensemble by name in a specific directory.

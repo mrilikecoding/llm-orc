@@ -24,7 +24,10 @@ from llm_orc.cli_modules.utils.visualization.refusal_display import (
     display_run_record,
 )
 from llm_orc.core.config.ensemble_config import EnsembleConfig
-from llm_orc.services.handlers.run_preparation import RunRefusedError
+from llm_orc.services.handlers.run_preparation import (
+    RootNotFoundError,
+    RunRefusedError,
+)
 
 
 def _get_service() -> Any:
@@ -128,6 +131,7 @@ def _display_grouped_ensembles(
     library_ensembles: Sequence[EnsembleConfig],
     global_ensembles: Sequence[EnsembleConfig],
     packaged_ensembles: Sequence[EnsembleConfig] = (),
+    bundle_ensembles: Sequence[EnsembleConfig] = (),
 ) -> None:
     """Display grouped ensembles with proper formatting.
 
@@ -137,6 +141,7 @@ def _display_grouped_ensembles(
         library_ensembles: List of library ensemble configs
         global_ensembles: List of global ensemble configs
         packaged_ensembles: List of packaged (shipped with llm-orc) configs
+        bundle_ensembles: Roots of persisted closures (stored run requests)
     """
     click.echo("Available ensembles:")
 
@@ -149,6 +154,9 @@ def _display_grouped_ensembles(
     _display_ensemble_group(global_ensembles, global_header)
 
     _display_ensemble_group(packaged_ensembles, "📦 Packaged (shipped with llm-orc):")
+
+    bundle_header = f"🧳 Bundles ({config_manager.global_config_dir}/bundles):"
+    _display_ensemble_group(bundle_ensembles, bundle_header)
 
 
 def _setup_performance_display(
@@ -254,21 +262,24 @@ def _root_lookup(
     service: Any, ensemble_name: str, config_dir: str | None
 ) -> Callable[[str], Any]:
     """The lookup the prepared run is given for the named root: the
-    service's tiers, or the one ``--config-dir`` directory. A root that
-    is not there ends the command with the searched directories."""
+    service's tiers, or the one ``--config-dir`` directory. A miss in the
+    tiers is None, so the service can consult its bundles before the
+    command reports it; ``--config-dir`` is strict and ends the command
+    with the directory searched."""
 
     def lookup(name: str) -> Any:
         if config_dir is not None:
             return _find_ensemble_config(name, [Path(config_dir)], service)
-        config = service.find_ensemble_by_name(name)
-        if config is None:
-            searched = [str(d) for d in service.config_manager.get_ensembles_dirs()]
-            raise click.ClickException(
-                f"Ensemble '{name}' not found in: {', '.join(searched)}"
-            )
-        return config
+        return service.find_ensemble_by_name(name)
 
     return lookup
+
+
+def _not_found(service: Any, name: str) -> click.ClickException:
+    searched = [str(d) for d in service.config_manager.get_ensembles_dirs()]
+    return click.ClickException(
+        f"Ensemble '{name}' not found in: {', '.join(searched)}"
+    )
 
 
 async def _run_prepared(
@@ -387,6 +398,8 @@ def invoke_ensemble(
         return asyncio.run(_run_prepared(service, request, lookup, input_data, options))
     except click.ClickException:
         raise
+    except RootNotFoundError as e:
+        raise _not_found(service, e.name) from e
     except Exception as e:
         raise click.ClickException(f"Ensemble execution failed: {e!s}") from e
 
@@ -432,6 +445,7 @@ def list_ensembles_command(config_dir: str | None) -> None:
         grouped["library"],
         grouped["global"],
         grouped["packaged"],
+        grouped.get("bundle", []),
     )
 
 
