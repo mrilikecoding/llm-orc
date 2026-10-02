@@ -22,11 +22,40 @@ from starlette.applications import Starlette
 from llm_orc.core.config.config_manager import ConfigurationManager
 from llm_orc.core.config.ensemble_config import EnsembleLoader
 from llm_orc.core.execution.artifact_manager import ArtifactManager
+from llm_orc.services.closure_shipper import LeftOut
+from llm_orc.services.handlers.run_preparation import INVALID_REQUEST, RunRefusedError
 from llm_orc.services.handlers.scope import Scope
 from llm_orc.services.orchestra_service import OrchestraService
+from llm_orc.services.remote_run import RemoteRunError, run_remote
 
 if TYPE_CHECKING:
     from llm_orc.core.execution.ensemble_execution import EnsembleExecutor
+
+
+_NOT_A_RELAY = (
+    "this serve does not relay: remote and with_profiles are not accepted "
+    "here, so call that remote yourself"
+)
+
+
+def _remote_problem(
+    remote: str | None,
+    ensemble_name: str | None,
+    with_profiles: list[str] | None,
+    inline: list[str],
+) -> str | None:
+    """Why the ``remote`` arguments are not a request, or None. The
+    messages tell the caller how to fix it."""
+    if remote is None:
+        return "with_profiles needs remote" if with_profiles else None
+    if ensemble_name is None:
+        return "remote needs ensemble_name, the local ensemble to ship"
+    if inline:
+        return (
+            f"remote cannot be used with {', '.join(inline)}: a client that "
+            "holds a definition can send it to the remote itself"
+        )
+    return None
 
 
 class ProgressReporter(Protocol):
@@ -88,6 +117,7 @@ class MCPServer:
         config_manager: ConfigurationManager | None = None,
         executor: EnsembleExecutor | None = None,
         service: OrchestraService | None = None,
+        relay: bool = False,
     ) -> None:
         """Initialize MCP server.
 
@@ -95,7 +125,12 @@ class MCPServer:
             config_manager: Configuration manager instance. Creates default if None.
             executor: Ensemble executor instance. Creates default if None.
             service: OrchestraService instance. Creates default if None.
+            relay: Whether ``invoke`` may run a root on another serve
+                (``remote``). Off unless asked: only the stdio command
+                asks, since it has one local client; a serve is not a
+                relay.
         """
+        self._relay = relay
         if service is not None:
             self._service = service
         else:
@@ -249,6 +284,9 @@ class MCPServer:
             scripts: dict[str, str] | None = None,
             bind: dict[str, str] | None = None,
             pull: bool = False,
+            persist: str | None = None,
+            remote: str | None = None,
+            with_profiles: list[str] | None = None,
         ) -> dict[str, Any]:
             """Execute an ensemble with input data.
 
@@ -261,7 +299,33 @@ class MCPServer:
                 scripts: Script source by path key, for this run only
                 bind: Profile name to profile name; runs the first as the second
                 pull: Download pullable models first (default: refuse)
+                persist: "global" stores the closure for later runs by name
+                remote: Run the named ensemble and its closure on this remote
+                with_profiles: Local profiles to ship to the remote (needs remote)
             """
+            if not self._relay and (remote is not None or with_profiles):
+                return RunRefusedError(INVALID_REQUEST, _NOT_A_RELAY).envelope()
+            parts = {
+                "ensemble": ensemble,
+                "ensembles": ensembles,
+                "profiles": profiles,
+                "scripts": scripts,
+            }
+            problem = _remote_problem(
+                remote, ensemble_name, with_profiles, [k for k in parts if parts[k]]
+            )
+            if problem is not None:
+                return RunRefusedError(INVALID_REQUEST, problem).envelope()
+            if remote is not None and ensemble_name is not None:
+                return await self._invoke_remote_tool(
+                    ensemble_name,
+                    input_data,
+                    remote,
+                    bind=bind,
+                    pull=pull,
+                    persist=persist,
+                    with_profiles=with_profiles or [],
+                )
             injection = {
                 "ensemble": ensemble,
                 "ensembles": ensembles,
@@ -269,6 +333,7 @@ class MCPServer:
                 "scripts": scripts,
                 "bind": bind,
                 "pull": pull or None,
+                "persist": persist,
             }
             result = await self._invoke_tool_with_streaming(
                 ensemble_name,
@@ -1121,6 +1186,45 @@ class MCPServer:
         return await self._execute_ensemble_streaming(
             ensemble_name, input_data, reporter, injection
         )
+
+    async def _invoke_remote_tool(
+        self,
+        ensemble_name: str,
+        input_data: str,
+        remote: str,
+        *,
+        bind: dict[str, str] | None,
+        pull: bool,
+        persist: str | None,
+        with_profiles: list[str],
+    ) -> dict[str, Any]:
+        """Run the named local root on ``remote`` and return its result."""
+        service = self._service
+        # One project answers the root and the closure: all three are read
+        # here, on the loop, before the worker thread starts.
+        config_manager = service.config_manager
+        project_dir = service.project_path
+        root = service.find_ensemble_by_name(ensemble_name)
+        left: list[LeftOut] = []
+        try:
+            document = await run_remote(
+                ensemble_name,
+                remote,
+                find_root=lambda _name: root,
+                config_manager=config_manager,
+                project_dir=project_dir,
+                input_text=input_data,
+                with_profiles=with_profiles,
+                bind=bind,
+                pull=pull,
+                persist=persist,
+                on_left_out=left.extend,
+            )
+        except RemoteRunError as e:
+            return RunRefusedError(e.kind, str(e)).envelope()
+        if left:
+            document["left_out"] = [item.label for item in left]
+        return document
 
     async def _execute_ensemble_streaming(
         self,

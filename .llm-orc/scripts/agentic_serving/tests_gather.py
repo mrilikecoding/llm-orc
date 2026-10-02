@@ -13,6 +13,13 @@ workspace-import injection via sibling import (one implementation).
 Emits JSON: {requirement, code, tests, workspace, target_file, held}
 """
 
+# /// llm-orc
+# files = [
+#   "_helpers.py",
+#   "accept_gather.py",
+# ]
+# ///
+
 from __future__ import annotations
 
 import json

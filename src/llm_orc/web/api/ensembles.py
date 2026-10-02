@@ -3,9 +3,11 @@
 Provides REST API for ensemble management, delegating to OrchestraService.
 """
 
-from typing import Any
+import asyncio
+import contextlib
+from typing import Any, Literal
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request, Response
 from pydantic import BaseModel, ConfigDict, Field
 
 from llm_orc.services.handlers.scope import Scope
@@ -37,11 +39,13 @@ class RunRequest(ExecuteRequest):
 
     The root is ``ensemble_name`` (an installed ensemble) or ``ensemble``
     (an inline definition); the service refuses a request with both or
-    neither.
+    neither. ``persist: global`` stores an inline root's closure as a
+    bundle once the gate passes.
     """
 
     ensemble_name: str | None = None
     ensemble: dict[str, Any] | None = None
+    persist: Literal["global"] | None = None
 
 
 class CreateEnsembleRequest(BaseModel):
@@ -61,6 +65,40 @@ class UpdateEnsembleRequest(BaseModel):
     dry_run: bool = True
     backup: bool = True
     scope: Scope = "project"
+
+
+# nginx's code for a client that closed the connection before the answer.
+CLIENT_CLOSED_REQUEST = 499
+
+
+async def _wait_for_disconnect(http_request: Request) -> None:
+    """Return when the connection reports ``http.disconnect``."""
+    while (await http_request.receive())["type"] != "http.disconnect":
+        pass
+
+
+async def _invoke_while_connected(
+    http_request: Request, request: dict[str, Any]
+) -> dict[str, Any] | None:
+    """Run the request, cancelling it if the client goes away first.
+
+    Returns the result, or None after a disconnect: nobody is listening,
+    and cancelling the call is what kills the run's scripts and removes
+    its layer.
+    """
+    run = asyncio.create_task(get_orchestra_service().invoke(request))
+    gone = asyncio.create_task(_wait_for_disconnect(http_request))
+    try:
+        await asyncio.wait({run, gone}, return_when=asyncio.FIRST_COMPLETED)
+    finally:
+        gone.cancel()
+        if not run.done():
+            run.cancel()
+    if run.cancelled() or not run.done():
+        with contextlib.suppress(asyncio.CancelledError):
+            await run
+        return None
+    return run.result()
 
 
 @router.get("")
@@ -83,28 +121,33 @@ async def get_ensemble(name: str) -> dict[str, Any]:
     return result
 
 
-@router.post("/execute")
-async def run_request(request: RunRequest) -> dict[str, Any]:
+@router.post("/execute", response_model=dict[str, Any])
+async def run_request(request: RunRequest, http_request: Request) -> Any:
     """Run one request: a named or inline ensemble with its injections.
 
     Returns the execution result, or the refusal envelope (HTTP 200, like
-    every run outcome) when the host cannot run it.
+    every run outcome) when the host cannot run it. A client that
+    disconnects first cancels the run.
     """
-    service = get_orchestra_service()
-    return await service.invoke(request.model_dump(exclude_none=True))
+    result = await _invoke_while_connected(
+        http_request, request.model_dump(exclude_none=True)
+    )
+    return result if result is not None else Response(status_code=CLIENT_CLOSED_REQUEST)
 
 
-@router.post("/{name}/execute")
-async def execute_ensemble(name: str, request: ExecuteRequest) -> dict[str, Any]:
+@router.post("/{name}/execute", response_model=dict[str, Any])
+async def execute_ensemble(
+    name: str, request: ExecuteRequest, http_request: Request
+) -> Any:
     """Execute the ensemble ``name`` with the given input and injections.
 
-    Returns the execution result including agent outputs.
+    Returns the execution result including agent outputs. A client that
+    disconnects first cancels the run.
     """
-    service = get_orchestra_service()
-    result = await service.invoke(
-        {**request.model_dump(exclude_none=True), "ensemble_name": name}
+    result = await _invoke_while_connected(
+        http_request, {**request.model_dump(exclude_none=True), "ensemble_name": name}
     )
-    return result
+    return result if result is not None else Response(status_code=CLIENT_CLOSED_REQUEST)
 
 
 @router.post("/{name}/validate")

@@ -3,7 +3,11 @@
 import asyncio
 import json
 import sys
-from collections.abc import Sequence
+import threading
+import time
+from collections.abc import Callable, Iterator, Mapping, Sequence
+from contextlib import contextmanager
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
 
@@ -18,7 +22,20 @@ from llm_orc.cli_modules.utils.visualization import (
     run_standard_execution,
     run_streaming_execution,
 )
+from llm_orc.cli_modules.utils.visualization.refusal_display import (
+    display_refusal,
+    display_run_record,
+)
+from llm_orc.cli_modules.utils.visualization.streaming import display_result
 from llm_orc.core.config.ensemble_config import EnsembleConfig
+from llm_orc.services.closure_shipper import LeftOut
+from llm_orc.services.handlers.run_preparation import (
+    RootNotFoundError,
+    RunRefusedError,
+)
+from llm_orc.services.remote_run import RemoteRunError, run_remote
+
+WAIT_TICK_S = 1.0
 
 
 def _get_service() -> Any:
@@ -122,6 +139,7 @@ def _display_grouped_ensembles(
     library_ensembles: Sequence[EnsembleConfig],
     global_ensembles: Sequence[EnsembleConfig],
     packaged_ensembles: Sequence[EnsembleConfig] = (),
+    bundle_ensembles: Sequence[EnsembleConfig] = (),
 ) -> None:
     """Display grouped ensembles with proper formatting.
 
@@ -131,6 +149,7 @@ def _display_grouped_ensembles(
         library_ensembles: List of library ensemble configs
         global_ensembles: List of global ensemble configs
         packaged_ensembles: List of packaged (shipped with llm-orc) configs
+        bundle_ensembles: Roots of persisted closures (stored run requests)
     """
     click.echo("Available ensembles:")
 
@@ -143,6 +162,9 @@ def _display_grouped_ensembles(
     _display_ensemble_group(global_ensembles, global_header)
 
     _display_ensemble_group(packaged_ensembles, "📦 Packaged (shipped with llm-orc):")
+
+    bundle_header = f"🧳 Bundles ({config_manager.global_config_dir}/bundles):"
+    _display_ensemble_group(bundle_ensembles, bundle_header)
 
 
 def _setup_performance_display(
@@ -204,7 +226,7 @@ def _determine_effective_streaming(
             return streaming  # Use just the CLI flag
 
 
-def _execute_ensemble_with_mode(
+async def _execute_ensemble_with_mode(
     executor: Any,
     ensemble_config: "EnsembleConfig",
     input_data: str,
@@ -212,6 +234,7 @@ def _execute_ensemble_with_mode(
     detailed: bool,
     requires_user_input: bool,
     effective_streaming: bool,
+    record: dict[str, Any] | None = None,
 ) -> bool:
     """Execute ensemble with the appropriate execution mode.
 
@@ -223,6 +246,7 @@ def _execute_ensemble_with_mode(
         detailed: Detailed output flag
         requires_user_input: Whether ensemble requires user input
         effective_streaming: Whether to use streaming execution
+        record: Bindings applied and models pulled, for the JSON document
 
     Returns:
         Whether the run's caller-facing status is "error" (fail-closed-
@@ -232,27 +256,107 @@ def _execute_ensemble_with_mode(
     # Convert None output_format to "rich" for execution functions
     execution_format = output_format or "rich"
 
-    if requires_user_input:
-        # Interactive execution with streaming visualization for progress control
-        return asyncio.run(
-            run_streaming_execution(
-                executor, ensemble_config, input_data, execution_format, detailed
-            )
+    if requires_user_input or effective_streaming:
+        # Streaming visualization; interactive scripts need its progress control
+        return await run_streaming_execution(
+            executor, ensemble_config, input_data, execution_format, detailed
         )
-    elif effective_streaming:
-        # Streaming execution with Rich status
-        return asyncio.run(
-            run_streaming_execution(
-                executor, ensemble_config, input_data, execution_format, detailed
-            )
-        )
-    else:
-        # Standard execution
-        return asyncio.run(
-            run_standard_execution(
-                executor, ensemble_config, input_data, execution_format, detailed
-            )
-        )
+    return await run_standard_execution(
+        executor, ensemble_config, input_data, execution_format, detailed, record
+    )
+
+
+def _root_lookup(
+    service: Any, ensemble_name: str, config_dir: str | None
+) -> Callable[[str], Any]:
+    """The lookup the prepared run is given for the named root: the
+    service's tiers, or the one ``--config-dir`` directory. A miss in the
+    tiers is None, so the service can consult its bundles before the
+    command reports it; ``--config-dir`` is strict and ends the command
+    with the directory searched."""
+
+    def lookup(name: str) -> Any:
+        if config_dir is not None:
+            return _find_ensemble_config(name, [Path(config_dir)], service)
+        return service.find_ensemble_by_name(name)
+
+    return lookup
+
+
+def _not_found(service: Any, name: str) -> click.ClickException:
+    searched = [str(d) for d in service.config_manager.get_ensembles_dirs()]
+    return click.ClickException(
+        f"Ensemble '{name}' not found in: {', '.join(searched)}"
+    )
+
+
+async def _run_prepared(
+    service: Any,
+    request: dict[str, Any],
+    lookup: Callable[[str], Any],
+    input_data: str,
+    options: "_RunOptions",
+) -> bool:
+    """Run ``request`` inside the preparation step and display it. A
+    refusal is displayed and counts as an error."""
+    try:
+        async with service.prepared_run(request, lookup) as run:
+            return await _run_with_display(run, input_data, service, options)
+    except RunRefusedError as refusal:
+        display_refusal(refusal.envelope(), options.output_format)
+        return True
+
+
+async def _run_with_display(
+    run: Any, input_data: str, service: Any, options: "_RunOptions"
+) -> bool:
+    from llm_orc.core.execution.scripting.user_input_handler import (
+        ScriptUserInputHandler,
+    )
+
+    requires_user_input = ScriptUserInputHandler().ensemble_requires_user_input(
+        run.config
+    )
+
+    # Override concurrency settings if provided
+    if options.max_concurrent is not None:
+        run.executor.set_max_concurrent_agents(options.max_concurrent)
+
+    # Show performance configuration only for default Rich interface (not text/json)
+    _setup_performance_display(
+        service.config_manager,
+        run.executor,
+        options.ensemble_name,
+        run.config,
+        options.streaming,
+        options.output_format,
+        input_data,
+    )
+    display_run_record(run.bindings, run.pulled, options.output_format)
+
+    effective_streaming = _determine_effective_streaming(
+        service.config_manager, options.output_format, options.streaming
+    )
+    record = {"bindings": run.bindings, "pulled": run.pulled}
+    return await _execute_ensemble_with_mode(
+        run.executor,
+        run.config,
+        input_data,
+        options.output_format,
+        options.detailed,
+        requires_user_input,
+        effective_streaming,
+        record,
+    )
+
+
+@dataclass(frozen=True)
+class _RunOptions:
+    ensemble_name: str
+    output_format: str | None
+    streaming: bool
+    max_concurrent: int | None
+    detailed: bool
 
 
 def invoke_ensemble(
@@ -266,8 +370,17 @@ def invoke_ensemble(
     detailed: bool,
     *,
     input_file: str | None = None,
+    bind: Mapping[str, str] | None = None,
+    pull: bool = False,
+    remote: str | None = None,
+    with_profiles: Sequence[str] = (),
+    persist: str | None = None,
 ) -> bool:
     """Invoke an ensemble of agents.
+
+    The run is a request (``ensemble_name``, ``bind``, ``pull``) handed to
+    the preparation step REST and MCP use, so an ensemble this host
+    cannot run is refused before any agent starts.
 
     Returns:
         Whether the run's caller-facing status is "error" (fail-closed-
@@ -275,6 +388,24 @@ def invoke_ensemble(
         uses this to set a non-zero process exit code in every output
         format (rich/text/json alike).
     """
+    if remote is not None:
+        return _invoke_remote(
+            ensemble_name,
+            RemoteInvocation(
+                remote=remote,
+                input_data=_resolve_input_data(
+                    input_data, input_data_option, file_input=input_file
+                ),
+                config_dir=config_dir,
+                output_format=output_format,
+                max_concurrent=max_concurrent,
+                detailed=detailed,
+                bind=bind,
+                pull=pull,
+                with_profiles=with_profiles,
+                persist=persist,
+            ),
+        )
     service = _get_service()
 
     # Resolve input data using helper method
@@ -282,64 +413,151 @@ def invoke_ensemble(
         input_data, input_data_option, file_input=input_file
     )
 
-    # Find ensemble configuration
-    if config_dir is not None:
-        ensemble_config = _find_ensemble_config(
-            ensemble_name, [Path(config_dir)], service
-        )
-    else:
-        ensemble_config = service.find_ensemble_by_name(ensemble_name)
-        if ensemble_config is None:
-            ensemble_dirs = service.config_manager.get_ensembles_dirs()
-            searched = [str(d) for d in ensemble_dirs]
-            raise click.ClickException(
-                f"Ensemble '{ensemble_name}' not found in: {', '.join(searched)}"
-            )
-
-    # Get executor from service
-    executor = service._get_executor()
-
-    # Check if ensemble contains interactive scripts
-    from llm_orc.core.execution.scripting.user_input_handler import (
-        ScriptUserInputHandler,
+    request: dict[str, Any] = {"ensemble_name": ensemble_name}
+    if bind:
+        request["bind"] = dict(bind)
+    if pull:
+        request["pull"] = True
+    options = _RunOptions(
+        ensemble_name, output_format, streaming, max_concurrent, detailed
     )
+    lookup = _root_lookup(service, ensemble_name, config_dir)
 
-    input_handler = ScriptUserInputHandler()
-    requires_user_input = input_handler.ensemble_requires_user_input(ensemble_config)
-
-    # Override concurrency settings if provided
-    if max_concurrent is not None:
-        executor.set_max_concurrent_agents(max_concurrent)
-
-    # Show performance configuration only for default Rich interface (not text/json)
-    _setup_performance_display(
-        service.config_manager,
-        executor,
-        ensemble_name,
-        ensemble_config,
-        streaming,
-        output_format,
-        input_data,
-    )
-
-    # Determine effective streaming setting
-    effective_streaming = _determine_effective_streaming(
-        service.config_manager, output_format, streaming
-    )
-
-    # Execute the ensemble
     try:
-        return _execute_ensemble_with_mode(
-            executor,
-            ensemble_config,
-            input_data,
-            output_format,
-            detailed,
-            requires_user_input,
-            effective_streaming,
-        )
+        return asyncio.run(_run_prepared(service, request, lookup, input_data, options))
+    except click.ClickException:
+        raise
+    except RootNotFoundError as e:
+        raise _not_found(service, e.name) from e
     except Exception as e:
         raise click.ClickException(f"Ensemble execution failed: {e!s}") from e
+
+
+@dataclass(frozen=True)
+class RemoteInvocation:
+    """What ``invoke --remote`` was asked for."""
+
+    remote: str
+    input_data: str
+    config_dir: str | None
+    output_format: str | None
+    max_concurrent: int | None
+    detailed: bool
+    bind: Mapping[str, str] | None = None
+    pull: bool = False
+    with_profiles: Sequence[str] = ()
+    persist: str | None = None
+
+
+def _invoke_remote(ensemble_name: str, invocation: RemoteInvocation) -> bool:
+    """Run the named local root on the remote and display its answer.
+
+    Refused before anything is sent: ``--max-concurrent`` (the request
+    has no place for it), an unknown remote, a closure that cannot ship
+    and an interactive script.
+    """
+    if invocation.max_concurrent is not None:
+        raise click.ClickException(
+            "--max-concurrent cannot be used with --remote: "
+            "the run request cannot carry it"
+        )
+    service = _get_service()
+    root = _root_lookup(service, ensemble_name, invocation.config_dir)(ensemble_name)
+    if root is None:
+        # Only a tier root ships: a bundle is a stored request, not a file.
+        raise _not_found(service, ensemble_name)
+    try:
+        with _waiting_on(invocation.remote, invocation.output_format):
+            document = asyncio.run(
+                run_remote(
+                    ensemble_name,
+                    invocation.remote,
+                    find_root=lambda _name: root,
+                    config_manager=service.config_manager,
+                    project_dir=service.project_path,
+                    input_text=invocation.input_data,
+                    with_profiles=invocation.with_profiles,
+                    bind=invocation.bind,
+                    pull=invocation.pull,
+                    persist=invocation.persist,
+                    on_left_out=_say_left_out,
+                )
+            )
+    except RemoteRunError as e:
+        raise click.ClickException(str(e)) from e
+    except KeyboardInterrupt:
+        raise SystemExit(130) from None
+    return _display_remote_document(
+        document, root, invocation.output_format, invocation.detailed
+    )
+
+
+def _say_left_out(left_out: list[LeftOut]) -> None:
+    """One line on stderr, in every output mode, naming what the remote
+    must satisfy with its own copy. stdout stays the result alone."""
+    labels = ", ".join(item.label for item in left_out)
+    click.echo(f"Left to the remote (not found locally): {labels}", err=True)
+
+
+@contextmanager
+def _waiting_on(remote: str, output_format: str | None) -> Iterator[None]:
+    """In rich mode, the remote's name and the elapsed time on stderr
+    while the run is out. Text and JSON modes print nothing, so a pipe
+    stays clean."""
+    if output_format is not None:
+        yield
+        return
+    done = threading.Event()
+    started = time.monotonic()
+    interactive = sys.stderr.isatty()
+
+    def tick() -> None:
+        while True:
+            elapsed = time.monotonic() - started
+            line = f"Running on {remote}... {elapsed:.0f}s"
+            click.echo(
+                f"\r{line}" if interactive else line, err=True, nl=not interactive
+            )
+            if done.wait(WAIT_TICK_S) or not interactive:
+                return
+
+    ticker = threading.Thread(target=tick, daemon=True)
+    ticker.start()
+    try:
+        yield
+    finally:
+        done.set()
+        ticker.join()
+        if interactive:
+            click.echo("", err=True)
+
+
+def _display_remote_document(
+    document: dict[str, Any],
+    root: EnsembleConfig,
+    output_format: str | None,
+    detailed: bool,
+) -> bool:
+    """Show the remote's document as a local run shows its own: a refusal
+    as the table, a result through the result display. Returns whether its
+    status is "error"."""
+    error = document.get("error")
+    if isinstance(error, dict) and "kind" in error:
+        display_refusal(document, output_format)
+        return True
+    display_run_record(
+        document.get("bindings") or {},
+        document.get("pulled") or [],
+        output_format,
+        document.get("persisted"),
+    )
+    return display_result(
+        {"results": {}, "metadata": {}, **document},
+        root.agents,
+        output_format or "rich",
+        detailed,
+        root,
+    )
 
 
 def _list_ensembles_from_dir(config_dir: str, service: Any) -> None:
@@ -364,12 +582,12 @@ def list_ensembles_command(config_dir: str | None) -> None:
 
     service = _get_service()
     ensemble_dirs = service.config_manager.get_ensembles_dirs()
-    if not ensemble_dirs:
+    grouped = service.list_ensembles_grouped()
+    if not ensemble_dirs and not grouped["bundle"]:
         click.echo("No ensemble directories found.")
         click.echo("Run 'llm-orc config init' to set up local configuration.")
         return
 
-    grouped = service.list_ensembles_grouped()
     if not any(grouped.values()):
         click.echo("No ensembles found in any configured directories:")
         for dir_path in ensemble_dirs:
@@ -383,6 +601,7 @@ def list_ensembles_command(config_dir: str | None) -> None:
         grouped["library"],
         grouped["global"],
         grouped["packaged"],
+        grouped.get("bundle", []),
     )
 
 

@@ -85,6 +85,31 @@ ESCAPES = {
 }
 
 
+class TestPersist:
+    def test_global_with_an_inline_root_validates(self) -> None:
+        assert _parse(persist="global").persist == "global"
+
+    def test_the_default_is_no_persist(self) -> None:
+        assert _parse().persist is None
+
+    def test_any_other_scope_is_rejected(self) -> None:
+        with pytest.raises(RunRequestError, match="persist"):
+            _parse(persist="project")
+
+    def test_a_named_root_cannot_be_persisted(self) -> None:
+        with pytest.raises(RunRequestError, match="inline root"):
+            RunRequest.parse({"ensemble_name": "x", "persist": "global"})
+
+    def test_the_root_name_must_be_plain(self) -> None:
+        nested = {**ROOT, "name": "group/root"}
+        with pytest.raises(RunRequestError, match="'/'"):
+            RunRequest.parse({"ensemble": nested, "persist": "global"})
+
+    def test_a_nested_root_name_is_fine_without_persist(self) -> None:
+        nested = {**ROOT, "name": "group/root"}
+        assert RunRequest.parse({"ensemble": nested}).persist is None
+
+
 class TestPathSafety:
     @pytest.mark.parametrize("fields", ESCAPES.values(), ids=ESCAPES.keys())
     def test_each_escape_raises_and_leaves_every_tree_untouched(

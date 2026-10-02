@@ -14,6 +14,10 @@ carries it to emit, which refuses a rejected seat before the deliverable ships. 
 seat with no contract (an ungated seat, a raw-prose explainer) is vacuously admitted.
 """
 
+# /// llm-orc
+# files = ["_helpers.py"]
+# ///
+
 from __future__ import annotations
 
 import asyncio

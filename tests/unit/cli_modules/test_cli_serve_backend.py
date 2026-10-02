@@ -4,12 +4,14 @@ import os
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
 from click.testing import CliRunner
 
 from llm_orc.cli import cli
 
 
 class TestServeOwnsTheRouter:
+    @pytest.mark.usefixtures("restored_signal_handlers")
     def test_serve_starts_router_exports_url_and_stops_after_uvicorn(self) -> None:
         supervisor = MagicMock()
         supervisor.base_url = "http://127.0.0.1:8080/v1"

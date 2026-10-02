@@ -10,6 +10,10 @@ common I/O envelope"; ADR-024; ADR-046 §2). The seat owns the deliverable
 CONTENT; the serving classify owns the DESTINATION path — shape combines them.
 """
 
+# /// llm-orc
+# files = ["_helpers.py"]
+# ///
+
 from __future__ import annotations
 
 import json

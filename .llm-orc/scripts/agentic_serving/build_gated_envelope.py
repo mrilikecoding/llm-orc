@@ -11,6 +11,10 @@ owns the loop). The surviving ADR-024 container shape is preserved; the retired
 collapse preservation).
 """
 
+# /// llm-orc
+# files = ["_helpers.py"]
+# ///
+
 from __future__ import annotations
 
 import json

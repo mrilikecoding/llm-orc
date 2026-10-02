@@ -27,6 +27,10 @@ the accept gate reads it unchanged. Deterministic control per the standing
 constraint: model judgment only where a closed check cannot decide.
 """
 
+# /// llm-orc
+# files = ["_helpers.py"]
+# ///
+
 from __future__ import annotations
 
 import ast

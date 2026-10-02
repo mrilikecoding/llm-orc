@@ -485,6 +485,7 @@ class TestClientModelList:
 
 
 class TestInstallSignalStop:
+    @pytest.mark.usefixtures("restored_signal_handlers")
     def test_sigterm_stops_the_router_then_re_raises_the_signal(self) -> None:
         """uvicorn re-raises the signal it captured after restoring default
         handlers, so the process dies before any ``finally`` (e2e

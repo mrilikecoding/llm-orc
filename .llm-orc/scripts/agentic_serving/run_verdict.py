@@ -9,6 +9,10 @@ the indent is stripped here), so untrusted output text can never be confused
 with block headers.
 """
 
+# /// llm-orc
+# files = ["_helpers.py"]
+# ///
+
 from __future__ import annotations
 
 import json

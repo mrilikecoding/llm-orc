@@ -10,11 +10,7 @@ from typing import Any, Literal
 
 from llm_orc.core.config.closure import Closure, Key, walk_closure
 from llm_orc.core.config.config_manager import ConfigurationManager
-from llm_orc.core.config.ensemble_config import (
-    EnsembleConfig,
-    EnsembleLoader,
-    child_ensemble_search_dirs,
-)
+from llm_orc.core.config.ensemble_config import EnsembleConfig
 from llm_orc.core.execution.scripting.resolver import (
     ScriptNotFoundError,
     ScriptResolver,
@@ -38,7 +34,9 @@ from llm_orc.services.handlers.preflight import (
     is_runnable,
 )
 from llm_orc.services.handlers.profile_handler import ProfileHandler
-from llm_orc.services.handlers.run_preparation import LOAD_ERRORS, ChildLoadError
+from llm_orc.services.handlers.run_preparation import MaterializedRoot
+from llm_orc.services.handlers.run_view import run_view
+from llm_orc.services.handlers.script_files import ScriptFileLocator
 
 _DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1"
 _DEFAULT_LLAMA_SERVER_URL = "http://127.0.0.1:8080/v1"
@@ -207,20 +205,36 @@ class ProviderHandler:
         )
 
     async def check_ensemble_runnable(
-        self, arguments: dict[str, Any]
+        self, arguments: dict[str, Any], *, root: MaterializedRoot | None = None
     ) -> dict[str, Any]:
-        """Check if an ensemble can run with current providers."""
+        """Check if an ensemble can run with current providers.
+
+        ``root`` is a bundle's root materialized in a run layer: it is
+        judged over that layer's view, with the rows its bindings add,
+        instead of being looked up in the tiers.
+        """
         ensemble_name = arguments.get("ensemble_name")
         if not ensemble_name:
             raise ValueError("ensemble_name is required")
 
-        config = self._find_ensemble(ensemble_name)
-        if not config:
-            raise ValueError(f"Ensemble not found: {ensemble_name}")
-
-        outcome = await self.preflight(config, ensemble_name, probe_host=True)
+        if root is None:
+            config = self._find_ensemble(ensemble_name)
+            if not config:
+                raise ValueError(f"Ensemble not found: {ensemble_name}")
+            outcome = await self.preflight(config, ensemble_name, probe_host=True)
+            extra: list[DependencyReport] = []
+        else:
+            config = root.config
+            outcome = await self.preflight(
+                config,
+                ensemble_name,
+                config_manager=root.manager,
+                project_dir=root.project_dir,
+                probe_host=True,
+            )
+            extra = root.extra_reports
         closure, providers = outcome.closure, outcome.providers
-        reports = outcome.reports
+        reports = [*outcome.reports, *extra]
         by_key: dict[Key, DependencyReport] = {(r.kind, r.name): r for r in reports}
 
         agent_results = [
@@ -267,16 +281,19 @@ class ProviderHandler:
         if config_manager is None or project_dir is _MISSING:
             profiles = self._profile_handler.get_runtime_profiles()
             find_child = self._find_child
-            script_found: Callable[[str], bool] = self._script_found
+            resolver = self._script_resolver_factory()
         else:
-            profiles = config_manager.get_model_profiles()
-            find_child = _child_finder(config_manager, project_dir)
-            script_found = _script_finder(
-                ScriptResolver(
-                    project_dir=project_dir, run_dir=config_manager.run_layer_dir
-                )
-            )
-        closure = walk_closure(config, find_child, profiles, root_ref=root_ref)
+            view = run_view(config_manager, project_dir)
+            profiles = view.profiles
+            find_child = view.find_child
+            resolver = view.resolver
+        closure = walk_closure(
+            config,
+            find_child,
+            profiles,
+            root_ref=root_ref,
+            script_files=ScriptFileLocator(resolver),
+        )
         probed = _probed_by(closure, profiles)
         if probe_host:
             probed = {**profiles, **probed}
@@ -288,15 +305,9 @@ class ProviderHandler:
             closure.dependencies,
             profiles=profiles,
             providers=providers,
-            script_found=script_found,
+            script_found=_script_finder(resolver),
         )
         return Preflight(closure=closure, reports=reports, providers=providers)
-
-    def _script_found(self, script_ref: str) -> bool:
-        """The executor's own resolution (ruling 5): a bare name is
-        inline content and resolves; only a path-syntax or absolute
-        reference can be missing."""
-        return _script_finder(self._script_resolver_factory())(script_ref)
 
     def _agent_view(
         self,
@@ -408,23 +419,6 @@ def _script_finder(resolver: ScriptResolver) -> Callable[[str], bool]:
         return True
 
     return found
-
-
-def _child_finder(
-    config_manager: ConfigurationManager, project_dir: Path | None
-) -> Callable[[str], EnsembleConfig | None]:
-    """The executor's child lookup over this manager and project dir:
-    the same search dirs, the same by-filename finder."""
-    loader = EnsembleLoader()
-
-    def find(reference: str) -> EnsembleConfig | None:
-        search_dirs = child_ensemble_search_dirs(project_dir, config_manager)
-        try:
-            return loader._find_ensemble_in_dirs(reference, search_dirs)
-        except LOAD_ERRORS as e:
-            raise ChildLoadError(reference, e) from e
-
-    return find
 
 
 def _is_openai_compatible(provider: str | None) -> bool:

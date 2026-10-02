@@ -54,8 +54,10 @@ def create_app() -> FastAPI:
     # A fresh MCPServer per app (each owns its own FastMCP session
     # manager, which can only run() once), but built on the shared
     # OrchestraService so REST, /v1, and the /mcp mount below all see
-    # the same project state (docs/plans/2026-09-16-mcp-in-serve.md).
-    mcp_server = MCPServer(service=get_orchestra_service())
+    # the same project state (docs/plans/2026-09-16-mcp-in-serve.md). It
+    # does not relay: a serve runs its own ensembles, and a client that
+    # wants another serve calls that serve itself.
+    mcp_server = MCPServer(service=get_orchestra_service(), relay=False)
     mcp_app = mcp_server.streamable_http_app()
 
     @asynccontextmanager

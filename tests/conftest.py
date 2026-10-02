@@ -1,6 +1,7 @@
 """Shared test fixtures and configuration."""
 
 import shutil
+import signal
 from collections.abc import Generator
 from pathlib import Path
 from unittest.mock import Mock, patch
@@ -15,6 +16,21 @@ from llm_orc.core.execution.executor_factory import ExecutorFactory
 pytest_plugins = ["pytest_bdd"]
 
 _project_root = Path(__file__).resolve().parent.parent
+
+
+@pytest.fixture
+def restored_signal_handlers() -> Generator[None, None, None]:
+    """Put back the SIGINT and SIGTERM handlers a test installs for real.
+
+    A handler left behind stops asyncio installing its own SIGINT handler
+    in a later test on the same worker (it does so only over the default
+    one), so a real Ctrl-C in that test kills the process or goes
+    unnoticed.
+    """
+    saved = {sig: signal.getsignal(sig) for sig in (signal.SIGINT, signal.SIGTERM)}
+    yield
+    for sig, handler in saved.items():
+        signal.signal(sig, handler)
 
 
 @pytest.fixture(autouse=True)
@@ -157,6 +173,16 @@ def _reset_http_connection_pool() -> Generator[None, None, None]:
     HTTPConnectionPool._instance = None
 
 
+def _subdirs(path: Path) -> list[Path]:
+    """The directories directly under ``path``; empty when ``path`` is
+    gone. Every xdist worker shares the real artifacts directory, so
+    another worker can remove one between a check and a listing."""
+    try:
+        return [d for d in path.iterdir() if d.is_dir()]
+    except FileNotFoundError:
+        return []
+
+
 @pytest.fixture(autouse=True)
 def cleanup_test_artifacts() -> Generator[None, None, None]:
     """Automatically clean up test artifacts after each test.
@@ -168,14 +194,14 @@ def cleanup_test_artifacts() -> Generator[None, None, None]:
     artifacts_path = _project_root / ".llm-orc" / "artifacts"
     initial_dirs = set()
     if artifacts_path.exists():
-        initial_dirs = {d.name for d in artifacts_path.iterdir() if d.is_dir()}
+        initial_dirs = {d.name for d in _subdirs(artifacts_path)}
 
     # Run the test
     yield
 
     # Clean up any new top-level artifact directories created during test
     if artifacts_path.exists():
-        current_dirs = {d.name for d in artifacts_path.iterdir() if d.is_dir()}
+        current_dirs = {d.name for d in _subdirs(artifacts_path)}
         new_dirs = current_dirs - initial_dirs
 
         # Also check for modified directories (new timestamped subdirs)
@@ -185,11 +211,9 @@ def cleanup_test_artifacts() -> Generator[None, None, None]:
                 # Check if this directory has new timestamped subdirectories
                 if dir_name in initial_dirs:
                     # Check for new subdirectories created during test
-                    subdirs = list(dir_path.iterdir())
+                    subdirs = _subdirs(dir_path)
                     # If it has new content, consider it modified
-                    if any(
-                        subdir.is_dir() and "202" in subdir.name for subdir in subdirs
-                    ):
+                    if any("202" in subdir.name for subdir in subdirs):
                         new_dirs.add(dir_name)
 
         # Clean up all new or modified directories

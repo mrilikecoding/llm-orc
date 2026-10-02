@@ -10,9 +10,10 @@ from collections.abc import (
     AsyncIterator,
     Awaitable,
     Callable,
+    Iterator,
     Mapping,
 )
-from contextlib import aclosing, asynccontextmanager
+from contextlib import aclosing, asynccontextmanager, contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -26,12 +27,19 @@ from llm_orc.core.config.state import resolve_state_dir
 from llm_orc.core.execution.artifact_manager import ArtifactManager
 from llm_orc.core.execution.results_processor import caller_status
 from llm_orc.mcp.project_context import ProjectContext
+from llm_orc.services.handlers.bundle_store import (
+    BundleError,
+    BundleStore,
+    stored_form,
+)
 from llm_orc.services.handlers.preflight import DependencyReport, is_runnable
 from llm_orc.services.handlers.run_preparation import (
     INVALID_REQUEST,
     LOAD_ERRORS,
     NOT_EQUIPPED,
     ChildLoadError,
+    MaterializedRoot,
+    RootNotFoundError,
     RunRefusedError,
     load_problem,
     only_pullable_unmet,
@@ -44,6 +52,7 @@ from llm_orc.services.handlers.run_request import (
     RunRequestError,
     apply_bindings,
     materialize,
+    overlay,
 )
 
 if TYPE_CHECKING:
@@ -63,6 +72,7 @@ _REQUEST_KEYS = (
     "scripts",
     "bind",
     "pull",
+    "persist",
 )
 
 
@@ -75,6 +85,7 @@ class PreparedRun:
     inline: bool = False
     bindings: dict[str, str] = field(default_factory=dict)
     pulled: list[str] = field(default_factory=list)
+    persisted: str | None = None
 
 
 @dataclass
@@ -85,6 +96,17 @@ class _Layer:
     root_path: Path | None = None
     applied: dict[str, str] = field(default_factory=dict)
     unmet: list[tuple[str, str]] = field(default_factory=list)
+
+
+@dataclass
+class _Root:
+    """A materialized request: its layer, the manager the run resolves
+    through, the loaded root and the reference the closure walk starts at."""
+
+    layer: _Layer
+    manager: ConfigurationManager
+    config: Any
+    ref: str
 
 
 class ExecutionHandler:
@@ -100,6 +122,7 @@ class ExecutionHandler:
         *,
         preflight_fn: PreflightFn,
         layer_executor_fn: LayerExecutorFn,
+        bundle_store: BundleStore | None = None,
     ) -> None:
         """Initialize with dependencies.
 
@@ -112,6 +135,8 @@ class ExecutionHandler:
             preflight_fn: The gate every run passes (``ProviderHandler.preflight``).
             layer_executor_fn: Builds the executor of a run with a layer from
                 its config manager view and whether to save artifacts.
+            bundle_store: Where persisted closures are kept; the config
+                manager's global config directory when omitted.
         """
         self._config_manager = config_manager
         self._ensemble_loader = ensemble_loader
@@ -120,6 +145,9 @@ class ExecutionHandler:
         self._find_ensemble = find_ensemble_fn
         self._preflight = preflight_fn
         self._layer_executor = layer_executor_fn
+        self._bundles = bundle_store or BundleStore(
+            lambda: self._config_manager.global_config_dir
+        )
         self._project_path: Path | None = None
 
     def set_project_context(self, ctx: ProjectContext) -> None:
@@ -150,9 +178,9 @@ class ExecutionHandler:
             input_data = path.read_text()
 
         try:
-            async with self._prepared(
+            async with self.prepared(
                 _request_data(arguments),
-                self._lookup_in_tiers,
+                self._find_ensemble,
                 "Ensemble does not exist",
             ) as run:
                 result = await run.executor.execute(run.config, input_data)
@@ -162,6 +190,7 @@ class ExecutionHandler:
                 return {
                     "results": result.get("results", {}),
                     "deliverable": result.get("deliverable"),
+                    "metadata": result.get("metadata", {}),
                     "status": status,
                     "has_errors": has_errors,
                     "raw_output": run.config.raw_output,
@@ -170,18 +199,8 @@ class ExecutionHandler:
         except RunRefusedError as refusal:
             return refusal.envelope()
 
-    def _lookup_in_tiers(self, ensemble_name: str) -> Any:
-        """The first tier directory that has the ensemble."""
-        for ensemble_dir in self._config_manager.get_ensembles_dirs():
-            config = self._ensemble_loader.find_ensemble(
-                str(ensemble_dir), ensemble_name
-            )
-            if config:
-                return config
-        return None
-
     @asynccontextmanager
-    async def _prepared(
+    async def prepared(
         self,
         data: Mapping[str, Any],
         lookup: Callable[[str], Any],
@@ -196,9 +215,20 @@ class ExecutionHandler:
         cancellation.
         """
         request = _parse(data)
+        self._refuse_shadowed_persist(request, lookup)
+        request, from_bundle = self._expand_bundle(request, lookup)
+        with self._run_dir(request) as run_dir:
+            yield await self._prepare(
+                request, run_dir, lookup, missing, keep_artifact=from_bundle
+            )
+
+    @contextmanager
+    def _run_dir(self, request: RunRequest) -> Iterator[Path | None]:
+        """A fresh run directory when the request injects anything, removed
+        on every way out."""
         run_dir = self._new_run_dir() if request.needs_layer else None
         try:
-            yield await self._prepare(request, run_dir, lookup, missing)
+            yield run_dir
         finally:
             if run_dir is not None:
                 shutil.rmtree(run_dir, ignore_errors=True)
@@ -214,15 +244,14 @@ class ExecutionHandler:
         run_dir: Path | None,
         lookup: Callable[[str], Any],
         missing: str,
+        *,
+        keep_artifact: bool = False,
     ) -> PreparedRun:
-        layer = self._open_layer(request, run_dir)
-        manager = layer.view or self._config_manager
-        inline = request.ensemble is not None
-        config = self._load_root(request, layer.root_path, manager, lookup, missing)
-        root_ref = str(
-            request.ensemble["name"] if request.ensemble else request.ensemble_name
-        )
-        outcome = await self._gate(config, root_ref, manager)
+        root = self._materialize(request, run_dir, lookup, missing)
+        layer, manager, config = root.layer, root.manager, root.config
+        keep = keep_artifact or request.persist is not None
+        inline = request.ensemble is not None and not keep
+        outcome = await self._gate(config, root.ref, manager)
         stray = unnamed_bind_keys(request.bind, outcome.closure.dependencies)
         if stray:
             raise RunRefusedError(
@@ -235,10 +264,126 @@ class ExecutionHandler:
             reports, pulled = await pull_pullable(reports, manager.get_model_profiles())
         if not is_runnable(reports):
             raise RunRefusedError(NOT_EQUIPPED, _unmet_message(reports), reports)
+        persisted = self._persist(request, lookup)
         if layer.view is None:
             return PreparedRun(config, self._get_executor(), inline, {}, pulled)
         executor = self._layer_executor(layer.view, not inline)
-        return PreparedRun(config, executor, inline, layer.applied, pulled)
+        return PreparedRun(config, executor, inline, layer.applied, pulled, persisted)
+
+    def _expand_bundle(
+        self, request: RunRequest, lookup: Callable[[str], Any]
+    ) -> tuple[RunRequest, bool]:
+        """A named root no tier resolves, that a bundle holds, becomes the
+        stored request with the caller's injections laid over it; the
+        flag says it did. The tiers are asked first, as for any named
+        root, so a tier file added under a bundle's name wins (ruling 9)."""
+        name = request.ensemble_name
+        if name is None or lookup(name) is not None:
+            return request, False
+        try:
+            stored = self._bundles.read(name)
+            if stored is None:
+                return request, False
+            return overlay(stored, request), True
+        except (BundleError, RunRequestError) as e:
+            raise RunRefusedError(INVALID_REQUEST, str(e)) from e
+
+    @contextmanager
+    def bundle_root(
+        self, name: str | None, lookup: Callable[[str], Any]
+    ) -> Iterator[MaterializedRoot | None]:
+        """The root of the bundle ``name`` materialized in a run layer, for
+        a check that judges it; None when ``name`` is not a bundle (a tier
+        resolves it first, or no bundle holds it). The layer is removed on
+        the way out."""
+        if not name:
+            yield None
+            return
+        try:
+            request, from_bundle = self._expand_bundle(
+                RunRequest(ensemble_name=name), lookup
+            )
+        except RunRefusedError as refusal:
+            raise ValueError(refusal.message) from refusal
+        if not from_bundle:
+            yield None
+            return
+        with self._run_dir(request) as run_dir:
+            try:
+                root = self._materialize(request, run_dir, lookup, "not found")
+            except RunRefusedError as refusal:
+                raise ValueError(refusal.message) from refusal
+            yield MaterializedRoot(
+                root.config,
+                root.manager,
+                self._project_path,
+                unmet_binding_rows(root.layer.unmet),
+            )
+
+    def _refuse_shadowed_persist(
+        self, request: RunRequest, lookup: Callable[[str], Any]
+    ) -> None:
+        """A bundle is never born shadowed: a root name some tier already
+        resolves is refused, naming the tier (ruling 9)."""
+        if request.persist is None or request.ensemble is None:
+            return
+        name = request.ensemble["name"]
+        found = lookup(name)
+        if found is None:
+            self._refuse_other_spelling(str(name))
+            return
+        source = getattr(found, "source_path", None)
+        tier = self._config_manager.classify_tier(Path(source)) if source else ""
+        where = f"the {tier} tier" if tier not in ("", "unknown") else "a tier"
+        raise RunRefusedError(
+            INVALID_REQUEST,
+            f"cannot persist {name!r}: {where} already has an ensemble of that name",
+        )
+
+    def _refuse_other_spelling(self, name: str) -> None:
+        """A bundle named like ``name`` in another spelling would be
+        overwritten on a case-folding disk and stranded under a root its
+        file name does not match."""
+        held = self._bundles.spelled_otherwise(name)
+        if held is not None:
+            raise RunRefusedError(
+                INVALID_REQUEST,
+                f"cannot persist {name!r}: the bundle {held!r} already holds "
+                "that name in another spelling",
+            )
+
+    def _persist(self, request: RunRequest, lookup: Callable[[str], Any]) -> str | None:
+        """Store the request that just passed the gate; the name stored.
+
+        The shadow and other-spelling checks run again here: the gate can
+        take long (a model pull), and a tier file or a bundle of another
+        spelling may have been written since the first check."""
+        if request.persist is None or request.ensemble is None:
+            return None
+        name = str(request.ensemble["name"])
+        self._refuse_shadowed_persist(request, lookup)
+        try:
+            self._bundles.write(name, stored_form(request))
+        except BundleError as e:
+            raise RunRefusedError(INVALID_REQUEST, str(e)) from e
+        return name
+
+    def _materialize(
+        self,
+        request: RunRequest,
+        run_dir: Path | None,
+        lookup: Callable[[str], Any],
+        missing: str,
+    ) -> _Root:
+        """The first half of preparing a run: write the layer, bind over
+        it and load the root, before anything is judged."""
+        layer = self._open_layer(request, run_dir)
+        manager = layer.view or self._config_manager
+        config = self._load_root(request, layer.root_path, manager, lookup, missing)
+        ref = str(
+            request.ensemble["name"] if request.ensemble else request.ensemble_name
+        )
+        return _Root(layer, manager, config, ref)
 
     def _open_layer(self, request: RunRequest, run_dir: Path | None) -> _Layer:
         """Materialize the request into ``run_dir`` and bind over it."""
@@ -264,7 +409,7 @@ class ExecutionHandler:
             name = str(request.ensemble_name)
             config = lookup(name)
             if not config:
-                raise ValueError(f"{missing}: {name}")
+                raise RootNotFoundError(f"{missing}: {name}", name)
             return config
         try:
             return self._ensemble_loader.load_from_file(
@@ -310,7 +455,7 @@ class ExecutionHandler:
             Execution result.
         """
         try:
-            async with self._prepared(
+            async with self.prepared(
                 _request_data({**(injection or {}), "ensemble_name": ensemble_name}),
                 self._find_ensemble,
                 "Ensemble does not exist",
@@ -348,7 +493,9 @@ class ExecutionHandler:
         result = state.get("result", {})
         if not isinstance(result, dict):
             result = {}
-        return {**result, **_run_record(run)} if result else result
+        if not result:
+            return result
+        return {**result, "raw_output": run.config.raw_output, **_run_record(run)}
 
     async def handle_streaming_event(
         self,
@@ -389,6 +536,7 @@ class ExecutionHandler:
             state["result"] = {
                 "results": results,
                 "deliverable": deliverable,
+                "metadata": event_data.get("metadata", {}),
                 "status": status,
                 "has_errors": has_errors,
             }
@@ -481,8 +629,8 @@ class ExecutionHandler:
         """
         input_data = params.get("input", "")
         try:
-            async with self._prepared(
-                _request_data(params), self._lookup_in_tiers, "Ensemble not found"
+            async with self.prepared(
+                _request_data(params), self._find_ensemble, "Ensemble not found"
             ) as run:
                 events = run.executor.execute_streaming(run.config, input_data)
                 async with aclosing(events):
@@ -494,12 +642,15 @@ class ExecutionHandler:
 
 def _run_record(run: PreparedRun) -> dict[str, Any]:
     """What the run was asked to do that the caller should see: the
-    bindings applied and the models pulled, when there are any."""
+    bindings applied, the models pulled and the bundle stored, when there
+    are any."""
     record: dict[str, Any] = {}
     if run.bindings:
         record["bindings"] = run.bindings
     if run.pulled:
         record["pulled"] = run.pulled
+    if run.persisted:
+        record["persisted"] = run.persisted
     return record
 
 

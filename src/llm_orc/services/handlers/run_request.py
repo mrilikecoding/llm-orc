@@ -15,12 +15,13 @@ from __future__ import annotations
 import unicodedata
 from collections.abc import Iterable, Mapping
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from llm_orc.core.config.config_manager import ConfigurationManager
+from llm_orc.core.execution.scripting.relative_path import check_relative
 from llm_orc.core.execution.scripting.resolver import ScriptResolver
 
 _FILE_MODE = 0o755
@@ -30,19 +31,10 @@ class RunRequestError(ValueError):
     """The request is malformed: the ``invalid_request`` carrier."""
 
 
-def _check_relative(key: str, what: str) -> None:
-    """A relative path: no ``..``, no leading ``/``, no backslash, no
-    empty or ``.`` segment."""
-    if not key or "\\" in key or "\0" in key or key.startswith("/"):
-        raise ValueError(f"{what} {key!r} is not a relative path")
-    if any(segment in ("", ".", "..") for segment in key.split("/")):
-        raise ValueError(f"{what} {key!r} is not a relative path")
-
-
-def _check_plain(key: str, what: str) -> None:
+def check_plain(key: str, what: str) -> None:
     """A name that becomes one file name: a relative path with no
     separator."""
-    _check_relative(key, what)
+    check_relative(key, what)
     if "/" in key:
         raise ValueError(f"{what} {key!r} must not contain '/'")
 
@@ -85,6 +77,14 @@ def _check_distinct(paths: Iterable[tuple[str, str]]) -> None:
         files[segments] = label
 
 
+def script_key_form(key: str) -> str:
+    """The form two script keys share when one reference reaches both:
+    the key without a leading ``scripts/`` and with hyphens as
+    underscores, compared as the disk folds names (see ``_folded``)."""
+    folded = "/".join(_folded(key))
+    return ScriptResolver.underscored(ScriptResolver.unprefixed(folded))
+
+
 def _check_one_reference_one_script(keys: Iterable[str]) -> None:
     """No two script keys are reachable from the same reference. The
     resolver also tries a reference without its leading ``scripts/`` and
@@ -93,8 +93,7 @@ def _check_one_reference_one_script(keys: Iterable[str]) -> None:
     The forms compare as the disk folds them (see ``_folded``)."""
     seen: dict[str, str] = {}
     for key in keys:
-        folded = "/".join(_folded(key))
-        form = ScriptResolver.underscored(ScriptResolver.unprefixed(folded))
+        form = script_key_form(key)
         if form in seen:
             raise ValueError(
                 f"script {key!r} and script {seen[form]!r} are reached by the "
@@ -116,21 +115,24 @@ class RunRequest(BaseModel):
     bind: dict[str, str] = Field(default_factory=dict)
     pull: bool = False
     input: str = ""
+    persist: Literal["global"] | None = None
 
     @model_validator(mode="after")
     def _validate(self) -> RunRequest:
         if (self.ensemble is None) == (self.ensemble_name is None):
             raise ValueError("give exactly one of ensemble and ensemble_name")
         for key in self.ensembles:
-            _check_relative(key, "ensemble name")
+            check_relative(key, "ensemble name")
         for key in (*self.profiles, *self.bind):
-            _check_plain(key, "profile name")
+            check_plain(key, "profile name")
         for key in self.scripts:
-            _check_relative(key, "script key")
+            check_relative(key, "script key")
             _check_reachable(key)
         _check_one_reference_one_script(self.scripts)
         if self.ensemble is not None:
             self._validate_root(self.ensemble)
+        if self.persist is not None:
+            self._validate_persist()
         twice = sorted(set(self.profiles) & set(self.bind))
         if twice:
             raise ValueError(f"profile {twice[0]!r} is defined twice (inline and bind)")
@@ -150,11 +152,18 @@ class RunRequest(BaseModel):
         paths.extend((k, f"script {k!r}") for k in self.scripts)
         return paths
 
+    def _validate_persist(self) -> None:
+        """A persisted request is stored under its root's name, so the root
+        is inline and the name is one file name (ruling 9)."""
+        if self.ensemble is None:
+            raise ValueError("persist needs an inline root (ensemble)")
+        check_plain(self.ensemble["name"], "persisted ensemble name")
+
     def _validate_root(self, root: dict[str, Any]) -> None:
         name = root.get("name")
         if not isinstance(name, str):
             raise ValueError("an inline ensemble needs a name")
-        _check_relative(name, "ensemble name")
+        check_relative(name, "ensemble name")
         if name in self.ensembles:
             raise ValueError(f"ensemble {name!r} is defined twice (root and child)")
 
@@ -176,6 +185,35 @@ class RunRequest(BaseModel):
             or self.scripts
             or self.bind
         )
+
+
+def overlay(stored: Mapping[str, Any], request: RunRequest) -> RunRequest:
+    """The stored closure with ``request``'s injections laid over it key
+    by key, plus its ``pull``, then validated as one request.
+
+    A role the caller defines, as ``bind[a]`` or as ``profiles[a]``,
+    replaces the stored definition of that role in either form: the union
+    would otherwise define it twice. Everything else the validator
+    hardened for one request holds for the union, so an injection that
+    meets what the bundle holds (``Kid`` against ``kid``, ``x.py`` against
+    ``scripts/x.py``) is a ``RunRequestError``.
+    """
+    roles = set(request.profiles) | set(request.bind)
+    kept_profiles = {
+        k: v for k, v in stored.get("profiles", {}).items() if k not in roles
+    }
+    kept_bind = {k: v for k, v in stored.get("bind", {}).items() if k not in roles}
+    return RunRequest.parse(
+        {
+            "ensemble": stored["ensemble"],
+            "ensembles": {**stored.get("ensembles", {}), **request.ensembles},
+            "profiles": {**kept_profiles, **request.profiles},
+            "scripts": {**stored.get("scripts", {}), **request.scripts},
+            "bind": {**kept_bind, **request.bind},
+            "pull": request.pull,
+            "input": request.input,
+        }
+    )
 
 
 def _first_message(error: ValidationError) -> str:

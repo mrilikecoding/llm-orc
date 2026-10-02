@@ -51,6 +51,10 @@ bindings stays on the fallback (named bound, recorded in the design
 brief, not closed).
 """
 
+# /// llm-orc
+# files = ["_helpers.py"]
+# ///
+
 from __future__ import annotations
 
 import ast
