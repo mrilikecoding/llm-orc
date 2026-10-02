@@ -34,9 +34,13 @@ def display_refusal(envelope: Mapping[str, Any], output_format: str | None) -> N
 
 
 def display_run_record(
-    bindings: Mapping[str, str], pulled: Sequence[str], output_format: str | None
+    bindings: Mapping[str, str],
+    pulled: Sequence[str],
+    output_format: str | None,
+    persisted: str | None = None,
 ) -> None:
-    """Name the bindings applied and the models pulled, when there are any."""
+    """Name the bindings applied, the models pulled and the bundle stored,
+    when there are any."""
     if output_format == "json":
         return
     if bindings:
@@ -44,6 +48,8 @@ def display_run_record(
         click.echo(f"Bindings applied: {applied}")
     if pulled:
         click.echo(f"Models pulled: {', '.join(pulled)}")
+    if persisted:
+        click.echo(f"Bundle persisted: {persisted}")
 
 
 def _rows(dependencies: Sequence[Mapping[str, Any]]) -> list[tuple[str, ...]]:
