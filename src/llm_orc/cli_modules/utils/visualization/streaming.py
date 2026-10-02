@@ -114,15 +114,21 @@ async def run_standard_execution(
     )
 
 
+_EXECUTOR_RESULT_KEYS = ("results", "metadata", "deliverable")
+
+
 def _result_document(
     result: dict[str, Any], record: dict[str, Any] | None = None
 ) -> dict[str, Any]:
     """The executor's raw result in the caller vocabulary REST and MCP
     return: ``status`` is ``success`` or ``error``, with ``has_errors``,
-    plus the bindings applied and models pulled when there are any."""
+    plus the bindings applied and models pulled when there are any. Only
+    the keys the service's document has are kept: the executor's own
+    ``input``, ``ensemble`` and ``execution_order`` are not part of it."""
     status, has_errors = caller_status(result.get("status"))
+    kept = {k: v for k, v in result.items() if k in _EXECUTOR_RESULT_KEYS}
     applied = {k: v for k, v in (record or {}).items() if v}
-    return {**result, "status": status, "has_errors": has_errors, **applied}
+    return {**kept, "status": status, "has_errors": has_errors, **applied}
 
 
 def display_result(
@@ -422,6 +428,8 @@ def _display_json_results(result: dict[str, Any], ensemble_config: Any) -> None:
             except (AttributeError, TypeError):
                 config_dict = {"type": "mock_config"}
 
+        # Every key of the document passes through, so a key the service
+        # adds is never dropped here; the CLI adds only ``config``.
         output: dict[str, Any] = {
             "results": result.get("results", {}),
             "metadata": result.get("metadata", {}),
@@ -429,14 +437,11 @@ def _display_json_results(result: dict[str, Any], ensemble_config: Any) -> None:
         if config_dict is not None:
             output["config"] = config_dict
         output.update(
-            {
-                "status": result.get("status", "error"),
-                "has_errors": bool(result.get("has_errors", True)),
-                "deliverable": result.get("deliverable"),
-            }
+            {k: v for k, v in result.items() if k not in ("results", "metadata")}
         )
-        # Bindings applied and models pulled, only when there are any.
-        output.update({k: result[k] for k in ("bindings", "pulled") if k in result})
+        output["status"] = result.get("status", "error")
+        output["has_errors"] = bool(result.get("has_errors", True))
+        output["deliverable"] = result.get("deliverable")
 
         click.echo(json.dumps(output, indent=2, default=str))
     except Exception as e:

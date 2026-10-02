@@ -262,6 +262,17 @@ class TestPersistingOnTheRemote:
         assert result.exit_code == 0, result.output
         assert "Bundle persisted: top" in result.stdout
 
+    def test_json_mode_carries_every_key_of_the_remotes_document(
+        self, in_project: Path, remote: Remote
+    ) -> None:
+        _write_top(in_project)
+
+        result = _remote_invoke("--output-format", "json", "--persist", "global")
+
+        document = json.loads(result.stdout)
+        assert document["persisted"] == "top"
+        assert document["raw_output"] is False
+
     def test_without_persist_no_line_and_no_key(
         self, in_project: Path, remote: Remote
     ) -> None:
