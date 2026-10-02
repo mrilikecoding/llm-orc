@@ -195,11 +195,24 @@ is `input_data`):
 
 ```json
 {
-  "ensemble": {"name": "review", "agents": ["..."]},
-  "ensembles": {"child": {"name": "child", "agents": ["..."]}},
+  "ensemble": {
+    "name": "review",
+    "description": "check, then review",
+    "agents": [
+      {"name": "check", "script": "probe/check.py"},
+      {"name": "sub", "ensemble": "child", "depends_on": ["check"]},
+      {"name": "review", "model_profile": "reviewer", "depends_on": ["sub"]}
+    ]
+  },
+  "ensembles": {
+    "child": {
+      "description": "a child ensemble",
+      "agents": [{"name": "c", "model_profile": "seat"}]
+    }
+  },
   "profiles": {"seat": {"provider": "llama-server", "model": "qwen3-8b"}},
   "scripts": {"probe/check.py": "print('...')"},
-  "bind": {"seat": "other-seat"},
+  "bind": {"reviewer": "seat"},
   "pull": false,
   "input": "text for the ensemble"
 }
@@ -209,14 +222,24 @@ The root is `ensemble` (inline, as above) or `ensemble_name` (installed,
 in its place), never both. `POST /api/ensembles/{name}/execute` takes the same body without a
 root: the path names it, and a body that also carries `ensemble_name` or
 `ensemble` is a 422. Both REST bodies reject unknown keys with a 422, so a
-misspelled `bind` cannot run the call without its binding.
+misspelled `bind` cannot run the call without its binding. The MCP tool
+ignores unknown arguments instead, so a misspelled argument over MCP is
+dropped silently.
+
+Names must be distinct ignoring case: `Kid` and `kid`, or `a` and
+`a/b.py`, are `invalid_request`, since a case-folding disk would make each
+pair one file. Script keys need path syntax (a `/` or a script extension);
+a bare key like `date` would be read as shell content, so it is
+`invalid_request` too.
 
 Every run through REST or MCP is preflighted first, named ensembles
 included (`/v1/chat/completions` and the local CLI are not gated). The
 gate is the preflight above, run over the request's own layer. A
 `pullable` model blocks unless `pull: true`, which downloads each one,
 waits for the router to load it, and resolves it only if the router
-reports `loaded`. When the host cannot run the request, nothing runs and
+reports `loaded`. The pull happens only when everything else is ready: a
+request with any other unmet dependency is refused without touching the
+router. When the host cannot run the request, nothing runs and
 the call returns (HTTP 200, like any run outcome):
 
 ```json
@@ -226,7 +249,8 @@ the call returns (HTTP 200, like any run outcome):
 
 `kind` is `not_equipped` (the dependency report, same rows as preflight)
 or `invalid_request` (the request is malformed: both roots, a script key
-that escapes its directory, a `bind` key no profile names). A success
+that escapes its directory, names that collide, a `bind` key no profile
+names). A success
 keeps its usual keys and adds `bindings` (the binds applied) and `pulled`
 (the models downloaded) when they are not empty.
 
