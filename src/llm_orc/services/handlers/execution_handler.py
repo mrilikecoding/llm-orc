@@ -353,10 +353,15 @@ class ExecutionHandler:
             )
 
     def _persist(self, request: RunRequest) -> str | None:
-        """Store the request that just passed the gate; the name stored."""
+        """Store the request that just passed the gate; the name stored.
+
+        The other-spelling check runs again here: the gate can take long
+        (a model pull), and a bundle of another spelling may have been
+        written since the first check."""
         if request.persist is None or request.ensemble is None:
             return None
         name = str(request.ensemble["name"])
+        self._refuse_other_spelling(name)
         try:
             self._bundles.write(name, stored_form(request))
         except BundleError as e:
