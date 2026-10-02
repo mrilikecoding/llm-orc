@@ -1,13 +1,14 @@
 """Script-based agent execution for hybrid LLM/script workflows."""
 
 import asyncio
-import functools
 import json
 import os
 import shlex
+import signal
 import subprocess
 import sys
 import tempfile
+import threading
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -35,20 +36,117 @@ SCRIPT_POOL = ThreadPoolExecutor(
 )
 
 
+class _Child:
+    """The one script subprocess a ``_run_subprocess`` call starts.
+
+    The worker thread and the cancelling coroutine meet here. The lock
+    makes "cancel before the child exists" and "start the child" mutually
+    exclusive: whichever comes second sees the other's mark.
+    """
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._cancelled = False
+        self._process: subprocess.Popen[str] | None = None
+
+    def start(self, args: tuple[Any, ...], kwargs: dict[str, Any]) -> Any:
+        """Start the child in its own session, or None once cancelled."""
+        with self._lock:
+            if self._cancelled:
+                return None
+            self._process = subprocess.Popen(  # nosec B603 B602
+                *args, start_new_session=True, **kwargs
+            )
+            return self._process
+
+    def cancel(self) -> None:
+        with self._lock:
+            self._cancelled = True
+            if self._process is not None:
+                _kill_group(self._process)
+
+
+def _kill_group(process: subprocess.Popen[str]) -> None:
+    """Kill the child and everything it started (it leads its own group)."""
+    try:
+        os.killpg(process.pid, signal.SIGKILL)
+    except (ProcessLookupError, PermissionError):
+        process.kill()
+
+
+def _run_child(
+    child: _Child, args: tuple[Any, ...], kwargs: dict[str, Any]
+) -> subprocess.CompletedProcess[str] | None:
+    """``subprocess.run``'s contract, on a child the caller can kill.
+
+    ``input``, ``capture_output``, ``timeout`` and ``check`` behave as in
+    ``subprocess.run``, including the exceptions and their attributes. A
+    timeout kills the child's whole group. Returns None when the call was
+    cancelled before the child started.
+    """
+    options = dict(kwargs)
+    stdin_data = options.pop("input", None)
+    timeout = options.pop("timeout", None)
+    check = options.pop("check", False)
+    if options.pop("capture_output", False):
+        options["stdout"] = options["stderr"] = subprocess.PIPE
+    if stdin_data is not None:
+        options["stdin"] = subprocess.PIPE
+    process = child.start(args, options)
+    if process is None:
+        return None
+    with process:
+        try:
+            stdout, stderr = process.communicate(stdin_data, timeout=timeout)
+        except subprocess.TimeoutExpired as exc:
+            _kill_group(process)
+            stdout, stderr = process.communicate()
+            raise subprocess.TimeoutExpired(
+                process.args, timeout, output=stdout, stderr=stderr
+            ) from exc
+        except BaseException:
+            _kill_group(process)
+            raise
+        returncode = process.poll()
+    if check and returncode:
+        raise subprocess.CalledProcessError(
+            returncode, process.args, output=stdout, stderr=stderr
+        )
+    return subprocess.CompletedProcess(process.args, returncode or 0, stdout, stderr)
+
+
 async def _run_subprocess(
     *args: Any, **kwargs: Any
 ) -> subprocess.CompletedProcess[str]:
-    """Run ``subprocess.run`` on the script pool without blocking the loop.
+    """Run a script subprocess on the script pool without blocking the loop.
 
-    ``functools.partial`` rather than a lambda so nothing closes over loop
-    variables. Exceptions propagate exactly as they would inline, which is
-    what keeps ``ScriptAgent.execute``'s TimeoutExpired/CalledProcessError
-    envelopes intact.
+    Exceptions propagate exactly as ``subprocess.run`` raises them, which
+    is what keeps ``ScriptAgent.execute``'s TimeoutExpired/CalledProcessError
+    envelopes intact. The child leads its own process group. When the
+    awaiting task is cancelled the group is killed and the worker thread has
+    finished before the cancellation propagates, so a cancelled run leaves
+    no process behind to outlive the directory its caller then removes.
     """
     loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(
-        SCRIPT_POOL, functools.partial(subprocess.run, *args, **kwargs)
-    )
+    child = _Child()
+    future = SCRIPT_POOL.submit(_run_child, child, args, kwargs)
+    waiting = asyncio.wrap_future(future, loop=loop)
+    try:
+        result = await asyncio.shield(waiting)
+    except asyncio.CancelledError:
+        child.cancel()
+        future.cancel()
+        while not waiting.done():
+            try:
+                await asyncio.wait([waiting])
+            except asyncio.CancelledError:
+                continue
+        if not waiting.cancelled():
+            waiting.exception()
+        raise
+    if result is None:
+        raise asyncio.CancelledError
+    return result
 
 
 def _bytecode_environment(

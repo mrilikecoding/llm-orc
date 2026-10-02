@@ -9,7 +9,10 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
+import signal
 import threading
+import time
 from pathlib import Path
 from typing import Any
 
@@ -21,6 +24,7 @@ from llm_orc.core.config.config_manager import resolve_global_config_dir
 from llm_orc.core.execution.ensemble_execution import EnsembleExecutor
 from llm_orc.core.execution.executor_factory import ExecutorFactory
 from llm_orc.core.models.model_factory import ModelFactory
+from llm_orc.mcp.server import MCPServer
 from llm_orc.providers.llama_server import LlamaServerClient
 from llm_orc.services.handlers import provider_handler, run_request
 from llm_orc.services.orchestra_service import OrchestraService
@@ -425,9 +429,9 @@ class TestClosingTheStream:
     ) -> None:
         started = tmp_path / "started.txt"
         sleeper = (
-            "import sys, time\n"
+            "import os, sys, time\n"
             "sys.stdin.read()\n"
-            f'open(r"{started}", "w").write("x")\n'
+            f'open(r"{started}", "w").write(str(os.getpid()))\n'
             "time.sleep(60)\n"
         )
         tasks: list[asyncio.Task[Any]] = []
@@ -450,11 +454,192 @@ class TestClosingTheStream:
                 break
             await asyncio.sleep(0.05)
         assert started.exists()
+        pid = int(started.read_text())
         assert len(_runs(state_dir)) == 1
+        try:
+            await stream.aclose()
+
+            assert [t.done() for t in tasks] == [True]
+            assert _runs(state_dir) == []
+            assert not _alive(pid)
+        finally:
+            if _alive(pid):
+                os.kill(pid, signal.SIGKILL)
+
+
+def _alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    return True
+
+
+async def _read_pid(path: Path) -> int:
+    for _ in range(200):
+        if path.exists() and path.read_text().strip():
+            return int(path.read_text())
+        await asyncio.sleep(0.05)
+    raise AssertionError(f"{path.name} never appeared")
+
+
+async def _gone(pid: int) -> bool:
+    for _ in range(40):
+        if not _alive(pid):
+            return True
+        await asyncio.sleep(0.05)
+    return False
+
+
+class TestACancelledRunKillsItsScripts:
+    """Cancelling a run leaves no script process, and nothing recreates the
+    run directory afterwards (the orphan's late import wrote bytecode there)."""
+
+    @pytest.fixture
+    def pids(self, tmp_path: Path) -> Any:
+        """Marker files for the script's pid and its child's; whatever is
+        still alive afterwards is killed so a red test leaves nothing."""
+        marks = {"script": tmp_path / "pid.txt", "child": tmp_path / "child.txt"}
+        yield marks
+        for mark in marks.values():
+            if mark.exists() and mark.read_text().strip():
+                try:
+                    os.kill(int(mark.read_text()), signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+
+    def _request(
+        self, pids: dict[str, Path], *, spawn: bool = False, nap: float = 1.0
+    ) -> Any:
+        child = (
+            "import subprocess\n"
+            "kid = subprocess.Popen(['sleep', '30'])\n"
+            f'open(r"{pids["child"]}", "w").write(str(kid.pid))\n'
+            if spawn
+            else ""
+        )
+        script = (
+            "import os, sys, time\n"
+            "sys.stdin.read()\n"
+            f"{child}"
+            f'open(r"{pids["script"]}", "w").write(str(os.getpid()))\n'
+            f"time.sleep({nap})\n"
+            "import _late\n"
+        )
+        return _inline_request(
+            scripts={"probe/x.py": script, "probe/_late.py": "x = 1\n"}
+        )
+
+    async def _assert_run_gone_for_good(self, state_dir: Path) -> None:
+        assert _runs(state_dir) == []
+        await asyncio.sleep(3)
+        assert _runs(state_dir) == []
+
+    async def test_cancelling_invoke_kills_the_script(
+        self, service: OrchestraService, state_dir: Path, pids: Any
+    ) -> None:
+        task = asyncio.create_task(service.invoke(self._request(pids)))
+        pid = await _read_pid(pids["script"])
+
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+        assert await _gone(pid)
+        await self._assert_run_gone_for_good(state_dir)
+
+    async def test_closing_the_stream_kills_the_script(
+        self, service: OrchestraService, state_dir: Path, pids: Any
+    ) -> None:
+        stream = service.invoke_streaming(self._request(pids))
+        await stream.__anext__()
+        pid = await _read_pid(pids["script"])
+
         await stream.aclose()
 
-        assert [t.done() for t in tasks] == [True]
-        assert _runs(state_dir) == []
+        assert await _gone(pid)
+        await self._assert_run_gone_for_good(state_dir)
+
+    async def test_the_scripts_own_children_die_with_it(
+        self, service: OrchestraService, state_dir: Path, pids: Any
+    ) -> None:
+        task = asyncio.create_task(service.invoke(self._request(pids, spawn=True)))
+        await _read_pid(pids["script"])
+        grandchild = await _read_pid(pids["child"])
+
+        started = time.monotonic()
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+        # A grandchild left alive holds the script's output pipe open, so
+        # the cancel would wait out its whole life.
+        assert time.monotonic() - started < 5
+        assert await _gone(grandchild)
+
+    async def test_cancelling_does_not_wait_out_the_script(
+        self, service: OrchestraService, pids: Any
+    ) -> None:
+        task = asyncio.create_task(service.invoke(self._request(pids, nap=20)))
+        pid = await _read_pid(pids["script"])
+
+        started = time.monotonic()
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+        assert time.monotonic() - started < 5
+        assert await _gone(pid)
+
+    async def test_a_timeout_still_kills_the_script_and_reports_it(
+        self, service: OrchestraService, pids: Any
+    ) -> None:
+        request = self._request(pids, nap=20)
+        request["ensemble"] = {
+            **INLINE,
+            "agents": [
+                {"name": "s", "script": "probe/x.py", "timeout_seconds": 1},
+                {"name": "w", "model_profile": "inline-seat"},
+            ],
+        }
+
+        result = await service.invoke(request)
+
+        assert "timed out" in result["results"]["s"]["error"].lower()
+        assert await _gone(await _read_pid(pids["script"]))
+
+    async def test_a_failing_reporter_closes_the_executor_stream(
+        self, service: OrchestraService, state_dir: Path, pids: Any
+    ) -> None:
+        """The streaming loop leaves early when the reporter raises; the
+        executor's stream (and so the script) must be closed before the
+        run dir goes, not whenever the generator is collected."""
+
+        class Failing(Reporter):
+            async def info(self, message: str) -> None:
+                if "started" in message and "Agent" in message:
+                    await _read_pid(pids["script"])
+                    raise RuntimeError("reporter broke")
+
+        with pytest.raises(RuntimeError, match="reporter broke"):
+            await service.execute_streaming(
+                None, "hi", Failing(), injection=self._request(pids)
+            )
+
+        assert not _alive(await _read_pid(pids["script"]))
+        await self._assert_run_gone_for_good(state_dir)
+
+    async def test_closing_the_mcp_stream_kills_the_script(
+        self, service: OrchestraService, state_dir: Path, pids: Any
+    ) -> None:
+        stream = MCPServer(service=service).invoke_streaming(self._request(pids))
+        await stream.__anext__()
+        pid = await _read_pid(pids["script"])
+
+        await stream.aclose()
+
+        assert not _alive(pid)
+        await self._assert_run_gone_for_good(state_dir)
 
 
 class TestRunsStayApart:
