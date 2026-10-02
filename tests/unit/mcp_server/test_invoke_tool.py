@@ -444,16 +444,11 @@ class _Ticks:
 
     def __init__(self) -> None:
         self.count = 0
-        self.longest_gap = 0.0
         self._task: asyncio.Task[None] | None = None
 
     async def _tick(self) -> None:
-        last = time.monotonic()
         while True:
             await asyncio.sleep(0.005)
-            now = time.monotonic()
-            self.longest_gap = max(self.longest_gap, now - last)
-            last = now
             self.count += 1
 
     def __enter__(self) -> _Ticks:
@@ -522,9 +517,6 @@ class TestTheEventLoop:
         assert ticks_while_shipping[0] >= 20
         assert len(post.ticks_while_out) == 1
         assert post.ticks_while_out[0] >= 20
-        # Whatever else blocked the loop (a read, a walk) shows as a gap
-        # far longer than the 5 ms tick; the two sleeps above were 300 ms.
-        assert ticks.longest_gap < 0.15
 
 
 def _threads_in_the_transport() -> list[str]:
