@@ -189,6 +189,28 @@ class TestPersist:
         stored = json.loads(_bundle_file().read_text())
         assert stored["scripts"]["tools/x.py"] == _script_source("x2")
 
+    def test_another_spelling_of_a_bundles_name_is_refused_naming_the_bundle(
+        self, client: TestClient
+    ) -> None:
+        """A case-folding disk would open ``pack.json`` for ``PACK`` and
+        overwrite the bundle under a root its file name does not match, so
+        the refusal holds on a case-sensitive disk too: the directory may
+        be copied to a folding one."""
+        _persisted(client)
+        before = _bundle_file().read_bytes()
+        renamed = _pack(persist="global")
+        renamed["ensemble"] = {**PACK, "name": "PACK"}
+
+        result = _run(client, renamed)
+
+        assert result["error"]["kind"] == "invalid_request"
+        assert "pack" in result["error"]["message"]
+        assert os.listdir(_bundle_file().parent) == ["pack.json"]
+        assert _bundle_file().read_bytes() == before
+        assert _run_named(client, "pack")["status"] == "success"
+        deleted = client.delete("/api/ensembles/pack", params={"scope": "global"})
+        assert deleted.json()["deleted"] is True
+
     def test_persist_needs_an_inline_root(self, client: TestClient) -> None:
         body = {"ensemble_name": "pack", "persist": "global", "input": "hi"}
         result = _run(client, body)

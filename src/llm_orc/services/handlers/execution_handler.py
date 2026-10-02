@@ -330,6 +330,7 @@ class ExecutionHandler:
         name = request.ensemble["name"]
         found = lookup(name)
         if found is None:
+            self._refuse_other_spelling(str(name))
             return
         source = getattr(found, "source_path", None)
         tier = self._config_manager.classify_tier(Path(source)) if source else ""
@@ -338,6 +339,18 @@ class ExecutionHandler:
             INVALID_REQUEST,
             f"cannot persist {name!r}: {where} already has an ensemble of that name",
         )
+
+    def _refuse_other_spelling(self, name: str) -> None:
+        """A bundle named like ``name`` in another spelling would be
+        overwritten on a case-folding disk and stranded under a root its
+        file name does not match."""
+        held = self._bundles.spelled_otherwise(name)
+        if held is not None:
+            raise RunRefusedError(
+                INVALID_REQUEST,
+                f"cannot persist {name!r}: the bundle {held!r} already holds "
+                "that name in another spelling",
+            )
 
     def _persist(self, request: RunRequest) -> str | None:
         """Store the request that just passed the gate; the name stored."""
