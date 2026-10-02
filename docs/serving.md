@@ -353,8 +353,9 @@ A project config's `remotes` is not read, so a checked-in file cannot point
 a run at a host you did not configure. An unknown name is an error that
 lists the known names. When a name is looked up, a `remotes` that is not a
 mapping, or an entry without a string `url`, is an error. A URL, named or
-given, must be `http` or `https` with a host and a port in 1 to 65535;
-anything else is refused naming what is wrong.
+given, must be `http` or `https` with a host and a port in 1 to 65535, no
+query or fragment, and no whitespace or control character (a YAML `url: |`
+block ends in a newline); anything else is refused naming what is wrong.
 
 The request is the one in the previous section, sent as a single POST to
 `<url>/api/ensembles/execute`. It carries:
@@ -388,8 +389,10 @@ an unknown or malformed remote, a `--with-profile` name with no local
 profile, a child ensemble that does not load, a script
 given as an absolute path, a script that is a bare file name in the working
 directory (the remote would read it as inline shell), a script reference
-with a `.` or `..` segment, a script that cannot be read or is not UTF-8
-text, two local files the remote would reach by one reference, an ensemble
+that is not a plain relative path (a `.` or `..` segment, a backslash, an
+empty segment), found locally or not, a script that cannot be read or is
+not UTF-8 text, two local files the remote would reach by one reference, an
+ensemble
 or profile that is not plain data, an interactive script, and a request the
 remote's validator would refuse. `--with-profile` and
 `--persist` without `--remote` are usage errors (exit 2).
@@ -507,9 +510,11 @@ matches an existing bundle's except for case (`PACK` when there is a
 `pack`) is refused, naming the existing bundle: on a disk that folds case
 the two would be one file. A bundle name otherwise means the file spelled
 exactly `<name>.json`.
-`delete_ensemble` with `scope: global` removes it. If the global tier also
-holds an ensemble file of that name, that delete removes the file and a
-second one removes the bundle.
+`delete_ensemble` with `scope: global` removes it when no tier resolves
+the name. If a tier does, the delete is the tier delete as before: a flat
+global `<name>.yaml` or `.yml` is removed and a second delete removes the
+bundle; a tier root in a subdirectory or under another file name cannot be
+deleted by name, and the bundle behind it stays until that file is removed.
 `persist` on a run by name is `invalid_request`, and the named execute route
 rejects it with a 422. `validate` and promote answer that a bundle is not a
 tier ensemble.
