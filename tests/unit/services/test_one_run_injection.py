@@ -13,6 +13,7 @@ import threading
 from pathlib import Path
 from typing import Any
 
+import httpx
 import pytest
 import yaml
 
@@ -208,6 +209,38 @@ class TestEveryRunIsGated:
         assert {
             d["name"]: d["status"] for d in events[0]["data"]["error"]["dependencies"]
         }["nope"] == "missing_profile"
+
+    async def test_a_run_contacts_no_endpoint_its_closure_does_not_use(
+        self,
+        project: Path,
+        service: OrchestraService,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        requests: list[str] = []
+
+        async def get(self: httpx.AsyncClient, url: str, **kwargs: Any) -> Any:
+            requests.append(url)
+            raise httpx.ConnectError("no endpoint in this test")
+
+        monkeypatch.setattr(httpx.AsyncClient, "get", get)
+        _profile(project / ".llm-orc", "elsewhere")
+        _yaml(
+            project / ".llm-orc" / "profiles" / "remote.yaml",
+            {
+                "name": "remote",
+                "provider": "openai-compatible",
+                "model": "theirs",
+                "base_url": "http://unrelated.test/v1",
+            },
+        )
+        _ensemble(
+            project / ".llm-orc", "top", [{"name": "w", "model_profile": "elsewhere"}]
+        )
+
+        result = await service.invoke({"ensemble_name": "top", "input": "hi"})
+
+        assert result["status"] == "success", result
+        assert requests == []
 
     async def test_a_missing_named_ensemble_still_raises(
         self, service: OrchestraService

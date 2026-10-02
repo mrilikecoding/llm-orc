@@ -186,45 +186,15 @@ class ProviderHandler:
         if not url_profiles:
             return OpenAICompatibleStatus(available=False)
 
-        import httpx
-
-        endpoints: list[EndpointStatus] = []
-        all_models: list[str] = []
-
-        for base_url, profile_names in url_profiles.items():
-            try:
-                async with httpx.AsyncClient(timeout=5.0) as client:
-                    response = await client.get(f"{base_url}/models")
-                    if response.status_code == 200:
-                        data = response.json()
-                        models = sorted(m.get("id", "") for m in data.get("data", []))
-                        endpoints.append(
-                            EndpointStatus(
-                                base_url=base_url,
-                                available=True,
-                                models=models,
-                                profiles=sorted(profile_names),
-                            )
-                        )
-                        all_models.extend(models)
-                    else:
-                        endpoints.append(
-                            EndpointStatus(
-                                base_url=base_url,
-                                available=False,
-                                profiles=sorted(profile_names),
-                                reason=f"HTTP {response.status_code}",
-                            )
-                        )
-            except Exception as e:
-                endpoints.append(
-                    EndpointStatus(
-                        base_url=base_url,
-                        available=False,
-                        profiles=sorted(profile_names),
-                        reason=f"{type(e).__name__}: {e}",
-                    )
+        endpoints = list(
+            await asyncio.gather(
+                *(
+                    _probe_endpoint(base_url, names)
+                    for base_url, names in url_profiles.items()
                 )
+            )
+        )
+        all_models = [m for endpoint in endpoints for m in endpoint.models]
 
         unique_models = sorted(set(all_models))
         any_available = any(ep.available for ep in endpoints)
@@ -301,12 +271,11 @@ class ProviderHandler:
                     project_dir=project_dir, run_dir=config_manager.run_layer_dir
                 )
             )
+        closure = walk_closure(config, find_child, profiles, root_ref=root_ref)
         provider_status = await self.get_provider_status(
-            {}, profiles=profiles, config_manager=manager
+            {}, profiles=_probed_by(closure, profiles), config_manager=manager
         )
         providers = provider_status.get("providers", {})
-
-        closure = walk_closure(config, find_child, profiles, root_ref=root_ref)
         reports = classify_dependencies(
             closure.dependencies,
             profiles=profiles,
@@ -375,6 +344,49 @@ class ProviderHandler:
     def _suggest_available_models(self, available_models: list[str]) -> list[str]:
         """Suggest available models."""
         return sorted(available_models)[:5]
+
+
+async def _probe_endpoint(base_url: str, profile_names: list[str]) -> EndpointStatus:
+    """One OpenAI-compatible endpoint's reachability and model list."""
+    import httpx
+
+    names = sorted(profile_names)
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            response = await client.get(f"{base_url}/models")
+            if response.status_code != 200:
+                return EndpointStatus(
+                    base_url=base_url,
+                    available=False,
+                    profiles=names,
+                    reason=f"HTTP {response.status_code}",
+                )
+            models = sorted(m.get("id", "") for m in response.json().get("data", []))
+    except Exception as e:
+        return EndpointStatus(
+            base_url=base_url,
+            available=False,
+            profiles=names,
+            reason=f"{type(e).__name__}: {e}",
+        )
+    return EndpointStatus(
+        base_url=base_url, available=True, models=models, profiles=names
+    )
+
+
+def _probed_by(
+    closure: Closure, profiles: dict[str, dict[str, str]]
+) -> dict[str, dict[str, str]]:
+    """The profiles whose endpoints the gate contacts: those of the
+    closure, and an inline model standing for its provider's default
+    endpoint. Nothing else the host defines costs the run a request."""
+    probed: dict[str, dict[str, str]] = {}
+    for dep in closure.dependencies:
+        if dep.kind == "profile" and dep.name in profiles:
+            probed[dep.name] = profiles[dep.name]
+        elif dep.kind == "model" and dep.provider:
+            probed[f"model:{dep.name}"] = {"provider": dep.provider}
+    return probed
 
 
 def _script_finder(resolver: ScriptResolver) -> Callable[[str], bool]:
