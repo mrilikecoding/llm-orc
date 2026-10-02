@@ -1021,9 +1021,11 @@ above stand except as amended here.
   nothing.
 - Ruling 9: the bundle is written once the gate passes, before any
   agent runs, so a run that then fails or is cancelled leaves it
-  stored. A bundle name acts only on the directory entry spelled
-  exactly like it whose root has that name (a case-folding disk let
-  `PACK` delete `pack.json`). `delete_ensemble` with `scope: global`
+  stored. A bundle name reads, runs and lists only the directory entry
+  spelled exactly like it whose root has that name (a case-folding disk
+  let `PACK` delete `pack.json`); `delete` removes the entry spelled
+  exactly `<name>.json` whatever root it stores, so a stranded file can
+  always be removed. `delete_ensemble` with `scope: global`
   removes a global tier file of the name first and the bundle on a
   second call. A caller's `bind` or inline profile for a role replaces
   the stored definition of that role in either form. A bundle is read
@@ -1158,6 +1160,28 @@ referenced. Its key rule gives both one key; the proof would accept two.
 A loud refusal of a rare layout. No MCP remote pin goes through an MCP
 wire, since the mounted server refuses `remote`; the stdio live row is
 that check.
+
+A third scoped review at `aedcb66a`: one blocker and notes. The blocker:
+the client's own set-up raised outside its error tree on common
+environments (a SOCKS proxy without `socksio`, a proxy with an unknown
+scheme, a stale `SSL_CERT_FILE`, a port above 65535), and each reached
+the CLI as a traceback and the MCP tool as a tool exception. Now the
+resolver accepts only `http` and `https` with a host and a port in
+range; building the client is its own step whose failure is
+`invalid_request` naming the proxy and TLS variables; the POST's errors
+stay `remote_error`. From the notes: a left-out reference with a `.` or
+`..` segment is refused like a found one, and nothing outside the layer
+counts as answering one; a redirect's `Location` is cut at 200
+characters and stripped of control characters; the other-spelling
+check is repeated right before the bundle is written; the MCP tool
+resolves the root on the loop before the ship thread starts, so a
+`set_project` cannot split root from closure; `MCPServer` does not
+relay unless asked, and only the stdio command asks; the delete order
+also respects a global `.yml` file; two tests that leaked a SIGINT
+handler restore it. Left as is: Ctrl-C cannot interrupt a ship that is
+itself stuck. The event-loop pin's longest-gap assertion was dropped
+after it failed 3 of 20 times under a concurrent suite; its tick
+counts alone go red for both regressions it guards.
 
 Lesson, binding: a parity pin proves the layouts it was given. Two
 rounds of key rules passed it and each was wrong on a layout it did not

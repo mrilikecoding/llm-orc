@@ -352,7 +352,9 @@ remotes:
 A project config's `remotes` is not read, so a checked-in file cannot point
 a run at a host you did not configure. An unknown name is an error that
 lists the known names. When a name is looked up, a `remotes` that is not a
-mapping, or an entry without a string `url`, is an error.
+mapping, or an entry without a string `url`, is an error. A URL, named or
+given, must be `http` or `https` with a host and a port in 1 to 65535;
+anything else is refused naming what is wrong.
 
 The request is the one in the previous section, sent as a single POST to
 `<url>/api/ensembles/execute`. It carries:
@@ -406,10 +408,15 @@ error naming the remote and the status code: a 422 from an older serve, a
 404, or the web UI's page answered with 200 for an unknown API path. A
 redirect is not followed, since the closure would go to a host you did not
 name; the error shows where it pointed, so the `url` can be corrected (an
-`http://` remote behind a proxy that redirects to `https://`, for one).
+`http://` remote behind a proxy that redirects to `https://`, for one). The
+address shown is cut at 200 characters and stripped of control characters.
 
-The client is `httpx`. It reads proxy settings from the environment, and a
-private CA from `SSL_CERT_FILE` or `SSL_CERT_DIR`.
+The client is `httpx`. It reads proxy settings from the environment
+(`HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`), and a private CA from
+`SSL_CERT_FILE` or `SSL_CERT_DIR`. When those settings keep the client from
+being set up (a SOCKS proxy without the `socksio` package, a proxy with an
+unknown scheme, a certificate file that is not there), the error names the
+cause and those variables, and nothing was sent.
 
 Exit codes: 0 for `status: success` with no errors, 1 for `status: error`
 or `has_errors` (a failed run, a refusal, a closure that cannot ship, an
