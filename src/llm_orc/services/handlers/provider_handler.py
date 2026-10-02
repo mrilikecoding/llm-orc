@@ -1,5 +1,6 @@
 """Provider status handler for MCP server."""
 
+import asyncio
 import os
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -87,18 +88,21 @@ class ProviderHandler:
         self,
         arguments: dict[str, Any],
         profiles: dict[str, dict[str, str]] | None = None,
+        config_manager: ConfigurationManager | None = None,
     ) -> dict[str, Any]:
         """Get status of all providers and available models.
 
         ``profiles`` is the map the OpenAI-compatible endpoints are
         grouped from; the service's own runtime profiles when omitted.
+        ``config_manager`` is where credentials are read from; the
+        service's own when omitted.
         """
         providers: dict[str, Any] = {}
 
         providers["llama-server"] = await self._get_llama_server_status()
 
-        providers["anthropic-api"] = self._get_cloud_provider_status("anthropic-api")
-        providers["google-gemini"] = self._get_cloud_provider_status("google-gemini")
+        for cloud in ("anthropic-api", "google-gemini"):
+            providers[cloud] = self._get_cloud_provider_status(cloud, config_manager)
 
         oai_status = await self._get_openai_compatible_status(profiles)
         providers["openai-compatible"] = oai_status.model_dump()
@@ -113,7 +117,8 @@ class ProviderHandler:
         base_url = os.environ.get("LLAMA_SERVER_URL", _DEFAULT_LLAMA_SERVER_URL)
         client = LlamaServerClient.from_base_url(base_url)
         try:
-            inventory = client.inventory()
+            # Blocking urllib, up to 5 s on an unreachable router: off the loop.
+            inventory = await asyncio.to_thread(client.inventory)
         except (OSError, ValueError) as e:
             return LlamaServerProviderStatus(
                 available=False,
@@ -131,14 +136,22 @@ class ProviderHandler:
             base_url=base_url,
         ).model_dump()
 
-    def _get_cloud_provider_status(self, provider: str) -> dict[str, Any]:
-        """Check if a cloud provider is configured."""
+    def _get_cloud_provider_status(
+        self, provider: str, config_manager: ConfigurationManager | None = None
+    ) -> dict[str, Any]:
+        """Check if a cloud provider is configured, reading credentials
+        through ``config_manager`` and creating nothing: a host with no
+        credentials file has no credentials, and building the storage
+        would write an encryption key into its global config dir."""
         from llm_orc.core.auth.authentication import (
             CredentialStorage,
         )
 
-        storage = CredentialStorage()
-        configured_providers = storage.list_providers()
+        manager = config_manager or self._profile_handler.config_manager
+        if manager.get_credentials_file().exists():
+            configured_providers = CredentialStorage(manager).list_providers()
+        else:
+            configured_providers = []
 
         if provider in configured_providers:
             return CloudProviderStatus(available=True, reason="configured").model_dump()
@@ -274,6 +287,7 @@ class ProviderHandler:
             raise ValueError(
                 "preflight takes both config_manager and project_dir, or neither"
             )
+        manager = config_manager or self._profile_handler.config_manager
         if config_manager is None or project_dir is _MISSING:
             profiles = self._profile_handler.get_runtime_profiles()
             find_child = self._find_child
@@ -286,7 +300,9 @@ class ProviderHandler:
                     project_dir=project_dir, run_dir=config_manager.run_layer_dir
                 )
             )
-        provider_status = await self.get_provider_status({}, profiles=profiles)
+        provider_status = await self.get_provider_status(
+            {}, profiles=profiles, config_manager=manager
+        )
         providers = provider_status.get("providers", {})
 
         closure = walk_closure(config, find_child, profiles, root_ref=root_ref)

@@ -9,6 +9,8 @@ from the executor's own search dirs and by-filename finder.
 
 from __future__ import annotations
 
+import asyncio
+import time
 from pathlib import Path
 from typing import Any
 
@@ -418,3 +420,56 @@ class TestThePairIsOneThing:
         )
 
         assert outcome.closure.dependencies
+
+
+def _listing_of(base: Path) -> dict[str, int]:
+    return {
+        str(p.relative_to(base)): (p.stat().st_size if p.is_file() else 0)
+        for p in sorted(base.rglob("*"))
+    }
+
+
+class TestTheGateStaysOffTheEventLoopAndTheDisk:
+    """The gate runs before every run now: it must not hold the loop
+    while an unreachable router times out, nor provision a second
+    configuration manager to read credentials."""
+
+    async def test_the_router_inventory_does_not_hold_the_event_loop(
+        self, project: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        def slow(self: LlamaServerClient) -> list[dict[str, Any]]:
+            time.sleep(0.5)
+            return LISTING
+
+        monkeypatch.setattr(LlamaServerClient, "_list", slow)
+        service = _service(project)
+        ticks = 0
+
+        async def ticker() -> None:
+            nonlocal ticks
+            while True:
+                await asyncio.sleep(0.01)
+                ticks += 1
+
+        task = asyncio.create_task(ticker())
+        await service.get_provider_status({})
+        task.cancel()
+
+        assert ticks >= 10, f"the loop ticked {ticks} times during a 0.5s inventory"
+
+    async def test_a_gate_run_creates_nothing_in_the_global_config_dir(
+        self, project: Path
+    ) -> None:
+        _ensemble(
+            project / ".llm-orc" / "ensembles" / "top.yaml",
+            "top",
+            [{"name": "w", "model": "qwen3-8b", "provider": "llama-server"}],
+        )
+        service = _service(project)
+        glob = resolve_global_config_dir()
+        before = _listing_of(glob)
+
+        await service.check_ensemble_runnable({"ensemble_name": "top"})
+        await service.get_provider_status({})
+
+        assert _listing_of(glob) == before

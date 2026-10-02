@@ -18,9 +18,10 @@ def _mock_config(server: MCPServer) -> Any:
 
 
 @pytest.fixture
-def mock_config_manager() -> Any:
+def mock_config_manager(tmp_path: Path) -> Any:
     """Create mock config manager."""
     config = MagicMock()
+    config.get_credentials_file.return_value = tmp_path / "no-credentials.yaml"
     config.get_ensembles_dirs.return_value = []
     config.get_profiles_dirs.return_value = []
     config.global_config_dir = Path("/tmp/global-config")

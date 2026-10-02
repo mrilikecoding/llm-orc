@@ -20,6 +20,11 @@ class ProfileHandler:
         """Initialize with configuration manager."""
         self._config_manager = config_manager
 
+    @property
+    def config_manager(self) -> ConfigurationManager:
+        """The manager this handler reads and writes through."""
+        return self._config_manager
+
     def set_project_context(self, ctx: ProjectContext) -> None:
         """Update handler to use new project context."""
         self._config_manager = ctx.config_manager
