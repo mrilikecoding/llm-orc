@@ -852,3 +852,60 @@ class TestPull:
         )
 
         assert result["pulled"] == ["mock-seat"]
+
+
+class TestOtherSeams:
+    async def test_an_inline_profile_reusing_a_host_model_name_with_another_source(
+        self,
+        service: OrchestraService,
+        listing: list[dict[str, Any]],
+        state_dir: Path,
+        loaded_models: list[str],
+    ) -> None:
+        listing[:] = [
+            {
+                "id": "mock-a",
+                "status": {
+                    "value": "unloaded",
+                    "args": ["/bin/llama-server", "--hf-repo", "host/source:Q4"],
+                },
+            },
+            {"id": "host/source:Q4", "status": {"value": "unloaded"}},
+        ]
+        request = _inline_request(
+            profiles={
+                "inline-seat": {
+                    "provider": "llama-server",
+                    "model": "mock-a",
+                    "hf_repo": "caller/other:Q4",
+                }
+            }
+        )
+
+        result = await service.invoke(request)
+
+        assert result["error"]["kind"] == "not_equipped", result
+        assert _kinds(result)["inline-seat"] == "needs_restart"
+        assert loaded_models == []
+        assert _runs(state_dir) == []
+
+    async def test_a_caller_injected_executor_is_never_used_for_a_layer_run(
+        self, project: Path
+    ) -> None:
+        class Sentinel:
+            calls = 0
+
+            async def execute(self, config: Any, input_data: str = "") -> Any:
+                Sentinel.calls += 1
+                return {"status": "completed", "results": {}, "deliverable": None}
+
+        service = OrchestraService(executor=Sentinel())  # type: ignore[arg-type]
+        service.handle_set_project(str(project))
+        service._executor = Sentinel()  # type: ignore[assignment]
+        service._executor_injected = True
+
+        result = await service.invoke(_inline_request())
+
+        assert result["status"] == "success", result
+        assert _tag(result, "s") == "injected"
+        assert Sentinel.calls == 0
