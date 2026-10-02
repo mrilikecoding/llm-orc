@@ -10,6 +10,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+import httpx
 import pytest
 import yaml
 from fastapi.testclient import TestClient
@@ -67,6 +68,11 @@ PROFILES: dict[str, dict[str, Any]] = {
     },
     "nosrc-prof": {"provider": "llama-server", "model": "mystery"},
     "claude-prof": {"provider": "anthropic-api", "model": "claude-x"},
+    "aa-remote": {
+        "provider": "openai-compatible",
+        "model": "theirs",
+        "base_url": "http://remote.test/v1",
+    },
 }
 
 
@@ -120,6 +126,11 @@ def project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
         dot / "ensembles",
         "repointed",
         [{"name": "writer", "model_profile": "repointed-prof"}],
+    )
+    _ensemble(
+        dot / "ensembles",
+        "lost",
+        [{"name": "ghost", "model_profile": "nope"}],
     )
     _ensemble(
         dot / "ensembles",
@@ -231,3 +242,28 @@ class TestPreflightOverRest:
         assert (row["status"], row["resolve"]) == ("needs_restart", "restart")
         assert "unsloth/Qwen3-8B-GGUF:Q4_K_M" in row["detail"]
         assert "bartowski/Qwen3-8B-GGUF:Q4_K_M" in row["detail"]
+
+
+class TestAlternativesAreStillOffered:
+    def test_a_live_openai_compatible_profile_is_an_alternative(
+        self, project: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The read endpoint probes the host's endpoints, not only the
+        closure's, so it can name a profile the closure does not use."""
+
+        class _Response:
+            status_code = 200
+
+            def json(self) -> dict[str, Any]:
+                return {"data": [{"id": "theirs"}]}
+
+        async def get(self: httpx.AsyncClient, url: str, **kwargs: Any) -> Any:
+            return _Response()
+
+        monkeypatch.setattr(httpx.AsyncClient, "get", get)
+
+        data = _runnable("lost")
+
+        [agent] = data["agents"]
+        assert agent["status"] == "missing_profile"
+        assert "aa-remote" in agent["alternatives"]

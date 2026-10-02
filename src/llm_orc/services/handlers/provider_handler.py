@@ -218,7 +218,7 @@ class ProviderHandler:
         if not config:
             raise ValueError(f"Ensemble not found: {ensemble_name}")
 
-        outcome = await self.preflight(config, ensemble_name)
+        outcome = await self.preflight(config, ensemble_name, probe_host=True)
         closure, providers = outcome.closure, outcome.providers
         reports = outcome.reports
         by_key: dict[Key, DependencyReport] = {(r.kind, r.name): r for r in reports}
@@ -242,6 +242,7 @@ class ProviderHandler:
         *,
         config_manager: ConfigurationManager | None = None,
         project_dir: Path | None | Literal[_Missing.MISSING] = _MISSING,
+        probe_host: bool = False,
     ) -> Preflight:
         """The dependency closure of ``config`` and a report for each
         dependency, with the providers they were classified against.
@@ -253,6 +254,10 @@ class ProviderHandler:
         reach (Arc 4). Without one, the service's own wiring answers.
         Half a pair raises: a view with the wrong project dir would
         resolve scripts where the executor does not.
+
+        A run's gate probes only the endpoints its closure uses. The read
+        endpoint passes ``probe_host`` to probe every endpoint the host's
+        profiles name, so it can offer them as alternatives.
         """
         if (config_manager is None) != (project_dir is _MISSING):
             raise ValueError(
@@ -272,8 +277,9 @@ class ProviderHandler:
                 )
             )
         closure = walk_closure(config, find_child, profiles, root_ref=root_ref)
+        probed = profiles if probe_host else _probed_by(closure, profiles)
         provider_status = await self.get_provider_status(
-            {}, profiles=_probed_by(closure, profiles), config_manager=manager
+            {}, profiles=probed, config_manager=manager
         )
         providers = provider_status.get("providers", {})
         reports = classify_dependencies(
