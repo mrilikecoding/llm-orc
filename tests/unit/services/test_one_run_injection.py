@@ -487,6 +487,34 @@ class TestMalformedRequestsWriteNothing:
         assert _runs(state_dir) == []
 
 
+class TestNamesThatFoldTogetherAreRefused:
+    async def test_a_child_named_like_the_root_in_another_case_runs_nothing(
+        self,
+        project: Path,
+        service: OrchestraService,
+        state_dir: Path,
+        tmp_path: Path,
+    ) -> None:
+        marker = tmp_path / "marker.txt"
+        _marker_script(project, marker)
+        agents = [{"name": "s", "script": "mark.py"}]
+        before = _trees(project, state_dir)
+
+        result = await service.invoke(
+            {
+                "ensemble": {"name": "Kid", "description": "root", "agents": agents},
+                "ensembles": {"kid": {"description": "child", "agents": agents}},
+                "input": "hi",
+            }
+        )
+
+        assert result["error"]["kind"] == "invalid_request", result
+        assert "distinct" in result["error"]["message"]
+        assert not marker.exists()
+        assert _trees(project, state_dir) == before
+        assert _runs(state_dir) == []
+
+
 class TestArtifacts:
     async def test_an_inline_root_saves_none_and_a_named_root_keeps_its_own(
         self, project: Path, service: OrchestraService, state_dir: Path
