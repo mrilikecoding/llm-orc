@@ -40,6 +40,18 @@ def test_json_prints_the_document_with_its_metadata(
     assert "config" not in printed
 
 
+def test_json_passes_every_key_of_the_document_through_and_adds_config(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    document = {**DOCUMENT, "persisted": "top", "a_key_added_later": [1]}
+    config = SimpleNamespace(to_dict=lambda: {"name": "top"})
+
+    display_result(document, AGENTS, "json", True, config)
+
+    printed = json.loads(capsys.readouterr().out)
+    assert printed == {**document, "config": {"name": "top"}}
+
+
 def test_text_prints_the_answer_and_the_run_metrics(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
