@@ -314,6 +314,15 @@ class DataTransformInput(BaseModel):
 
 ## Script Resolution
 
+A script that imports or runs a file beside it (a `_helpers.py`, a runner
+it spawns by path) lists that file in a `# /// llm-orc` block at the top of
+the script: `files = ["_helpers.py"]`. The engine infers nothing from
+imports. Preflight reports a listed file that is not beside the script as
+`missing_script` before any agent runs, and `llm-orc invoke --remote` ships
+the listed files with the script. Rules and examples:
+[docs/serving.md](serving.md), "A script's files block".
+
+
 ### Search Path Priority
 
 ScriptResolver finds scripts in this order:
