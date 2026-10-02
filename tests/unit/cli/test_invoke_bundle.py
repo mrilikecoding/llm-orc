@@ -17,6 +17,7 @@ from click.testing import CliRunner, Result
 from fastapi.testclient import TestClient
 
 from llm_orc.cli import cli
+from llm_orc.core.config.config_manager import ConfigurationManager
 from tests.unit.services.test_one_run_injection import (  # noqa: F401
     _tag,
     listing,
@@ -70,6 +71,13 @@ class TestInvokeByBundleName:
         assert f"Ensemble 'pack' not found in: {only}" in result.output
 
 
+@pytest.fixture
+def no_tier_directory(monkeypatch: pytest.MonkeyPatch) -> None:
+    """No ensemble tier directory exists. A real manager makes the global
+    one on construction, so the state is injected at the one lookup."""
+    monkeypatch.setattr(ConfigurationManager, "get_ensembles_dirs", lambda self: [])
+
+
 class TestListEnsembles:
     def test_a_bundle_is_listed_apart_from_the_tiers(
         self, in_project: Path, client: TestClient
@@ -81,3 +89,22 @@ class TestListEnsembles:
         assert result.exit_code == 0, result.output
         assert "Bundles" in result.output
         assert "pack: a closure" in result.output
+
+    def test_a_bundle_is_listed_when_no_tier_directory_exists(
+        self, in_project: Path, client: TestClient, no_tier_directory: None
+    ) -> None:
+        _run(client, _pack(persist="global"))
+
+        result = CliRunner().invoke(cli, ["list-ensembles"])
+
+        assert result.exit_code == 0, result.output
+        assert "No ensemble directories found" not in result.output
+        assert "pack: a closure" in result.output
+
+    def test_no_tier_directory_and_no_bundle_still_says_so(
+        self, in_project: Path, no_tier_directory: None
+    ) -> None:
+
+        result = CliRunner().invoke(cli, ["list-ensembles"])
+
+        assert "No ensemble directories found." in result.output

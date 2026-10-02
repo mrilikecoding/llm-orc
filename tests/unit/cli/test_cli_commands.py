@@ -781,6 +781,7 @@ class TestListEnsemblesCommand:
 
         mock_service = Mock()
         mock_service.config_manager = mock_config_manager
+        mock_service.list_ensembles_grouped.return_value = {"bundle": []}
 
         with (
             patch(
