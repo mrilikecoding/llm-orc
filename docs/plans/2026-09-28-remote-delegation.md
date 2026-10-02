@@ -1121,6 +1121,49 @@ first except the transport change, whose pin was shown red under a
 mutant and then confirmed in the live row. The fourteen review-focus
 items each have a pin through a real surface.
 
+A scoped re-review of that fix wave at `def0b958`: CHANGES REQUIRED
+again. The eight were fixed; three of the fixes had brought problems of
+their own and the review found gaps the wave had not covered. What the
+second wave changed:
+
+- Ruling 9: a persist whose name matches an existing bundle's ignoring
+  case and Unicode normalization, spelled differently, is
+  `invalid_request` naming that bundle. The first wave had made read and
+  delete exact and left write: on a case-folding disk `PACK` overwrote
+  `pack.json` and neither name could then be run, listed or deleted.
+  `delete` removes the entry spelled exactly `<name>.json` whatever root
+  it stores.
+- Rulings 6 and 7: the proof covers what is left out. A script, child
+  or listed file that did not resolve locally must not resolve inside
+  the materialized layer; if it would, the ship is refused. Otherwise a
+  left-out `helper.py` was answered on the remote by a listed file
+  shipped at `scripts/helper.py`, and the remote ran the caller's file
+  where the caller's own host refused the run.
+- Ruling 3: a malformed URL is `invalid_request` (the new client raised
+  it outside its own error tree). A redirect is still not followed, and
+  the error names its `Location`. `REQUESTS_CA_BUNDLE` is no longer
+  read; `SSL_CERT_FILE` is.
+- Ruling 10: the ship runs in a worker thread and the POST stays on the
+  loop; after the transport change the walk and the proof (about 144 ms
+  for a packaged closure) had moved onto the MCP event loop, and the
+  pin for it could not fail. `llm-orc mcp serve --transport http` does
+  not relay; only the stdio transport does.
+- The teardown error seen twice in the arc was a race in the suite's
+  artifact cleanup fixture, which walks a directory every worker
+  shares. The fixture tolerates a directory that disappears.
+
+Known limit, left as is: the shipper refuses a layout that would run,
+`.llm-orc/scripts/scripts/x.py` beside `.llm-orc/scripts/x.py` with both
+referenced. Its key rule gives both one key; the proof would accept two.
+A loud refusal of a rare layout. No MCP remote pin goes through an MCP
+wire, since the mounted server refuses `remote`; the stdio live row is
+that check.
+
+Lesson, binding: a parity pin proves the layouts it was given. Two
+rounds of key rules passed it and each was wrong on a layout it did not
+hold. What closed the class was running the run's own resolver over the
+request before sending it, for what ships and for what does not.
+
 ## Gates (every arc)
 
 Hermetic suite green, lint clean, mutant-red pins, a live row, and an

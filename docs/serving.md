@@ -377,8 +377,13 @@ the request laid out as the remote will lay it out, with the resolver the
 remote uses. A reference that would reach a different file there is
 refused.
 
+The same check covers what is left out: a reference that did not resolve
+locally must not resolve to a shipped file either, or the remote would run
+the caller's file where the caller's own host would have refused.
+
 These are refused before anything is sent, with exit 1: `--max-concurrent`,
-an unknown remote, a `--with-profile` name with no local profile, a script
+an unknown or malformed remote, a `--with-profile` name with no local
+profile, a child ensemble that does not load, a script
 given as an absolute path, a script that is a bare file name in the working
 directory (the remote would read it as inline shell), a script reference
 with a `.` or `..` segment, a script that cannot be read or is not UTF-8
@@ -398,12 +403,18 @@ dependency report as a table; JSON mode prints the refusal envelope. An
 answer is a result only if it is HTTP 200 and a JSON object with a `status`
 of `success` or `error` and a boolean `has_errors`. Anything else is an
 error naming the remote and the status code: a 422 from an older serve, a
-404, or the web UI's page answered with 200 for an unknown API path.
+404, or the web UI's page answered with 200 for an unknown API path. A
+redirect is not followed, since the closure would go to a host you did not
+name; the error shows where it pointed, so the `url` can be corrected (an
+`http://` remote behind a proxy that redirects to `https://`, for one).
+
+The client is `httpx`. It reads proxy settings from the environment, and a
+private CA from `SSL_CERT_FILE` or `SSL_CERT_DIR`.
 
 Exit codes: 0 for `status: success` with no errors, 1 for `status: error`
 or `has_errors` (a failed run, a refusal, a closure that cannot ship, an
-unreachable remote, an answer that is not a result), 130 for Ctrl-C. Ctrl-C closes the connection, and the serve then
-cancels the run.
+unreachable remote, an answer that is not a result), 130 for Ctrl-C.
+Ctrl-C closes the connection, and the serve then cancels the run.
 
 A run on a profile the remote lacks, then the same run bound to one it has
 (shown with `--output-format text`; rich draws the table as a box):
@@ -433,9 +444,11 @@ cannot ship, an interactive script) the error kind is `invalid_request`.
 When the remote could not be reached or did not answer with a result, it
 is `remote_error`.
 
-`remote` works on the stdio server (`llm-orc mcp serve`). A serve does not
-relay: REST takes no `remote`, and the MCP endpoint a serve mounts at
-`/mcp` answers `remote` and `with_profiles` with `invalid_request`.
+`remote` works on the stdio server (`llm-orc mcp serve`), which has one
+local client. Nothing reachable over the network relays: REST takes no
+`remote`, and the MCP endpoint a serve mounts at `/mcp` and
+`llm-orc mcp serve --transport http` both answer `remote` and
+`with_profiles` with `invalid_request`.
 
 ## Local runs: bind, pull and the gate
 
@@ -482,7 +495,11 @@ Names resolve through the tiers (project, library, global, packaged) first
 and bundles after. So a tier file added later under a bundle's name wins,
 and persisting a root name that a tier already resolves is refused with
 `invalid_request`, naming the tier. Persisting again replaces the bundle
-(written beside and renamed, so a failure keeps the old one).
+(written beside and renamed, so a failure keeps the old one). A name that
+matches an existing bundle's except for case (`PACK` when there is a
+`pack`) is refused, naming the existing bundle: on a disk that folds case
+the two would be one file. A bundle name otherwise means the file spelled
+exactly `<name>.json`.
 `delete_ensemble` with `scope: global` removes it. If the global tier also
 holds an ensemble file of that name, that delete removes the file and a
 second one removes the bundle.
