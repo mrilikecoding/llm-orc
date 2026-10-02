@@ -1222,6 +1222,28 @@ class MCPServer:
         with_profiles: list[str],
     ) -> dict[str, Any]:
         """Run the named local root on ``remote`` and return its result."""
+        return await self._relayed(
+            run_remote,
+            ensemble_name,
+            remote,
+            input_text=input_data,
+            with_profiles=with_profiles,
+            bind=bind,
+            pull=pull,
+            persist=persist,
+        )
+
+    async def _relayed(
+        self,
+        send: Callable[..., Awaitable[dict[str, Any]]],
+        ensemble_name: str,
+        remote: str,
+        **shipping: Any,
+    ) -> dict[str, Any]:
+        """Ship the named local root's closure to ``remote`` with ``send``
+        (``run_remote`` or ``preflight_remote``) and return its document,
+        with ``left_out`` naming what the closure left to the remote. A
+        failure is the refusal envelope, whose kind says what to do."""
         service = self._service
         # One project answers the root and the closure: all three are read
         # here, on the loop, before the worker thread starts.
@@ -1230,18 +1252,14 @@ class MCPServer:
         root = service.find_ensemble_by_name(ensemble_name)
         left: list[LeftOut] = []
         try:
-            document = await run_remote(
+            document = await send(
                 ensemble_name,
                 remote,
                 find_root=lambda _name: root,
                 config_manager=config_manager,
                 project_dir=project_dir,
-                input_text=input_data,
-                with_profiles=with_profiles,
-                bind=bind,
-                pull=pull,
-                persist=persist,
                 on_left_out=left.extend,
+                **shipping,
             )
         except RemoteRunError as e:
             return RunRefusedError(e.kind, str(e)).envelope()
