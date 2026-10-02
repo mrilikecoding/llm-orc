@@ -475,7 +475,9 @@ class ExecutionHandler:
         result = state.get("result", {})
         if not isinstance(result, dict):
             result = {}
-        return {**result, **_run_record(run)} if result else result
+        if not result:
+            return result
+        return {**result, "raw_output": run.config.raw_output, **_run_record(run)}
 
     async def handle_streaming_event(
         self,
