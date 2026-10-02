@@ -7,8 +7,8 @@ MCP and web ports.
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncGenerator, Mapping
-from contextlib import aclosing
+from collections.abc import AsyncGenerator, AsyncIterator, Callable, Mapping
+from contextlib import aclosing, asynccontextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -26,7 +26,10 @@ from llm_orc.mcp.project_context import ProjectContext
 from llm_orc.models.base import HTTPConnectionPool
 from llm_orc.services.handlers.artifact_handler import ArtifactHandler
 from llm_orc.services.handlers.ensemble_crud_handler import EnsembleCrudHandler
-from llm_orc.services.handlers.execution_handler import ExecutionHandler
+from llm_orc.services.handlers.execution_handler import (
+    ExecutionHandler,
+    PreparedRun,
+)
 from llm_orc.services.handlers.help_handler import HelpHandler
 from llm_orc.services.handlers.library_handler import LibraryHandler
 from llm_orc.services.handlers.profile_handler import ProfileHandler
@@ -337,6 +340,21 @@ class OrchestraService:
 
     async def invoke(self, arguments: dict[str, Any]) -> dict[str, Any]:
         return await self._execution_handler.invoke(arguments)
+
+    @asynccontextmanager
+    async def prepared_run(
+        self,
+        request: Mapping[str, Any],
+        lookup: Callable[[str], Any] | None = None,
+    ) -> AsyncIterator[PreparedRun]:
+        """The root and executor of one gated run, the preparation step
+        REST and MCP share. ``lookup`` finds a named root (default: the
+        service's tiers). Raises ``RunRefusedError`` before any agent
+        starts."""
+        async with self._execution_handler.prepared(
+            request, lookup or self.find_ensemble_by_name, "Ensemble does not exist"
+        ) as run:
+            yield run
 
     async def execute_streaming(
         self,
