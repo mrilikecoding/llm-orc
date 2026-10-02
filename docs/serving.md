@@ -281,7 +281,8 @@ imports, so a missing helper fails the script at run time. Nothing
 persists: the run directory is removed on success, refusal, error and
 cancellation, and an inline root saves no artifact (an installed root
 keeps its own). A cancelled run (a cancelled call or a closed stream) kills
-its scripts, and their child processes, before the directory is removed.
+each script and the processes in its process group before the directory is
+removed; a process that left the group is not tracked.
 
 Trust: injected scripts run unsandboxed as the serve's user, and an inline
 profile can point the host at any endpoint. llm-orc does not sandbox any
