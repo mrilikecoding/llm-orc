@@ -75,7 +75,8 @@ class Remote:
         self.calls: list[tuple[str, dict[str, Any]]] = []
         with self._env():
             self.service = OrchestraService()
-        assert self.service.handle_set_project(str(self.project))["status"] == "ok"
+            status = self.service.handle_set_project(str(self.project))["status"]
+        assert status == "ok"
 
     @contextmanager
     def _env(self) -> Iterator[None]:
@@ -101,10 +102,14 @@ class Remote:
     def tree(self) -> dict[str, str]:
         """Every file and empty directory under the remote's three trees,
         by content hash. The state dir's empty ``runs/`` is where run
-        layers live and stays after a run; a run left in it shows."""
+        layers live and stays after a run; a run left in it shows. The
+        serve's encryption key is made by its first run of any kind: serve
+        state, not the run's, so it is left out."""
         found: dict[str, str] = {}
         for root in (self.project, self.config, self.state):
             for path in sorted(root.rglob("*")):
+                if path.name == ".encryption_key":
+                    continue
                 if path.is_file():
                     digest = hashlib.sha256(path.read_bytes()).hexdigest()
                     found[str(path)] = digest
@@ -219,6 +224,46 @@ class TestARemoteRun:
         assert request["input"] == "hi"
         assert request["pull"] is True
         assert request["persist"] == "global"
+
+
+class TestPersistingOnTheRemote:
+    def test_the_bundle_lands_on_the_remote_and_runs_by_name_over_rest(
+        self, in_project: Path, remote: Remote
+    ) -> None:
+        local_marker = _write_top(in_project)
+        caller_config = Path(os.environ["XDG_CONFIG_HOME"]) / "llm-orc"
+
+        result = _remote_invoke("--output-format", "json", "--persist", "global")
+
+        bundle = remote.config / "llm-orc" / "bundles" / "top.json"
+        assert result.exit_code == 0, result.output
+        assert bundle.is_file()
+        before = remote.tree()
+        by_name = remote.post(
+            REMOTE_URL + remote_run.EXECUTE_PATH,
+            {"ensemble_name": "top", "input": "hi"},
+        ).json()
+        assert by_name["status"] == "success"
+        assert by_name["deliverable"] == json.loads(result.stdout)["deliverable"]
+        assert hashlib.sha256(bundle.read_bytes()).hexdigest() == before[str(bundle)]
+        assert not local_marker.exists()
+        assert not (caller_config / "bundles").exists()
+        assert not (in_project / ".llm-orc" / "ensembles" / "top.json").exists()
+
+    def test_a_name_the_remotes_tiers_resolve_is_refused_with_its_message(
+        self, in_project: Path, remote: Remote
+    ) -> None:
+        _write_top(in_project)
+        _ensemble(remote.project / ".llm-orc", "top", [{"name": "x", "script": "x.py"}])
+        before = remote.tree()
+
+        result = _remote_invoke("--output-format", "text", "--persist", "global")
+
+        assert result.exit_code == 1, result.output
+        assert "cannot persist 'top'" in result.output
+        assert "already has an ensemble of that name" in result.output
+        assert remote.tree() == before
+        assert not (remote.config / "llm-orc" / "bundles").exists()
 
 
 class TestAProfileTheRemoteLacks:
