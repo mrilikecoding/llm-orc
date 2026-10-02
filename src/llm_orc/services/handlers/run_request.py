@@ -12,7 +12,8 @@ re-cut, rulings 3 and 9).
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+import unicodedata
+from collections.abc import Iterable, Mapping
 from pathlib import Path
 from typing import Any
 
@@ -45,6 +46,32 @@ def _check_plain(key: str, what: str) -> None:
         raise ValueError(f"{what} {key!r} must not contain '/'")
 
 
+def _folded(path: str) -> tuple[str, ...]:
+    """The segments of ``path`` as a case-folding, Unicode-normalizing
+    disk (macOS) sees them: two spellings that fold equal are one name."""
+    normalized = unicodedata.normalize("NFC", path)
+    folded = unicodedata.normalize("NFC", normalized.casefold())
+    return tuple(folded.split("/"))
+
+
+def _check_distinct(paths: Iterable[tuple[str, str]]) -> None:
+    """No two ``(path, label)`` pairs meet on the disk: equal after
+    folding, or one a directory prefix of the other."""
+    files: dict[tuple[str, ...], str] = {}
+    directories: dict[tuple[str, ...], str] = {}
+    for path, label in paths:
+        segments = _folded(path)
+        meets = files.get(segments) or directories.get(segments)
+        for end in range(1, len(segments)):
+            meets = meets or files.get(segments[:end])
+            directories.setdefault(segments[:end], label)
+        if meets:
+            raise ValueError(
+                f"{label} collides with {meets}: names must be distinct ignoring case"
+            )
+        files[segments] = label
+
+
 class RunRequest(BaseModel):
     """What one run is asked to do. Unknown keys are an error."""
 
@@ -74,7 +101,21 @@ class RunRequest(BaseModel):
         twice = sorted(set(self.profiles) & set(self.bind))
         if twice:
             raise ValueError(f"profile {twice[0]!r} is defined twice (inline and bind)")
+        _check_distinct(self._layer_paths())
         return self
+
+    def _layer_paths(self) -> list[tuple[str, str]]:
+        """Every path the request writes into the run layer, with a label
+        naming the request key it came from."""
+        paths: list[tuple[str, str]] = []
+        if self.ensemble is not None:
+            name = self.ensemble["name"]
+            paths.append((f"ensembles/{name}.yaml", f"ensemble {name!r}"))
+        paths.extend((f"ensembles/{k}.yaml", f"ensemble {k!r}") for k in self.ensembles)
+        paths.extend((f"profiles/{k}.yaml", f"profile {k!r}") for k in self.profiles)
+        paths.extend((f"profiles/{k}.yaml", f"bind key {k!r}") for k in self.bind)
+        paths.extend((k, f"script {k!r}") for k in self.scripts)
+        return paths
 
     def _validate_root(self, root: dict[str, Any]) -> None:
         name = root.get("name")

@@ -124,6 +124,55 @@ class TestPathSafety:
         assert _tree(tmp_path / "outside") == {}
 
 
+COLLISIONS = {
+    "root and child differ in case": {"ensembles": {"ROOT": ROOT}},
+    "children differ in case": {"ensembles": {"Kid": ROOT, "kid": ROOT}},
+    "scripts differ in case": {"scripts": {"probe/x.py": "a", "probe/X.py": "b"}},
+    "profiles differ in case": {
+        "profiles": {"Seat": {"model": "m"}, "seat": {"model": "m"}}
+    },
+    "bind keys differ in case": {"bind": {"Seat": "b", "seat": "b"}},
+    "profile and bind differ in case": {
+        "profiles": {"Seat": {"model": "m"}},
+        "bind": {"seat": "b"},
+    },
+    "scripts differ in unicode form": {
+        "scripts": {"caf\u00e9.py": "a", "cafe\u0301.py": "b"}
+    },
+    "a script key is a directory of another": {"scripts": {"a": "x", "a/b.py": "y"}},
+    "a script key is a directory of another, folded": {
+        "scripts": {"A": "x", "a/b.py": "y"}
+    },
+    "a script lands inside a profile file": {
+        "profiles": {"a": {"model": "m"}},
+        "scripts": {"profiles/a.yaml/z.py": "x"},
+    },
+}
+
+
+class TestDistinctNames:
+    @pytest.mark.parametrize("fields", COLLISIONS.values(), ids=COLLISIONS.keys())
+    def test_names_that_meet_on_a_case_folding_disk_are_rejected(
+        self, tmp_path: Path, fields: dict[str, Any]
+    ) -> None:
+        run = tmp_path / "run"
+        run.mkdir()
+
+        with pytest.raises(RunRequestError, match="distinct"):
+            materialize(_parse(**fields), run)
+
+        assert _tree(run) == {}
+
+    def test_names_that_differ_by_more_than_case_are_accepted(self) -> None:
+        request = _parse(
+            ensembles={"kid": ROOT, "sub/kid": ROOT},
+            profiles={"seat": {"model": "m"}, "seat2": {"model": "m"}},
+            scripts={"a/x.py": "1", "a/y.py": "2", "a.py": "3"},
+        )
+
+        assert len(request.scripts) == 3
+
+
 class TestMaterialize:
     def test_it_writes_every_kind_at_its_place(self, tmp_path: Path) -> None:
         run = tmp_path / "run"
