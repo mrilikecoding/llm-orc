@@ -27,6 +27,7 @@ from llm_orc.services.handlers.run_preparation import (
     INVALID_REQUEST,
     NOT_EQUIPPED,
     RunRefusedError,
+    only_pullable_unmet,
     pull_pullable,
     unmet_binding_rows,
     unnamed_bind_keys,
@@ -233,7 +234,7 @@ class ExecutionHandler:
             )
         reports = [*outcome.reports, *unmet_binding_rows(layer.unmet)]
         pulled: list[str] = []
-        if request.pull:
+        if request.pull and only_pullable_unmet(reports):
             reports, pulled = await pull_pullable(reports, manager.get_model_profiles())
         if not is_runnable(reports):
             raise RunRefusedError(NOT_EQUIPPED, _unmet_message(reports), reports)

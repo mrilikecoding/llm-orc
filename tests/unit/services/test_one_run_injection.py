@@ -869,6 +869,28 @@ class TestPull:
         assert not marker.exists()
         assert _runs(state_dir) == []
 
+    async def test_pull_waits_until_every_other_unmet_dependency_is_pullable(
+        self, project: Path, service: OrchestraService, pulls: dict[str, Any]
+    ) -> None:
+        _profile(project / ".llm-orc", "seat", hf_repo="x/y:Q4")
+        _ensemble(
+            project / ".llm-orc",
+            "top",
+            [
+                {"name": "w", "model_profile": "seat"},
+                {"name": "v", "model_profile": "nope"},
+            ],
+        )
+
+        result = await service.invoke(
+            {"ensemble_name": "top", "input": "hi", "pull": True}
+        )
+
+        assert result["error"]["kind"] == "not_equipped"
+        assert _kinds(result)["seat"] == "pullable"
+        assert _kinds(result)["nope"] == "missing_profile"
+        assert pulls["calls"] == []
+
     async def test_without_pull_nothing_is_pulled(
         self, project: Path, service: OrchestraService, pulls: dict[str, Any]
     ) -> None:
