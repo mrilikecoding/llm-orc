@@ -10,9 +10,10 @@ from collections.abc import (
     AsyncIterator,
     Awaitable,
     Callable,
+    Iterator,
     Mapping,
 )
-from contextlib import aclosing, asynccontextmanager
+from contextlib import aclosing, asynccontextmanager, contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -85,6 +86,17 @@ class _Layer:
     root_path: Path | None = None
     applied: dict[str, str] = field(default_factory=dict)
     unmet: list[tuple[str, str]] = field(default_factory=list)
+
+
+@dataclass
+class _Root:
+    """A materialized request: its layer, the manager the run resolves
+    through, the loaded root and the reference the closure walk starts at."""
+
+    layer: _Layer
+    manager: ConfigurationManager
+    config: Any
+    ref: str
 
 
 class ExecutionHandler:
@@ -187,9 +199,16 @@ class ExecutionHandler:
         cancellation.
         """
         request = _parse(data)
+        with self._run_dir(request) as run_dir:
+            yield await self._prepare(request, run_dir, lookup, missing)
+
+    @contextmanager
+    def _run_dir(self, request: RunRequest) -> Iterator[Path | None]:
+        """A fresh run directory when the request injects anything, removed
+        on every way out."""
         run_dir = self._new_run_dir() if request.needs_layer else None
         try:
-            yield await self._prepare(request, run_dir, lookup, missing)
+            yield run_dir
         finally:
             if run_dir is not None:
                 shutil.rmtree(run_dir, ignore_errors=True)
@@ -206,14 +225,10 @@ class ExecutionHandler:
         lookup: Callable[[str], Any],
         missing: str,
     ) -> PreparedRun:
-        layer = self._open_layer(request, run_dir)
-        manager = layer.view or self._config_manager
+        root = self._materialize(request, run_dir, lookup, missing)
+        layer, manager, config = root.layer, root.manager, root.config
         inline = request.ensemble is not None
-        config = self._load_root(request, layer.root_path, manager, lookup, missing)
-        root_ref = str(
-            request.ensemble["name"] if request.ensemble else request.ensemble_name
-        )
-        outcome = await self._gate(config, root_ref, manager)
+        outcome = await self._gate(config, root.ref, manager)
         stray = unnamed_bind_keys(request.bind, outcome.closure.dependencies)
         if stray:
             raise RunRefusedError(
@@ -230,6 +245,23 @@ class ExecutionHandler:
             return PreparedRun(config, self._get_executor(), inline, {}, pulled)
         executor = self._layer_executor(layer.view, not inline)
         return PreparedRun(config, executor, inline, layer.applied, pulled)
+
+    def _materialize(
+        self,
+        request: RunRequest,
+        run_dir: Path | None,
+        lookup: Callable[[str], Any],
+        missing: str,
+    ) -> _Root:
+        """The first half of preparing a run: write the layer, bind over
+        it and load the root, before anything is judged."""
+        layer = self._open_layer(request, run_dir)
+        manager = layer.view or self._config_manager
+        config = self._load_root(request, layer.root_path, manager, lookup, missing)
+        ref = str(
+            request.ensemble["name"] if request.ensemble else request.ensemble_name
+        )
+        return _Root(layer, manager, config, ref)
 
     def _open_layer(self, request: RunRequest, run_dir: Path | None) -> _Layer:
         """Materialize the request into ``run_dir`` and bind over it."""
