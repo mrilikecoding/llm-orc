@@ -205,17 +205,26 @@ def model_status(model: Mapping[str, Any]) -> str | None:
     return str(value) if value else None
 
 
+_SOURCE_FLAGS = ("--hf-repo", "-hf", "-hfr")
+
+
 def model_source(model: Mapping[str, Any]) -> str | None:
-    """The source a preset entry serves: the value after ``--hf-repo`` in
-    its ``status.args``, the argv the router would spawn (probe
-    2026-10-01). None when the entry carries no such arg (a bare-string
-    status has no args at all)."""
+    """The source a preset entry serves: the value of the last
+    ``--hf-repo`` / ``-hf`` / ``-hfr`` (or ``--hf-repo=X``) in its
+    ``status.args``, the argv the router would spawn (probe 2026-10-01).
+    The last one wins, as in llama.cpp. None when the entry carries no
+    such arg (a bare-string status has no args at all)."""
     status = model.get("status")
     args = status.get("args") if isinstance(status, dict) else None
-    if not isinstance(args, list) or "--hf-repo" not in args:
+    if not isinstance(args, list):
         return None
-    index = args.index("--hf-repo") + 1
-    return str(args[index]) if index < len(args) else None
+    source: str | None = None
+    for index, arg in enumerate(args):
+        if isinstance(arg, str) and arg.startswith("--hf-repo="):
+            source = arg.split("=", 1)[1]
+        elif arg in _SOURCE_FLAGS and index + 1 < len(args):
+            source = str(args[index + 1])
+    return source
 
 
 @dataclass(frozen=True)
