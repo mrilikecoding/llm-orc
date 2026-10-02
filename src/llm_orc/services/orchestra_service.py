@@ -103,6 +103,7 @@ class OrchestraService:
             self.artifact_manager,
             self._get_executor,
             self.find_ensemble_by_name,
+            preflight_fn=self._provider_handler.preflight,
         )
         self._ensemble_crud_handler = EnsembleCrudHandler(
             self.config_manager,
