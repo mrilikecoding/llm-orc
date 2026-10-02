@@ -7,7 +7,7 @@ MCP and web ports.
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -104,6 +104,7 @@ class OrchestraService:
             self._get_executor,
             self.find_ensemble_by_name,
             preflight_fn=self._provider_handler.preflight,
+            layer_executor_fn=self._get_layer_executor,
         )
         self._ensemble_crud_handler = EnsembleCrudHandler(
             self.config_manager,
@@ -174,6 +175,28 @@ class OrchestraService:
             credential_storage=self._executor._credential_storage,
         )
         return self._executor
+
+    def _get_layer_executor(
+        self, view: ConfigurationManager, save_artifacts: bool
+    ) -> EnsembleExecutor:
+        """The executor of one run with a layer: built on the view, never
+        cached, so the view cannot reach a later run (Arc 4). Credentials
+        are the service's cached storage; a caller-injected executor is
+        only ever used for runs with no layer."""
+        from llm_orc.core.execution.executor_factory import ExecutorFactory
+
+        storage = None
+        if not self._executor_injected:
+            if self._executor is None:
+                self._get_executor()  # builds and caches the credential storage
+            assert self._executor is not None
+            storage = self._executor._credential_storage
+        return ExecutorFactory.create_root_executor(
+            project_dir=self._project_path,
+            config_manager=view,
+            credential_storage=storage,
+            save_artifacts=save_artifacts,
+        )
 
     def find_ensemble_by_name(self, ensemble_name: str) -> Any:
         ensemble_dirs = self.config_manager.get_ensembles_dirs()
@@ -316,12 +339,13 @@ class OrchestraService:
 
     async def execute_streaming(
         self,
-        ensemble_name: str,
+        ensemble_name: str | None,
         input_data: str,
         reporter: Any,
+        injection: Mapping[str, Any] | None = None,
     ) -> dict[str, Any]:
         return await self._execution_handler.execute_streaming(
-            ensemble_name, input_data, reporter
+            ensemble_name, input_data, reporter, injection
         )
 
     async def handle_streaming_event(

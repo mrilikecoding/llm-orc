@@ -7,18 +7,24 @@ classifies them as a host would and nothing is called out.
 
 from __future__ import annotations
 
+import asyncio
+import json
 from pathlib import Path
 from typing import Any
 
 import pytest
 import yaml
 
+from llm_orc.core.config.config_manager import resolve_global_config_dir
+from llm_orc.core.execution.ensemble_execution import EnsembleExecutor
+from llm_orc.core.execution.executor_factory import ExecutorFactory
+from llm_orc.core.models.model_factory import ModelFactory
 from llm_orc.providers.llama_server import LlamaServerClient
 from llm_orc.services.orchestra_service import OrchestraService
 
 LISTING: list[dict[str, Any]] = [
-    {"id": "mock-seat", "status": {"value": "unloaded"}},
-    {"id": "mock-other", "status": {"value": "unloaded"}},
+    {"id": name, "status": {"value": "unloaded"}}
+    for name in ("mock-seat", "mock-other", "mock-a", "mock-b")
 ]
 
 
@@ -69,7 +75,18 @@ def listing(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
 
 
 @pytest.fixture
-def project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, listing: Any) -> Path:
+def state_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """The serve's state dir, apart from the project and the global dir."""
+    path = tmp_path / "state"
+    path.mkdir()
+    monkeypatch.setenv("LLM_ORC_STATE_DIR", str(path))
+    return path
+
+
+@pytest.fixture
+def project(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, listing: Any, state_dir: Path
+) -> Path:
     """A project dir, with the cwd somewhere else entirely."""
     (tmp_path / "elsewhere").mkdir()
     monkeypatch.chdir(tmp_path / "elsewhere")
@@ -195,3 +212,354 @@ class TestEveryRunIsGated:
     ) -> None:
         with pytest.raises(ValueError, match="does not exist"):
             await service.invoke({"ensemble_name": "ghost", "input": "hi"})
+
+
+def _files(base: Path) -> dict[str, int]:
+    """Every file under ``base`` with its size."""
+    return {
+        str(p.relative_to(base)): p.stat().st_size
+        for p in sorted(base.rglob("*"))
+        if p.is_file()
+    }
+
+
+def _trees(project: Path, state_dir: Path) -> dict[str, dict[str, int]]:
+    return {
+        "state": _files(state_dir),
+        "global": _files(resolve_global_config_dir()),
+        "project": _files(project),
+    }
+
+
+def _runs(state_dir: Path) -> list[Path]:
+    runs = state_dir / "runs"
+    return sorted(runs.iterdir()) if runs.exists() else []
+
+
+def _script_source(tag: str, *, imports: str = "") -> str:
+    return (
+        "import json, sys\n"
+        f"{imports}"
+        "sys.stdin.read()\n"
+        f'print(json.dumps({{"success": True, "data": {{"tag": "{tag}"}}}}))\n'
+    )
+
+
+def _tag(result: dict[str, Any], agent: str) -> str:
+    return str(json.loads(result["results"][agent]["response"])["data"]["tag"])
+
+
+INLINE: dict[str, Any] = {
+    "name": "inline-top",
+    "description": "inline",
+    "agents": [
+        {"name": "s", "script": "probe/x.py"},
+        {"name": "w", "model_profile": "inline-seat"},
+    ],
+}
+
+
+def _inline_request(**more: Any) -> dict[str, Any]:
+    return {
+        "ensemble": INLINE,
+        "profiles": {"inline-seat": {"provider": "llama-server", "model": "mock-a"}},
+        "scripts": {"probe/x.py": _script_source("injected")},
+        "input": "hi",
+        **more,
+    }
+
+
+class TestAnInlineRunLeavesNothing:
+    async def test_it_runs_and_every_tree_is_the_same_afterwards(
+        self, project: Path, service: OrchestraService, state_dir: Path
+    ) -> None:
+        # The first run of any kind makes the serve's credential storage
+        # (and so its encryption key, in the global dir): serve state, not
+        # the injection's. Start from a serve that has served once.
+        _ensemble(project / ".llm-orc", "warm", [{"name": "s", "script": "echo hi"}])
+        await service.invoke({"ensemble_name": "warm", "input": "hi"})
+        before = _trees(project, state_dir)
+
+        result = await service.invoke(_inline_request())
+
+        assert result["status"] == "success", result
+        assert _tag(result, "s") == "injected"
+        assert _trees(project, state_dir) == before
+        assert _runs(state_dir) == []
+
+    async def test_an_injected_script_imports_its_injected_sibling_helper(
+        self, service: OrchestraService
+    ) -> None:
+        request = _inline_request(
+            scripts={
+                "probe/x.py": _script_source(
+                    "h", imports="from _helpers import tag\n"
+                ).replace('"tag": "h"', '"tag": tag'),
+                "probe/_helpers.py": "tag = 'from-helper'\n",
+            }
+        )
+
+        result = await service.invoke(request)
+
+        assert result["status"] == "success", result
+        assert _tag(result, "s") == "from-helper"
+
+    async def test_a_script_without_its_helper_does_not_import_the_hosts(
+        self, project: Path, service: OrchestraService, tmp_path: Path
+    ) -> None:
+        marker = tmp_path / "host-helper-imported.txt"
+        host_helper = project / ".llm-orc" / "scripts" / "probe" / "_helpers.py"
+        host_helper.parent.mkdir(parents=True)
+        host_helper.write_text(f'open(r"{marker}", "w").write("x")\ntag = "host"\n')
+        request = _inline_request(
+            scripts={
+                "probe/x.py": _script_source("h", imports="from _helpers import tag\n")
+            }
+        )
+
+        result = await service.invoke(request)
+
+        assert result["has_errors"] is True
+        assert not marker.exists()
+
+
+class TestTheRunDirIsAlwaysRemoved:
+    @pytest.fixture
+    def executing(self, monkeypatch: pytest.MonkeyPatch, state_dir: Path) -> Any:
+        """Replace execute: records that the run dir existed mid-run, then
+        does what the test says."""
+        seen: dict[str, Any] = {"mid_run": [], "started": asyncio.Event()}
+
+        async def execute(self: Any, config: Any, input_data: str = "") -> Any:
+            seen["mid_run"] = _runs(state_dir)
+            seen["started"].set()
+            await seen["behavior"]()
+
+        monkeypatch.setattr(EnsembleExecutor, "execute", execute)
+        return seen
+
+    async def test_on_a_refusal(
+        self, service: OrchestraService, state_dir: Path
+    ) -> None:
+        request = _inline_request(profiles={})
+
+        result = await service.invoke(request)
+
+        assert result["error"]["kind"] == "not_equipped"
+        assert _runs(state_dir) == []
+
+    async def test_on_an_executor_exception(
+        self, service: OrchestraService, state_dir: Path, executing: Any
+    ) -> None:
+        async def boom() -> None:
+            raise RuntimeError("boom")
+
+        executing["behavior"] = boom
+
+        with pytest.raises(RuntimeError, match="boom"):
+            await service.invoke(_inline_request())
+
+        assert len(executing["mid_run"]) == 1
+        assert _runs(state_dir) == []
+
+    async def test_on_cancellation(
+        self, service: OrchestraService, state_dir: Path, executing: Any
+    ) -> None:
+        async def forever() -> None:
+            await asyncio.Event().wait()
+
+        executing["behavior"] = forever
+        task = asyncio.create_task(service.invoke(_inline_request()))
+        await executing["started"].wait()
+        assert len(_runs(state_dir)) == 1
+
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+        assert _runs(state_dir) == []
+
+
+class TestRunsStayApart:
+    async def test_two_concurrent_runs_each_see_their_own_content(
+        self,
+        service: OrchestraService,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        loaded: list[str] = []
+        original = ModelFactory.load_model
+
+        async def spy(self: ModelFactory, model_name: str, *a: Any, **kw: Any) -> Any:
+            loaded.append(model_name)
+            return await original(self, model_name, *a, **kw)
+
+        monkeypatch.setattr(ModelFactory, "load_model", spy)
+        requests = [
+            _inline_request(
+                profiles={"inline-seat": {"provider": "llama-server", "model": m}},
+                scripts={"probe/x.py": _script_source(m)},
+            )
+            for m in ("mock-a", "mock-b")
+        ]
+
+        results = await asyncio.gather(*(service.invoke(r) for r in requests))
+
+        assert [_tag(r, "s") for r in results] == ["mock-a", "mock-b"]
+        assert sorted(loaded) == ["mock-a", "mock-b"]
+
+    async def test_a_following_named_run_resolves_as_before(
+        self,
+        project: Path,
+        service: OrchestraService,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        loaded: list[str] = []
+        original = ModelFactory.load_model
+
+        async def spy(self: ModelFactory, model_name: str, *a: Any, **kw: Any) -> Any:
+            loaded.append(model_name)
+            return await original(self, model_name, *a, **kw)
+
+        monkeypatch.setattr(ModelFactory, "load_model", spy)
+        layers: list[Path | None] = []
+        create = ExecutorFactory.create_root_executor
+
+        def watch(*args: Any, **kw: Any) -> Any:
+            layers.append(kw["config_manager"].run_layer_dir)
+            return create(*args, **kw)
+
+        monkeypatch.setattr(ExecutorFactory, "create_root_executor", watch)
+        _profile(project / ".llm-orc", "seat", model="mock-seat")
+        _ensemble(project / ".llm-orc", "top", [{"name": "w", "model_profile": "seat"}])
+        shadow = _inline_request(
+            ensemble={
+                "name": "shadow",
+                "description": "s",
+                "agents": [{"name": "w", "model_profile": "seat"}],
+            },
+            profiles={"seat": {"provider": "llama-server", "model": "mock-other"}},
+            scripts={},
+        )
+
+        await service.invoke(shadow)
+        await service.invoke({"ensemble_name": "top", "input": "hi"})
+
+        assert loaded == ["mock-other", "mock-seat"]
+        assert layers[-1] is None, "the named run was built on a run layer view"
+        base = service.config_manager
+        assert base.run_layer_dir is None
+        assert base.get_model_profiles()["seat"]["model"] == "mock-seat"
+        assert "inline-seat" not in base.get_model_profiles()
+        assert service._executor is None or (
+            service._executor._config_manager.run_layer_dir is None
+        )
+
+
+class TestMalformedRequestsWriteNothing:
+    @pytest.mark.parametrize(
+        "bad",
+        [
+            {"ensemble_name": "top", "ensemble": INLINE},
+            {"input": "no root at all", "scripts": {"a.py": "x"}},
+            {"ensemble": INLINE, "scripts": {"../x.py": "print(1)"}},
+            {"ensemble": INLINE, "scripts": {"/etc/x.py": "print(1)"}},
+            {"ensemble": INLINE, "scripts": {"a//b.py": "print(1)"}},
+            {"ensemble": INLINE, "scripts": {"a\\b.py": "print(1)"}},
+            {"ensemble": INLINE, "ensembles": {"../kid": INLINE}},
+            {"ensemble": {"name": "x", "description": "no agents"}},
+        ],
+    )
+    async def test_each_is_invalid_request_and_nothing_is_written(
+        self,
+        project: Path,
+        service: OrchestraService,
+        state_dir: Path,
+        bad: dict[str, Any],
+    ) -> None:
+        before = _trees(project, state_dir)
+
+        result = await service.invoke(bad)
+
+        assert result["error"]["kind"] == "invalid_request", result
+        assert result["has_errors"] is True
+        assert _trees(project, state_dir) == before
+        assert _runs(state_dir) == []
+
+
+class TestArtifacts:
+    async def test_an_inline_root_saves_none_and_a_named_root_keeps_its_own(
+        self, project: Path, service: OrchestraService, state_dir: Path
+    ) -> None:
+        _profile(project / ".llm-orc", "seat")
+        _ensemble(project / ".llm-orc", "top", [{"name": "w", "model_profile": "seat"}])
+
+        await service.invoke(_inline_request())
+        assert not (state_dir / "artifacts").exists()
+
+        await service.invoke(
+            {
+                "ensemble_name": "top",
+                "input": "hi",
+                "profiles": {"extra": {"provider": "llama-server", "model": "mock-a"}},
+            }
+        )
+        assert list((state_dir / "artifacts" / "top").iterdir())
+
+    async def test_execute_streaming_saves_no_artifact_for_an_inline_root(
+        self, service: OrchestraService, state_dir: Path
+    ) -> None:
+        injection = {k: v for k, v in _inline_request().items() if k != "input"}
+
+        result = await service.execute_streaming(
+            None, "hi", Reporter(), injection=injection
+        )
+
+        assert result["status"] == "success", result
+        assert not (state_dir / "artifacts").exists()
+        assert _runs(state_dir) == []
+
+
+class TestInjectedKindsGateLikeTheRun:
+    async def test_a_child_ensemble_only_in_the_request_is_ready_and_runs(
+        self, service: OrchestraService
+    ) -> None:
+        root = {
+            "name": "r",
+            "description": "r",
+            "agents": [{"name": "k", "ensemble": "kid"}],
+        }
+        kid = {
+            "description": "kid",
+            "agents": [{"name": "s", "script": "probe/x.py"}],
+        }
+        request = {
+            "ensemble": root,
+            "ensembles": {"kid": kid},
+            "scripts": {"probe/x.py": _script_source("kid-ran")},
+        }
+
+        result = await service.invoke(request)
+
+        assert result["status"] == "success", result
+
+    async def test_the_same_root_without_its_child_is_refused_not_run(
+        self, service: OrchestraService
+    ) -> None:
+        root = {
+            "name": "r",
+            "description": "r",
+            "agents": [{"name": "k", "ensemble": "kid"}],
+        }
+
+        result = await service.invoke({"ensemble": root})
+
+        assert result["error"]["kind"] == "not_equipped"
+        assert _kinds(result)["kid"] == "missing_ensemble"
+
+    async def test_a_missing_script_is_refused_not_run(
+        self, service: OrchestraService
+    ) -> None:
+        result = await service.invoke(_inline_request(scripts={}))
+
+        assert result["error"]["kind"] == "not_equipped"
+        assert _kinds(result)["probe/x.py"] == "missing_script"
