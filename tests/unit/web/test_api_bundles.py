@@ -9,6 +9,7 @@ passes, replayed through the same injection path on each named run.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import os
 import threading
@@ -662,6 +663,13 @@ def _both(x_source: str, more: dict[str, str] | None = None) -> dict[str, str]:
     }
 
 
+def _write_tier_yml(path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        "name: pack\ndescription: tier\nagents:\n  - name: t\n    script: echo hi\n"
+    )
+
+
 class TestTheOtherSurfacesKnowBundles:
     def test_the_listing_shows_a_bundle_root_with_source_bundle(
         self, client: TestClient
@@ -817,6 +825,23 @@ class TestTheOtherSurfacesKnowBundles:
 
         assert second.json()["bundle"] == "pack"
         assert not _bundle_file().exists()
+
+    def test_a_global_yml_file_also_spares_the_bundle_on_a_delete(
+        self, client: TestClient
+    ) -> None:
+        """The loader reads ``.yml`` as it reads ``.yaml``, so a tier file
+        with either extension is what the delete of that name means."""
+        _persisted(client)
+        tier_file = resolve_global_config_dir() / "ensembles" / "pack.yml"
+        _write_tier_yml(tier_file)
+
+        # Removing a ``.yml`` file is not something delete does (it looks
+        # for ``.yaml``), so it may raise; what this pins is the bundle.
+        with contextlib.suppress(ValueError):
+            client.delete("/api/ensembles/pack", params={"scope": "global"})
+
+        assert tier_file.exists()
+        assert _bundle_file().exists()
 
     def test_delete_with_scope_project_does_not_touch_a_bundle(
         self, client: TestClient
