@@ -131,7 +131,9 @@ class TestRunStandardExecution:
         )
 
         executor.execute.assert_called_once_with(ensemble_config, input_data)
-        mock_json_display.assert_called_once_with(result, ensemble_config)
+        mock_json_display.assert_called_once_with(
+            {**result, "status": "success", "has_errors": False}, ensemble_config
+        )
         assert has_errors is False
 
     @pytest.mark.asyncio
@@ -197,7 +199,8 @@ class TestDisplayJsonResults:
         result = {
             "results": {"agent_a": {"status": "success", "response": "ok"}},
             "metadata": {},
-            "status": "completed",
+            "status": "success",
+            "has_errors": False,
             "deliverable": "ok",
         }
         ensemble_config = Mock()
@@ -217,7 +220,8 @@ class TestDisplayJsonResults:
         result = {
             "results": {"agent_a": {"status": "failed", "error": "boom"}},
             "metadata": {},
-            "status": "completed_with_errors",
+            "status": "error",
+            "has_errors": True,
             "deliverable": None,
         }
         ensemble_config = Mock()
@@ -705,7 +709,7 @@ class TestNewHelperFunctions:
             mock_format_perf.return_value = ["Performance: Good"]
 
             _display_detailed_execution_results(
-                results, metadata, ensemble_config, results_console
+                results, metadata, ensemble_config.agents, results_console
             )
 
             mock_tree.assert_called_once()
