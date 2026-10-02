@@ -2,7 +2,9 @@
 
 import os
 import sys
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 import click
 
@@ -57,6 +59,24 @@ def _parse_bindings(
             raise click.BadParameter(f"{key!r} is bound twice")
         bindings[key] = target
     return bindings
+
+
+def _bind_and_pull_options(command: Callable[..., Any]) -> Callable[..., Any]:
+    """The ``--bind`` and ``--pull`` options of a command whose run goes
+    through the preparation step, with one parsing for both commands."""
+    command = click.option(
+        "--pull",
+        is_flag=True,
+        default=False,
+        help="Download a model this host lacks but can pull, then run",
+    )(command)
+    return click.option(
+        "--bind",
+        "bind",
+        multiple=True,
+        callback=_parse_bindings,
+        help="Run a profile name on another profile: NAME=TARGET (repeatable)",
+    )(command)
 
 
 @click.group()
@@ -156,19 +176,7 @@ def completion(shell: str | None) -> None:
     default=True,
     help="Show detailed results and performance metrics",
 )
-@click.option(
-    "--bind",
-    "bind",
-    multiple=True,
-    callback=_parse_bindings,
-    help="Run a profile name on another profile: NAME=TARGET (repeatable)",
-)
-@click.option(
-    "--pull",
-    is_flag=True,
-    default=False,
-    help="Download a model this host lacks but can pull, then run",
-)
+@_bind_and_pull_options
 @click.option(
     "--remote",
     default=None,
