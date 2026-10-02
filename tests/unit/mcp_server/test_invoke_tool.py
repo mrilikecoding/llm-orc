@@ -24,7 +24,7 @@ from fastapi.testclient import TestClient
 import llm_orc.web.api as web_api
 from llm_orc.core.config.config_manager import resolve_global_config_dir
 from llm_orc.mcp.server import MCPServer
-from llm_orc.services import remote_run
+from llm_orc.services import closure_shipper, remote_run
 from llm_orc.services.orchestra_service import OrchestraService
 from llm_orc.web.server import create_app
 from tests.unit.cli.test_invoke_remote import (  # noqa: F401
@@ -385,8 +385,59 @@ class TestAMalformedRemoteUrl:
         assert calls == []
 
 
+class _Ticks:
+    """A task that counts how often the event loop got to run it. The
+    count between two points is how many times the loop was free."""
+
+    def __init__(self) -> None:
+        self.count = 0
+        self.longest_gap = 0.0
+        self._task: asyncio.Task[None] | None = None
+
+    async def _tick(self) -> None:
+        last = time.monotonic()
+        while True:
+            await asyncio.sleep(0.005)
+            now = time.monotonic()
+            self.longest_gap = max(self.longest_gap, now - last)
+            last = now
+            self.count += 1
+
+    def __enter__(self) -> _Ticks:
+        self._task = asyncio.create_task(self._tick())
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        assert self._task is not None
+        self._task.cancel()
+
+
+class _CountingDelay(httpx.AsyncBaseTransport):
+    """Holds each request for ``seconds`` on the loop and records how many
+    ticks the loop got while it was out."""
+
+    def __init__(
+        self, inner: httpx.AsyncBaseTransport, ticks: _Ticks, seconds: float
+    ) -> None:
+        self._inner = inner
+        self._ticks = ticks
+        self._seconds = seconds
+        self.ticks_while_out: list[int] = []
+
+    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+        before = self._ticks.count
+        await asyncio.sleep(self._seconds)
+        self.ticks_while_out.append(self._ticks.count - before)
+        return await self._inner.handle_async_request(request)
+
+
 class TestTheEventLoop:
-    async def test_it_is_not_blocked_while_a_remote_run_is_out(
+    """Both halves of a remote run leave the event loop free: the ship
+    (a closure walk and file reads, in a worker thread) and the POST
+    (async). Each pin counts loop ticks over that half alone, so a block
+    in either shows as a count of about zero."""
+
+    async def test_it_is_free_while_the_closure_ships_and_while_the_run_is_out(
         self,
         project: Path,
         service: OrchestraService,
@@ -394,21 +445,33 @@ class TestTheEventLoop:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         _write_top(project)
-        monkeypatch.setattr(remote_run, "transport", Delayed(remote.transport, 0.5))
-        call = asyncio.create_task(
-            MCPServer(service=service)._mcp.call_tool(
+        real_ship = closure_shipper.ship_closure_reporting
+        ticks_while_shipping: list[int] = []
+        with _Ticks() as ticks:
+
+            def blocking_ship(*args: Any, **more: Any) -> Any:
+                before = ticks.count
+                time.sleep(0.3)  # a slow walk; the loop must not wait for it
+                ticks_while_shipping.append(ticks.count - before)
+                return real_ship(*args, **more)
+
+            monkeypatch.setattr(remote_run, "ship_closure_reporting", blocking_ship)
+            post = _CountingDelay(remote.transport, ticks, 0.3)
+            monkeypatch.setattr(remote_run, "transport", post)
+
+            await MCPServer(service=service)._mcp.call_tool(
                 "invoke",
                 {"ensemble_name": "top", "input_data": "hi", "remote": "remote-host"},
             )
-        )
-        ticks = 0
-        while not call.done():
-            await asyncio.sleep(0.01)
-            ticks += 1
 
         assert len(remote.calls) == 1
-        assert ticks >= 10
-        await call
+        assert len(ticks_while_shipping) == 1
+        assert ticks_while_shipping[0] >= 20
+        assert len(post.ticks_while_out) == 1
+        assert post.ticks_while_out[0] >= 20
+        # Whatever else blocked the loop (a read, a walk) shows as a gap
+        # far longer than the 5 ms tick; the two sleeps above were 300 ms.
+        assert ticks.longest_gap < 0.15
 
 
 def _threads_in_the_transport() -> list[str]:
