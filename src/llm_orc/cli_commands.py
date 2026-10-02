@@ -28,6 +28,7 @@ from llm_orc.cli_modules.utils.visualization.refusal_display import (
 )
 from llm_orc.cli_modules.utils.visualization.streaming import display_result
 from llm_orc.core.config.ensemble_config import EnsembleConfig
+from llm_orc.services.closure_shipper import LeftOut
 from llm_orc.services.handlers.run_preparation import (
     RootNotFoundError,
     RunRefusedError,
@@ -479,6 +480,7 @@ def _invoke_remote(ensemble_name: str, invocation: RemoteInvocation) -> bool:
                     bind=invocation.bind,
                     pull=invocation.pull,
                     persist=invocation.persist,
+                    on_left_out=_say_left_out,
                 )
             )
     except RemoteRunError as e:
@@ -488,6 +490,13 @@ def _invoke_remote(ensemble_name: str, invocation: RemoteInvocation) -> bool:
     return _display_remote_document(
         document, root, invocation.output_format, invocation.detailed
     )
+
+
+def _say_left_out(left_out: list[LeftOut]) -> None:
+    """One line on stderr, in every output mode, naming what the remote
+    must satisfy with its own copy. stdout stays the result alone."""
+    labels = ", ".join(item.label for item in left_out)
+    click.echo(f"Left to the remote (not found locally): {labels}", err=True)
 
 
 @contextmanager

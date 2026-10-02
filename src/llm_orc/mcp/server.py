@@ -22,6 +22,7 @@ from starlette.applications import Starlette
 from llm_orc.core.config.config_manager import ConfigurationManager
 from llm_orc.core.config.ensemble_config import EnsembleLoader
 from llm_orc.core.execution.artifact_manager import ArtifactManager
+from llm_orc.services.closure_shipper import LeftOut
 from llm_orc.services.handlers.run_preparation import INVALID_REQUEST, RunRefusedError
 from llm_orc.services.handlers.scope import Scope
 from llm_orc.services.orchestra_service import OrchestraService
@@ -1198,8 +1199,9 @@ class MCPServer:
     ) -> dict[str, Any]:
         """Run the named local root on ``remote`` and return its result."""
         service = self._service
+        left: list[LeftOut] = []
         try:
-            return await run_remote(
+            document = await run_remote(
                 ensemble_name,
                 remote,
                 find_root=service.find_ensemble_by_name,
@@ -1210,9 +1212,13 @@ class MCPServer:
                 bind=bind,
                 pull=pull,
                 persist=persist,
+                on_left_out=left.extend,
             )
         except RemoteRunError as e:
             return RunRefusedError(e.kind, str(e)).envelope()
+        if left:
+            document["left_out"] = [item.label for item in left]
+        return document
 
     async def _execute_ensemble_streaming(
         self,

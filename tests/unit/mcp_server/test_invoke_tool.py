@@ -34,6 +34,7 @@ from tests.unit.cli.test_invoke_remote import (  # noqa: F401
     Remote,
     _canned,
     _write_top,
+    _write_top_with_remote_only_child,
     in_project,
     remote,
     remotes,
@@ -186,6 +187,32 @@ class TestRemoteRun:
         assert result["raw_output"] is False
         assert len(remote.calls) == 1
         assert Path(record.read_text()).is_relative_to(remote.state / "runs")
+
+    def test_a_child_left_to_the_remote_is_named_in_left_out(
+        self, project: Path, remote: Remote, stdio_tool: ToolCall
+    ) -> None:
+        _write_top_with_remote_only_child(project, remote)
+
+        result = stdio_tool(
+            "invoke",
+            {"ensemble_name": "top", "input_data": "hi", "remote": "remote-host"},
+        )
+
+        assert result["status"] == "success", result
+        assert result["left_out"] == ["ensemble 'kids/only'"]
+
+    def test_a_closure_that_ships_whole_has_no_left_out_key(
+        self, project: Path, remote: Remote, stdio_tool: ToolCall, tmp_path: Path
+    ) -> None:
+        _where_script(project, tmp_path / "where.txt")
+
+        result = stdio_tool(
+            "invoke",
+            {"ensemble_name": "top", "input_data": "hi", "remote": "remote-host"},
+        )
+
+        assert result["status"] == "success", result
+        assert "left_out" not in result
 
     def test_a_profile_the_remote_lacks_returns_its_not_equipped_envelope(
         self, project: Path, remote: Remote, stdio_tool: ToolCall

@@ -26,7 +26,11 @@ from llm_orc.core.config.remotes import RemoteError, resolve_remote
 from llm_orc.core.execution.scripting.user_input_handler import (
     ScriptUserInputHandler,
 )
-from llm_orc.services.closure_shipper import ShipError, ship_closure
+from llm_orc.services.closure_shipper import (
+    LeftOut,
+    ShipError,
+    ship_closure_reporting,
+)
 from llm_orc.services.handlers.run_preparation import INVALID_REQUEST, REMOTE_ERROR
 
 CONNECT_TIMEOUT_S = 10
@@ -86,9 +90,13 @@ async def run_remote(
     bind: Mapping[str, str] | None = None,
     pull: bool = False,
     persist: str | None = None,
+    on_left_out: Callable[[list[LeftOut]], None] | None = None,
 ) -> dict[str, Any]:
     """Run ``root_name`` and its closure on ``remote`` (a configured name
     or a URL) and return the remote's result document.
+
+    ``on_left_out`` is called once with what the closure left to the
+    remote (ruling 6), only when that is not empty, before the POST.
 
     Raises:
         RemoteRunError: the remote is unknown, the closure cannot be
@@ -99,7 +107,7 @@ async def run_remote(
         base_url = resolve_remote(remote, config_manager)
     except RemoteError as e:
         raise RemoteRunError(remote, str(e), kind=INVALID_REQUEST) from e
-    request = _ship(
+    request, left_out = _ship(
         remote,
         root_name,
         find_root=find_root,
@@ -112,6 +120,8 @@ async def run_remote(
         input_text=input_text,
     )
     _refuse_interactive(remote, request)
+    if left_out and on_left_out is not None:
+        on_left_out(left_out)
     try:
         response = await post_run(base_url + EXECUTE_PATH, request)
     except httpx.HTTPError as e:
@@ -121,9 +131,11 @@ async def run_remote(
     return _result_document(remote, response)
 
 
-def _ship(remote: str, root_name: str, **more: Any) -> dict[str, Any]:
+def _ship(
+    remote: str, root_name: str, **more: Any
+) -> tuple[dict[str, Any], list[LeftOut]]:
     try:
-        return ship_closure(root_name, **more)
+        return ship_closure_reporting(root_name, **more)
     except ShipError as e:
         raise RemoteRunError(
             remote, f"cannot ship {root_name!r}: {e}", kind=INVALID_REQUEST
