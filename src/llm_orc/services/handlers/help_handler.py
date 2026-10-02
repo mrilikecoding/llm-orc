@@ -16,6 +16,7 @@ class HelpHandler:
             "directory_structure": self._get_directory_structure_help(),
             "schemas": self._get_schema_help(),
             "tools": self._get_tools_help(),
+            "remotes": self._get_remotes_help(),
             "workflows": self._get_workflow_help(),
         }
 
@@ -124,6 +125,10 @@ class HelpHandler:
                 "get_provider_status (check available models), "
                 "check_ensemble_runnable (verify ensemble can run)"
             ),
+            "remotes": (
+                "list_remotes (the stdio server only); check_ensemble_runnable "
+                "and invoke take remote"
+            ),
             "ensemble_crud": "create_ensemble, delete_ensemble",
             "profile_crud": (
                 "list_profiles, create_profile, update_profile, delete_profile"
@@ -133,6 +138,29 @@ class HelpHandler:
             ),
             "library": ("library_browse, library_copy, library_search, library_info"),
             "artifacts": "delete_artifact, cleanup_artifacts",
+        }
+
+    def _get_remotes_help(self) -> dict[str, Any]:
+        """Get documentation for running an ensemble on another serve."""
+        return {
+            "what": (
+                "A remote is another llm-orc serve that can run an ensemble "
+                "shipped from here. Name remotes in the global config.yaml "
+                "(~/.config/llm-orc/config.yaml); a project config is not "
+                "read. Remote tools and flags exist on the stdio server "
+                "(llm-orc mcp serve); a mounted serve does not relay."
+            ),
+            "config": "remotes:\n  remote-host:\n    url: https://llm-orc.remote.example",
+            "steps": [
+                "1. List: list_remotes (CLI: llm-orc remotes) shows each "
+                "remote with a live health probe",
+                "2. Preflight: check_ensemble_runnable with remote (CLI: "
+                "llm-orc invoke NAME --remote remote-host --preflight) says "
+                "what the remote lacks and runs nothing; answer a "
+                "missing_profile with bind or with_profiles",
+                "3. Run: invoke with remote (CLI: llm-orc invoke NAME "
+                "--remote remote-host)",
+            ],
         }
 
     def _get_workflow_help(self) -> dict[str, list[str]]:
