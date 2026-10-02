@@ -165,7 +165,7 @@ class ScriptResolver:
         self._cache[script_ref] = resolved
         return resolved
 
-    def _has_path_syntax(self, script_ref: str) -> bool:
+    def has_path_syntax(self, script_ref: str) -> bool:
         """Whether a reference LOOKS like a path: a separator or a
         ``SCRIPT_EXTENSIONS`` suffix.
 
@@ -236,7 +236,7 @@ class ScriptResolver:
                 return str(path), True
             raise ScriptNotFoundError(script_ref)
 
-        if self._has_path_syntax(script_ref):
+        if self.has_path_syntax(script_ref):
             # Path syntax never falls back to inline (trap 3): the search
             # itself is the one observation, since each candidate is
             # necessarily probed with `.exists()` to find it. Every
