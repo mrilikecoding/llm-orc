@@ -50,6 +50,9 @@ class TestMainCLI:
                 input_file=None,
                 bind={},
                 pull=False,
+                remote=None,
+                with_profiles=(),
+                persist=None,
             )
             assert result.exit_code == 0
 
@@ -105,6 +108,9 @@ class TestMainCLI:
                 input_file=None,
                 bind={},
                 pull=False,
+                remote=None,
+                with_profiles=(),
+                persist=None,
             )
             assert result.exit_code == 0
 
@@ -138,6 +144,9 @@ class TestMainCLI:
                 input_file=None,
                 bind={},
                 pull=False,
+                remote=None,
+                with_profiles=(),
+                persist=None,
             )
 
     def test_invoke_command_output_format_choices(self) -> None:

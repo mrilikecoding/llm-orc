@@ -3,7 +3,10 @@
 import asyncio
 import json
 import sys
-from collections.abc import Callable, Mapping, Sequence
+import threading
+import time
+from collections.abc import Callable, Iterator, Mapping, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
@@ -23,11 +26,15 @@ from llm_orc.cli_modules.utils.visualization.refusal_display import (
     display_refusal,
     display_run_record,
 )
+from llm_orc.cli_modules.utils.visualization.streaming import display_result
 from llm_orc.core.config.ensemble_config import EnsembleConfig
 from llm_orc.services.handlers.run_preparation import (
     RootNotFoundError,
     RunRefusedError,
 )
+from llm_orc.services.remote_run import RemoteRunError, run_remote
+
+WAIT_TICK_S = 1.0
 
 
 def _get_service() -> Any:
@@ -364,6 +371,9 @@ def invoke_ensemble(
     input_file: str | None = None,
     bind: Mapping[str, str] | None = None,
     pull: bool = False,
+    remote: str | None = None,
+    with_profiles: Sequence[str] = (),
+    persist: str | None = None,
 ) -> bool:
     """Invoke an ensemble of agents.
 
@@ -377,6 +387,24 @@ def invoke_ensemble(
         uses this to set a non-zero process exit code in every output
         format (rich/text/json alike).
     """
+    if remote is not None:
+        return _invoke_remote(
+            ensemble_name,
+            RemoteInvocation(
+                remote=remote,
+                input_data=_resolve_input_data(
+                    input_data, input_data_option, file_input=input_file
+                ),
+                config_dir=config_dir,
+                output_format=output_format,
+                max_concurrent=max_concurrent,
+                detailed=detailed,
+                bind=bind,
+                pull=pull,
+                with_profiles=with_profiles,
+                persist=persist,
+            ),
+        )
     service = _get_service()
 
     # Resolve input data using helper method
@@ -402,6 +430,120 @@ def invoke_ensemble(
         raise _not_found(service, e.name) from e
     except Exception as e:
         raise click.ClickException(f"Ensemble execution failed: {e!s}") from e
+
+
+@dataclass(frozen=True)
+class RemoteInvocation:
+    """What ``invoke --remote`` was asked for."""
+
+    remote: str
+    input_data: str
+    config_dir: str | None
+    output_format: str | None
+    max_concurrent: int | None
+    detailed: bool
+    bind: Mapping[str, str] | None = None
+    pull: bool = False
+    with_profiles: Sequence[str] = ()
+    persist: str | None = None
+
+
+def _invoke_remote(ensemble_name: str, invocation: RemoteInvocation) -> bool:
+    """Run the named local root on the remote and display its answer.
+
+    Refused before anything is sent: ``--max-concurrent`` (the request
+    has no place for it), an unknown remote, a closure that cannot ship
+    and an interactive script.
+    """
+    if invocation.max_concurrent is not None:
+        raise click.ClickException(
+            "--max-concurrent cannot be used with --remote: "
+            "the run request cannot carry it"
+        )
+    service = _get_service()
+    root = _root_lookup(service, ensemble_name, invocation.config_dir)(ensemble_name)
+    if root is None:
+        # Only a tier root ships: a bundle is a stored request, not a file.
+        raise _not_found(service, ensemble_name)
+    try:
+        with _waiting_on(invocation.remote, invocation.output_format):
+            document = run_remote(
+                ensemble_name,
+                invocation.remote,
+                find_root=lambda _name: root,
+                config_manager=service.config_manager,
+                project_dir=service.project_path,
+                input_text=invocation.input_data,
+                with_profiles=invocation.with_profiles,
+                bind=invocation.bind,
+                pull=invocation.pull,
+                persist=invocation.persist,
+            )
+    except RemoteRunError as e:
+        raise click.ClickException(str(e)) from e
+    except KeyboardInterrupt:
+        raise SystemExit(130) from None
+    return _display_remote_document(
+        document, root, invocation.output_format, invocation.detailed
+    )
+
+
+@contextmanager
+def _waiting_on(remote: str, output_format: str | None) -> Iterator[None]:
+    """In rich mode, the remote's name and the elapsed time on stderr
+    while the run is out. Text and JSON modes print nothing, so a pipe
+    stays clean."""
+    if output_format is not None:
+        yield
+        return
+    done = threading.Event()
+    started = time.monotonic()
+    interactive = sys.stderr.isatty()
+
+    def tick() -> None:
+        while True:
+            elapsed = time.monotonic() - started
+            line = f"Running on {remote}... {elapsed:.0f}s"
+            click.echo(
+                f"\r{line}" if interactive else line, err=True, nl=not interactive
+            )
+            if done.wait(WAIT_TICK_S) or not interactive:
+                return
+
+    ticker = threading.Thread(target=tick, daemon=True)
+    ticker.start()
+    try:
+        yield
+    finally:
+        done.set()
+        ticker.join()
+        if interactive:
+            click.echo("", err=True)
+
+
+def _display_remote_document(
+    document: dict[str, Any],
+    root: EnsembleConfig,
+    output_format: str | None,
+    detailed: bool,
+) -> bool:
+    """Show the remote's document as a local run shows its own: a refusal
+    as the table, a result through the result display. Returns whether its
+    status is "error"."""
+    error = document.get("error")
+    if isinstance(error, dict) and "kind" in error:
+        display_refusal(document, output_format)
+        return True
+    display_run_record(
+        document.get("bindings") or {}, document.get("pulled") or [], output_format
+    )
+    return display_result(
+        {"results": {}, "metadata": {}, **document},
+        root.agents,
+        output_format or "rich",
+        detailed,
+        root,
+    )
 
 
 def _list_ensembles_from_dir(config_dir: str, service: Any) -> None:

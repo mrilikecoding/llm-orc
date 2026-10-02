@@ -169,6 +169,23 @@ def completion(shell: str | None) -> None:
     default=False,
     help="Download a model this host lacks but can pull, then run",
 )
+@click.option(
+    "--remote",
+    default=None,
+    help="Run on another serve: a name from the global config or a URL",
+)
+@click.option(
+    "--with-profile",
+    "with_profile",
+    multiple=True,
+    help="Ship a local profile's definition with the run (repeatable, --remote)",
+)
+@click.option(
+    "--persist",
+    type=click.Choice(["global"]),
+    default=None,
+    help="Keep the shipped closure on the remote under its name (--remote)",
+)
 def invoke(
     ensemble_name: str,
     input_data: str | None,
@@ -181,8 +198,23 @@ def invoke(
     detailed: bool,
     bind: dict[str, str],
     pull: bool,
+    remote: str | None,
+    with_profile: tuple[str, ...],
+    persist: str | None,
 ) -> None:
-    """Invoke an ensemble of agents."""
+    """Invoke an ensemble of agents.
+
+    \b
+    Run on another serve, shipping the ensemble and what it needs:
+      llm-orc invoke review "the diff" --remote remote-host
+    A profile the remote lacks: run it on one the remote has, or ship yours:
+      llm-orc invoke review --remote remote-host --bind seat=other
+      llm-orc invoke review --remote remote-host --with-profile seat
+    Keep the shipped ensemble on the remote, to run it there by name:
+      llm-orc invoke review --remote remote-host --persist global
+    """
+    if remote is None and (with_profile or persist):
+        raise click.UsageError("--with-profile and --persist need --remote")
     has_errors = invoke_ensemble(
         ensemble_name,
         input_data,
@@ -195,6 +227,9 @@ def invoke(
         input_file=input_file,
         bind=bind,
         pull=pull,
+        remote=remote,
+        with_profiles=with_profile,
+        persist=persist,
     )
     if has_errors:
         sys.exit(1)
