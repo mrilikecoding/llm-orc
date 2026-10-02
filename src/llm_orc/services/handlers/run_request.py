@@ -186,33 +186,36 @@ def materialize(request: RunRequest, run_dir: Path) -> Path | None:
     Returns the root's path when the root is inline. Everything is
     validated and every target checked before the first write.
     """
-    writes: list[tuple[Path, str, int | None]] = []
+    writes: list[tuple[Path, str, int | None, str]] = []
     root_path: Path | None = None
     if request.ensemble is not None:
-        root_path = _target(run_dir, "ensembles", f"{request.ensemble['name']}.yaml")
-        writes.append((root_path, _dump(request.ensemble), None))
+        name = request.ensemble["name"]
+        root_path = _target(run_dir, "ensembles", f"{name}.yaml")
+        writes.append((root_path, _dump(request.ensemble), None, name))
     for key, definition in request.ensembles.items():
         data = {"name": key.rsplit("/", 1)[-1], **definition}
         path = _target(run_dir, "ensembles", f"{key}.yaml")
-        writes.append((path, _dump(data), None))
+        writes.append((path, _dump(data), None, key))
     for key, definition in request.profiles.items():
         path = _target(run_dir, "profiles", f"{key}.yaml")
-        writes.append((path, _dump({**definition, "name": key}), None))
+        writes.append((path, _dump({**definition, "name": key}), None, key))
     for key, source in request.scripts.items():
-        writes.append((_target(run_dir, key), source, _FILE_MODE))
-    for path, text, mode in writes:
-        _write(path, text, mode)
+        writes.append((_target(run_dir, key), source, _FILE_MODE, key))
+    for path, text, mode, key in writes:
+        _write(path, text, mode, key)
     return root_path
 
 
-def _write(path: Path, text: str, mode: int | None) -> None:
+def _write(path: Path, text: str, mode: int | None, key: str) -> None:
+    """Write ``text`` at ``path``; a failure names the request ``key``
+    and the OS reason, never the path (it holds the run directory)."""
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(text)
         if mode is not None:
             path.chmod(mode)
     except OSError as e:
-        raise RunRequestError(f"cannot write {path.name!r}: {e}") from e
+        raise RunRequestError(f"cannot write {key!r}: {e.strerror or e}") from e
 
 
 def apply_bindings(
@@ -234,6 +237,6 @@ def apply_bindings(
             unmet.append((key, target))
             continue
         path = _target(run_dir, "profiles", f"{key}.yaml")
-        _write(path, _dump({**definition, "name": key}), None)
+        _write(path, _dump({**definition, "name": key}), None, key)
         applied[key] = target
     return applied, unmet
