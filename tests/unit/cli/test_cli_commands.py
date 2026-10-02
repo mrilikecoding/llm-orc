@@ -629,21 +629,18 @@ class TestInvokeEnsemble:
         mock_loader: Mock,
         mock_executor: Mock,
     ) -> None:
-        """Test error handling when execution fails."""
+        """An executor whose run raises ends the command with the message."""
         mock_service = Mock()
         mock_service.config_manager = mock_config_manager
         mock_service.find_ensemble_by_name.return_value = mock_ensemble_config
         use_prepared_run(mock_service, mock_executor)
-
-        # Mock asyncio.run to raise an exception
-        execution_error = Exception("Execution failed")
+        mock_executor.execute = AsyncMock(side_effect=Exception("Execution failed"))
 
         with (
             patch(
                 "llm_orc.cli_commands._get_service",
                 return_value=mock_service,
             ),
-            patch("llm_orc.cli_commands.asyncio.run", side_effect=execution_error),
             pytest.raises(
                 ClickException, match="Ensemble execution failed: Execution failed"
             ),
