@@ -21,6 +21,7 @@ import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from llm_orc.core.config.config_manager import ConfigurationManager
+from llm_orc.core.execution.scripting.relative_path import check_relative
 from llm_orc.core.execution.scripting.resolver import ScriptResolver
 
 _FILE_MODE = 0o755
@@ -30,19 +31,10 @@ class RunRequestError(ValueError):
     """The request is malformed: the ``invalid_request`` carrier."""
 
 
-def _check_relative(key: str, what: str) -> None:
-    """A relative path: no ``..``, no leading ``/``, no backslash, no
-    empty or ``.`` segment."""
-    if not key or "\\" in key or "\0" in key or key.startswith("/"):
-        raise ValueError(f"{what} {key!r} is not a relative path")
-    if any(segment in ("", ".", "..") for segment in key.split("/")):
-        raise ValueError(f"{what} {key!r} is not a relative path")
-
-
 def _check_plain(key: str, what: str) -> None:
     """A name that becomes one file name: a relative path with no
     separator."""
-    _check_relative(key, what)
+    check_relative(key, what)
     if "/" in key:
         raise ValueError(f"{what} {key!r} must not contain '/'")
 
@@ -122,11 +114,11 @@ class RunRequest(BaseModel):
         if (self.ensemble is None) == (self.ensemble_name is None):
             raise ValueError("give exactly one of ensemble and ensemble_name")
         for key in self.ensembles:
-            _check_relative(key, "ensemble name")
+            check_relative(key, "ensemble name")
         for key in (*self.profiles, *self.bind):
             _check_plain(key, "profile name")
         for key in self.scripts:
-            _check_relative(key, "script key")
+            check_relative(key, "script key")
             _check_reachable(key)
         _check_one_reference_one_script(self.scripts)
         if self.ensemble is not None:
@@ -154,7 +146,7 @@ class RunRequest(BaseModel):
         name = root.get("name")
         if not isinstance(name, str):
             raise ValueError("an inline ensemble needs a name")
-        _check_relative(name, "ensemble name")
+        check_relative(name, "ensemble name")
         if name in self.ensembles:
             raise ValueError(f"ensemble {name!r} is defined twice (root and child)")
 
