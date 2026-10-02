@@ -10,6 +10,7 @@ REST. Nothing here opens a connection.
 from __future__ import annotations
 
 import json
+import tempfile
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
@@ -719,6 +720,60 @@ class TestParityWithALocalRun:
         assert refused["error"]["kind"] == "not_equipped"
         rows = {d["name"]: d["status"] for d in refused["error"]["dependencies"]}
         assert rows["tools/_h.py"] == "missing_script"
+
+
+def _tag_script(tag: str, files: tuple[str, ...] = ()) -> str:
+    return (
+        (_block(*files) if files else "")
+        + "import json, sys\n"
+        + "sys.stdin.read()\n"
+        + f'print(json.dumps({{"success": True, "data": {{"tag": "{tag}"}}}}))\n'
+    )
+
+
+class TestAReferenceTheRemoteWouldReadAsAnotherFile:
+    def test_a_scripts_prefixed_reference_beside_a_listed_scripts_dir_is_refused(
+        self,
+        project: Path,
+        service: OrchestraService,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Locally ``scripts/foo.py`` is the tier's ``foo.py`` (A). The
+        listed file of ``scripts/y.py`` would ship at
+        ``scripts/scripts/foo.py``, which the remote's resolver reaches
+        first for that reference (B)."""
+        _scripts(project, "foo.py", _tag_script("A"))
+        _write(project / "scripts" / "y.py", _tag_script("Y", ("scripts/foo.py",)))
+        _write(project / "scripts" / "scripts" / "foo.py", _tag_script("B"))
+        _uses(project, "scripts/y.py", "scripts/foo.py")
+        local = _run(service, monkeypatch, {"ensemble_name": "top", "input": ""})
+        assert local["status"] == "success", local
+        assert "A" in str(_outcome(local)["agents"]["a1"])
+
+        with pytest.raises(ShipError, match="'scripts/foo.py'"):
+            _ship(service, "top")
+
+    def test_the_proofs_temporary_directory_is_gone_on_every_way_out(
+        self,
+        project: Path,
+        service: OrchestraService,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        scratch = tmp_path / "scratch"
+        scratch.mkdir()
+        monkeypatch.setattr(tempfile, "tempdir", str(scratch))
+        _scripts(project, "foo.py", _tag_script("A"))
+        _uses(project, "scripts/foo.py")
+        _ship(service, "top")
+        assert list(scratch.iterdir()) == []
+
+        _write(project / "scripts" / "y.py", _tag_script("Y", ("scripts/foo.py",)))
+        _write(project / "scripts" / "scripts" / "foo.py", _tag_script("B"))
+        _uses(project, "scripts/y.py", "scripts/foo.py")
+        with pytest.raises(ShipError):
+            _ship(service, "top")
+        assert list(scratch.iterdir()) == []
 
 
 class TestWhatTheRemoteJudges:

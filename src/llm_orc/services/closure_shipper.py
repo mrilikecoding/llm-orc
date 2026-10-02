@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import os
 import posixpath
+import tempfile
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
@@ -22,10 +23,14 @@ from llm_orc.core.config.closure import Closure, walk_closure
 from llm_orc.core.config.config_manager import ConfigurationManager
 from llm_orc.core.config.ensemble_config import EnsembleConfig
 from llm_orc.core.execution.scripting.relative_path import check_relative
-from llm_orc.core.execution.scripting.resolver import ScriptResolver
+from llm_orc.core.execution.scripting.resolver import (
+    ScriptNotFoundError,
+    ScriptResolver,
+)
 from llm_orc.services.handlers.run_request import (
     RunRequest,
     RunRequestError,
+    materialize,
     script_key_form,
 )
 from llm_orc.services.handlers.run_view import run_view
@@ -85,6 +90,7 @@ def ship_closure(
     if persist is not None:
         request["persist"] = persist
     _require_valid(request)
+    _prove_reachable(request, locator.found)
     return request
 
 
@@ -94,6 +100,63 @@ def _require_valid(request: Mapping[str, Any]) -> None:
         RunRequest.parse(request)
     except RunRequestError as e:
         raise ShipError(f"the request would be refused: {e}") from e
+
+
+def _prove_reachable(
+    request: Mapping[str, Any], found: Sequence[LocatedScript]
+) -> None:
+    """The run's own resolver, over the request materialized into a
+    temporary layer, reaches the local file for every reference and every
+    listed file. The shipping keys are derived from the reference; this
+    proves the derivation against the real search instead of restating
+    it."""
+    with tempfile.TemporaryDirectory(prefix="llm-orc-ship-") as name:
+        layer = Path(name)
+        try:
+            materialize(RunRequest.parse(request), layer)
+        except RunRequestError as e:
+            raise ShipError(f"the request would be refused: {e}") from e
+        resolver = ScriptResolver(
+            search_paths=[str(layer / ScriptResolver.SCRIPTS_DIR), str(layer)]
+        )
+        reached: dict[str, Path] = {}
+        for item in found:
+            label = _label(item)
+            there = _remote_path(item, label, resolver, reached)
+            reached[item.dep.name] = there
+            _require_same_bytes(label, item.path, there, layer)
+
+
+def _remote_path(
+    item: LocatedScript,
+    label: str,
+    resolver: ScriptResolver,
+    reached: Mapping[str, Path],
+) -> Path:
+    dep = item.dep
+    if dep.beside is not None:
+        assert dep.listed is not None
+        return reached[dep.beside].parent / dep.listed
+    try:
+        resolved, is_file = resolver.resolve_and_classify(dep.name)
+    except ScriptNotFoundError as e:
+        raise ShipError(f"{label} would not resolve on the remote") from e
+    if not is_file:
+        raise ShipError(f"{label} would be read as inline shell on the remote")
+    return Path(resolved)
+
+
+def _require_same_bytes(label: str, local: Path, there: Path, layer: Path) -> None:
+    try:
+        same = there.read_bytes() == local.read_bytes()
+    except OSError as e:
+        raise ShipError(f"{label} would not be readable on the remote") from e
+    if not same:
+        shown = there.relative_to(layer) if there.is_relative_to(layer) else there
+        raise ShipError(
+            f"{label} would reach {shown.as_posix()!r} on the remote, which "
+            "is not the file it is locally"
+        )
 
 
 def _profile_definitions(
