@@ -183,6 +183,7 @@ class EnsembleConfig:
     default_task: str | None = None
     task: str | None = None  # Backward compatibility
     relative_path: str | None = None  # For hierarchical display
+    source_path: str | None = None  # The file ``load_from_file`` read
     validation: dict[str, Any] | None = None  # Validation configuration
     test_mode: dict[str, Any] | None = None  # Test mode configuration
     raw_output: bool = False
@@ -445,6 +446,7 @@ class EnsembleLoader:
             output_substrate=output_substrate,
             output_retention=output_retention,
             calibration_substrate_access=calibration_substrate_access,
+            source_path=str(path),
         )
 
         # Validate agent dependencies
