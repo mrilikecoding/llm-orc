@@ -3,19 +3,36 @@
 from __future__ import annotations
 
 import datetime
-from collections.abc import AsyncIterator, Awaitable, Callable
+import shutil
+import tempfile
+from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+import yaml
+
 from llm_orc.core.config.config_manager import ConfigurationManager
-from llm_orc.core.config.ensemble_config import EnsembleLoader
+from llm_orc.core.config.ensemble_config import (
+    EnsembleLoader,
+    child_ensemble_search_dirs,
+)
+from llm_orc.core.config.state import resolve_state_dir
 from llm_orc.core.execution.artifact_manager import ArtifactManager
 from llm_orc.core.execution.results_processor import caller_status
 from llm_orc.mcp.project_context import ProjectContext
 from llm_orc.services.handlers.preflight import DependencyReport, is_runnable
-from llm_orc.services.handlers.run_preparation import NOT_EQUIPPED, RunRefusedError
+from llm_orc.services.handlers.run_preparation import (
+    INVALID_REQUEST,
+    NOT_EQUIPPED,
+    RunRefusedError,
+)
+from llm_orc.services.handlers.run_request import (
+    RunRequest,
+    RunRequestError,
+    materialize,
+)
 
 if TYPE_CHECKING:
     from llm_orc.core.execution.ensemble_execution import EnsembleExecutor
@@ -23,6 +40,26 @@ if TYPE_CHECKING:
     from llm_orc.services.handlers.provider_handler import Preflight
 
 PreflightFn = Callable[..., Awaitable["Preflight"]]
+LayerExecutorFn = Callable[[ConfigurationManager, bool], "EnsembleExecutor"]
+
+#: The request keys a caller may send besides the input.
+_REQUEST_KEYS = (
+    "ensemble_name",
+    "ensemble",
+    "ensembles",
+    "profiles",
+    "scripts",
+    "bind",
+    "pull",
+)
+_PARSE_ERRORS = (
+    KeyError,
+    TypeError,
+    ValueError,
+    AttributeError,
+    OSError,
+    yaml.YAMLError,
+)
 
 
 @dataclass
@@ -31,6 +68,7 @@ class PreparedRun:
 
     config: Any
     executor: EnsembleExecutor
+    inline: bool = False
 
 
 class ExecutionHandler:
@@ -45,6 +83,7 @@ class ExecutionHandler:
         find_ensemble_fn: Callable[[str], Any],
         *,
         preflight_fn: PreflightFn,
+        layer_executor_fn: LayerExecutorFn,
     ) -> None:
         """Initialize with dependencies.
 
@@ -55,6 +94,8 @@ class ExecutionHandler:
             get_executor_fn: Callback to get/create executor.
             find_ensemble_fn: Callback to find ensemble by name.
             preflight_fn: The gate every run passes (``ProviderHandler.preflight``).
+            layer_executor_fn: Builds the executor of a run with a layer from
+                its config manager view and whether to save artifacts.
         """
         self._config_manager = config_manager
         self._ensemble_loader = ensemble_loader
@@ -62,6 +103,7 @@ class ExecutionHandler:
         self._get_executor = get_executor_fn
         self._find_ensemble = find_ensemble_fn
         self._preflight = preflight_fn
+        self._layer_executor = layer_executor_fn
         self._project_path: Path | None = None
 
     def set_project_context(self, ctx: ProjectContext) -> None:
@@ -82,7 +124,6 @@ class ExecutionHandler:
         Returns:
             Execution result.
         """
-        ensemble_name = arguments.get("ensemble_name")
         input_data = arguments.get("input", "")
         input_file = arguments.get("input_file")
 
@@ -94,7 +135,9 @@ class ExecutionHandler:
 
         try:
             async with self._prepared(
-                ensemble_name, self._lookup_in_tiers, "Ensemble does not exist"
+                _request_data(arguments),
+                self._lookup_in_tiers,
+                "Ensemble does not exist",
             ) as run:
                 result = await run.executor.execute(run.config, input_data)
 
@@ -123,51 +166,127 @@ class ExecutionHandler:
     @asynccontextmanager
     async def _prepared(
         self,
-        ensemble_name: str | None,
+        data: Mapping[str, Any],
         lookup: Callable[[str], Any],
         missing: str,
     ) -> AsyncIterator[PreparedRun]:
         """The root and executor for one run, once the gate has passed.
 
-        Raises ``RunRefusedError`` before any agent starts when the host
-        cannot run the ensemble (Arc 4, ruling 1).
+        Raises ``RunRefusedError`` before any agent starts when the
+        request is malformed or the host cannot run the ensemble (Arc 4,
+        rulings 1, 9 and 10). The run directory, when there is one, is
+        removed on every way out: success, refusal, an exception and
+        cancellation.
         """
-        if not ensemble_name:
+        if not data:
             raise ValueError("ensemble_name is required")
-        config = lookup(ensemble_name)
-        if not config:
-            raise ValueError(f"{missing}: {ensemble_name}")
-        outcome = await self._preflight(
-            config,
-            ensemble_name,
-            config_manager=self._config_manager,
-            project_dir=self._project_path,
+        request = _parse(data)
+        run_dir = self._new_run_dir() if request.needs_layer else None
+        try:
+            yield await self._prepare(request, run_dir, lookup, missing)
+        finally:
+            if run_dir is not None:
+                shutil.rmtree(run_dir, ignore_errors=True)
+
+    def _new_run_dir(self) -> Path:
+        runs = resolve_state_dir(self._config_manager.local_config_dir) / "runs"
+        runs.mkdir(parents=True, exist_ok=True)
+        return Path(tempfile.mkdtemp(prefix="run-", dir=runs))
+
+    async def _prepare(
+        self,
+        request: RunRequest,
+        run_dir: Path | None,
+        lookup: Callable[[str], Any],
+        missing: str,
+    ) -> PreparedRun:
+        view: ConfigurationManager | None = None
+        root_path: Path | None = None
+        if run_dir is not None:
+            try:
+                root_path = materialize(request, run_dir)
+            except RunRequestError as e:
+                raise RunRefusedError(INVALID_REQUEST, str(e)) from e
+            view = self._config_manager.with_run_layer(run_dir)
+        manager = view or self._config_manager
+        inline = request.ensemble is not None
+        config = self._load_root(request, root_path, manager, lookup, missing)
+        root_ref = str(
+            request.ensemble["name"] if request.ensemble else request.ensemble_name
         )
+        outcome = await self._gate(config, root_ref, manager)
         if not is_runnable(outcome.reports):
             raise RunRefusedError(
                 NOT_EQUIPPED, _unmet_message(outcome.reports), outcome.reports
             )
-        yield PreparedRun(config, self._get_executor())
+        if view is None:
+            return PreparedRun(config, self._get_executor(), inline)
+        return PreparedRun(config, self._layer_executor(view, not inline), inline)
+
+    def _load_root(
+        self,
+        request: RunRequest,
+        root_path: Path | None,
+        manager: ConfigurationManager,
+        lookup: Callable[[str], Any],
+        missing: str,
+    ) -> Any:
+        if root_path is None:
+            name = str(request.ensemble_name)
+            config = lookup(name)
+            if not config:
+                raise ValueError(f"{missing}: {name}")
+            return config
+        try:
+            return self._ensemble_loader.load_from_file(
+                str(root_path),
+                search_dirs=child_ensemble_search_dirs(self._project_path, manager),
+            )
+        except _PARSE_ERRORS as e:
+            raise RunRefusedError(
+                INVALID_REQUEST, f"the inline ensemble does not load: {e}"
+            ) from e
+
+    async def _gate(
+        self, config: Any, root_ref: str, manager: ConfigurationManager
+    ) -> Preflight:
+        try:
+            return await self._preflight(
+                config,
+                root_ref,
+                config_manager=manager,
+                project_dir=self._project_path,
+            )
+        except _PARSE_ERRORS as e:
+            raise RunRefusedError(
+                INVALID_REQUEST, f"a child ensemble does not load: {e}"
+            ) from e
 
     async def execute_streaming(
         self,
-        ensemble_name: str,
+        ensemble_name: str | None,
         input_data: str,
         reporter: ProgressReporter,
+        injection: Mapping[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Execute ensemble with streaming progress updates.
 
         Args:
-            ensemble_name: Name of the ensemble to execute.
+            ensemble_name: Name of the ensemble to execute, or None when
+                the root is inline (``injection["ensemble"]``).
             input_data: Input data for the ensemble.
             reporter: Progress reporter for status updates.
+            injection: The run request's other keys: ``ensemble``,
+                ``ensembles``, ``profiles``, ``scripts``, ``bind``, ``pull``.
 
         Returns:
             Execution result.
         """
         try:
             async with self._prepared(
-                ensemble_name, self._find_ensemble, "Ensemble does not exist"
+                _request_data({**(injection or {}), "ensemble_name": ensemble_name}),
+                self._find_ensemble,
+                "Ensemble does not exist",
             ) as run:
                 return await self._stream(run, ensemble_name, input_data, reporter)
         except RunRefusedError as refusal:
@@ -177,19 +296,21 @@ class ExecutionHandler:
     async def _stream(
         self,
         run: PreparedRun,
-        ensemble_name: str,
+        ensemble_name: str | None,
         input_data: str,
         reporter: ProgressReporter,
     ) -> dict[str, Any]:
         total_agents = len(run.config.agents)
+        name = ensemble_name or run.config.name
         state: dict[str, Any] = {
             "completed": 0,
             "result": {},
-            "ensemble_name": ensemble_name,
+            "ensemble_name": name,
             "input_data": input_data,
+            "save_artifact": not run.inline,
         }
 
-        msg = f"Starting ensemble '{ensemble_name}' with {total_agents} agents"
+        msg = f"Starting ensemble '{name}' with {total_agents} agents"
         await reporter.info(msg)
 
         async for event in run.executor.execute_streaming(run.config, input_data):
@@ -247,9 +368,10 @@ class ExecutionHandler:
             # The artifact keeps the raw internal status (completed /
             # completed_with_errors) — its own consumers read that value,
             # unrelated to the caller-facing success/error vocabulary above.
-            self.save_execution_artifact(
-                ensemble_name, input_data, results, deliverable, raw_status
-            )
+            if state.get("save_artifact", True):
+                self.save_execution_artifact(
+                    ensemble_name, input_data, results, deliverable, raw_status
+                )
             await reporter.report_progress(progress=total_agents, total=total_agents)
 
         elif event_type == "execution_failed":
@@ -331,9 +453,7 @@ class ExecutionHandler:
         input_data = params.get("input", "")
         try:
             async with self._prepared(
-                params.get("ensemble_name"),
-                self._lookup_in_tiers,
-                "Ensemble not found",
+                _request_data(params), self._lookup_in_tiers, "Ensemble not found"
             ) as run:
                 async for event in run.executor.execute_streaming(
                     run.config, input_data
@@ -341,6 +461,23 @@ class ExecutionHandler:
                     yield event
         except RunRefusedError as refusal:
             yield {"type": "execution_failed", "data": {"error": refusal.error}}
+
+
+def _request_data(arguments: Mapping[str, Any]) -> dict[str, Any]:
+    """The run request keys of ``arguments``; the rest (input, input_file)
+    belong to the entry path, not the request."""
+    return {
+        k: arguments[k]
+        for k in _REQUEST_KEYS
+        if arguments.get(k) is not None and arguments[k] != ""
+    }
+
+
+def _parse(data: Mapping[str, Any]) -> RunRequest:
+    try:
+        return RunRequest.parse(data)
+    except RunRequestError as e:
+        raise RunRefusedError(INVALID_REQUEST, str(e)) from e
 
 
 def _unmet_message(reports: list[DependencyReport]) -> str:

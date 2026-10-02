@@ -41,6 +41,7 @@ def _make_handler(
         get_executor_fn=lambda: mock_executor,
         find_ensemble_fn=lambda name: ensemble_config,
         preflight_fn=_runnable,
+        layer_executor_fn=lambda view, save_artifacts: mock_executor,
     )
 
 
