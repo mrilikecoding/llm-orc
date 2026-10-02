@@ -85,6 +85,10 @@ class TestOnlyHttpAndHttpsWithAHostAndAPort:
             ("https://host.example:80800", "port"),
             ("https://host.example:0", "port"),
             ("https://host.example:abc", "port"),
+            ("https://host.example?x=1", "query"),
+            ("https://host.example/base?", "query"),
+            ("https://host.example#top", "fragment"),
+            ("https://host.example/base#", "fragment"),
         ],
     )
     def test_anything_else_is_refused_naming_what_is_wrong(
@@ -102,6 +106,14 @@ class TestOnlyHttpAndHttpsWithAHostAndAPort:
     )
     def test_a_good_url_passes(self, tmp_path: Path, value: str) -> None:
         assert resolve_remote(value, _manager(tmp_path)) == value
+
+    def test_a_configured_url_with_a_query_is_refused_naming_the_remote(
+        self, tmp_path: Path
+    ) -> None:
+        _global({"remotes": {"remote-host": {"url": f"{REMOTE_URL}?x=1"}}})
+
+        with pytest.raises(RemoteError, match="remote-host.*query"):
+            resolve_remote("remote-host", _manager(tmp_path))
 
     def test_a_configured_url_is_checked_too(self, tmp_path: Path) -> None:
         _global({"remotes": {"remote-host": {"url": "ftp://host.example"}}})
