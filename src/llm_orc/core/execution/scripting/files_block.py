@@ -22,12 +22,7 @@ from typing import Any
 
 from llm_orc.core.execution.scripting.relative_path import check_relative
 
-_OPENING = re.compile(r"(?m)^(?:#|//) /// llm-orc$")
-_BLOCK = re.compile(
-    r"(?m)^(?P<lead>#|//) /// llm-orc$\s"
-    r"(?P<body>(?:^(?P=lead)(?: .*)?$\s)+?)"
-    r"^(?P=lead) ///$"
-)
+_OPENING = re.compile(r"(?m)^(?P<lead>#|//) /// llm-orc$")
 
 
 @dataclass(frozen=True)
@@ -39,21 +34,35 @@ class ListedFiles:
 
 
 def listed_files(source: str) -> ListedFiles:
-    """The first ``llm-orc`` block of ``source``: no block lists nothing,
-    a block that does not parse or breaks the path rule is an error."""
+    """The block the first ``llm-orc`` opening line of ``source`` starts:
+    no opening line lists nothing, an empty block lists nothing, and a
+    block that is never closed, does not parse or breaks the path rule is
+    an error whatever follows it."""
     text = source.replace("\r\n", "\n")
-    match = _BLOCK.search(text)
-    if match is None:
-        if _OPENING.search(text):
-            return ListedFiles(error="the llm-orc block is never closed with '# ///'")
+    opening = _OPENING.search(text)
+    if opening is None:
         return ListedFiles()
-    lead = match["lead"]
-    body = "\n".join(line[len(lead) + 1 :] for line in match["body"].splitlines())
+    body = _body_lines(text[opening.end() :], opening["lead"])
+    if body is None:
+        return ListedFiles(error="the llm-orc block is never closed with '# ///'")
     try:
-        data = tomllib.loads(body)
+        data = tomllib.loads("\n".join(body))
     except tomllib.TOMLDecodeError as e:
         return ListedFiles(error=f"the llm-orc block is not valid TOML: {e}")
     return _paths_of(data)
+
+
+def _body_lines(after_opening: str, lead: str) -> list[str] | None:
+    """The comment lines up to the first closing ``<lead> ///``, with the
+    leader removed; None when a line that is not a comment comes first."""
+    lines: list[str] = []
+    for line in after_opening.split("\n")[1:]:
+        if line == f"{lead} ///":
+            return lines
+        if line != lead and not line.startswith(f"{lead} "):
+            return None
+        lines.append(line[len(lead) + 1 :])
+    return None
 
 
 def _paths_of(data: dict[str, Any]) -> ListedFiles:

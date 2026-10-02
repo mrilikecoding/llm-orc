@@ -70,3 +70,35 @@ class TestListedFiles:
     def test_an_unclosed_block_is_an_error(self) -> None:
         result = listed_files('# /// llm-orc\n# files = ["a.py"]\nimport a\n')
         assert result.error
+
+    def test_the_first_opening_line_decides_even_if_a_later_block_is_well_formed(
+        self,
+    ) -> None:
+        source = (
+            '# /// llm-orc\n# files = ["a.py"]\nimport a\n'
+            '# /// llm-orc\n# files = ["b.py"]\n# ///\n'
+        )
+        result = listed_files(source)
+        assert result.paths == ()
+        assert result.error
+        assert "never closed" in result.error
+
+    def test_a_first_block_that_does_not_parse_is_the_error_whatever_follows(
+        self,
+    ) -> None:
+        source = (
+            "# /// llm-orc\n# files = [\n# ///\n"
+            '# /// llm-orc\n# files = ["b.py"]\n# ///\n'
+        )
+        result = listed_files(source)
+        assert result.paths == ()
+        assert result.error
+        assert "TOML" in result.error
+
+    @pytest.mark.parametrize("lead", ["#", "//"])
+    def test_an_empty_block_lists_nothing_and_is_not_an_error(self, lead: str) -> None:
+        assert listed_files(f"{lead} /// llm-orc\n{lead} ///\nrun()\n") == ListedFiles()
+
+    def test_an_empty_block_is_still_the_first_block(self) -> None:
+        source = '# /// llm-orc\n# ///\n# /// llm-orc\n# files = ["b.py"]\n# ///\n'
+        assert listed_files(source) == ListedFiles()
