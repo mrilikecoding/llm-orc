@@ -27,6 +27,7 @@ from llm_orc.core.execution.scripting.resolver import (
     ScriptNotFoundError,
     ScriptResolver,
 )
+from llm_orc.services.handlers.run_preparation import ChildLoadError
 from llm_orc.services.handlers.run_request import (
     RunRequest,
     RunRequestError,
@@ -68,13 +69,16 @@ def ship_closure(
         return child
 
     locator = ScriptFileLocator(view.resolver)
-    closure = walk_closure(
-        root,
-        find_child,
-        view.profiles,
-        root_ref=root_name,
-        script_files=locator,
-    )
+    try:
+        closure = walk_closure(
+            root,
+            find_child,
+            view.profiles,
+            root_ref=root_name,
+            script_files=locator,
+        )
+    except ChildLoadError as e:
+        raise ShipError(str(e)) from e
     request: dict[str, Any] = {
         "ensemble": _as_written(root_name, root),
         "ensembles": {
@@ -279,3 +283,5 @@ def _utf8(label: str, path: Path) -> str:
         return path.read_bytes().decode("utf-8")
     except UnicodeDecodeError as e:
         raise ShipError(f"{label} is not UTF-8 text") from e
+    except OSError as e:
+        raise ShipError(f"{label} cannot be read: {e.strerror or e}") from e

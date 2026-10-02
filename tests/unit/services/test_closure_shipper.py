@@ -10,6 +10,7 @@ REST. Nothing here opens a connection.
 from __future__ import annotations
 
 import json
+import os
 import tempfile
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -21,6 +22,7 @@ import yaml
 from fastapi.testclient import TestClient
 
 import llm_orc.web.api as web_api
+from llm_orc.core.config.config_manager import resolve_global_config_dir
 from llm_orc.core.execution.scripting.resolver import ScriptResolver
 from llm_orc.services.closure_shipper import ShipError, ship_closure
 from llm_orc.services.handlers.run_request import RunRequest, materialize
@@ -570,6 +572,32 @@ class TestProfilesAndTheRestOfTheRequest:
 
         with pytest.raises(ShipError, match="would be refused.*must not contain '/'"):
             _ship(service, "pack/nested", persist="global")
+
+
+class TestErrorsOnTheShipPath:
+    def test_a_child_that_does_not_load_is_a_ship_error_naming_it(
+        self, project: Path, service: OrchestraService
+    ) -> None:
+        _ensemble(project / ".llm-orc", "top", [{"name": "k", "ensemble": "kid"}])
+        _write(resolve_global_config_dir() / "ensembles" / "kid.yaml", "agents: [\n")
+
+        with pytest.raises(ShipError, match="'kid'"):
+            _ship(service, "top")
+
+    def test_a_script_that_cannot_be_read_is_a_ship_error_naming_it(
+        self, project: Path, service: OrchestraService
+    ) -> None:
+        script = _scripts(project, "tools/x.py", _block("_h.py"))
+        _scripts(project, "tools/_h.py")
+        _uses(project, "tools/x.py")
+        script.chmod(0)
+        try:
+            if os.access(script, os.R_OK):
+                pytest.skip("this user can read a file with no permissions")
+            with pytest.raises(ShipError, match="'tools/x.py'"):
+                _ship(service, "top")
+        finally:
+            script.chmod(0o644)
 
 
 @pytest.fixture
