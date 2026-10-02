@@ -1052,6 +1052,56 @@ class TestAScriptNeverHangsOnItsDescendants:
         killpg.assert_not_called()
 
 
+class TestALargeInputReachesASlowReader:
+    """``communicate`` cannot be resumed after a timeout while it still has
+    input to send, so the read must not be sliced: a child that starts
+    reading late still gets all of its input and its EOF."""
+
+    READER = "import sys, time\ntime.sleep(0.5)\nprint(len(sys.stdin.read()))\n"
+
+    def test_run_subprocess_delivers_two_megabytes_to_a_slow_reader(self) -> None:
+        async def run() -> tuple[float, str]:
+            started = time.monotonic()
+            result = await _run_subprocess(
+                [sys.executable, "-c", self.READER],
+                input="x" * 2_000_000,
+                capture_output=True,
+                text=True,
+                timeout=6,
+            )
+            return time.monotonic() - started, result.stdout
+
+        elapsed, stdout = asyncio.run(run())
+
+        assert stdout.strip() == "2000000"
+        assert elapsed < 5
+
+    def test_a_script_agent_completes_with_an_input_past_the_pipe_buffer(
+        self,
+    ) -> None:
+        # The agent also mirrors the input into the environment, which the
+        # OS caps near 1 MB, so this input is 200 KB: well past the pipe
+        # buffer (16-64 KB), which is what stalls the write.
+        with tempfile.TemporaryDirectory() as directory:
+            script = Path(directory) / "reader.py"
+            script.write_text(
+                "import json, sys, time\n"
+                "time.sleep(0.5)\n"
+                "data = json.loads(sys.stdin.read())\n"
+                "print(json.dumps({'n': len(data['input'])}))\n"
+            )
+            agent = ScriptAgent(
+                "reader", {"script": str(script), "timeout_seconds": 10}
+            )
+
+            started = time.monotonic()
+            result = asyncio.run(agent.execute("x" * 200_000))
+            elapsed = time.monotonic() - started
+
+        assert json.loads(result) == {"n": 200_000}
+        assert elapsed < 5
+
+
 class TestOnePredicateFileVsInline:
     """#177: file-vs-inline was decided in three places by two rules. This
     class pins the trap in ``ScriptAgent``'s own execution: once a
