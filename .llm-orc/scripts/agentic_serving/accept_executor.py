@@ -14,6 +14,13 @@ Reads {requirement, code, tests} from the node payload; emits
 the contract and artifact to the isolated judge seat.
 """
 
+# /// llm-orc
+# files = [
+#   "_helpers.py",
+#   "accept_executor_runner.py",
+# ]
+# ///
+
 from __future__ import annotations
 
 import ast

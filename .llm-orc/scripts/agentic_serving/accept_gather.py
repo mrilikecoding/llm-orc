@@ -10,6 +10,10 @@ the criteria) and the code from code_writer (built against those tests).
 Emits JSON: {requirement, code, tests}
 """
 
+# /// llm-orc
+# files = ["_helpers.py"]
+# ///
+
 from __future__ import annotations
 
 import ast
