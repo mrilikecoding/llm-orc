@@ -59,15 +59,15 @@ def _bytecode_environment(
     A serving script imports its sibling ``_helpers``; run in place, the
     interpreter would write ``__pycache__`` under the read-only packaged
     tier (#196). Every subprocess environment in this module starts from
-    ``self.environment``, so setting it here covers every run path. A
-    caller's own ``PYTHONPYCACHEPREFIX`` wins. A run with a layer
-    keeps it under the run directory instead: the state dir's copy
-    mirrors absolute paths and would outlive the run (Arc 4).
+    ``self.environment``, so setting it here covers every run path. A run
+    with a layer keeps it under the run directory, whatever the
+    environment says: any other prefix would outlive the run (Arc 4).
+    Without a layer a caller's own ``PYTHONPYCACHEPREFIX`` wins.
     """
-    if "PYTHONPYCACHEPREFIX" in os.environ:
-        return {}
     if run_dir is not None:
         return {"PYTHONPYCACHEPREFIX": str(run_dir / PYCACHE_DIRNAME)}
+    if "PYTHONPYCACHEPREFIX" in os.environ:
+        return {}
     local = ConfigurationManager(
         project_dir=project_dir, provision=False
     ).local_config_dir
