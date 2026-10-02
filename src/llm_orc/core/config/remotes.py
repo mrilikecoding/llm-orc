@@ -47,6 +47,9 @@ def _checked_url(url: str, source: str | None) -> str:
         raise RemoteError(
             f"{where}{url!r} must use http or https, not {parts.scheme!r}"
         )
+    for mark, name in (("?", "query"), ("#", "fragment")):
+        if mark in url:
+            raise RemoteError(f"{where}{url!r} has a {name}; give the base URL alone")
     if not parts.hostname:
         raise RemoteError(f"{where}{url!r} has no host")
     try:
