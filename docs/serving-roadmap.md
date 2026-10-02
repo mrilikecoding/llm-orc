@@ -59,7 +59,7 @@ layer is the insulation that keeps an eventual hardening cheap, and
 "frozen component" status is the trigger, tracked informally the way the
 buy-back ledger tracks hosted seats.
 
-## State (2026-10-01 handoff)
+## State (2026-10-02 handoff)
 
 **Ranked index:** the GitHub project "llm-orc kanban"
 (https://github.com/users/mrilikecoding/projects/2). THIS DOCUMENT
@@ -109,7 +109,7 @@ the removed content and cannot be changed, only yanked (left as they
 are; the wheels never carried it). Hashes cited in GitHub issue comments before
 this date are the old ones.
 
-### 2026-10-01: v0.22.0 released; Arc 4 in flight
+### 2026-10-02: Arc 4 merged on local main; v0.22.0 is the release
 
 Released v0.22.0 on the practitioner's go: push `923fa5a6..a3aa6e70`,
 tag, GitHub release, PyPI, tap formula bumped (`1b3cdb00`, Intel
@@ -162,19 +162,68 @@ config. `/v1` results taken from the mini before this date ran the
 checkout's 0.20.4-era serving project on a newer engine. The homelab
 cert renewal daemon fix is still owed before December.
 
-**In flight: Arc 4 (one-run injection).** The re-cut is done: twelve
-rulings in the spec ("Arc 4 re-cut (2026-10-01)", with the code read and
-two router probes) and the plan with task cards
-(`docs/plans/2026-10-01-remote-delegation-arc4.md`). Implementation is on
-`feat/one-run-injection` in `.claude/worktrees/arc4-injection`, Sonnet
-implementers per task, Opus reviews, a whole-branch review before merge
-(where Arc 3's three wrong-accepts were found; do not skip it). The plan's
-Task 9 is the laptop live row and the review gate. The rulings a caller
-will notice: every REST/MCP run is gated, named ensembles too (an
-ensemble that is not `runnable` answers `not_equipped`); `needs_restart`
-is never resolved inside a run; an inline root saves no artifact; a
-listed model whose router source differs from the profile's `hf_repo`
-reads `needs_restart`.
+**Arc 4 merged on local main 2026-10-02 (`4e1b52da`), not pushed.**
+Rulings, the two probes, the live rows and the review record are in the
+spec (`docs/plans/2026-09-28-remote-delegation.md`, "Arc 4 re-cut
+(2026-10-01)" through "Review rounds and the re-run"); task cards in
+`docs/plans/2026-10-01-remote-delegation-arc4.md`. Shape: `invoke` (REST
+`POST /api/ensembles/execute` and `/{name}/execute`, the MCP tool) takes
+an inline ensemble with its children, profiles and scripts, plus `bind`
+and `pull`. One preparation step sits in front of every service run:
+validate, write a run layer under `<state dir>/runs/<id>/`, preflight
+over a config manager view that puts the layer highest, pull if asked,
+run, remove the directory. A refusal is `{status: error, error: {kind:
+not_equipped | invalid_request, message, dependencies}}` before any agent
+runs. Suite 5043; parallel about 70 s (`uv run pytest -n auto`), serial
+about 6.5 min.
+
+What a caller will notice (breaking, for the release notes): every REST
+and MCP run is gated, named ensembles too, so an ensemble that is not
+`runnable` answers `not_equipped` instead of starting, including a ready
+primary with an unmet fallback hop; a `pullable` model blocks unless
+`pull: true`; a listed model whose router source differs from the
+profile's `hf_repo` reads `needs_restart`; `needs_restart` is never
+resolved inside a run; an inline root saves no artifact; a request with
+no root is the `invalid_request` envelope, not an exception;
+`POST /api/models/{name}/pull` no longer blocks the event loop (#199).
+One engine change reaches every script agent: its subprocess leads its
+own process group, a timeout kills the group, a cancelled run kills it
+before cleanup. `/v1/chat/completions` and the local CLI are not gated.
+
+Process record: Sonnet implementers per task; an Opus review of Tasks
+1-4, a whole-branch review, and three scoped re-reviews of the fix
+waves. Every round but the last found real defects (six, three, three,
+one), and the fix waves introduced two of their own. Lesson, binding:
+after a fix wave check the suite's wall time and `--durations`, not only
+the passed count. A wave that sliced `Popen.communicate` hung every
+script with an input past the pipe buffer until its timeout, and the
+suite stayed green at 5038 with one test at 302 s.
+
+Deferred from the Arc 4 reviews (none block): a plain REST run is not
+cancelled when its client disconnects (the script runs to its end, then
+the layer is removed); the MCP tool ignores unknown arguments where REST
+rejects them; unused inline definitions are accepted; `input_file`
+pointing nowhere and a malformed named root still raise (500 on REST);
+a script agent's input is also copied into the subprocess environment,
+so one above about 1 MB fails with "Argument list too long"; a cancel
+during a pull leaves the worker thread polling the router; a cancelled
+run whose script left a process outside its group holds one pool thread
+until the script's timeout; context size is not compared (ruling 6);
+`load_problem` leaves Windows paths and paths with spaces partly
+unscrubbed. #205 (P2) is the spike on access levels for a serve with
+clients it does not trust; until then injection relies on who can reach
+the port.
+
+**Next:** on the practitioner's go, push and release (the push carries
+61 local commits; `publish.yml` publishes on every push to main, so push
+at 0.22.0 first, wait for CI, then the release commit), deploy to the
+remote host, and take the live row there. Then re-cut Arc 5 (the CLI as
+the remote client) from the merged shape. Carry into the re-cut: named
+remotes in the user's config so no URL lives in a repo; the CLI ships a
+script's sibling modules with it (ruling 7: an injected script imports
+only what ships beside it); script keys need path syntax and names must
+be distinct ignoring case; a serve's access level (#205) is where the
+CLI would read what the remote permits.
 
 ### 2026-09-27: fail-closed composition, released v0.21.0
 
