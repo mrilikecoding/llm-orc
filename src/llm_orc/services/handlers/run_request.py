@@ -15,7 +15,7 @@ from __future__ import annotations
 import unicodedata
 from collections.abc import Iterable, Mapping
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
@@ -31,7 +31,7 @@ class RunRequestError(ValueError):
     """The request is malformed: the ``invalid_request`` carrier."""
 
 
-def _check_plain(key: str, what: str) -> None:
+def check_plain(key: str, what: str) -> None:
     """A name that becomes one file name: a relative path with no
     separator."""
     check_relative(key, what)
@@ -108,6 +108,7 @@ class RunRequest(BaseModel):
     bind: dict[str, str] = Field(default_factory=dict)
     pull: bool = False
     input: str = ""
+    persist: Literal["global"] | None = None
 
     @model_validator(mode="after")
     def _validate(self) -> RunRequest:
@@ -116,13 +117,15 @@ class RunRequest(BaseModel):
         for key in self.ensembles:
             check_relative(key, "ensemble name")
         for key in (*self.profiles, *self.bind):
-            _check_plain(key, "profile name")
+            check_plain(key, "profile name")
         for key in self.scripts:
             check_relative(key, "script key")
             _check_reachable(key)
         _check_one_reference_one_script(self.scripts)
         if self.ensemble is not None:
             self._validate_root(self.ensemble)
+        if self.persist is not None:
+            self._validate_persist()
         twice = sorted(set(self.profiles) & set(self.bind))
         if twice:
             raise ValueError(f"profile {twice[0]!r} is defined twice (inline and bind)")
@@ -141,6 +144,13 @@ class RunRequest(BaseModel):
         paths.extend((f"profiles/{k}.yaml", f"bind key {k!r}") for k in self.bind)
         paths.extend((k, f"script {k!r}") for k in self.scripts)
         return paths
+
+    def _validate_persist(self) -> None:
+        """A persisted request is stored under its root's name, so the root
+        is inline and the name is one file name (ruling 9)."""
+        if self.ensemble is None:
+            raise ValueError("persist needs an inline root (ensemble)")
+        check_plain(self.ensemble["name"], "persisted ensemble name")
 
     def _validate_root(self, root: dict[str, Any]) -> None:
         name = root.get("name")
