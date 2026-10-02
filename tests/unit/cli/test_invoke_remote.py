@@ -213,6 +213,20 @@ def _write_top(project: Path, *, with_profile: bool = False) -> Path:
     return scripts / "ran.marker"
 
 
+def _write_top_with_remote_only_child(project: Path, remote: Remote) -> None:
+    """A root whose only agent runs the child ``kids/only``, which exists
+    on the remote and not in the caller's project."""
+    _ensemble(project / ".llm-orc", "top", [{"name": "k", "ensemble": "kids/only"}])
+    scripts = remote.project / ".llm-orc" / "scripts"
+    scripts.mkdir(parents=True, exist_ok=True)
+    (scripts / "say.py").write_text(_MARK)
+    _ensemble(
+        remote.project / ".llm-orc",
+        "kids/only",
+        [{"name": "a", "script": "say.py"}],
+    )
+
+
 def _invoke(*args: str) -> Result:
     return CliRunner().invoke(cli, ["invoke", "top", "hi", *args])
 
@@ -270,6 +284,55 @@ class TestARemoteRun:
         assert request["input"] == "hi"
         assert request["pull"] is True
         assert request["persist"] == "global"
+
+
+class TestWhatWasLeftToTheRemote:
+    LINE = "Left to the remote (not found locally): ensemble 'kids/only'\n"
+
+    @pytest.mark.parametrize("fmt", ["text", "json", "rich"])
+    def test_the_line_is_on_stderr_and_stdout_is_the_result_alone(
+        self, in_project: Path, remote: Remote, fmt: str
+    ) -> None:
+        _write_top_with_remote_only_child(in_project, remote)
+        args = [] if fmt == "rich" else ["--output-format", fmt]
+
+        result = _remote_invoke(*args)
+
+        assert result.exit_code == 0, result.output
+        assert self.LINE in result.stderr
+        assert "Left to the remote" not in result.stdout
+        assert "hello from the remote" in result.stdout
+        if fmt == "json":
+            assert json.loads(result.stdout)["status"] == "success"
+
+    def test_a_closure_that_ships_whole_prints_no_line(
+        self, in_project: Path, remote: Remote
+    ) -> None:
+        _write_top(in_project)
+
+        result = _remote_invoke("--output-format", "text")
+
+        assert "Left to the remote" not in result.stderr
+        assert "Left to the remote" not in result.stdout
+
+    def test_several_labels_are_joined_on_one_line(
+        self, in_project: Path, remote: Remote
+    ) -> None:
+        _ensemble(
+            in_project / ".llm-orc",
+            "top",
+            [
+                {"name": "k", "ensemble": "kids/only"},
+                {"name": "g", "script": "tools/y.py"},
+            ],
+        )
+
+        result = _remote_invoke("--output-format", "text")
+
+        assert (
+            "Left to the remote (not found locally): "
+            "ensemble 'kids/only', script 'tools/y.py'\n"
+        ) in result.stderr
 
 
 class TestPersistingOnTheRemote:
