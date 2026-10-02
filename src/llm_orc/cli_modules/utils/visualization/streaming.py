@@ -197,7 +197,7 @@ async def _run_text_json_execution(
             # For text output, execute and display results in plain text
             result = await executor.execute(ensemble_config, input_data)
             has_errors = display_result(
-                result, ensemble_config.agents, "text", detailed
+                _result_document(result), ensemble_config.agents, "text", detailed
             )
     except Exception as e:
         has_errors = True
