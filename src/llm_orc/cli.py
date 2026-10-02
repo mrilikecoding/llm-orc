@@ -83,7 +83,20 @@ def _bind_and_pull_options(command: Callable[..., Any]) -> Callable[..., Any]:
 @click.group()
 @click.version_option(package_name="llm-orchestra")
 def cli() -> None:
-    """LLM Orchestra - Multi-agent LLM communication system."""
+    """LLM Orchestra - Multi-agent LLM communication system.
+
+    \b
+    Run an ensemble on another llm-orc serve (a remote). Name remotes in
+    the global config.yaml (a project config is not read):
+      remotes:
+        remote-host:
+          url: https://llm-orc.remote.example
+    Then three steps:
+      llm-orc remotes                                    list, with a probe
+      llm-orc invoke NAME --remote remote-host --preflight   what it lacks
+      llm-orc invoke NAME --remote remote-host           run
+    The MCP tools are list_remotes, check_ensemble_runnable and invoke.
+    """
     pass
 
 
@@ -911,6 +924,15 @@ def help_command() -> None:
     for cmd, alias, desc in commands_with_aliases:
         click.echo(f"  {cmd:<15} ({alias:<2}) {desc}")
 
+    click.echo()
+    click.echo("Remotes: run an ensemble on another llm-orc serve.")
+    click.echo("Name remotes under 'remotes:' in the global config.yaml, then:")
+    click.echo("  llm-orc remotes                                  list and probe")
+    click.echo(
+        "  llm-orc invoke NAME --remote remote-host --preflight  check, run nothing"
+    )
+    click.echo("  llm-orc invoke NAME --remote remote-host         run")
+    click.echo("The MCP tools are list_remotes, check_ensemble_runnable and invoke.")
     click.echo()
     click.echo("You can use either the full command name or its alias.")
     click.echo(
