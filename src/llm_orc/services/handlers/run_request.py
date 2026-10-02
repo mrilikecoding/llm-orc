@@ -89,10 +89,12 @@ def _check_one_reference_one_script(keys: Iterable[str]) -> None:
     """No two script keys are reachable from the same reference. The
     resolver also tries a reference without its leading ``scripts/`` and
     with hyphens as underscores, and searches ``<run>/scripts`` before
-    ``<run>``, so keys that fold to one form let the first win silently."""
+    ``<run>``, so keys that fold to one form let the first win silently.
+    The forms compare as the disk folds them (see ``_folded``)."""
     seen: dict[str, str] = {}
     for key in keys:
-        form = ScriptResolver.underscored(ScriptResolver.unprefixed(key))
+        folded = "/".join(_folded(key))
+        form = ScriptResolver.underscored(ScriptResolver.unprefixed(folded))
         if form in seen:
             raise ValueError(
                 f"script {key!r} and script {seen[form]!r} are reached by the "
