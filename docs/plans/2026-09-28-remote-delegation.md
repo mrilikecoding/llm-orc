@@ -800,6 +800,187 @@ over ssh:
   https://llm-orc.remote.example "<topic>"`; then with a profile the mini
   lacks, see `not_equipped`; then `--bind` it and run.
 
+**Arc 5 re-cut (2026-10-02), from the merged Arc 4 shape, a code read of
+the CLI's run path and every lookup a shipper needs, and probes against
+the remote host.** The card above stands except where a ruling says
+otherwise. Implementation plan:
+`docs/plans/2026-10-02-remote-delegation-arc5.md`.
+
+Code read, the facts the rulings rest on.
+
+- `llm-orc invoke` (`cli_commands.invoke_ensemble`) finds the root with
+  `service.find_ensemble_by_name` (or in `--config-dir`), takes
+  `service._get_executor()` and runs it. No preparation step, no gate,
+  no `bind`, no `pull`.
+- `walk_closure` returns reference strings and `found`, never a file,
+  and `EnsembleConfig` does not record the file it was loaded from. The
+  root is found by its `name:` field (`EnsembleLoader.find_ensemble`, an
+  rglob); a child by file name (`_find_ensemble_in_dirs`).
+- A request's `ensembles` key becomes `ensembles/<key>.yaml` in the run
+  layer and the child finder resolves by file name, so a child shipped
+  under its reference string resolves on the remote as it did locally.
+  A script written at its reference string resolves too: `<run>/scripts`
+  is tried with the reference, its underscore form and its form without
+  `scripts/`, then `<run>`.
+- A script reference has four forms: a relative path (searched), an
+  absolute path, a bare name that is a file in the cwd, and bare inline
+  content.
+- The REST and MCP result carries `results`, `deliverable`, `status`,
+  `has_errors`, `raw_output`, `bindings`, `pulled`. The executor's
+  `metadata` (usage, durations), which the CLI's text and rich displays
+  read, is dropped.
+- `requests` is already a dependency; a client needs nothing new.
+- CRUD cannot install a closure: `create_script` writes a template,
+  `create_ensemble` keeps name, description and agents and refuses an
+  existing name, `update_ensemble` never writes (#191).
+- A named root is found by two copies of one loop over
+  `get_ensembles_dirs()`: `OrchestraService.find_ensemble_by_name` (the
+  CLI, the runnable check, validate, promotion, CRUD templates, the
+  streaming path) and `ExecutionHandler._lookup_in_tiers` (`invoke` and
+  `invoke_streaming`). The run layer is one attribute on a config
+  manager copy; `check_ensemble_runnable`'s function already takes a
+  view.
+- Global resolves before packaged, for ensembles and for scripts. A file
+  installed in a host's global tier shadows the packaged file of that
+  name for every ensemble on the host, `/v1` included.
+- The packaged scripts: 45 files, 18 with static sibling imports
+  (`_helpers` in all 18, plus `chain_plan` and `accept_gather` once
+  each), 48 script agents across the ensembles reference those 18. One
+  script runs a sibling by path (`accept_executor.py`, through
+  `Path(__file__).with_name`). Three read their tier's
+  `ensembles/agentic-serving` directory as a catalog. The largest
+  directory is 33 files, 397 KB.
+
+Probes (2026-10-02, the remote host at 0.23.0 through its https proxy,
+`POST /api/ensembles/execute`, an inline root with one injected script):
+
+- A 2 MB and a 12 MB script body: 200 in 1.7 s and 3.3 s, the script
+  ran. The proxy puts no practical cap on a shipped closure.
+- A script that sleeps 75 s, then one that sleeps 200 s: 200 after
+  75.4 s and 200.4 s. A plain POST with no bytes flowing survives at
+  least 200 s through the proxy. Not measured: the 8 to 15 minutes a
+  model run takes on that host; the live row covers it.
+
+1. **The local CLI runs through the preparation step (practitioner,
+   2026-10-02).** `invoke` builds a run request and hands it to the same
+   function REST and MCP use. `--bind a=b` (repeatable) and `--pull`
+   work on every invoke; `--remote` changes only where the run happens.
+   Breaking for local callers, as 0.23.0 was for REST and MCP: an
+   ensemble that is not `runnable` is refused before any agent starts,
+   and a `pullable` model blocks without `--pull`. `--config-dir` stays
+   as the directory the root is looked up in.
+2. **Named remotes live in the user's global config and nowhere else.**
+   `remotes: {<name>: {url: ...}}` in the global `config.yaml`.
+   `--remote` takes a name or a URL (a value with `://` is a URL). An
+   unknown name is an error that lists the known names. A `remotes` key
+   in a project config is not read, so no URL needs to live in a repo.
+3. **Transport is one plain POST, and only a run result is accepted.**
+   `requests.post(<url>/api/ensembles/execute)`, a connect timeout, no
+   read timeout. The response is a result only if it is HTTP 200 and a
+   JSON object with `status` of `success` or `error` and a boolean
+   `has_errors`. Anything else is an error that names the remote and
+   the status code, exit 1: a 422 from an older serve that forbids a
+   new key, a 404, and the web UI's HTML answered with 200 for an
+   unknown API path (#191).
+4. **A REST run is tied to its connection.** The two execute routes
+   cancel the run when the client disconnects; Arc 4's cancellation
+   already kills the script group and removes the run layer. This
+   closes the item deferred from Arc 4, which a CLI client turns from a
+   note into a defect: Ctrl-C on a ten minute run would leave the host
+   working. The live row measures it through the proxy.
+5. **The result carries `metadata`, and the CLI renders a remote result
+   with the functions it renders a local one.** Additive on REST and
+   MCP. `--output-format json` prints the result document. A
+   `not_equipped` refusal prints the dependency report as a table (kind,
+   name, status, via, resolve), the same table for a local refusal.
+   Exit 1 on `status: error`, whatever the kind.
+6. **Ensembles ship as written, keyed by reference; profiles do not ship
+   unless asked.** `load_from_file` records the path it read, and the
+   shipper sends the parsed YAML of that file, not a re-serialized
+   config. The local walk uses the run's own finders (Arc 3's rule).
+   What does not resolve locally is not shipped, and the remote's
+   preflight judges it. Profiles stay behind by default: a host binds
+   roles to its own models, and the card's live row depends on that
+   (a profile the remote lacks answers `not_equipped`, then `--bind`).
+   `--with-profile NAME` (repeatable) ships the local definition of one
+   role as an inline profile.
+7. **Scripts ship from whichever tier resolved them, at their reference
+   string.** Packaged scripts and primitives included: the caller's
+   ensemble runs with the caller's scripts (Arc 4 ruling 7's reasoning).
+   An absolute path is refused locally, since it names nothing on
+   another host. A bare name that is a file in the cwd is refused
+   locally: the remote would read it as inline shell (the `date` case
+   from the Arc 4 review). Inline content travels in the definition. A
+   script that is not UTF-8 text is refused by name.
+8. **A script declares the files it needs, in the script (practitioner,
+   2026-10-02).** A comment block in the form PEP 723 reserves for
+   tools: `# /// llm-orc`, TOML, one key `files` listing paths under
+   the script's own directory (relative, no `..`), closed by `# ///`.
+   A listed file that carries its own block is followed. Nothing is
+   inferred: what is listed ships, and a script with no block ships
+   alone. The listed files are closure members, so the walker, the
+   remote's preflight and the shipper read one list and a missing file
+   is `missing_script` before any agent runs, which closes "preflight
+   does not follow script imports" from Arc 4 ruling 12. A listed file
+   is looked for beside the resolved script and nowhere else (Arc 4
+   ruling 7: no fall-through to a host file at the same relative
+   path). A block that does not parse leaves the script unmet. No new
+   status. Rejected: the list on the script agent (48 agents against 19
+   scripts, and every ensemble changes when a script gains an import);
+   the script's directory (over-ships, and with ruling 9 every extra
+   file is persisted); static imports (a second implementation of
+   Python's import resolution, Python only, with one measured miss). An
+   undeclared import works locally and fails on the remote by name; a
+   suite test holds the packaged scripts' static sibling imports inside
+   their blocks.
+9. **`--persist global`: a persisted closure is a stored run request
+   (practitioner, 2026-10-02: in this arc, kept as a unit).** A request
+   with `persist: global` needs an inline root with a plain name. It
+   passes the same validation and gate as any run. If the gate passes,
+   the request without `input`, `pull` and `persist` is written as one
+   file, `<global config>/bundles/<root name>.json` (written beside,
+   then renamed), and the run goes on as a named run, artifact kept. A
+   gate refusal writes nothing. A later run of that name loads the
+   stored request, lays the caller's own injections over it key by key,
+   and takes the unchanged path: validate the union, materialize a run
+   layer, gate, run, remove the layer. So the closure's children and
+   scripts resolve only for that root and nothing on the host is
+   shadowed; what runs by name is what ran injected; a run in flight
+   holds its own copy while the bundle is replaced; and an injection
+   that collides with the bundle's contents meets the validator Arc 4's
+   reviews hardened. A persisted `bind` is the host's binding for a
+   role; a per-run `bind` overrides it by key. Named roots resolve in
+   the tiers first, as today, then in the bundles, through one lookup.
+   Persist refuses a root name that a tier resolves
+   (`invalid_request`, naming the tier), so a bundle is never born
+   shadowed. Persisting again replaces the file; `delete_ensemble` with
+   `scope: global` removes it. Listings show a bundle root with source
+   `bundle`; the runnable check on a bundle name gates over the same
+   materialized view; validate and promote answer that a bundle is not
+   a tier ensemble. Rejected: copying entries into the global tier with
+   a per-entry `written`, `identical`, `conflict` rule and `force`. It
+   shadows packaged files for every ensemble on the host when forced,
+   leaves no record of what an install wrote, and runs the persisted
+   root against the host's copies where the injected run used the
+   caller's. Also rejected: a kept run-layer directory used in place,
+   since an injection over it would skip the union validation and a
+   replace could pull files from under a run. Cost: a bundle root runs
+   as a root, not as a child of a host ensemble; a bundle keeps its
+   copies until it is persisted again. The CLI takes `--persist global`
+   only with `--remote`.
+10. **MCP: `invoke` gains `remote`.** With `remote`, the server builds
+    the closure of `ensemble_name` from its own tiers and sends it;
+    `bind`, `pull` and `persist` pass through. `remote` with an inline root is
+    `invalid_request`: a client holding a definition can send it to the
+    remote itself. REST does not gain `remote`; a serve is not a relay.
+11. **Refused with `--remote`:** `--max-concurrent` (the request has no
+    such field, so it would be dropped silently) and an ensemble with an
+    interactive script (no channel carries the prompt).
+12. **On the record, not in this arc:** progress events for a remote
+    run (the CLI shows elapsed time only); reading a serve's access
+    level before shipping (#205); candidates for a `${...}` dispatch
+    (#94), which today reads `dynamic` and is left to the host.
+
 ## Gates (every arc)
 
 Hermetic suite green, lint clean, mutant-red pins, a live row, and an
