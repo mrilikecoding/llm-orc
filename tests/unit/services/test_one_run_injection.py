@@ -21,6 +21,7 @@ from llm_orc.core.execution.ensemble_execution import EnsembleExecutor
 from llm_orc.core.execution.executor_factory import ExecutorFactory
 from llm_orc.core.models.model_factory import ModelFactory
 from llm_orc.providers.llama_server import LlamaServerClient
+from llm_orc.services.handlers import run_request
 from llm_orc.services.orchestra_service import OrchestraService
 
 LISTING: list[dict[str, Any]] = [
@@ -767,6 +768,34 @@ class TestBindings:
         assert "aa" in result["error"]["message"]
         assert not marker.exists()
         assert loaded_models == []
+
+    async def test_a_binding_that_cannot_be_written_is_invalid_request(
+        self,
+        project: Path,
+        service: OrchestraService,
+        tmp_path: Path,
+        state_dir: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        marker = _bound_ensemble(project, tmp_path)
+        _profile(project / ".llm-orc", "b", model="mock-other")
+        real_write = run_request._write
+
+        def failing(path: Path, text: str, mode: int | None) -> None:
+            if path.name == "a.yaml":
+                raise run_request.RunRequestError("cannot write 'a.yaml': disk full")
+            real_write(path, text, mode)
+
+        monkeypatch.setattr(run_request, "_write", failing)
+
+        result = await service.invoke(
+            {"ensemble_name": "top", "input": "hi", "bind": {"a": "b"}}
+        )
+
+        assert result["error"]["kind"] == "invalid_request", result
+        assert "a.yaml" in result["error"]["message"]
+        assert not marker.exists()
+        assert _runs(state_dir) == []
 
     async def test_execute_streaming_returns_the_bindings(
         self, project: Path, service: OrchestraService, tmp_path: Path
