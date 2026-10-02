@@ -1,9 +1,10 @@
-.PHONY: test test-watch lint lint-fix format lint-check security dead-code setup clean install help push workflow-status watch-workflows status red green refactor pre-commit roadmap
+.PHONY: test test-watch lint lint-fix format lint-check security dead-code setup install-hooks clean install help push workflow-status watch-workflows status red green refactor pre-commit roadmap
 
 # Help target
 help:
 	@echo "llm-orc Makefile targets:"
 	@echo "  setup           Setup development environment"
+	@echo "  install-hooks   Install the tracked git hooks (hooks/) into this clone"
 	@echo "  test            Run tests"
 	@echo "  test-watch      Run tests in watch mode"
 	@echo "  lint            Run linting checks (mypy + ruff + format check + complexity + security + dead code)"
@@ -25,9 +26,19 @@ help:
 	@echo "  roadmap         Show current development roadmap"
 
 # Development commands
-setup:
+setup: install-hooks
 	uv sync
 	@echo "✅ Development environment setup complete"
+
+# The hooks are tracked under hooks/ and copied into the clone's own hooks
+# directory (the common git dir, so worktrees and a submodule checkout get
+# them too).
+install-hooks:
+	@for hook in hooks/*; do \
+		cp "$$hook" "$$(git rev-parse --git-common-dir)/hooks/" && \
+		chmod +x "$$(git rev-parse --git-common-dir)/hooks/$$(basename $$hook)"; \
+	done
+	@echo "✅ Git hooks installed"
 
 test:
 	uv run pytest -n auto
