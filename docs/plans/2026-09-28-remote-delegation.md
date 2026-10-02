@@ -1025,9 +1025,11 @@ above stand except as amended here.
   spelled exactly like it whose root has that name (a case-folding disk
   let `PACK` delete `pack.json`); `delete` removes the entry spelled
   exactly `<name>.json` whatever root it stores, so a stranded file can
-  always be removed. `delete_ensemble` with `scope: global`
-  removes a global tier file of the name first and the bundle on a
-  second call. A caller's `bind` or inline profile for a role replaces
+  always be removed. `delete_ensemble` with `scope: global` removes the
+  bundle only when no tier resolves the name (the lookup persist uses);
+  otherwise it is the tier delete, so a flat global `.yaml` or `.yml`
+  goes first and the bundle on a second call. A caller's `bind` or
+  inline profile for a role replaces
   the stored definition of that role in either form. A bundle is read
   (`GET /api/ensembles/{name}`, the MCP resource) with source `bundle`.
   Not taught about bundles: `update_ensemble`, `from_template`, shell
@@ -1182,6 +1184,23 @@ handler restore it. Left as is: Ctrl-C cannot interrupt a ship that is
 itself stuck. The event-loop pin's longest-gap assertion was dropped
 after it failed 3 of 20 times under a concurrent suite; its tick
 counts alone go red for both regressions it guards.
+
+A fourth, narrow review at `51a080e1`: one regression and notes. The
+third wave had dropped the `InvalidURL` catch in favor of the resolver's
+check, and `urlsplit` silently drops tabs and newlines, so a YAML
+`url: |` block (which ends in a newline) crashed the run again with a
+raw exception. Now the resolver refuses whitespace and control
+characters by name, a query or a fragment too, and the catch is back as
+a guard (`http://☃` passes the check and fails the client's IDNA step,
+so the guard has a real input). From the notes: the tier-shadow check
+is repeated with the spelling check right before the bundle write; a
+non-200 body and a 422 `detail` are cleaned like a `Location`; a bundle
+delete defers to any tier that resolves the name, with the lookup
+persist uses, and the flat tier delete takes `.yml`. A tier root in a
+subdirectory or under another file name still cannot be deleted by
+name, and a bundle behind it stays until that file is removed. All 21
+of the third wave's new pins went red under their mutants; a
+whole-suite check found no leaked signal handler.
 
 Lesson, binding: a parity pin proves the layouts it was given. Two
 rounds of key rules passed it and each was wrong on a layout it did not
