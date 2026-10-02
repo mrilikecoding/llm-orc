@@ -16,6 +16,7 @@ answers 422 to a key it forbids, so anything else raises
 from __future__ import annotations
 
 import asyncio
+import re
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
@@ -41,6 +42,7 @@ CONNECT_TIMEOUT_S = 10
 transport: httpx.AsyncBaseTransport | None = None
 EXECUTE_PATH = "/api/ensembles/execute"
 _SHOWN_BODY_CHARS = 200
+_ASCII_WHITESPACE = re.compile(r"[ \t\n\r\f\v]+")
 _CLIENT_ENVIRONMENT = (
     "HTTP_PROXY",
     "HTTPS_PROXY",
@@ -250,9 +252,8 @@ def _result_document(remote: str, response: Any) -> dict[str, Any]:
 
 def _observed(response: Any) -> str:
     """What a non-200 answer said: a redirect's ``Location`` (it is not
-    followed, so the caller needs it to fix the URL; capped like the body
-    and without unprintable characters), a 422's ``detail``
-    as the serve wrote it, else the start of the body."""
+    followed, so the caller needs it to fix the URL), a 422's ``detail``,
+    else the start of the body. Each goes through ``_shown``."""
     location = _location(response)
     if location is not None:
         return f"redirected to {location} (not followed): {_excerpt(response)}"
@@ -261,18 +262,23 @@ def _observed(response: Any) -> str:
     except ValueError:
         return _excerpt(response)
     if isinstance(body, dict) and "detail" in body:
-        return f"the serve refused the request: {body['detail']}"
+        return f"the serve refused the request: {_shown(body['detail'])}"
     return _excerpt(response)
 
 
 def _location(response: Any) -> str | None:
     if not 300 <= int(response.status_code) < 400:
         return None
-    value = str(response.headers.get("location") or "")
-    shown = "".join(c for c in value if c.isprintable())[:_SHOWN_BODY_CHARS]
-    return shown or None
+    return _shown(response.headers.get("location")) or None
 
 
 def _excerpt(response: Any) -> str:
-    text = " ".join(str(response.text).split())
-    return text[:_SHOWN_BODY_CHARS] or "(empty body)"
+    return _shown(response.text) or "(empty body)"
+
+
+def _shown(value: Any) -> str:
+    """Text from a remote as it reaches the terminal: runs of ASCII
+    whitespace folded to one space, unprintable characters dropped,
+    capped. The remote is not trusted not to send escape sequences."""
+    folded = _ASCII_WHITESPACE.sub(" ", str(value or "")).strip()
+    return "".join(c for c in folded if c.isprintable())[:_SHOWN_BODY_CHARS]
