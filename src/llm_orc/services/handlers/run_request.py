@@ -84,6 +84,22 @@ def _check_distinct(paths: Iterable[tuple[str, str]]) -> None:
         files[segments] = label
 
 
+def _check_one_reference_one_script(keys: Iterable[str]) -> None:
+    """No two script keys are reachable from the same reference. The
+    resolver also tries a reference without its leading ``scripts/`` and
+    with hyphens as underscores, and searches ``<run>/scripts`` before
+    ``<run>``, so keys that fold to one form let the first win silently."""
+    seen: dict[str, str] = {}
+    for key in keys:
+        form = ScriptResolver.underscored(ScriptResolver.unprefixed(key))
+        if form in seen:
+            raise ValueError(
+                f"script {key!r} and script {seen[form]!r} are reached by the "
+                "same reference: script keys must be distinct"
+            )
+        seen[form] = key
+
+
 class RunRequest(BaseModel):
     """What one run is asked to do. Unknown keys are an error."""
 
@@ -109,6 +125,7 @@ class RunRequest(BaseModel):
         for key in self.scripts:
             _check_relative(key, "script key")
             _check_reachable(key)
+        _check_one_reference_one_script(self.scripts)
         if self.ensemble is not None:
             self._validate_root(self.ensemble)
         twice = sorted(set(self.profiles) & set(self.bind))

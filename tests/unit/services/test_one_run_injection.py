@@ -776,6 +776,27 @@ class TestNamesThatFoldTogetherAreRefused:
         assert _runs(state_dir) == []
 
 
+class TestOneReferenceReachesOneScript:
+    async def test_two_keys_one_reference_resolves_to_run_nothing(
+        self, service: OrchestraService, project: Path, state_dir: Path
+    ) -> None:
+        request = _inline_request(
+            ensemble={**INLINE, "agents": [{"name": "s", "script": "x.py"}]},
+            scripts={
+                "x.py": _script_source("first"),
+                "scripts/x.py": _script_source("second"),
+            },
+        )
+        before = _trees(project, state_dir)
+
+        result = await service.invoke(request)
+
+        assert result["error"]["kind"] == "invalid_request", result
+        assert "distinct" in result["error"]["message"]
+        assert result["results"] == {}
+        assert _trees(project, state_dir) == before
+
+
 class TestRefusalsNameNoRunDirectory:
     """The run directory changes on every call, so its path is an unstable
     string in a caller contract."""
