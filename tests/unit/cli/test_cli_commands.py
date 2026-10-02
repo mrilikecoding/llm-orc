@@ -656,51 +656,56 @@ class TestInvokeEnsemble:
                 detailed=False,
             )
 
-    def test_invoke_ensemble_max_concurrent_override(self) -> None:
-        """Test max_concurrent parameter override."""
-        mock_config_manager = Mock()
-        mock_config_manager.get_ensembles_dirs.return_value = [Path("/test/ensembles")]
-        mock_config_manager.load_performance_config.return_value = {
-            "streaming_enabled": False
-        }
+    @pytest.mark.parametrize("max_concurrent", [5, 1])
+    def test_invoke_ensemble_max_concurrent_sets_the_runs_executor(
+        self,
+        max_concurrent: int,
+        mock_config_manager: Mock,
+        mock_ensemble_config: Mock,
+        mock_executor: Mock,
+    ) -> None:
+        """--max-concurrent is applied to the executor that runs the ensemble."""
+        self._invoke_with_executor(
+            mock_config_manager, mock_ensemble_config, mock_executor, max_concurrent
+        )
 
-        mock_ensemble_config = Mock()
-        mock_ensemble_config.name = "test_ensemble"
-        mock_ensemble_config.description = "Test ensemble"
-        mock_ensemble_config.agents = [Mock(), Mock()]
-        mock_ensemble_config.relative_path = None
+        mock_executor.set_max_concurrent_agents.assert_called_once_with(max_concurrent)
+        mock_executor.execute.assert_called_once()
 
-        mock_executor = Mock()
-        # Mock the executor.execute method to return expected structure
-        mock_executor.execute = AsyncMock(
+    def test_invoke_ensemble_without_max_concurrent_sets_nothing(
+        self,
+        mock_config_manager: Mock,
+        mock_ensemble_config: Mock,
+        mock_executor: Mock,
+    ) -> None:
+        self._invoke_with_executor(
+            mock_config_manager, mock_ensemble_config, mock_executor, None
+        )
+
+        mock_executor.set_max_concurrent_agents.assert_not_called()
+        mock_executor.execute.assert_called_once()
+
+    @staticmethod
+    def _invoke_with_executor(
+        config_manager: Mock,
+        ensemble_config: Mock,
+        executor: Mock,
+        max_concurrent: int | None,
+    ) -> None:
+        executor.execute = AsyncMock(
             return_value={
                 "results": {
                     "test_agent": {"status": "success", "response": "Test response"}
                 },
-                "metadata": {"execution_time": 1.5, "agents_used": 1},
+                "metadata": {"execution_time": 1.5},
             }
         )
+        service = Mock()
+        service.config_manager = config_manager
+        service.find_ensemble_by_name.return_value = ensemble_config
+        use_prepared_run(service, executor)
 
-        mock_service = Mock()
-        mock_service.config_manager = mock_config_manager
-        mock_service.find_ensemble_by_name.return_value = mock_ensemble_config
-        use_prepared_run(mock_service, mock_executor)
-
-        with (
-            patch(
-                "llm_orc.cli_commands._get_service",
-                return_value=mock_service,
-            ),
-            patch("llm_orc.cli_commands.run_standard_execution") as mock_run_std,
-            patch("click.echo"),
-        ):
-            # Create a simple async function to avoid AsyncMockMixin issues
-            async def simple_run_standard_execution(*args: Any, **kwargs: Any) -> None:
-                return None
-
-            mock_run_std.side_effect = simple_run_standard_execution
-
-            # This should hit the pass statement in max_concurrent handling
+        with patch("llm_orc.cli_commands._get_service", return_value=service):
             invoke_ensemble(
                 ensemble_name="test_ensemble",
                 input_data="test input",
@@ -708,7 +713,7 @@ class TestInvokeEnsemble:
                 input_data_option=None,
                 output_format="json",
                 streaming=False,
-                max_concurrent=5,  # This triggers the max_concurrent override logic
+                max_concurrent=max_concurrent,
                 detailed=False,
             )
 
