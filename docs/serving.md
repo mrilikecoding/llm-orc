@@ -167,7 +167,7 @@ of eleven statuses and a resolve hint:
 | `ready` | present; for a local model, listed by the router and either its `hf_repo` in the router's cache or the model loaded now; also a listed model with no `hf_repo` | `none` |
 | `dynamic` | a `${...}` dispatch target, decided at run time | `none` |
 | `pullable` | listed by the router, GGUF not downloaded: `POST /api/models/{model}/pull`. A model pulled in a running serve reads `ready` once loaded, and reads `pullable` again if the router evicts it before the next restart (its cache entry appears at restart) | `pull` |
-| `needs_restart` | profile has a source, the router has not scanned it (it reads the preset at start; a supervised restart costs 1.5 to 2.2 s and cuts in-flight completions) | `restart` |
+| `needs_restart` | profile has a source, the router has not scanned it (it reads the preset at start; a supervised restart costs 1.5 to 2.2 s and cuts in-flight completions). Also a listed model whose router source (its `--hf-repo`) differs from the profile's `hf_repo`: the router serves the model from its own source, so the profile's file is not what would run | `restart` |
 | `missing_profile` | no profile of that name in any runtime tier (project, global, packaged; the library is not resolved at run time) | `bind` |
 | `model_unavailable` | an OpenAI-compatible endpoint does not list the model | `bind` |
 | `missing_model_source` | not listed and the profile has no `hf_repo` | `add_source` |
@@ -185,6 +185,80 @@ preset section is routable, a cache entry (its id is the `hf_repo`
 string, built when the router starts) or a model loaded now is
 downloaded. The `agents` list keeps the coarse per-agent
 status the web UI reads.
+
+## Running a request: inline ensembles, bind and pull
+
+One request shape runs an ensemble on the serve, whether the ensemble is
+installed there or travels in the request. It is the same body on
+`POST /api/ensembles/execute` and on the MCP `invoke` tool (where `input`
+is `input_data`):
+
+```json
+{
+  "ensemble": {"name": "review", "agents": ["..."]},
+  "ensembles": {"child": {"name": "child", "agents": ["..."]}},
+  "profiles": {"seat": {"provider": "llama-server", "model": "qwen3-8b"}},
+  "scripts": {"probe/check.py": "print('...')"},
+  "bind": {"seat": "other-seat"},
+  "pull": false,
+  "input": "text for the ensemble"
+}
+```
+
+The root is `ensemble` (inline, as above) or `ensemble_name` (installed,
+in its place), never both. `POST /api/ensembles/{name}/execute` takes the same body without a
+root: the path names it, and a body that also carries `ensemble_name` or
+`ensemble` is a 422. Both REST bodies reject unknown keys with a 422, so a
+misspelled `bind` cannot run the call without its binding.
+
+Every run through REST or MCP is preflighted first, named ensembles
+included (`/v1/chat/completions` and the local CLI are not gated). The
+gate is the preflight above, run over the request's own layer. A
+`pullable` model blocks unless `pull: true`, which downloads each one,
+waits for the router to load it, and resolves it only if the router
+reports `loaded`. When the host cannot run the request, nothing runs and
+the call returns (HTTP 200, like any run outcome):
+
+```json
+{"status": "error", "has_errors": true, "results": {}, "deliverable": null,
+ "error": {"kind": "not_equipped", "message": "...", "dependencies": ["..."]}}
+```
+
+`kind` is `not_equipped` (the dependency report, same rows as preflight)
+or `invalid_request` (the request is malformed: both roots, a script key
+that escapes its directory, a `bind` key no profile names). A success
+keeps its usual keys and adds `bindings` (the binds applied) and `pulled`
+(the models downloaded) when they are not empty.
+
+`bind` maps a profile name the closure uses to another profile. The run
+sees the first name as a copy of the second's definition, looked up after
+the inline profiles and one hop deep. It applies even when the host has
+its own profile of the first name. An unmet target (no such profile, or
+its fallback chain unmet) refuses the call, and a key that no profile in
+the closure names is `invalid_request`, so a typo never falls through to
+the host's profile of the intended name.
+
+An inline profile can name a model the router already lists (with the
+caller's options and fallback chain), a cloud provider the host has
+credentials for, or an OpenAI-compatible endpoint. It cannot bring a new
+local model: that needs a persisted profile (`scope: global`) and a
+serve restart. `needs_restart` is never resolved inside a run, since a
+restart would cut every other run's completions, so such a request is
+refused.
+
+Scripts are written at their key inside the run's own directory and run
+from there. A script imports only what ships beside it in `scripts`; there
+is no fall-through to a helper of the same path on the host, because that
+would mix versions and still report success. Preflight does not read
+imports, so a missing helper fails the script at run time. Nothing
+persists: the run directory is removed on success, refusal, error and
+cancellation, and an inline root saves no artifact (an installed root
+keeps its own).
+
+Trust: injected scripts run unsandboxed as the serve's user, and an inline
+profile can point the host at any endpoint. llm-orc does not sandbox any
+of it, so the boundary is who can reach the port. A serve with clients it
+does not trust needs more than this; issue #205 tracks that design.
 
 ## Operator seat configuration
 
