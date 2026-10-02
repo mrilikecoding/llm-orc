@@ -5,7 +5,7 @@ Provides REST API for ensemble management, delegating to OrchestraService.
 
 import asyncio
 import contextlib
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Request, Response
 from pydantic import BaseModel, ConfigDict, Field
@@ -39,11 +39,13 @@ class RunRequest(ExecuteRequest):
 
     The root is ``ensemble_name`` (an installed ensemble) or ``ensemble``
     (an inline definition); the service refuses a request with both or
-    neither.
+    neither. ``persist: global`` stores an inline root's closure as a
+    bundle once the gate passes.
     """
 
     ensemble_name: str | None = None
     ensemble: dict[str, Any] | None = None
+    persist: Literal["global"] | None = None
 
 
 class CreateEnsembleRequest(BaseModel):
