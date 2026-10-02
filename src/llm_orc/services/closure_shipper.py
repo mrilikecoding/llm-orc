@@ -56,6 +56,31 @@ def ship_closure(
 ) -> dict[str, Any]:
     """The run request for ``root_name`` and its closure, in the shape
     ``RunRequest`` takes (``persist`` only when given)."""
+    request, _closure, _resolver = _build(
+        root_name,
+        find_root,
+        config_manager,
+        project_dir,
+        with_profiles,
+        bind,
+        pull,
+        persist,
+        input_text,
+    )
+    return request
+
+
+def _build(
+    root_name: str,
+    find_root: Callable[[str], EnsembleConfig | None],
+    config_manager: ConfigurationManager,
+    project_dir: Path | None,
+    with_profiles: Sequence[str],
+    bind: Mapping[str, str] | None,
+    pull: bool,
+    persist: str | None,
+    input_text: str,
+) -> tuple[dict[str, Any], Closure, ScriptResolver]:
     root = find_root(root_name)
     if root is None:
         raise ShipError(f"ensemble {root_name!r} was not found")
@@ -95,7 +120,7 @@ def ship_closure(
         request["persist"] = persist
     _require_valid(request)
     _prove_reachable(request, locator.found)
-    return request
+    return request, closure, view.resolver
 
 
 def _require_valid(request: Mapping[str, Any]) -> None:
