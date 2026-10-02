@@ -9,6 +9,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+import pytest
 from fastapi.testclient import TestClient
 
 from llm_orc.core.config.config_manager import resolve_global_config_dir
@@ -142,6 +143,31 @@ class TestRunnableRoute:
         [_, script] = data["dependencies"]
         assert script["status"] == "missing_script"
         assert "TOML" in script["detail"]
+
+    def test_a_listed_file_beside_the_link_but_not_its_target_is_missing(
+        self, client: TestClient, project: Path
+    ) -> None:
+        """Python puts the script's real directory first on its import
+        path, so a symlinked script's listed files are beside its target."""
+        target = project / "shared" / "x.py"
+        target.parent.mkdir()
+        target.write_text(_block("_h.py") + "import _h\n")
+        link = project / ".llm-orc" / "scripts" / "tools" / "x.py"
+        link.parent.mkdir(parents=True)
+        try:
+            link.symlink_to(target)
+        except OSError:
+            pytest.skip("this platform cannot make symlinks")
+        _script(project, "tools/_h.py")
+        _top(project)
+
+        data = _runnable(client)
+
+        assert data["runnable"] is False
+        assert _rows(data)[1:] == [
+            ("script", "tools/x.py", "ready"),
+            ("script", "tools/_h.py", "missing_script"),
+        ]
 
 
 class TestOneNameTwoSightings:

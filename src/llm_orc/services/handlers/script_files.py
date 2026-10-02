@@ -1,7 +1,9 @@
 """Where a script and the files it lists are, for the closure walk.
 
 A script is resolved by the run's own ``ScriptResolver``. A file it
-lists in its llm-orc block is looked for beside the resolved script and
+lists in its llm-orc block is looked for beside the resolved script's
+real location (the interpreter puts that directory first on a script's
+import path, so a symlink's target is where it imports from) and
 nowhere else: asking the resolver's search paths would let a host file
 at the same relative path in another tier stand in for a file the
 script's own directory lacks (Arc 5 ruling 8, Arc 4 ruling 7).
@@ -58,7 +60,7 @@ class ScriptFileLocator:
         owner = self._located.get(dep.beside)
         if owner is None:
             return None
-        candidate = owner.parent / dep.listed
+        candidate = owner.resolve().parent / dep.listed
         return candidate if candidate.is_file() else None
 
     def _resolve(self, reference: str) -> Path | None:

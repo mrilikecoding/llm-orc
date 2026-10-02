@@ -776,6 +776,44 @@ class TestAReferenceTheRemoteWouldReadAsAnotherFile:
         assert list(scratch.iterdir()) == []
 
 
+class TestASymlinkedScript:
+    def test_the_helper_beside_the_target_is_the_one_that_ships_and_runs(
+        self,
+        project: Path,
+        service: OrchestraService,
+        remote: OrchestraService,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Locally the script imports ``_h`` from beside its target (the
+        interpreter puts the real directory first); the remote must get
+        that file, not the one beside the link."""
+        source = (
+            _block("_h.py")
+            + "import json, sys\n"
+            + "sys.stdin.read()\n"
+            + "import _h\n"
+            + 'print(json.dumps({"success": True, "data": {"tag": _h.TAG}}))\n'
+        )
+        target = _write(project / "shared" / "x.py", source)
+        _write(project / "shared" / "_h.py", "TAG = 'target'\n")
+        link = project / ".llm-orc" / "scripts" / "tools" / "x.py"
+        link.parent.mkdir(parents=True)
+        try:
+            link.symlink_to(target)
+        except OSError:
+            pytest.skip("this platform cannot make symlinks")
+        _scripts(project, "tools/_h.py", "TAG = 'link'\n")
+        _uses(project, "tools/x.py")
+        local = _run(service, monkeypatch, {"ensemble_name": "top", "input": ""})
+        assert local["status"] == "success", local
+        assert "target" in str(_outcome(local)["agents"]["a0"])
+
+        shipped = _run(remote, monkeypatch, _ship(service, "top"))
+
+        assert shipped["status"] == "success", shipped
+        assert _outcome(shipped) == _outcome(local)
+
+
 class TestWhatTheRemoteJudges:
     def test_a_child_missing_locally_is_reported_missing_by_the_remote(
         self,
