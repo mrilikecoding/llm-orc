@@ -6,15 +6,19 @@ integration items). Nothing here opens a connection."""
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
-import threading
+import os
+import signal
+import sys
 import time
 from collections.abc import Callable, Iterator
 from pathlib import Path
+from types import FrameType
 from typing import Any
 
+import httpx
 import pytest
-import requests
 from fastapi.testclient import TestClient
 
 import llm_orc.web.api as web_api
@@ -26,6 +30,7 @@ from llm_orc.web.server import create_app
 from tests.unit.cli.test_invoke_remote import (  # noqa: F401
     REMOTE_URL,
     Canned,
+    Delayed,
     Remote,
     _canned,
     _write_top,
@@ -35,7 +40,10 @@ from tests.unit.cli.test_invoke_remote import (  # noqa: F401
 )
 from tests.unit.services.test_one_run_injection import (  # noqa: F401
     _ensemble,
+    _gone,
     _profile,
+    _read_pid,
+    _runs,
     _yaml,
     listing,
     project,
@@ -283,7 +291,7 @@ class TestARemoteThatDoesNotAnswer:
     @pytest.mark.parametrize(
         "answer",
         [
-            requests.ConnectionError("connection refused"),
+            httpx.ConnectError("connection refused"),
             Canned(200, "<!doctype html><title>llm-orc</title>"),
         ],
         ids=["unreachable", "html"],
@@ -322,15 +330,7 @@ class TestTheEventLoop:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         _write_top(project)
-        sent = threading.Event()
-        post = remote.post
-
-        def slow(url: str, request: dict[str, Any]) -> Any:
-            sent.set()
-            time.sleep(0.5)
-            return post(url, request)
-
-        monkeypatch.setattr(remote_run, "post_run", slow)
+        monkeypatch.setattr(remote_run, "transport", Delayed(remote.transport, 0.5))
         call = asyncio.create_task(
             MCPServer(service=service)._mcp.call_tool(
                 "invoke",
@@ -342,9 +342,81 @@ class TestTheEventLoop:
             await asyncio.sleep(0.01)
             ticks += 1
 
-        assert sent.is_set()
+        assert len(remote.calls) == 1
         assert ticks >= 10
         await call
+
+
+def _threads_in_the_transport() -> list[str]:
+    """Threads whose stack is inside the remote transport: one blocked
+    in a POST whose caller has gone. Idle pool workers do not count."""
+    found: list[str] = []
+    for ident, top in sys._current_frames().items():
+        files = []
+        frame: FrameType | None = top
+        while frame is not None:
+            files.append(frame.f_code.co_filename)
+            frame = frame.f_back
+        if any(f.endswith("remote_run.py") for f in files):
+            found.append(str(ident))
+    return found
+
+
+class TestCancellingARemoteRun:
+    """Cancelling the tool call closes the connection, so the second
+    service sees the disconnect, kills the script's process group and
+    removes the run's layer, long before the script's own end."""
+
+    @pytest.fixture
+    def pids(self, tmp_path: Path) -> Iterator[dict[str, Path]]:
+        marks = {"script": tmp_path / "pid.txt", "child": tmp_path / "child.txt"}
+        yield marks
+        for mark in marks.values():
+            if mark.exists() and mark.read_text().strip():
+                with contextlib.suppress(ProcessLookupError):
+                    os.kill(int(mark.read_text()), signal.SIGKILL)
+
+    def _sleeping_root(self, project: Path, pids: dict[str, Path]) -> None:
+        scripts = project / ".llm-orc" / "scripts"
+        scripts.mkdir(parents=True, exist_ok=True)
+        (scripts / "nap.py").write_text(
+            "import os, subprocess, sys, time\n"
+            "sys.stdin.read()\n"
+            "kid = subprocess.Popen(['sleep', '30'])\n"
+            f'open(r"{pids["child"]}", "w").write(str(kid.pid))\n'
+            f'open(r"{pids["script"]}", "w").write(str(os.getpid()))\n'
+            "time.sleep(30)\n"
+        )
+        _ensemble(project / ".llm-orc", "top", [{"name": "a", "script": "nap.py"}])
+
+    async def test_the_remote_run_is_killed_and_nothing_still_waits(
+        self,
+        project: Path,
+        service: OrchestraService,
+        remote: Remote,
+        pids: dict[str, Path],
+    ) -> None:
+        self._sleeping_root(project, pids)
+        call = asyncio.create_task(
+            MCPServer(service=service)._mcp.call_tool(
+                "invoke",
+                {"ensemble_name": "top", "input_data": "hi", "remote": "remote-host"},
+            )
+        )
+        script_pid = await _read_pid(pids["script"])
+        child_pid = await _read_pid(pids["child"])
+        started = time.monotonic()
+
+        call.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await call
+
+        assert await _gone(script_pid)
+        assert await _gone(child_pid)
+        assert _runs(remote.state) == []
+        assert time.monotonic() - started < 5
+        assert asyncio.all_tasks() == {asyncio.current_task()}
+        assert _threads_in_the_transport() == []
 
 
 INLINE_ROOT = {"name": "inline", "agents": [{"name": "a", "script": "echo hi"}]}

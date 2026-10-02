@@ -1,12 +1,15 @@
 """Run a local root on another serve (Arc 5, Task 8).
 
-One function, ``run_remote``, does a remote run for the CLI and the MCP
+One coroutine, ``run_remote``, does a remote run for the CLI and the MCP
 tool: it resolves the remote, ships the closure as one run request,
-posts it and checks the answer. An answer counts as a result only when
-it is HTTP 200, a JSON object, ``status`` of ``success`` or ``error``
-and a boolean ``has_errors``. An unknown API path answers the web UI's
-page with 200, and an older serve answers 422 to a key it forbids, so
-anything else raises ``RemoteRunError`` naming the remote.
+posts it with an ``httpx.AsyncClient`` and checks the answer. The POST
+sits inside the client's ``async with``, so cancelling the awaiting task
+closes the connection and the remote serve sees the disconnect. An
+answer counts as a result only when it is HTTP 200, a JSON object,
+``status`` of ``success`` or ``error`` and a boolean ``has_errors``. An
+unknown API path answers the web UI's page with 200, and an older serve
+answers 422 to a key it forbids, so anything else raises
+``RemoteRunError`` naming the remote.
 """
 
 from __future__ import annotations
@@ -15,7 +18,7 @@ from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
-import requests
+import httpx
 
 from llm_orc.core.config.config_manager import ConfigurationManager
 from llm_orc.core.config.ensemble_config import EnsembleConfig
@@ -27,6 +30,9 @@ from llm_orc.services.closure_shipper import ShipError, ship_closure
 from llm_orc.services.handlers.run_preparation import INVALID_REQUEST, REMOTE_ERROR
 
 CONNECT_TIMEOUT_S = 10
+# The transport seam: None in production (the network). A test sets it to
+# an ``httpx.AsyncBaseTransport`` and the real client code runs on it.
+transport: httpx.AsyncBaseTransport | None = None
 EXECUTE_PATH = "/api/ensembles/execute"
 _SHOWN_BODY_CHARS = 200
 
@@ -56,13 +62,19 @@ class RemoteRunError(RuntimeError):
         super().__init__(f"Remote '{remote}'{code}: {detail}")
 
 
-def post_run(url: str, request: Mapping[str, Any]) -> Any:
-    """The transport seam: POST the request, connect timeout only, no
-    retry. Tests replace this function and nothing else."""
-    return requests.post(url, json=request, timeout=(CONNECT_TIMEOUT_S, None))
+async def post_run(url: str, request: Mapping[str, Any]) -> httpx.Response:
+    """POST the request once: connect timeout only, no read timeout, no
+    redirect followed, no retry, the environment's proxy settings kept."""
+    async with httpx.AsyncClient(
+        transport=transport,
+        timeout=httpx.Timeout(None, connect=CONNECT_TIMEOUT_S),
+        follow_redirects=False,
+        trust_env=True,
+    ) as client:
+        return await client.post(url, json=request)
 
 
-def run_remote(
+async def run_remote(
     root_name: str,
     remote: str,
     *,
@@ -101,9 +113,11 @@ def run_remote(
     )
     _refuse_interactive(remote, request)
     try:
-        response = post_run(base_url + EXECUTE_PATH, request)
-    except requests.RequestException as e:
-        raise RemoteRunError(remote, f"could not reach {base_url}: {e}") from e
+        response = await post_run(base_url + EXECUTE_PATH, request)
+    except httpx.HTTPError as e:
+        raise RemoteRunError(
+            remote, f"could not reach {base_url}: {str(e) or type(e).__name__}"
+        ) from e
     return _result_document(remote, response)
 
 
