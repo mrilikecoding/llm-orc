@@ -14,6 +14,7 @@ import os
 import posixpath
 import tempfile
 from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -42,6 +43,24 @@ class ShipError(ValueError):
     """The closure cannot be shipped; the message names the reference."""
 
 
+@dataclass(frozen=True)
+class LeftOut:
+    """A reference the request does not carry because it does not resolve
+    locally (ruling 6): the remote may satisfy it with its own copy.
+    ``kind`` is ``ensemble``, ``script`` or ``file`` (a file a script lists,
+    whose ``owner`` is that script's reference)."""
+
+    kind: str
+    reference: str
+    owner: str | None = None
+
+    @property
+    def label(self) -> str:
+        if self.owner is None:
+            return f"{self.kind} {self.reference!r}"
+        return f"{self.kind} {self.reference!r} listed by script {self.owner!r}"
+
+
 def ship_closure(
     root_name: str,
     *,
@@ -56,7 +75,35 @@ def ship_closure(
 ) -> dict[str, Any]:
     """The run request for ``root_name`` and its closure, in the shape
     ``RunRequest`` takes (``persist`` only when given)."""
-    request, _closure, _resolver = _build(
+    request, _left_out = ship_closure_reporting(
+        root_name,
+        find_root=find_root,
+        config_manager=config_manager,
+        project_dir=project_dir,
+        with_profiles=with_profiles,
+        bind=bind,
+        pull=pull,
+        persist=persist,
+        input_text=input_text,
+    )
+    return request
+
+
+def ship_closure_reporting(
+    root_name: str,
+    *,
+    find_root: Callable[[str], EnsembleConfig | None],
+    config_manager: ConfigurationManager,
+    project_dir: Path | None,
+    with_profiles: Sequence[str] = (),
+    bind: Mapping[str, str] | None = None,
+    pull: bool = False,
+    persist: str | None = None,
+    input_text: str = "",
+) -> tuple[dict[str, Any], list[LeftOut]]:
+    """``ship_closure``'s request with what it left out, in walk order.
+    Inline shell content is not left out: it stays in the definition."""
+    request, closure, resolver = _build(
         root_name,
         find_root,
         config_manager,
@@ -67,7 +114,22 @@ def ship_closure(
         persist,
         input_text,
     )
-    return request
+    return request, _left_out(closure, resolver)
+
+
+def _left_out(closure: Closure, resolver: ScriptResolver) -> list[LeftOut]:
+    left: list[LeftOut] = []
+    for dep in closure.dependencies:
+        if dep.found:
+            continue
+        if dep.kind == "ensemble":
+            left.append(LeftOut("ensemble", dep.name))
+        elif dep.kind == "script" and dep.beside is not None:
+            assert dep.listed is not None
+            left.append(LeftOut("file", dep.listed, dep.beside))
+        elif dep.kind == "script" and resolver.has_path_syntax(dep.name):
+            left.append(LeftOut("script", dep.name))
+    return left
 
 
 def _build(
