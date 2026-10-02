@@ -53,6 +53,12 @@ async def _probe(
         return {**row, "error": _shown(e)}
     except RemoteRunError as e:
         return {**row, "error": _shown(e.detail)}
+    return await _ask(client, base_url, row)
+
+
+async def _ask(
+    client: httpx.AsyncClient, base_url: str, row: dict[str, Any]
+) -> dict[str, Any]:
     try:
         async with client:
             response = await client.get(base_url + HEALTH_PATH)
