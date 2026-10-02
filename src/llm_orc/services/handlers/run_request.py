@@ -77,6 +77,14 @@ def _check_distinct(paths: Iterable[tuple[str, str]]) -> None:
         files[segments] = label
 
 
+def script_key_form(key: str) -> str:
+    """The form two script keys share when one reference reaches both:
+    the key without a leading ``scripts/`` and with hyphens as
+    underscores, compared as the disk folds names (see ``_folded``)."""
+    folded = "/".join(_folded(key))
+    return ScriptResolver.underscored(ScriptResolver.unprefixed(folded))
+
+
 def _check_one_reference_one_script(keys: Iterable[str]) -> None:
     """No two script keys are reachable from the same reference. The
     resolver also tries a reference without its leading ``scripts/`` and
@@ -85,8 +93,7 @@ def _check_one_reference_one_script(keys: Iterable[str]) -> None:
     The forms compare as the disk folds them (see ``_folded``)."""
     seen: dict[str, str] = {}
     for key in keys:
-        folded = "/".join(_folded(key))
-        form = ScriptResolver.underscored(ScriptResolver.unprefixed(folded))
+        form = script_key_form(key)
         if form in seen:
             raise ValueError(
                 f"script {key!r} and script {seen[form]!r} are reached by the "
