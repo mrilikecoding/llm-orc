@@ -5,6 +5,54 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.23.0] - 2026-10-02
+
+### Added
+- One-run injection (#196). `invoke` takes an ensemble inline, with its
+  child ensembles, profiles and scripts, runs it once and keeps nothing:
+  `POST /api/ensembles/execute` (the full request: `ensemble` or
+  `ensemble_name`, `ensembles`, `profiles`, `scripts`, `bind`, `pull`,
+  `input`), `POST /api/ensembles/{name}/execute` (the same body without a
+  root) and the MCP `invoke` tool. Injected definitions live in a run
+  layer under the state dir for that run only, the highest tier, and are
+  removed afterwards, also on refusal, failure and cancellation. An
+  inline root saves no artifact.
+- `bind: {a: b}` runs profile name `a` on this host's profile `b` for one
+  run and returns the applied bindings. `pull: true` downloads models
+  that are only missing a download, when nothing else is unmet, and
+  returns what it pulled.
+- A refusal before anything runs: `status: "error"` with `error.kind`
+  `not_equipped` (and the dependency report of
+  `check_ensemble_runnable`) or `invalid_request`.
+- `LlamaServerClient.pull`, the load-and-wait both the pull endpoint and
+  `pull: true` use. The llama-server provider status carries `sources`,
+  the source the router serves each model from.
+
+### Changed
+- **Breaking for callers:** every run through REST or the MCP tools is
+  preflighted first, named ensembles included. An ensemble that is not
+  `runnable` answers `not_equipped` instead of starting. That covers a
+  ready primary profile with an unmet fallback hop (bind it), and a model
+  the router lists but has not downloaded (send `pull: true`).
+  `/v1/chat/completions` and the `llm-orc invoke` CLI are not gated.
+- A listed local model whose router source differs from the profile's
+  `hf_repo` reads `needs_restart`, not `ready` or `pullable`: the router
+  serves a model name from the source in the preset it started with.
+- A request with no ensemble is the `invalid_request` envelope, not an
+  exception. Both execute bodies reject unknown keys with a 422.
+- Script agents: the subprocess leads its own process group. A timeout
+  kills the group, not only the script, and a cancelled run kills it
+  before the run is cleaned up.
+- The preflight probes only the OpenAI-compatible endpoints the
+  ensemble's closure uses, concurrently, when it gates a run;
+  `check_ensemble_runnable` still probes the host's.
+
+### Fixed
+- `POST /api/models/{name}/pull` no longer blocks the serve's event loop
+  for the length of the download (#199).
+- A preflight refusal for an ensemble that does not load names the
+  ensemble and the problem, not the host's file path.
+
 ## [0.22.0] - 2026-10-01
 
 ### Added
