@@ -12,6 +12,7 @@ from llm_orc.cli_commands import (
     invoke_ensemble,
     list_ensembles_command,
     list_profiles_command,
+    remotes_command,
 )
 from llm_orc.cli_completion import (
     complete_ensemble_names,
@@ -245,6 +246,18 @@ def invoke(
     )
     if has_errors:
         sys.exit(1)
+
+
+@cli.command()
+@click.option(
+    "--output-format",
+    type=click.Choice(["json", "text"]),
+    default=None,
+    help="Output format (default: one line per remote)",
+)
+def remotes(output_format: str | None) -> None:
+    """List the remotes in the global config, each with a health probe."""
+    remotes_command(output_format)
 
 
 @cli.command("list-ensembles")

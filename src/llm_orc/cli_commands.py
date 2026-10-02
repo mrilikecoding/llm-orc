@@ -27,12 +27,18 @@ from llm_orc.cli_modules.utils.visualization.refusal_display import (
     display_run_record,
 )
 from llm_orc.cli_modules.utils.visualization.streaming import display_result
+from llm_orc.core.config.config_manager import (
+    ConfigurationManager,
+    resolve_global_config_dir,
+)
 from llm_orc.core.config.ensemble_config import EnsembleConfig
+from llm_orc.core.config.remotes import RemoteError
 from llm_orc.services.closure_shipper import LeftOut
 from llm_orc.services.handlers.run_preparation import (
     RootNotFoundError,
     RunRefusedError,
 )
+from llm_orc.services.remote_probe import probe_remotes
 from llm_orc.services.remote_run import RemoteRunError, run_remote
 
 WAIT_TICK_S = 1.0
@@ -490,6 +496,38 @@ def _invoke_remote(ensemble_name: str, invocation: RemoteInvocation) -> bool:
     return _display_remote_document(
         document, root, invocation.output_format, invocation.detailed
     )
+
+
+def remotes_command(output_format: str | None) -> None:
+    """List the configured remotes, each with a live health probe. Exit 0
+    whether or not any answers; a malformed ``remotes`` key is an error."""
+    try:
+        rows = asyncio.run(probe_remotes(ConfigurationManager(provision=False)))
+    except RemoteError as e:
+        raise click.ClickException(str(e)) from e
+    if output_format == "json":
+        click.echo(json.dumps(rows, indent=2))
+        return
+    if not rows:
+        config_file = resolve_global_config_dir() / "config.yaml"
+        click.echo(
+            "No remotes are configured. Add a remotes: block to "
+            f"{config_file}:\n"
+            "  remotes:\n"
+            "    remote-host:\n"
+            "      url: https://llm-orc.remote.example"
+        )
+    for row in rows:
+        click.echo(_remote_line(row))
+
+
+def _remote_line(row: Mapping[str, Any]) -> str:
+    state = (
+        f"reachable, llm-orc {row['version']}"
+        if row["reachable"]
+        else f"unreachable: {row['error']}"
+    )
+    return f"{row['name']}  {row['url']}  {state}"
 
 
 def _say_left_out(left_out: list[LeftOut]) -> None:

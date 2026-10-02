@@ -21,11 +21,13 @@ from starlette.applications import Starlette
 
 from llm_orc.core.config.config_manager import ConfigurationManager
 from llm_orc.core.config.ensemble_config import EnsembleLoader
+from llm_orc.core.config.remotes import RemoteError
 from llm_orc.core.execution.artifact_manager import ArtifactManager
 from llm_orc.services.closure_shipper import LeftOut
 from llm_orc.services.handlers.run_preparation import INVALID_REQUEST, RunRefusedError
 from llm_orc.services.handlers.scope import Scope
 from llm_orc.services.orchestra_service import OrchestraService
+from llm_orc.services.remote_probe import probe_remotes
 from llm_orc.services.remote_run import RemoteRunError, run_remote
 
 if TYPE_CHECKING:
@@ -33,8 +35,8 @@ if TYPE_CHECKING:
 
 
 _NOT_A_RELAY = (
-    "this serve does not relay: remote and with_profiles are not accepted "
-    "here, so call that remote yourself"
+    "this serve does not relay: remote, with_profiles and list_remotes are "
+    "not accepted here, so call that remote yourself"
 )
 
 
@@ -253,6 +255,7 @@ class MCPServer:
         self._setup_core_tools()
         self._setup_crud_tools()
         self._setup_provider_discovery_tools()
+        self._setup_remote_tools()
         self._setup_promotion_tools()
         self._setup_help_tool()
 
@@ -770,6 +773,26 @@ class MCPServer:
                 {"ensemble_name": ensemble_name}
             )
             return result
+
+    def _setup_remote_tools(self) -> None:
+        """Register the tools that look at remotes."""
+
+        @self._mcp.tool()
+        async def list_remotes() -> dict[str, Any]:
+            """List the remotes named in the global config, each probed.
+
+            A remote is a llm-orc serve that can run an ensemble shipped
+            from here: invoke and check_ensemble_runnable take its name as
+            remote. Each row has name, url and a live GET /health probe:
+            reachable with the serve's version, or the error observed.
+            """
+            if not self._relay:
+                return RunRefusedError(INVALID_REQUEST, _NOT_A_RELAY).envelope()
+            try:
+                rows = await probe_remotes(self._service.config_manager)
+            except RemoteError as e:
+                return RunRefusedError(INVALID_REQUEST, str(e)).envelope()
+            return {"remotes": rows}
 
     def _setup_promotion_tools(self) -> None:
         """Register promotion and demotion tools."""
