@@ -1199,14 +1199,19 @@ class MCPServer:
     ) -> dict[str, Any]:
         """Run the named local root on ``remote`` and return its result."""
         service = self._service
+        # One project answers the root and the closure: all three are read
+        # here, on the loop, before the worker thread starts.
+        config_manager = service.config_manager
+        project_dir = service.project_path
+        root = service.find_ensemble_by_name(ensemble_name)
         left: list[LeftOut] = []
         try:
             document = await run_remote(
                 ensemble_name,
                 remote,
-                find_root=service.find_ensemble_by_name,
-                config_manager=service.config_manager,
-                project_dir=service.project_path,
+                find_root=lambda _name: root,
+                config_manager=config_manager,
+                project_dir=project_dir,
                 input_text=input_data,
                 with_profiles=with_profiles,
                 bind=bind,

@@ -23,6 +23,7 @@ from fastapi.testclient import TestClient
 
 import llm_orc.web.api as web_api
 from llm_orc.core.config.config_manager import resolve_global_config_dir
+from llm_orc.mcp import server as mcp_server
 from llm_orc.mcp.server import MCPServer
 from llm_orc.services import closure_shipper, remote_run
 from llm_orc.services.orchestra_service import OrchestraService
@@ -436,6 +437,45 @@ class TestARemoteTheResolverRefuses:
         assert result["status"] == "error"
         assert result["error"]["kind"] == "invalid_request"
         assert named in result["error"]["message"]
+
+
+class TestOneProjectAnswersRootAndClosure:
+    """The root is looked up on the event loop, where ``config_manager`` and
+    ``project_dir`` are captured, so a ``set_project`` that lands while the
+    closure ships in its worker thread cannot pair one project's root with
+    another's closure."""
+
+    def test_the_thread_gets_the_root_of_the_project_the_call_started_in(
+        self,
+        project: Path,
+        service: OrchestraService,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        _write_top(project)
+        seen: dict[str, Any] = {}
+
+        async def fake_run_remote(*args: Any, **more: Any) -> dict[str, Any]:
+            seen.update(more)
+            return {"status": "success", "has_errors": False}
+
+        monkeypatch.setattr(mcp_server, "run_remote", fake_run_remote)
+        other = tmp_path / "other-project"
+        (other / ".llm-orc" / "ensembles").mkdir(parents=True)
+        server = MCPServer(service=service)
+
+        asyncio.run(
+            server._mcp.call_tool(
+                "invoke",
+                {"ensemble_name": "top", "input_data": "hi", "remote": "remote-host"},
+            )
+        )
+        assert service.handle_set_project(str(other))["status"] == "ok"
+
+        root = seen["find_root"]("top")
+        assert root is not None
+        assert root.name == "top"
+        assert seen["project_dir"] == project
 
 
 class _Ticks:
