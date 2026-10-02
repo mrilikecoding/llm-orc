@@ -378,7 +378,10 @@ a request the remote's validator would refuse. `--with-profile` and
 
 The CLI prints a remote result the way it prints a local one, in rich,
 `--output-format text` or `--output-format json`. Rich mode shows
-`Running on <remote>... Ns` on stderr while the run is out. A refusal
+`Running on <remote>... Ns` on stderr while the run is out. Rich and text
+modes print `Bindings applied`, `Models pulled` and `Bundle persisted`
+lines when the result has them; JSON mode prints the remote's document
+with every key it carries, plus `config`. A refusal
 prints `Run refused (<kind>): <message>` and, for `not_equipped`, the
 dependency report as a table; JSON mode prints the refusal envelope. An
 answer is a result only if it is HTTP 200 and a JSON object with a `status`
@@ -405,6 +408,17 @@ Bindings applied: seat -> general
 ...
 ```
 
+The MCP `invoke` tool does the same for an agent. With `remote` (a name or
+a URL) and `ensemble_name`, the server ships that local root's closure and
+returns the remote's result document unchanged. `bind`, `pull`, `persist`
+and `with_profiles` (a list of profile names) travel with it. `remote`
+with an inline `ensemble`, `ensembles`, `profiles` or `scripts` is
+`invalid_request`: a client that holds a definition can send it to the
+remote itself. When nothing was sent (an unknown remote, a closure that
+cannot ship, an interactive script) the error kind is `invalid_request`.
+When the remote could not be reached or did not answer with a result, it
+is `remote_error`. REST takes no `remote`; a serve does not relay.
+
 ## Local runs: bind, pull and the gate
 
 `--bind NAME=TARGET` (repeatable) and `--pull` work on a local
@@ -417,17 +431,19 @@ Breaking change for local CLI callers: `llm-orc invoke` and
 MCP. An ensemble the host cannot run is refused before any agent starts:
 the CLI prints the refusal and the dependency table and exits 1. A local
 model that is listed but not downloaded now blocks until the call carries
-`--pull`, which downloads it first. `validate run` has no `--pull` or
-`--bind`. Before, the CLI ran the ensemble with no check.
+`--pull`, which downloads it first. `validate run` takes `--bind` and
+`--pull` too. Before, the CLI ran the ensemble with no check.
 
 ## Bundles
 
 A request with `persist: global` (`--persist global` on `invoke --remote`)
 stores the closure it carries on the serve, and runs it. It needs an inline
 root whose name is one plain file name, and it passes the same validation
-and gate as any run. If the gate refuses, nothing is written. The run goes
-on as a named run, so its artifact is kept, and the result names the bundle
-in `persisted`.
+and gate as any run. If the gate refuses, nothing is written. The bundle is
+stored once the gate passes, before any agent runs, so a run that then
+fails or is cancelled still leaves it stored. The run goes on as a named
+run, so its artifact is kept, and the result names the bundle in
+`persisted`.
 
 A bundle is one stored request: `bundles/<root name>.json` under the global
 config directory, holding the root, `ensembles`, `profiles`, `scripts` and
@@ -438,19 +454,20 @@ removes the layer, as for an inline request. Listings show the root with
 source `bundle`, and the runnable check of its name reports over the same
 layer.
 
-A bundle shadows nothing on the host. Copying its scripts and children into
-the global tier would hide the host's own packaged ensembles and scripts of
-the same names from every ensemble on the host, `/v1` included, at the
-caller's version. Here its children and scripts resolve for its own root
-only.
+A bundle shadows nothing on the host. If its scripts and children were
+copied into the global tier, every ensemble on the host, `/v1` included,
+would get the caller's copies in place of the host's packaged files of the
+same names, and would keep them across upgrades. A bundle's children and
+scripts resolve for its own root only.
 
 Names resolve through the tiers (project, library, global, packaged) first
 and bundles after. So a tier file added later under a bundle's name wins,
 and persisting a root name that a tier already resolves is refused with
 `invalid_request`, naming the tier. Persisting again replaces the bundle
 (written beside and renamed, so a failure keeps the old one).
-`delete_ensemble` with `scope: global` removes it, unless the global tier
-holds an ensemble file of that name, which is what that delete then means.
+`delete_ensemble` with `scope: global` removes it. If the global tier also
+holds an ensemble file of that name, that delete removes the file and a
+second one removes the bundle.
 `persist` on a run by name is `invalid_request`, and the named execute route
 rejects it with a 422. `validate` and promote answer that a bundle is not a
 tier ensemble.
