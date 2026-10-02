@@ -208,8 +208,12 @@ def _result_document(remote: str, response: Any) -> dict[str, Any]:
 
 
 def _observed(response: Any) -> str:
-    """What a non-200 answer said: a 422's ``detail`` as the serve wrote
-    it, else the start of the body."""
+    """What a non-200 answer said: a redirect's ``Location`` (it is not
+    followed, so the caller needs it to fix the URL), a 422's ``detail``
+    as the serve wrote it, else the start of the body."""
+    location = _location(response)
+    if location is not None:
+        return f"redirected to {location} (not followed): {_excerpt(response)}"
     try:
         body = response.json()
     except ValueError:
@@ -217,6 +221,12 @@ def _observed(response: Any) -> str:
     if isinstance(body, dict) and "detail" in body:
         return f"the serve refused the request: {body['detail']}"
     return _excerpt(response)
+
+
+def _location(response: Any) -> str | None:
+    if not 300 <= int(response.status_code) < 400:
+        return None
+    return str(response.headers.get("location") or "") or None
 
 
 def _excerpt(response: Any) -> str:
