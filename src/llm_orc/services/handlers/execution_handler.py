@@ -33,6 +33,7 @@ from llm_orc.services.handlers.run_preparation import (
     NOT_EQUIPPED,
     ChildLoadError,
     RunRefusedError,
+    load_problem,
     only_pullable_unmet,
     pull_pullable,
     unmet_binding_rows,
@@ -272,7 +273,7 @@ class ExecutionHandler:
             )
         except LOAD_ERRORS as e:
             raise RunRefusedError(
-                INVALID_REQUEST, f"the inline ensemble does not load: {e}"
+                INVALID_REQUEST, f"the inline ensemble does not load: {load_problem(e)}"
             ) from e
 
     async def _gate(
