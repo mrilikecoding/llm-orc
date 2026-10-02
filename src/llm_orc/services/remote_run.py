@@ -24,6 +24,7 @@ from llm_orc.core.execution.scripting.user_input_handler import (
     ScriptUserInputHandler,
 )
 from llm_orc.services.closure_shipper import ShipError, ship_closure
+from llm_orc.services.handlers.run_preparation import INVALID_REQUEST, REMOTE_ERROR
 
 CONNECT_TIMEOUT_S = 10
 EXECUTE_PATH = "/api/ensembles/execute"
@@ -34,13 +35,21 @@ class RemoteRunError(RuntimeError):
     """A remote run that did not produce a result document.
 
     ``remote`` is the value the caller gave, ``status_code`` the HTTP
-    status when one was seen, and ``detail`` what was observed.
+    status when one was seen, and ``detail`` what was observed. ``kind``
+    tells the caller what to do: ``invalid_request`` when nothing was
+    sent (fix the request), ``remote_error`` when something was sent or
+    tried (look at the remote).
     """
 
     def __init__(
-        self, remote: str, detail: str, status_code: int | None = None
+        self,
+        remote: str,
+        detail: str,
+        status_code: int | None = None,
+        kind: str = REMOTE_ERROR,
     ) -> None:
         self.remote = remote
+        self.kind = kind
         self.status_code = status_code
         self.detail = detail
         code = f" ({status_code})" if status_code is not None else ""
@@ -77,7 +86,7 @@ def run_remote(
     try:
         base_url = resolve_remote(remote, config_manager)
     except RemoteError as e:
-        raise RemoteRunError(remote, str(e)) from e
+        raise RemoteRunError(remote, str(e), kind=INVALID_REQUEST) from e
     request = _ship(
         remote,
         root_name,
@@ -102,7 +111,9 @@ def _ship(remote: str, root_name: str, **more: Any) -> dict[str, Any]:
     try:
         return ship_closure(root_name, **more)
     except ShipError as e:
-        raise RemoteRunError(remote, f"cannot ship {root_name!r}: {e}") from e
+        raise RemoteRunError(
+            remote, f"cannot ship {root_name!r}: {e}", kind=INVALID_REQUEST
+        ) from e
 
 
 def _refuse_interactive(remote: str, request: Mapping[str, Any]) -> None:
@@ -122,6 +133,7 @@ def _refuse_interactive(remote: str, request: Mapping[str, Any]) -> None:
             remote,
             "the closure has an interactive script and no channel carries "
             "its prompt to a remote run; nothing was sent",
+            kind=INVALID_REQUEST,
         )
 
 
