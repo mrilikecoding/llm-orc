@@ -7,6 +7,7 @@ any binding was written.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -14,6 +15,7 @@ import pytest
 import yaml
 
 from llm_orc.core.config.config_manager import ConfigurationManager
+from llm_orc.core.config.ensemble_config import EnsembleLoader
 from llm_orc.services.handlers.run_request import (
     RunRequest,
     RunRequestError,
@@ -311,3 +313,30 @@ class TestApplyBindings:
 
         assert view.resolve_model_profile("a") == ("mock-b", "mock")
         assert view.resolve_model_profile("b") == ("mock-c", "mock")
+
+
+SERVING_DOC = Path(__file__).parents[4] / "docs" / "serving.md"
+
+
+class TestTheDocumentedRequest:
+    def _example(self) -> dict[str, Any]:
+        """The first fenced JSON block under the request section."""
+        text = SERVING_DOC.read_text()
+        section = text.split("## Running a request", 1)[1]
+        body = section.split("```json\n", 1)[1].split("\n```", 1)[0]
+        return dict(json.loads(body))
+
+    def test_it_validates_and_every_ensemble_in_it_loads(self, tmp_path: Path) -> None:
+        request = RunRequest.parse(self._example())
+        run = tmp_path / "run"
+        run.mkdir()
+
+        root_path = materialize(request, run)
+
+        assert root_path is not None
+        loader = EnsembleLoader()
+        search_dirs = [str(run / "ensembles")]
+        root = loader.load_from_file(str(root_path), search_dirs=search_dirs)
+        child = loader.load_from_file(str(run / "ensembles" / "child.yaml"))
+        assert [a.name for a in root.agents] == ["check", "sub", "review"]
+        assert [a.name for a in child.agents] == ["c"]
