@@ -262,6 +262,25 @@ class TestRequestBodies:
 
         assert response.status_code == 422, response.text
 
+    @pytest.mark.parametrize(
+        "body",
+        [
+            {"input": "x"},
+            {"input": "x", "ensemble_name": ""},
+            {"input": "x", "profiles": {"p": {"model": "m"}}},
+        ],
+        ids=["no root", "empty name", "profiles only"],
+    )
+    def test_a_request_with_no_root_gets_the_invalid_request_envelope(
+        self, body: dict[str, Any], client: TestClient
+    ) -> None:
+        response = client.post("/api/ensembles/execute", json=body)
+
+        assert response.status_code == 200, response.text
+        error = response.json()["error"]
+        assert error["kind"] == "invalid_request"
+        assert "exactly one" in error["message"]
+
     def test_get_execute_still_reads_an_ensemble_named_execute(
         self, client: TestClient, project: Path
     ) -> None:

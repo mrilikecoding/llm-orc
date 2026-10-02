@@ -196,8 +196,6 @@ class ExecutionHandler:
         removed on every way out: success, refusal, an exception and
         cancellation.
         """
-        if not data:
-            raise ValueError("ensemble_name is required")
         request = _parse(data)
         run_dir = self._new_run_dir() if request.needs_layer else None
         try:
