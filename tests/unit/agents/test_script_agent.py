@@ -1142,9 +1142,10 @@ class TestALargeInputReachesASlowReader:
     def test_a_script_agent_completes_with_an_input_past_the_pipe_buffer(
         self,
     ) -> None:
-        # The agent also mirrors the input into the environment, which the
-        # OS caps near 1 MB, so this input is 200 KB: well past the pipe
-        # buffer (16-64 KB), which is what stalls the write.
+        # The agent also mirrors the input into the environment. Linux caps
+        # one variable at 128 KB and macOS the whole environment near 1 MB,
+        # so this input is 100 KB: still past the pipe buffer (16-64 KB),
+        # which is what stalls the write.
         with tempfile.TemporaryDirectory() as directory:
             script = Path(directory) / "reader.py"
             script.write_text(
@@ -1158,10 +1159,10 @@ class TestALargeInputReachesASlowReader:
             )
 
             started = time.monotonic()
-            result = asyncio.run(agent.execute("x" * 200_000))
+            result = asyncio.run(agent.execute("x" * 100_000))
             elapsed = time.monotonic() - started
 
-        assert json.loads(result) == {"n": 200_000}
+        assert json.loads(result) == {"n": 100_000}
         assert elapsed < 5
 
 
