@@ -244,7 +244,8 @@ def _result_document(remote: str, response: Any) -> dict[str, Any]:
 
 def _observed(response: Any) -> str:
     """What a non-200 answer said: a redirect's ``Location`` (it is not
-    followed, so the caller needs it to fix the URL), a 422's ``detail``
+    followed, so the caller needs it to fix the URL; capped like the body
+    and without unprintable characters), a 422's ``detail``
     as the serve wrote it, else the start of the body."""
     location = _location(response)
     if location is not None:
@@ -261,7 +262,9 @@ def _observed(response: Any) -> str:
 def _location(response: Any) -> str | None:
     if not 300 <= int(response.status_code) < 400:
         return None
-    return str(response.headers.get("location") or "") or None
+    value = str(response.headers.get("location") or "")
+    shown = "".join(c for c in value if c.isprintable())[:_SHOWN_BODY_CHARS]
+    return shown or None
 
 
 def _excerpt(response: Any) -> str:
