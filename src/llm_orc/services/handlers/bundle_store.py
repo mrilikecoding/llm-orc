@@ -20,6 +20,7 @@ from typing import Any
 from llm_orc.services.handlers.run_request import (
     RunRequest,
     RunRequestError,
+    _folded,
     check_plain,
 )
 
@@ -95,6 +96,21 @@ class BundleStore:
             return path
         return path if root == name else None
 
+    def spelled_otherwise(self, name: str) -> str | None:
+        """The bundle whose file name folds equal to ``name`` (case and
+        Unicode normalization, as a macOS disk sees names) but is spelled
+        differently; None when there is none. Such a file would be
+        overwritten by a write of ``name`` on a folding disk."""
+        want = _folded(f"{name}{_SUFFIX}")
+        try:
+            held = os.listdir(self.directory)
+        except OSError:
+            return None
+        for entry in sorted(held):
+            if entry != f"{name}{_SUFFIX}" and _folded(entry) == want:
+                return entry.removesuffix(_SUFFIX)
+        return None
+
     def has(self, name: str) -> bool:
         return self._entry_named(name) is not None
 
@@ -161,8 +177,10 @@ class BundleStore:
             raise
 
     def delete(self, name: str) -> bool:
-        """Remove ``name``; whether a bundle was there."""
-        path = self._entry_named(name)
+        """Remove the entry spelled exactly ``<name>.json``, whatever root
+        it stores, so a stranded or hand-edited file can always go by its
+        own file name; whether a file was there."""
+        path = self._entry(name)
         if path is None:
             return False
         path.unlink()

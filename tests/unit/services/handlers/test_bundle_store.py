@@ -170,7 +170,7 @@ class TestOnlyTheExactNameIsABundle:
         assert store.has("pack")
         assert store.read("pack") is not None
 
-    def test_a_file_whose_root_is_named_otherwise_is_not_a_bundle_to_has_or_delete(
+    def test_a_file_whose_root_is_named_otherwise_is_not_a_bundle_to_has(
         self, store: BundleStore, tmp_path: Path
     ) -> None:
         store.write("pack", _stored())
@@ -178,8 +178,17 @@ class TestOnlyTheExactNameIsABundle:
         other.write_text((tmp_path / "global" / "bundles" / "pack.json").read_text())
 
         assert not store.has("other")
-        assert store.delete("other") is False
-        assert other.exists()
+
+    def test_a_file_is_deleted_by_its_own_name_whatever_root_it_holds(
+        self, store: BundleStore, tmp_path: Path
+    ) -> None:
+        store.write("pack", _stored())
+        other = tmp_path / "global" / "bundles" / "other.json"
+        other.write_text((tmp_path / "global" / "bundles" / "pack.json").read_text())
+
+        assert store.delete("other") is True
+        assert not other.exists()
+        assert store.has("pack")
 
 
 class TestDeleteAndNames:
