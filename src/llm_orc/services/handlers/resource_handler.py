@@ -216,7 +216,28 @@ class ResourceHandler:
                     "agents": agents_list,
                 }
 
+        bundle = self._bundle_root(name)
+        if bundle is not None:
+            return bundle
+
         raise ValueError(f"Ensemble not found: {name}")
+
+    def _bundle_root(self, name: str) -> dict[str, Any] | None:
+        """The root of the bundle ``name`` with source ``bundle``, as the
+        listing shows it; None when no readable bundle holds it."""
+        try:
+            stored = self._bundles.read(name)
+        except BundleError:
+            return None
+        if stored is None:
+            return None
+        root = stored["ensemble"]
+        return {
+            "name": name,
+            "description": root.get("description", ""),
+            "agents": [_serialize_agent(a) for a in root.get("agents", [])],
+            "source": BUNDLE_SOURCE,
+        }
 
     async def read_artifacts(self, ensemble_name: str) -> list[dict[str, Any]]:
         """Read artifacts for an ensemble.

@@ -8,6 +8,7 @@ passes, replayed through the same injection path on each named run.
 # ruff: noqa: F811  (imported fixtures are redefined as test parameters)
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import threading
@@ -21,6 +22,7 @@ from fastapi.testclient import TestClient
 
 import llm_orc.web.api as web_api
 from llm_orc.core.config.config_manager import resolve_global_config_dir
+from llm_orc.mcp.server import MCPServer
 from llm_orc.services.orchestra_service import OrchestraService
 from llm_orc.web.server import create_app
 from tests.unit.services.test_one_run_injection import (  # noqa: F401
@@ -577,6 +579,44 @@ class TestTheOtherSurfacesKnowBundles:
         assert listed["pack"]["source"] == "bundle"
         assert listed["pack"]["agent_count"] == 2
         assert listed["pack"]["description"] == "a closure"
+
+    def test_a_listed_bundle_can_be_read_over_rest_with_source_bundle(
+        self, client: TestClient
+    ) -> None:
+        _persisted(client)
+
+        response = client.get("/api/ensembles/pack")
+
+        assert response.status_code == 200, response.text
+        body = response.json()
+        assert body["name"] == "pack"
+        assert body["source"] == "bundle"
+        assert body["description"] == "a closure"
+        assert [a["name"] for a in body["agents"]] == ["s", "k"]
+
+    def test_a_listed_bundle_can_be_read_as_the_mcp_resource(
+        self, client: TestClient, service: OrchestraService
+    ) -> None:
+        _persisted(client)
+
+        contents = asyncio.run(
+            MCPServer(service=service)._mcp.read_resource("llm-orc://ensemble/pack")
+        )
+
+        body = json.loads(next(iter(contents)).content)
+        assert body["source"] == "bundle"
+        assert body["name"] == "pack"
+
+    def test_a_tier_ensemble_of_the_same_name_is_read_first(
+        self, client: TestClient, project: Path
+    ) -> None:
+        _persisted(client)
+        _ensemble(project / ".llm-orc", "pack", [{"name": "t", "script": "echo hi"}])
+
+        body = client.get("/api/ensembles/pack").json()
+
+        assert "source" not in body
+        assert [a["name"] for a in body["agents"]] == ["t"]
 
     def test_a_corrupt_bundle_is_left_out_of_the_listing(
         self, client: TestClient
