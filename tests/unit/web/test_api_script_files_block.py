@@ -144,6 +144,68 @@ class TestRunnableRoute:
         assert "TOML" in script["detail"]
 
 
+class TestOneNameTwoSightings:
+    """Two sightings of one script name can differ in outcome (a listed
+    file is looked for beside its owner only). An unmet sighting wins, in
+    either visit order: the row is one, and it blocks the run."""
+
+    def _global_script(self, ref: str, source: str = "print('g')\n") -> None:
+        path = resolve_global_config_dir() / "scripts" / ref
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(source)
+
+    def _agents(self, project: Path, *scripts: str) -> None:
+        agents = [{"name": f"a{i}", "script": s} for i, s in enumerate(scripts)]
+        _ensemble(project / ".llm-orc", "top", agents)
+
+    def _only_row(self, data: dict[str, Any]) -> dict[str, Any]:
+        rows = [d for d in data["dependencies"] if d["name"] == "tools/_h.py"]
+        assert len(rows) == 1
+        return dict(rows[0])
+
+    def test_a_direct_reference_and_a_listing_that_misses_the_file(
+        self, client: TestClient, project: Path
+    ) -> None:
+        self._global_script("tools/_h.py")
+        _script(project, "tools/x.py", _block("_h.py"))
+        for order in (("tools/_h.py", "tools/x.py"), ("tools/x.py", "tools/_h.py")):
+            self._agents(project, *order)
+
+            data = _runnable(client)
+
+            row = self._only_row(data)
+            assert data["runnable"] is False, order
+            assert row["status"] == "missing_script", order
+            assert "not beside it" in row["detail"], order
+
+    def test_two_owners_listing_one_name_where_only_one_directory_has_it(
+        self, client: TestClient, project: Path
+    ) -> None:
+        _script(project, "tools/x.py", _block("_h.py"))
+        self._global_script("tools/y.py", _block("_h.py"))
+        self._global_script("tools/_h.py")
+        for order in (("tools/x.py", "tools/y.py"), ("tools/y.py", "tools/x.py")):
+            self._agents(project, *order)
+
+            data = _runnable(client)
+
+            row = self._only_row(data)
+            assert data["runnable"] is False, order
+            assert row["status"] == "missing_script", order
+            assert "'tools/x.py'" in row["detail"], order
+
+    def test_a_met_sighting_alone_is_still_ready(
+        self, client: TestClient, project: Path
+    ) -> None:
+        self._global_script("tools/_h.py")
+        self._agents(project, "tools/_h.py", "tools/_h.py")
+
+        data = _runnable(client)
+
+        assert data["runnable"] is True
+        assert self._only_row(data)["status"] == "ready"
+
+
 class TestExecuteRoute:
     def _request(self, marker: Path, files: dict[str, str]) -> dict[str, Any]:
         return {
