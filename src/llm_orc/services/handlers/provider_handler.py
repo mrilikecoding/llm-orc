@@ -2,6 +2,7 @@
 
 import os
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Any
 
 from llm_orc.core.config.closure import Closure, Key, walk_closure
@@ -32,6 +33,16 @@ from llm_orc.services.handlers.profile_handler import ProfileHandler
 
 _DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1"
 _DEFAULT_LLAMA_SERVER_URL = "http://127.0.0.1:8080/v1"
+
+
+@dataclass(frozen=True)
+class Preflight:
+    """What a gate run found: the closure, one report per dependency, and
+    the provider status they were classified against."""
+
+    closure: Closure
+    reports: list[DependencyReport]
+    providers: dict[str, Any]
 
 
 class ProviderHandler:
@@ -193,19 +204,9 @@ class ProviderHandler:
         if not config:
             raise ValueError(f"Ensemble not found: {ensemble_name}")
 
-        provider_status = await self.get_provider_status({})
-        providers = provider_status.get("providers", {})
-        profiles = self._profile_handler.get_runtime_profiles()
-
-        closure = walk_closure(
-            config, self._find_child, profiles, root_ref=ensemble_name
-        )
-        reports = classify_dependencies(
-            closure.dependencies,
-            profiles=profiles,
-            providers=providers,
-            script_found=self._script_found,
-        )
+        outcome = await self.preflight(config, ensemble_name)
+        closure, providers = outcome.closure, outcome.providers
+        reports = outcome.reports
         by_key: dict[Key, DependencyReport] = {(r.kind, r.name): r for r in reports}
 
         agent_results = [
@@ -219,6 +220,22 @@ class ProviderHandler:
         ).model_dump()
         result["dependencies"] = [r.model_dump() for r in reports]
         return result
+
+    async def preflight(self, config: EnsembleConfig, root_ref: str) -> Preflight:
+        """The dependency closure of ``config`` and a report for each
+        dependency, with the providers they were classified against."""
+        provider_status = await self.get_provider_status({})
+        providers = provider_status.get("providers", {})
+        profiles = self._profile_handler.get_runtime_profiles()
+
+        closure = walk_closure(config, self._find_child, profiles, root_ref=root_ref)
+        reports = classify_dependencies(
+            closure.dependencies,
+            profiles=profiles,
+            providers=providers,
+            script_found=self._script_found,
+        )
+        return Preflight(closure=closure, reports=reports, providers=providers)
 
     def _script_found(self, script_ref: str) -> bool:
         """The executor's own resolution (ruling 5): a bare name is
