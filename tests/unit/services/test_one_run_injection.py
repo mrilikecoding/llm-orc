@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -723,3 +724,131 @@ class TestBindings:
         )
 
         assert result["bindings"] == {"a": "b"}
+
+
+class TestPull:
+    @pytest.fixture
+    def pulls(self, monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
+        """Fake LlamaServerClient.pull: records each call and its thread,
+        answers what the test sets. The listing is never changed, so a
+        gate that re-read it would still see the model as pullable."""
+        record: dict[str, Any] = {
+            "calls": [],
+            "threads": [],
+            "answer": {"status": "loaded", "failed": False, "exit_code": None},
+        }
+
+        def pull(self: Any, model: str, *, timeout_s: float, poll_s: float) -> Any:
+            record["calls"].append(model)
+            record["threads"].append(threading.get_ident())
+            return record["answer"]
+
+        monkeypatch.setattr(LlamaServerClient, "pull", pull)
+        return record
+
+    def _pullable_top(self, project: Path) -> None:
+        _profile(project / ".llm-orc", "seat", hf_repo="x/y:Q4")
+        _profile(project / ".llm-orc", "twin", hf_repo="x/y:Q4")
+        _ensemble(
+            project / ".llm-orc",
+            "top",
+            [
+                {"name": "w", "model_profile": "seat"},
+                {"name": "v", "model_profile": "twin"},
+            ],
+        )
+
+    async def test_pull_true_pulls_each_model_once_and_the_run_proceeds(
+        self, project: Path, service: OrchestraService, pulls: dict[str, Any]
+    ) -> None:
+        self._pullable_top(project)
+
+        result = await service.invoke(
+            {"ensemble_name": "top", "input": "hi", "pull": True}
+        )
+
+        assert result["status"] == "success", result
+        assert result["pulled"] == ["mock-seat"]
+        assert pulls["calls"] == ["mock-seat"]
+
+    async def test_the_pull_runs_off_the_event_loop_thread(
+        self, project: Path, service: OrchestraService, pulls: dict[str, Any]
+    ) -> None:
+        self._pullable_top(project)
+
+        await service.invoke({"ensemble_name": "top", "input": "hi", "pull": True})
+
+        assert pulls["threads"]
+        assert threading.get_ident() not in pulls["threads"]
+
+    async def test_a_load_that_ends_unloaded_failed_keeps_the_model_pullable(
+        self,
+        project: Path,
+        service: OrchestraService,
+        pulls: dict[str, Any],
+        tmp_path: Path,
+        state_dir: Path,
+    ) -> None:
+        marker = tmp_path / "marker.txt"
+        _marker_script(project, marker)
+        _profile(project / ".llm-orc", "seat", hf_repo="x/y:Q4")
+        _ensemble(
+            project / ".llm-orc",
+            "top",
+            [
+                {"name": "first", "script": "mark.py"},
+                {"name": "w", "model_profile": "seat", "depends_on": ["first"]},
+            ],
+        )
+        pulls["answer"] = {"status": "unloaded", "failed": True, "exit_code": 1}
+
+        result = await service.invoke(
+            {"ensemble_name": "top", "input": "hi", "pull": True}
+        )
+
+        assert result["error"]["kind"] == "not_equipped", result
+        row = next(d for d in result["error"]["dependencies"] if d["name"] == "seat")
+        assert row["status"] == "pullable"
+        assert "unloaded" in row["detail"]
+        assert "pulled" not in result
+        assert not marker.exists()
+        assert _runs(state_dir) == []
+
+    async def test_without_pull_nothing_is_pulled(
+        self, project: Path, service: OrchestraService, pulls: dict[str, Any]
+    ) -> None:
+        self._pullable_top(project)
+
+        result = await service.invoke({"ensemble_name": "top", "input": "hi"})
+
+        assert result["error"]["kind"] == "not_equipped"
+        assert pulls["calls"] == []
+
+    async def test_pull_does_not_resolve_a_model_the_router_does_not_list(
+        self,
+        project: Path,
+        service: OrchestraService,
+        pulls: dict[str, Any],
+        listing: list[dict[str, Any]],
+    ) -> None:
+        _profile(project / ".llm-orc", "seat", model="mock-absent", hf_repo="x/y:Q4")
+        _ensemble(project / ".llm-orc", "top", [{"name": "w", "model_profile": "seat"}])
+
+        result = await service.invoke(
+            {"ensemble_name": "top", "input": "hi", "pull": True}
+        )
+
+        assert result["error"]["kind"] == "not_equipped"
+        assert _kinds(result)["seat"] == "needs_restart"
+        assert pulls["calls"] == []
+
+    async def test_execute_streaming_returns_the_pulled_models(
+        self, project: Path, service: OrchestraService, pulls: dict[str, Any]
+    ) -> None:
+        self._pullable_top(project)
+
+        result = await service.execute_streaming(
+            "top", "hi", Reporter(), injection={"pull": True}
+        )
+
+        assert result["pulled"] == ["mock-seat"]

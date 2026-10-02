@@ -10,10 +10,12 @@ listing is never re-read to decide.
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Mapping, Sequence
 from typing import Any
 
 from llm_orc.core.config.closure import Dependency
+from llm_orc.providers.llama_server import PULL_POLL_S, PULL_TIMEOUT_S, router_client
 from llm_orc.services.handlers.preflight import (
     RESOLVE,
     DependencyReport,
@@ -83,3 +85,68 @@ def unnamed_bind_keys(
     name."""
     named = {d.name for d in dependencies if d.kind == "profile"}
     return [key for key in bind if key not in named]
+
+
+def _model_of(report: DependencyReport, profiles: Mapping[str, Any]) -> str:
+    if report.kind == "model":
+        return report.name
+    return str(profiles.get(report.name, {}).get("model", ""))
+
+
+async def pull_pullable(
+    reports: Sequence[DependencyReport], profiles: Mapping[str, Any]
+) -> tuple[list[DependencyReport], list[str]]:
+    """Pull each ``pullable`` model once, off the event loop.
+
+    Returns the reports (a dependency whose model answered ``loaded`` is
+    ``ready``; any other answer leaves it ``pullable`` with the observed
+    status in its detail) and the models that loaded.
+    """
+    models = sorted(
+        {
+            _model_of(r, profiles)
+            for r in reports
+            if r.status is DependencyStatus.PULLABLE
+        }
+        - {""}
+    )
+    outcomes = {model: await _pull_one(model) for model in models}
+    loaded = [m for m, (ok, _) in outcomes.items() if ok]
+    updated: list[DependencyReport] = []
+    for report in reports:
+        outcome = outcomes.get(_model_of(report, profiles))
+        if report.status is not DependencyStatus.PULLABLE or outcome is None:
+            updated.append(report)
+        elif outcome[0]:
+            updated.append(
+                report.model_copy(
+                    update={
+                        "status": DependencyStatus.READY,
+                        "resolve": RESOLVE[DependencyStatus.READY],
+                        "detail": outcome[1],
+                    }
+                )
+            )
+        else:
+            updated.append(
+                report.model_copy(update={"detail": f"{report.detail}; {outcome[1]}"})
+            )
+    return updated, loaded
+
+
+async def _pull_one(model: str) -> tuple[bool, str]:
+    """``(loaded, what was observed)`` for one pull."""
+    client = router_client()
+    try:
+        result = await asyncio.to_thread(
+            client.pull, model, timeout_s=PULL_TIMEOUT_S, poll_s=PULL_POLL_S
+        )
+    except (OSError, ValueError) as e:
+        return False, f"pull of {model!r} failed: {type(e).__name__}: {e}"
+    status = str(result["status"])
+    if status == "loaded":
+        return True, f"pulled: model {model!r} loaded"
+    extra = ""
+    if result.get("failed"):
+        extra = f" (failed, exit code {result.get('exit_code')})"
+    return False, f"pull of {model!r} ended {status}{extra}"
