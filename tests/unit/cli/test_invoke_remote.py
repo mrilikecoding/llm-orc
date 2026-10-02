@@ -373,6 +373,42 @@ class TestAnAnswerThatIsNotAResult:
         assert result.stdout == ""
 
 
+class TestTheExitCodeFollowsTheStatus:
+    @pytest.mark.parametrize("fmt", ["text", "json", "rich"])
+    def test_status_error_exits_1_even_when_has_errors_is_false(
+        self,
+        in_project: Path,
+        remotes: None,
+        monkeypatch: pytest.MonkeyPatch,
+        fmt: str,
+    ) -> None:
+        _write_top(in_project)
+        answer = Canned(
+            200,
+            json.dumps({"status": "error", "has_errors": False, "results": {}}),
+        )
+        _canned(monkeypatch, answer)
+        args = [] if fmt == "rich" else ["--output-format", fmt]
+
+        result = _remote_invoke(*args)
+
+        assert result.exit_code == 1, result.output
+
+    def test_status_success_with_has_errors_true_exits_1(
+        self, in_project: Path, remotes: None, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _write_top(in_project)
+        answer = Canned(
+            200,
+            json.dumps({"status": "success", "has_errors": True, "results": {}}),
+        )
+        _canned(monkeypatch, answer)
+
+        result = _remote_invoke("--output-format", "text")
+
+        assert result.exit_code == 1, result.output
+
+
 class TestRefusedBeforeAnythingIsSent:
     def _assert_refused(self, result: Result, calls: list[Any], expected: str) -> None:
         assert result.exit_code == 1, result.output

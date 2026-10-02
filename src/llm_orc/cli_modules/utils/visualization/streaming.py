@@ -144,10 +144,13 @@ def display_result(
     The document is what REST and MCP return (``results``, ``metadata``,
     ``deliverable``, ``status`` of success or error, ``has_errors``);
     ``agents`` are the ensemble's agent configs. ``config`` only adds the
-    JSON document's ``config`` key. A document with no ``has_errors`` is
-    an error.
+    JSON document's ``config`` key. The run is an error when ``status`` is
+    not ``success`` or ``has_errors`` is true, so a document with neither
+    key is an error.
     """
-    has_errors = bool(document.get("has_errors", True))
+    has_errors = document.get("status") != "success" or bool(
+        document.get("has_errors", True)
+    )
 
     if output_format == "json":
         _display_json_results(document, config)
