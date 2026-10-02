@@ -473,3 +473,117 @@ class TestTheGateStaysOffTheEventLoopAndTheDisk:
         await service.get_provider_status({})
 
         assert _listing_of(glob) == before
+
+
+ENDPOINT_DELAY_S = 0.5
+HOST_ENDPOINTS = ("http://a.test/v1", "http://b.test/v1", "http://c.test/v1")
+
+
+class TestTheGateProbesOnlyWhatTheRunUses:
+    """Each OpenAI-compatible endpoint costs a request (up to 5 s when it
+    is dead): a run's gate contacts the endpoints of its own closure,
+    together, not every endpoint the host defines, one after another."""
+
+    @pytest.fixture
+    def probed(self, project: Path, monkeypatch: pytest.MonkeyPatch) -> list[str]:
+        urls: list[str] = []
+
+        class _Response:
+            status_code = 200
+
+            def json(self) -> dict[str, Any]:
+                return {"data": [{"id": "their-model"}]}
+
+        class _Client:
+            def __init__(self, **_: Any) -> None:
+                pass
+
+            async def __aenter__(self) -> _Client:
+                return self
+
+            async def __aexit__(self, *_: Any) -> None:
+                return None
+
+            async def get(self, url: str) -> _Response:
+                urls.append(url)
+                await asyncio.sleep(ENDPOINT_DELAY_S)
+                return _Response()
+
+        monkeypatch.setattr(httpx, "AsyncClient", _Client)
+        for letter, base_url in zip("abc", HOST_ENDPOINTS, strict=True):
+            _yaml(
+                resolve_global_config_dir() / "profiles" / f"{letter}.yaml",
+                {
+                    "name": f"remote-{letter}",
+                    "provider": "openai-compatible",
+                    "model": "their-model",
+                    "base_url": base_url,
+                },
+            )
+        ensembles = project / ".llm-orc" / "ensembles"
+        _ensemble(
+            ensembles / "idle.yaml",
+            "idle",
+            [{"name": "w", "model": "qwen3-8b", "provider": "llama-server"}],
+        )
+        _ensemble(
+            ensembles / "uses-two.yaml",
+            "uses-two",
+            [
+                {"name": "x", "model_profile": "remote-a"},
+                {"name": "y", "model_profile": "remote-b"},
+            ],
+        )
+        return urls
+
+    async def test_a_closure_with_no_such_profile_probes_nothing_on_the_read_path(
+        self, project: Path, probed: list[str]
+    ) -> None:
+        service = _service(project)
+
+        result = await service.check_ensemble_runnable({"ensemble_name": "idle"})
+
+        assert result["runnable"] is True
+        assert probed == []
+
+    async def test_a_closure_with_no_such_profile_probes_nothing_on_the_gate_path(
+        self, project: Path, probed: list[str]
+    ) -> None:
+        service = _service(project)
+        root = service.find_ensemble_by_name("idle")
+
+        outcome = await service._provider_handler.preflight(
+            root,
+            "idle",
+            config_manager=service.config_manager,
+            project_dir=service.project_path,
+        )
+
+        assert outcome.closure.dependencies
+        assert probed == []
+
+    async def test_a_closure_probes_its_own_endpoints_together_and_no_others(
+        self, project: Path, probed: list[str]
+    ) -> None:
+        service = _service(project)
+        started = time.monotonic()
+
+        result = await service.check_ensemble_runnable({"ensemble_name": "uses-two"})
+
+        elapsed = time.monotonic() - started
+        assert result["runnable"] is True
+        assert sorted(probed) == [f"{u}/models" for u in HOST_ENDPOINTS[:2]]
+        assert elapsed < ENDPOINT_DELAY_S * 1.8, f"probed in series: {elapsed:.2f}s"
+
+    async def test_the_provider_status_lists_every_endpoint_together(
+        self, project: Path, probed: list[str]
+    ) -> None:
+        service = _service(project)
+        started = time.monotonic()
+
+        result = await service.get_provider_status({})
+
+        elapsed = time.monotonic() - started
+        listed = result["providers"]["openai-compatible"]["endpoints"]
+        assert sorted(e["base_url"] for e in listed) == sorted(HOST_ENDPOINTS)
+        assert elapsed < ENDPOINT_DELAY_S * 1.8, f"probed in series: {elapsed:.2f}s"
