@@ -743,4 +743,5 @@ def test_a_redirect_is_not_followed_and_is_not_a_result(
 
     assert result.exit_code == 1, result.output
     assert "307" in result.output
+    assert "https://other.example/x" in result.output
     assert seen == [REMOTE_URL + "/api/ensembles/execute"]
