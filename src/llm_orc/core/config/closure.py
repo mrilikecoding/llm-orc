@@ -109,6 +109,10 @@ def walk_closure(
     return Closure(walker.deps, {f: frozenset(k) for f, k in walker.owned.items()})
 
 
+def _unmet(dep: Dependency) -> bool:
+    return not dep.found or dep.problem is not None
+
+
 class _Walker:
     def __init__(
         self,
@@ -132,10 +136,21 @@ class _Walker:
         key: Key = (dep.kind, dep.name)
         self._own(key, via)
         if key in self._seen:
+            self._prefer_unmet(key, dep)
             return False
         self._seen.add(key)
         self.deps.append(dep)
         return True
+
+    def _prefer_unmet(self, key: Key, dep: Dependency) -> None:
+        """One name can be sighted twice with different outcomes (a listed
+        file is looked for beside its owner only). An unmet sighting
+        replaces a met one in place, so the row cannot read ready."""
+        if dep.kind != "script" or not _unmet(dep):
+            return
+        for index, recorded in enumerate(self.deps):
+            if (recorded.kind, recorded.name) == key and not _unmet(recorded):
+                self.deps[index] = dep
 
     def _own(self, key: Key, via: tuple[str, ...]) -> None:
         for frame in via:
