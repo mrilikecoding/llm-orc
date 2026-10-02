@@ -18,6 +18,7 @@ from llm_orc.core.config.closure import Dependency
 from llm_orc.providers.llama_server import PULL_POLL_S, PULL_TIMEOUT_S, router_client
 from llm_orc.services.handlers.preflight import (
     RESOLVE,
+    UNBLOCKING,
     DependencyReport,
     DependencyStatus,
 )
@@ -85,6 +86,15 @@ def unnamed_bind_keys(
     name."""
     named = {d.name for d in dependencies if d.kind == "profile"}
     return [key for key in bind if key not in named]
+
+
+def only_pullable_unmet(reports: Sequence[DependencyReport]) -> bool:
+    """Whether a pull could make the run runnable: every unmet dependency
+    is ``pullable``. A pull is a download; none is made for a run that
+    would be refused anyway."""
+    return all(
+        r.status in UNBLOCKING or r.status is DependencyStatus.PULLABLE for r in reports
+    )
 
 
 def _model_of(report: DependencyReport, profiles: Mapping[str, Any]) -> str:
