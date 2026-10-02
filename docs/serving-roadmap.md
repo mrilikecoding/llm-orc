@@ -217,14 +217,25 @@ unscrubbed. #205 (P2) is the spike on access levels for a serve with
 clients it does not trust; until then injection relies on who can reach
 the port.
 
-**Next: re-cut Arc 5 (the CLI as the remote client)** from the merged
-shape. Carry into the re-cut: named remotes in the user's config so no
-URL lives in a repo; the CLI ships a script's sibling modules with it
-(ruling 7: an injected script imports only what ships beside it); script
-keys need path syntax and names must be distinct ignoring case; a
-serve's access level (#205) is where the CLI would read what the remote
-permits; the CLI itself is not gated yet and should go through the same
-preparation step (#191).
+**Arc 5 (the CLI as the remote client) is re-cut (2026-10-02); next is
+its implementation.** Rulings 1-12, the code read and the probes are in
+the spec ("Arc 5 re-cut (2026-10-02)"); task cards in
+`docs/plans/2026-10-02-remote-delegation-arc5.md`; branch
+`feat/cli-remote-client` in `.claude/worktrees/arc5-cli-remote`. What
+the practitioner ruled: the local CLI goes through the preparation step
+in this arc (breaking for local callers, as 0.23.0 was for REST and
+MCP); `--persist global` is in this arc; a script declares the files it
+needs in a header block, nothing is inferred; a persisted closure is
+kept as one unit (a stored run request under the global config's
+`bundles/`), never copied into the global tier, so it shadows nothing on
+the host. Also in the arc: named remotes in the user's global config,
+a REST run cancelled when its client disconnects, `metadata` on the run
+result, `remote` on the MCP `invoke` tool. Probes against the remote
+host: a 12 MB injected body and a 200 s silent POST both pass its
+proxy; a model run of 8 to 15 minutes through it is not measured until
+the arc's live row. Left out, on #94: candidates for a `${...}`
+dispatch. A serve's access level (#205) is still where the CLI would
+read what a remote permits.
 
 Tooling since the last handoff: `hooks/pre-commit` and `hooks/pre-push`
 are tracked and both run `make lint` (`make install-hooks`; `make setup`
