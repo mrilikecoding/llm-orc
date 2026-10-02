@@ -811,6 +811,12 @@ class TestLoadProblemReplacesOnlyFilesystemPaths:
 
         assert load_problem(error) == "cannot read <path>: bad"
 
+    def test_a_path_in_a_missing_key_is_replaced(self) -> None:
+        assert (
+            load_problem(KeyError("/home/someone/proj/x.yaml"))
+            == "missing key '<path>'"
+        )
+
 
 class TestKeysOneReferenceResolvesToFoldTogether:
     async def test_two_script_keys_differing_by_case_run_nothing(

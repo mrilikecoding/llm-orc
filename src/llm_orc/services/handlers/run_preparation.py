@@ -59,7 +59,7 @@ def load_problem(error: Exception) -> str:
             text += f" (line {mark.line + 1}, column {mark.column + 1})"
         return text
     if isinstance(error, KeyError) and error.args:
-        return f"missing key {error.args[0]!r}"
+        return _ABSOLUTE_PATH.sub("<path>", f"missing key {error.args[0]!r}")
     return _ABSOLUTE_PATH.sub("<path>", str(error))
 
 
