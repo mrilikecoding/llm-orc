@@ -186,10 +186,10 @@ class EnsembleCrudHandler:
 
     def _delete_bundle(self, name: str) -> bool:
         """Remove the bundle ``name`` unless the global tier holds an
-        ensemble file of that name, which is what the delete means."""
-        if (
-            self._config_manager.global_config_dir / "ensembles" / f"{name}.yaml"
-        ).exists():
+        ensemble file of that name, which is what the delete means. The
+        loader reads ``.yaml`` and ``.yml``, so both count."""
+        tier = self._config_manager.global_config_dir / "ensembles"
+        if any((tier / f"{name}{suffix}").exists() for suffix in (".yaml", ".yml")):
             return False
         return self._bundles.delete(name)
 
