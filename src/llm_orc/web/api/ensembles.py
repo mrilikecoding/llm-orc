@@ -49,6 +49,13 @@ class RunRequest(ExecuteRequest):
     persist: Literal["global"] | None = None
 
 
+class PreflightRequest(RunRequest):
+    """Request body for ``POST /api/ensembles/preflight``: the run request,
+    with ``input`` optional since nothing runs."""
+
+    input: str = ""
+
+
 class CreateEnsembleRequest(BaseModel):
     """Request body for ensemble creation."""
 
@@ -139,6 +146,22 @@ async def run_request(request: RunRequest, http_request: Request) -> Any:
     """
     result = await _invoke_while_connected(
         http_request, request.model_dump(exclude_none=True)
+    )
+    return result if result is not None else Response(status_code=CLIENT_CLOSED_REQUEST)
+
+
+@router.post("/preflight", response_model=dict[str, Any])
+async def preflight_request(request: PreflightRequest, http_request: Request) -> Any:
+    """Judge one run request without running it.
+
+    Answers ``runnable``, the ``dependencies`` rows over the run's view and
+    the ``bindings`` that would apply, or the refusal envelope (HTTP 200)
+    for an invalid request. Runs no agent, pulls nothing, keeps no artifact
+    and writes no bundle. A client that disconnects first cancels it.
+    """
+    result = await _while_connected(
+        http_request,
+        get_orchestra_service().preflight_run(request.model_dump(exclude_none=True)),
     )
     return result if result is not None else Response(status_code=CLIENT_CLOSED_REQUEST)
 

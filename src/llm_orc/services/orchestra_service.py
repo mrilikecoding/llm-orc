@@ -364,6 +364,19 @@ class OrchestraService:
     async def invoke(self, arguments: dict[str, Any]) -> dict[str, Any]:
         return await self._execution_handler.invoke(arguments)
 
+    async def preflight_run(
+        self,
+        request: Mapping[str, Any],
+        lookup: Callable[[str], Any] | None = None,
+    ) -> dict[str, Any]:
+        """The gate over a run request, without running it: ``runnable``,
+        ``dependencies`` and ``bindings``, or the refusal envelope for a
+        request that is invalid. ``lookup`` finds a named root (default:
+        the service's tiers)."""
+        return await self._execution_handler.preflight_run(
+            request, lookup or self.find_ensemble_by_name, "Ensemble does not exist"
+        )
+
     @asynccontextmanager
     async def prepared_run(
         self,

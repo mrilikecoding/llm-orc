@@ -230,6 +230,39 @@ class ExecutionHandler:
                 request, run_dir, lookup, missing, keep_artifact=from_bundle
             )
 
+    async def preflight_run(
+        self,
+        data: Mapping[str, Any],
+        lookup: Callable[[str], Any],
+        missing: str,
+    ) -> dict[str, Any]:
+        """The gate over the run ``data`` asks for, answered without
+        running it (Arc 6).
+
+        The request is staged and judged as ``prepared`` does it, so the
+        verdict is the one a run reaches; then the run directory is
+        removed. No agent starts, nothing is pulled (``pull`` is reported
+        as requested), no artifact is kept and no bundle is written
+        whatever ``persist`` says. A request that would be refused as
+        ``invalid_request`` is the same envelope; unmet dependencies are
+        not an error here, they are ``runnable: false`` with the rows.
+        """
+        try:
+            with self._staged(_request_data(data), lookup) as (request, run_dir, _):
+                verdict = await self._judge(
+                    request, run_dir, lookup, missing, pull=False
+                )
+        except RunRefusedError as refusal:
+            return refusal.envelope()
+        document: dict[str, Any] = {
+            "runnable": is_runnable(verdict.reports),
+            "dependencies": [r.model_dump(mode="json") for r in verdict.reports],
+            "bindings": verdict.root.layer.applied,
+        }
+        if request.pull:
+            document["pull_requested"] = True
+        return document
+
     @contextmanager
     def _staged(
         self, data: Mapping[str, Any], lookup: Callable[[str], Any]

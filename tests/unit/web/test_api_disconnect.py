@@ -21,6 +21,7 @@ from typing import Any
 import pytest
 
 import llm_orc.web.api as web_api
+from llm_orc.services.handlers.execution_handler import ExecutionHandler
 from llm_orc.services.orchestra_service import OrchestraService
 from llm_orc.web.server import create_app
 from tests.unit.services.test_one_run_injection import (  # noqa: F401
@@ -227,3 +228,33 @@ class TestAClientThatStaysGetsItsResult:
 def _install_named(project: Path) -> None:
     """The named route needs the inline ensemble installed in the project."""
     _ensemble(project / ".llm-orc", "inline-top", INLINE["agents"])
+
+
+class TestAPreflightIsTiedToItsConnectionToo:
+    async def test_a_disconnect_during_the_gate_cancels_it_and_removes_the_layer(
+        self,
+        app: Any,
+        state_dir: Path,
+        pid_file: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        entered = asyncio.Event()
+
+        async def slow_gate(self: Any, *args: Any, **kwargs: Any) -> Any:
+            assert _runs(state_dir), "the layer exists while the gate runs"
+            entered.set()
+            await asyncio.sleep(30)
+
+        monkeypatch.setattr(ExecutionHandler, "_gate", slow_gate)
+        path = "/api/ensembles/preflight"
+        wire = Wire(_sleeping_request(pid_file, 20))
+        task = asyncio.create_task(app(_scope(path), wire.receive, wire.send))
+        await asyncio.wait_for(entered.wait(), timeout=10)
+
+        started = time.monotonic()
+        wire.leave()
+        await asyncio.wait_for(task, timeout=10)
+
+        assert wire.status() == 499
+        assert _runs(state_dir) == []
+        assert time.monotonic() - started < 5
