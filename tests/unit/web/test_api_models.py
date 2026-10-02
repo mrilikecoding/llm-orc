@@ -65,5 +65,7 @@ class TestModelsApi:
     ) -> None:
         from llm_orc.web.api.models import router_client
 
-        with patch.dict("os.environ", {"LLAMA_SERVER_URL": "http://remote-host:8080/v1"}):
+        with patch.dict(
+            "os.environ", {"LLAMA_SERVER_URL": "http://remote-host:8080/v1"}
+        ):
             assert router_client().root_url == "http://remote-host:8080"

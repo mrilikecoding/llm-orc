@@ -1491,7 +1491,9 @@ class TestGetLlamaServerStatus:
             loaded=["qwen3-8b"],
         )
         with (
-            patch.dict("os.environ", {"LLAMA_SERVER_URL": "http://remote-host:8080/v1"}),
+            patch.dict(
+                "os.environ", {"LLAMA_SERVER_URL": "http://remote-host:8080/v1"}
+            ),
             patch(
                 "llm_orc.services.handlers.provider_handler.LlamaServerClient"
             ) as cls,
