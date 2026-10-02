@@ -363,6 +363,28 @@ class TestARemoteThatDoesNotAnswer:
         assert "remote-host" in result["error"]["message"]
 
 
+class TestAMalformedRemoteUrl:
+    def test_the_tool_returns_an_invalid_request_envelope_naming_the_remote(
+        self,
+        project: Path,
+        stdio_tool: ToolCall,
+        monkeypatch: pytest.MonkeyPatch,
+        remotes: None,
+    ) -> None:
+        _write_top(project)
+        calls = _canned(monkeypatch, Canned(200, "{}"))
+
+        result = stdio_tool(
+            "invoke",
+            {"ensemble_name": "top", "input_data": "hi", "remote": "http://[::1"},
+        )
+
+        assert result["status"] == "error"
+        assert result["error"]["kind"] == "invalid_request"
+        assert "http://[::1" in result["error"]["message"]
+        assert calls == []
+
+
 class TestTheEventLoop:
     async def test_it_is_not_blocked_while_a_remote_run_is_out(
         self,

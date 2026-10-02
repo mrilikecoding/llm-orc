@@ -479,6 +479,38 @@ class TestAnAnswerThatIsNotAResult:
         assert result.stdout == ""
 
 
+class TestAMalformedRemoteUrl:
+    """``httpx.InvalidURL`` is not an ``httpx.HTTPError``. Nothing was
+    sent, so the answer is ``invalid_request``, never a traceback."""
+
+    BAD = "http://[::1"
+
+    def test_a_url_given_to_the_flag_exits_1_with_a_message(
+        self, in_project: Path
+    ) -> None:
+        _write_top(in_project)
+
+        result = _invoke("--remote", self.BAD, "--output-format", "text")
+
+        assert result.exit_code == 1, result.output
+        assert self.BAD in result.output
+        assert "Traceback" not in result.output
+        assert isinstance(result.exception, SystemExit)
+
+    def test_a_url_in_the_config_exits_1_with_a_message(self, in_project: Path) -> None:
+        _write_top(in_project)
+        path = Path(os.environ["XDG_CONFIG_HOME"]) / "llm-orc" / "config.yaml"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(yaml.safe_dump({"remotes": {"remote-host": {"url": self.BAD}}}))
+
+        result = _remote_invoke("--output-format", "text")
+
+        assert result.exit_code == 1, result.output
+        assert "remote-host" in result.output
+        assert "Traceback" not in result.output
+        assert isinstance(result.exception, SystemExit)
+
+
 class TestTheExitCodeFollowsTheStatus:
     @pytest.mark.parametrize("fmt", ["text", "json", "rich"])
     def test_status_error_exits_1_even_when_has_errors_is_false(
