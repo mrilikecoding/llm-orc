@@ -327,6 +327,29 @@ class TestAPersistedNameIsNeverShadowed:
         assert tier in result["error"]["message"]
         assert not _bundle_file().exists()
 
+    def test_a_tier_file_that_lands_during_the_gate_is_refused_before_the_write(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The first check runs before the gate, which can take long (a
+        model pull). A tier file written in that time must stop this
+        persist at the write, or the bundle is born shadowed."""
+        real_gate = ExecutionHandler._gate
+
+        async def gate_then_a_tier_file_lands(*args: Any, **more: Any) -> Any:
+            outcome = await real_gate(*args, **more)
+            _ensemble(
+                resolve_global_config_dir(), "pack", [{"name": "t", "script": "echo"}]
+            )
+            return outcome
+
+        monkeypatch.setattr(ExecutionHandler, "_gate", gate_then_a_tier_file_lands)
+
+        result = _run(client, _pack(persist="global"))
+
+        assert result["error"]["kind"] == "invalid_request"
+        assert "global tier" in result["error"]["message"]
+        assert not _bundle_file().exists()
+
 
 def _persisted(client: TestClient, **more: Any) -> dict[str, Any]:
     """Persist ``pack`` and return the persisting run's result."""
