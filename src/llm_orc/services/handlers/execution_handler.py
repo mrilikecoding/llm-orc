@@ -152,7 +152,7 @@ class ExecutionHandler:
         try:
             async with self._prepared(
                 _request_data(arguments),
-                self._lookup_in_tiers,
+                self._find_ensemble,
                 "Ensemble does not exist",
             ) as run:
                 result = await run.executor.execute(run.config, input_data)
@@ -169,16 +169,6 @@ class ExecutionHandler:
                 }
         except RunRefusedError as refusal:
             return refusal.envelope()
-
-    def _lookup_in_tiers(self, ensemble_name: str) -> Any:
-        """The first tier directory that has the ensemble."""
-        for ensemble_dir in self._config_manager.get_ensembles_dirs():
-            config = self._ensemble_loader.find_ensemble(
-                str(ensemble_dir), ensemble_name
-            )
-            if config:
-                return config
-        return None
 
     @asynccontextmanager
     async def _prepared(
@@ -482,7 +472,7 @@ class ExecutionHandler:
         input_data = params.get("input", "")
         try:
             async with self._prepared(
-                _request_data(params), self._lookup_in_tiers, "Ensemble not found"
+                _request_data(params), self._find_ensemble, "Ensemble not found"
             ) as run:
                 events = run.executor.execute_streaming(run.config, input_data)
                 async with aclosing(events):
