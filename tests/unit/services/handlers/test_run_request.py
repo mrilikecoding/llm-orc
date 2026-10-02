@@ -141,6 +141,15 @@ COLLISIONS = {
     "scripts differ in unicode form": {
         "scripts": {"caf\u00e9.py": "a", "cafe\u0301.py": "b"}
     },
+    "scripts differ in a full casefold (U+1FB7)": {
+        "scripts": {"\u1fb7.py": "a", "\u1fbc\u0342.py": "b"}
+    },
+    "scripts differ in a full casefold (U+1FC7)": {
+        "scripts": {"\u1fc7.py": "a", "\u1fcc\u0342.py": "b"}
+    },
+    "scripts differ in a full casefold (U+1FF7)": {
+        "scripts": {"\u1ff7.py": "a", "\u1ffc\u0342.py": "b"}
+    },
     "a script key is a directory of another": {
         "scripts": {"a.py": "x", "a.py/b.py": "y"}
     },
