@@ -9,6 +9,7 @@ project knows how a model gets onto the box.
 """
 
 import json
+import os
 import signal
 import subprocess
 import tempfile
@@ -345,6 +346,17 @@ class LlamaServerClient:
                 return resp.status, json.load(resp)
         except urllib.request.HTTPError as e:
             return e.code, json.load(e)
+
+
+DEFAULT_LLAMA_SERVER_URL = "http://127.0.0.1:8080/v1"
+PULL_TIMEOUT_S = 3600.0
+PULL_POLL_S = 1.0
+
+
+def router_client() -> LlamaServerClient:
+    """The router this serve talks to (owned or reached by URL)."""
+    base_url = os.environ.get("LLAMA_SERVER_URL", DEFAULT_LLAMA_SERVER_URL)
+    return LlamaServerClient.from_base_url(base_url)
 
 
 class LlamaServerSupervisor:

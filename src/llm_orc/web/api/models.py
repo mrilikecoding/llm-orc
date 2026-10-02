@@ -5,23 +5,20 @@ and pulling a model are serve operations: a remote operator on the
 tailnet needs neither ssh nor a second application to manage models.
 """
 
-import os
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
 from fastapi.concurrency import run_in_threadpool
 
-from llm_orc.providers.llama_server import LlamaServerClient
+from llm_orc.providers.llama_server import (
+    PULL_POLL_S,
+    PULL_TIMEOUT_S,
+)
+from llm_orc.providers.llama_server import (
+    router_client as router_client,
+)
 
 router = APIRouter(prefix="/api/models", tags=["models"])
-
-DEFAULT_LLAMA_SERVER_URL = "http://127.0.0.1:8080/v1"
-
-
-def router_client() -> LlamaServerClient:
-    """The router this serve talks to (owned or reached by URL)."""
-    base_url = os.environ.get("LLAMA_SERVER_URL", DEFAULT_LLAMA_SERVER_URL)
-    return LlamaServerClient.from_base_url(base_url)
 
 
 def _unreachable(exc: Exception) -> HTTPException:
@@ -44,10 +41,6 @@ async def list_models() -> dict[str, Any]:
     except (OSError, ValueError) as e:
         raise _unreachable(e) from e
     return {"models": [_entry(m) for m in models]}
-
-
-PULL_TIMEOUT_S = 3600.0
-PULL_POLL_S = 1.0
 
 
 @router.post("/{name}/pull")
