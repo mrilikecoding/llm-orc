@@ -42,8 +42,8 @@ def recorder(monkeypatch: pytest.MonkeyPatch) -> type[_Recorder]:
 
 def _relays(built: dict[str, Any]) -> bool:
     """What ``MCPServer`` would do with the constructor arguments: it
-    relays unless told not to."""
-    return bool(built.get("relay", True))
+    relays only when told to."""
+    return bool(built.get("relay", False))
 
 
 def test_the_stdio_transport_builds_a_relaying_server(

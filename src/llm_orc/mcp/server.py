@@ -117,7 +117,7 @@ class MCPServer:
         config_manager: ConfigurationManager | None = None,
         executor: EnsembleExecutor | None = None,
         service: OrchestraService | None = None,
-        relay: bool = True,
+        relay: bool = False,
     ) -> None:
         """Initialize MCP server.
 
@@ -126,8 +126,9 @@ class MCPServer:
             executor: Ensemble executor instance. Creates default if None.
             service: OrchestraService instance. Creates default if None.
             relay: Whether ``invoke`` may run a root on another serve
-                (``remote``). The stdio server does; the one a serve mounts
-                does not, since a serve is not a relay.
+                (``remote``). Off unless asked: only the stdio command
+                asks, since it has one local client; a serve is not a
+                relay.
         """
         self._relay = relay
         if service is not None:

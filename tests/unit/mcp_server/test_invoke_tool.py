@@ -113,9 +113,8 @@ def tool(
 @pytest.fixture
 def stdio_tool(service: OrchestraService) -> ToolCall:
     """Call an MCP tool on a server built the way ``llm-orc mcp serve``
-    builds it (no mount, nothing to refuse ``remote``); the structured
-    result."""
-    server = MCPServer(service=service)
+    builds it (it opts in to relaying); the structured result."""
+    server = MCPServer(service=service, relay=True)
 
     def call(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         _, structured = asyncio.run(server._mcp.call_tool(name, arguments))
@@ -462,7 +461,7 @@ class TestOneProjectAnswersRootAndClosure:
         monkeypatch.setattr(mcp_server, "run_remote", fake_run_remote)
         other = tmp_path / "other-project"
         (other / ".llm-orc" / "ensembles").mkdir(parents=True)
-        server = MCPServer(service=service)
+        server = MCPServer(service=service, relay=True)
 
         asyncio.run(
             server._mcp.call_tool(
@@ -547,7 +546,7 @@ class TestTheEventLoop:
             post = _CountingDelay(remote.transport, ticks, 0.3)
             monkeypatch.setattr(remote_run, "transport", post)
 
-            await MCPServer(service=service)._mcp.call_tool(
+            await MCPServer(service=service, relay=True)._mcp.call_tool(
                 "invoke",
                 {"ensemble_name": "top", "input_data": "hi", "remote": "remote-host"},
             )
@@ -612,7 +611,7 @@ class TestCancellingARemoteRun:
     ) -> None:
         self._sleeping_root(project, pids)
         call = asyncio.create_task(
-            MCPServer(service=service)._mcp.call_tool(
+            MCPServer(service=service, relay=True)._mcp.call_tool(
                 "invoke",
                 {"ensemble_name": "top", "input_data": "hi", "remote": "remote-host"},
             )
@@ -729,6 +728,29 @@ class TestAServeIsNotARelay:
         assert result["error"]["kind"] == "invalid_request"
         assert "does not relay" in result["error"]["message"]
         assert "call that remote yourself" in result["error"]["message"]
+        assert calls == []
+
+    def test_a_bare_server_refuses_remote_and_sends_nothing(
+        self,
+        project: Path,
+        service: OrchestraService,
+        monkeypatch: pytest.MonkeyPatch,
+        remotes: None,
+    ) -> None:
+        """A construction that does not say it relays does not."""
+        _write_top(project)
+        calls = _canned(monkeypatch, Canned(200, "{}"))
+
+        _, result = asyncio.run(
+            MCPServer(service=service)._mcp.call_tool(
+                "invoke",
+                {"ensemble_name": "top", "input_data": "hi", "remote": "remote-host"},
+            )
+        )
+
+        assert isinstance(result, dict)
+        assert result["error"]["kind"] == "invalid_request"
+        assert "does not relay" in result["error"]["message"]
         assert calls == []
 
 
