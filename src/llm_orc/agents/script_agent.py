@@ -62,22 +62,18 @@ class _Child:
     def cancel(self) -> None:
         with self._lock:
             self._cancelled = True
-            if self._process is not None and self._process.poll() is None:
+            if self._process is not None and self._process.returncode is None:
                 _kill_group(self._process)
-
-    def reap(self, timeout: float) -> None:
-        """Wait briefly for the (already killed) child; never raises."""
-        process = self._process
-        if process is None:
-            return
-        try:
-            process.wait(timeout=timeout)
-        except subprocess.TimeoutExpired:
-            pass
 
 
 def _kill_group(process: subprocess.Popen[str]) -> None:
-    """Kill the child and everything it started (it leads its own group)."""
+    """Kill the child and everything it started (it leads its own group).
+
+    A reaped child's pid is free to be reused, so it is never signalled.
+    ``returncode`` is set only by a reap, and only the worker thread reaps.
+    """
+    if process.returncode is not None:
+        return
     try:
         os.killpg(process.pid, signal.SIGKILL)
     except (ProcessLookupError, PermissionError):
@@ -138,11 +134,13 @@ async def _run_subprocess(
     Exceptions propagate exactly as ``subprocess.run`` raises them, which
     is what keeps ``ScriptAgent.execute``'s TimeoutExpired/CalledProcessError
     envelopes intact. The child leads its own process group. When the
-    awaiting task is cancelled the group is killed and the worker thread gets
-    a short grace to finish. A descendant outside the group can keep the
-    pipes open past that; the child itself is reaped and the cancellation
-    propagates, and the blocked thread ends when that descendant lets go
-    (or the script's timeout fires), its result discarded.
+    awaiting task is cancelled the group is killed and the worker thread is
+    awaited for up to a second. If a descendant outside the group still
+    holds the pipes, the cancellation propagates anyway; the worker, the
+    only code that reaps the child, finishes on its own when the holder
+    lets go or the script's timeout fires, and its result is discarded.
+    Until then the killed child is a zombie, which keeps its pid unusable
+    and cannot write.
     """
     loop = asyncio.get_running_loop()
     child = _Child()
@@ -162,8 +160,6 @@ async def _run_subprocess(
                 await asyncio.wait([waiting], timeout=deadline - loop.time())
             except asyncio.CancelledError:
                 continue
-        if not waiting.done():
-            child.reap(_CANCEL_GRACE_SECONDS)
         raise
     if result is None:
         raise asyncio.CancelledError
