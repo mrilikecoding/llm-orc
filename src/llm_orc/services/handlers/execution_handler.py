@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import datetime
 from collections.abc import AsyncIterator, Callable
+from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -16,6 +18,14 @@ from llm_orc.mcp.project_context import ProjectContext
 if TYPE_CHECKING:
     from llm_orc.core.execution.ensemble_execution import EnsembleExecutor
     from llm_orc.mcp.server import ProgressReporter
+
+
+@dataclass
+class PreparedRun:
+    """What the entry paths run: the root and the executor to run it on."""
+
+    config: Any
+    executor: EnsembleExecutor
 
 
 class ExecutionHandler:
@@ -73,34 +83,45 @@ class ExecutionHandler:
                 raise FileNotFoundError(f"Input file not found: {input_file}")
             input_data = path.read_text()
 
-        if not ensemble_name:
-            raise ValueError("ensemble_name is required")
+        async with self._prepared(
+            ensemble_name, self._lookup_in_tiers, "Ensemble does not exist"
+        ) as run:
+            result = await run.executor.execute(run.config, input_data)
 
-        ensemble_dirs = self._config_manager.get_ensembles_dirs()
-        config = None
+            status, has_errors = caller_status(result.get("status"))
 
-        for ensemble_dir in ensemble_dirs:
+            return {
+                "results": result.get("results", {}),
+                "deliverable": result.get("deliverable"),
+                "status": status,
+                "has_errors": has_errors,
+                "raw_output": run.config.raw_output,
+            }
+
+    def _lookup_in_tiers(self, ensemble_name: str) -> Any:
+        """The first tier directory that has the ensemble."""
+        for ensemble_dir in self._config_manager.get_ensembles_dirs():
             config = self._ensemble_loader.find_ensemble(
                 str(ensemble_dir), ensemble_name
             )
             if config:
-                break
+                return config
+        return None
 
+    @asynccontextmanager
+    async def _prepared(
+        self,
+        ensemble_name: str | None,
+        lookup: Callable[[str], Any],
+        missing: str,
+    ) -> AsyncIterator[PreparedRun]:
+        """The root and executor for one run (named ensembles)."""
+        if not ensemble_name:
+            raise ValueError("ensemble_name is required")
+        config = lookup(ensemble_name)
         if not config:
-            raise ValueError(f"Ensemble does not exist: {ensemble_name}")
-
-        executor = self._get_executor()
-        result = await executor.execute(config, input_data)
-
-        status, has_errors = caller_status(result.get("status"))
-
-        return {
-            "results": result.get("results", {}),
-            "deliverable": result.get("deliverable"),
-            "status": status,
-            "has_errors": has_errors,
-            "raw_output": config.raw_output,
-        }
+            raise ValueError(f"{missing}: {ensemble_name}")
+        yield PreparedRun(config, self._get_executor())
 
     async def execute_streaming(
         self,
@@ -118,32 +139,27 @@ class ExecutionHandler:
         Returns:
             Execution result.
         """
-        if not ensemble_name:
-            raise ValueError("ensemble_name is required")
+        async with self._prepared(
+            ensemble_name, self._find_ensemble, "Ensemble does not exist"
+        ) as run:
+            total_agents = len(run.config.agents)
+            state: dict[str, Any] = {
+                "completed": 0,
+                "result": {},
+                "ensemble_name": ensemble_name,
+                "input_data": input_data,
+            }
 
-        config = self._find_ensemble(ensemble_name)
-        if not config:
-            raise ValueError(f"Ensemble does not exist: {ensemble_name}")
+            msg = f"Starting ensemble '{ensemble_name}' with {total_agents} agents"
+            await reporter.info(msg)
 
-        executor = self._get_executor()
-        total_agents = len(config.agents)
-        state: dict[str, Any] = {
-            "completed": 0,
-            "result": {},
-            "ensemble_name": ensemble_name,
-            "input_data": input_data,
-        }
+            async for event in run.executor.execute_streaming(run.config, input_data):
+                await self.handle_streaming_event(event, reporter, total_agents, state)
 
-        msg = f"Starting ensemble '{ensemble_name}' with {total_agents} agents"
-        await reporter.info(msg)
-
-        async for event in executor.execute_streaming(config, input_data):
-            await self.handle_streaming_event(event, reporter, total_agents, state)
-
-        result = state.get("result", {})
-        if not isinstance(result, dict):
-            result = {}
-        return result
+            result = state.get("result", {})
+            if not isinstance(result, dict):
+                result = {}
+            return result
 
     async def handle_streaming_event(
         self,
@@ -273,25 +289,9 @@ class ExecutionHandler:
         Yields:
             Progress events.
         """
-        ensemble_name = params.get("ensemble_name")
-
-        if not ensemble_name:
-            raise ValueError("ensemble_name is required")
-
-        ensemble_dirs = self._config_manager.get_ensembles_dirs()
-        config = None
-
-        for ensemble_dir in ensemble_dirs:
-            config = self._ensemble_loader.find_ensemble(
-                str(ensemble_dir), ensemble_name
-            )
-            if config:
-                break
-
-        if not config:
-            raise ValueError(f"Ensemble not found: {ensemble_name}")
-
         input_data = params.get("input", "")
-        executor = self._get_executor()
-        async for event in executor.execute_streaming(config, input_data):
-            yield event
+        async with self._prepared(
+            params.get("ensemble_name"), self._lookup_in_tiers, "Ensemble not found"
+        ) as run:
+            async for event in run.executor.execute_streaming(run.config, input_data):
+                yield event
