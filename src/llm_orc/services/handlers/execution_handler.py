@@ -264,7 +264,7 @@ class ExecutionHandler:
             reports, pulled = await pull_pullable(reports, manager.get_model_profiles())
         if not is_runnable(reports):
             raise RunRefusedError(NOT_EQUIPPED, _unmet_message(reports), reports)
-        persisted = self._persist(request)
+        persisted = self._persist(request, lookup)
         if layer.view is None:
             return PreparedRun(config, self._get_executor(), inline, {}, pulled)
         executor = self._layer_executor(layer.view, not inline)
@@ -352,16 +352,16 @@ class ExecutionHandler:
                 "that name in another spelling",
             )
 
-    def _persist(self, request: RunRequest) -> str | None:
+    def _persist(self, request: RunRequest, lookup: Callable[[str], Any]) -> str | None:
         """Store the request that just passed the gate; the name stored.
 
-        The other-spelling check runs again here: the gate can take long
-        (a model pull), and a bundle of another spelling may have been
-        written since the first check."""
+        The shadow and other-spelling checks run again here: the gate can
+        take long (a model pull), and a tier file or a bundle of another
+        spelling may have been written since the first check."""
         if request.persist is None or request.ensemble is None:
             return None
         name = str(request.ensemble["name"])
-        self._refuse_other_spelling(name)
+        self._refuse_shadowed_persist(request, lookup)
         try:
             self._bundles.write(name, stored_form(request))
         except BundleError as e:
