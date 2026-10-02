@@ -175,7 +175,9 @@ class EnsembleCrudHandler:
         scope = parse_scope(arguments)
         if scope == "global" and self._delete_bundle(ensemble_name):
             return {"deleted": True, "bundle": ensemble_name}
-        ensemble_file = self._find_in_scope(ensemble_name, scope)
+        ensemble_file = self._find_in_scope(
+            ensemble_name, scope, self._flat_filename(ensemble_name, scope)
+        )
 
         ensemble_file.unlink()
 
@@ -185,13 +187,22 @@ class EnsembleCrudHandler:
         }
 
     def _delete_bundle(self, name: str) -> bool:
-        """Remove the bundle ``name`` unless the global tier holds an
-        ensemble file of that name, which is what the delete means. The
-        loader reads ``.yaml`` and ``.yml``, so both count."""
-        tier = self._config_manager.global_config_dir / "ensembles"
-        if any((tier / f"{name}{suffix}").exists() for suffix in (".yaml", ".yml")):
+        """Remove the bundle ``name`` unless some tier resolves that name,
+        in which case the delete means the tier's ensemble. The lookup is
+        the one a persist uses to refuse a shadowed name, so a tier root
+        in a subdirectory or under another file name counts too."""
+        if self._find_ensemble(name) is not None:
             return False
         return self._bundles.delete(name)
+
+    def _flat_filename(self, name: str, scope: Scope) -> str:
+        """``<name>.yaml``, or ``<name>.yml`` when that is the file the
+        scope's directory holds (the loader reads both)."""
+        scope_dir = self._dir_for_scope(scope)
+        if scope_dir is not None and (scope_dir / f"{name}.yml").exists():
+            if not (scope_dir / f"{name}.yaml").exists():
+                return f"{name}.yml"
+        return f"{name}.yaml"
 
     async def update_ensemble(self, arguments: dict[str, Any]) -> dict[str, Any]:
         """Update an ensemble configuration.
@@ -296,10 +307,12 @@ class EnsembleCrudHandler:
             return None
         return local_config_dir / "ensembles"
 
-    def _find_in_scope(self, ensemble_name: str, scope: Scope) -> Path:
+    def _find_in_scope(
+        self, ensemble_name: str, scope: Scope, filename: str | None = None
+    ) -> Path:
         return find_in_scope(
             name=ensemble_name,
-            filename=f"{ensemble_name}.yaml",
+            filename=filename or f"{ensemble_name}.yaml",
             scope=scope,
             scope_dir=self._dir_for_scope(scope),
             search_dirs=[Path(d) for d in self._config_manager.get_ensembles_dirs()],
