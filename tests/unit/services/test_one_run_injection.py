@@ -558,6 +558,46 @@ class TestNamesThatFoldTogetherAreRefused:
         assert _runs(state_dir) == []
 
 
+class TestRefusalsNameNoRunDirectory:
+    """The run directory changes on every call, so its path is an unstable
+    string in a caller contract."""
+
+    def _assert_no_run_dir(self, result: dict[str, Any], state_dir: Path) -> None:
+        message = result["error"]["message"]
+        assert result["error"]["kind"] == "invalid_request", result
+        assert str(state_dir) not in message
+        assert "run-" not in message
+
+    async def test_a_name_too_long_for_the_disk(
+        self, service: OrchestraService, state_dir: Path
+    ) -> None:
+        name = "n" * 300
+        request = _inline_request()
+        request["ensemble"] = {**INLINE, "name": name}
+
+        result = await service.invoke(request)
+
+        self._assert_no_run_dir(result, state_dir)
+        assert "cannot write" in result["error"]["message"]
+
+    async def test_a_write_that_fails(
+        self,
+        service: OrchestraService,
+        state_dir: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        def full_disk(self: Path, *args: Any, **kwargs: Any) -> int:
+            raise OSError(28, "No space left on device", str(self))
+
+        monkeypatch.setattr(Path, "write_text", full_disk)
+
+        result = await service.invoke(_inline_request())
+
+        self._assert_no_run_dir(result, state_dir)
+        assert "inline-top" in result["error"]["message"]
+        assert "No space left on device" in result["error"]["message"]
+
+
 class TestAScriptKeyIsReachable:
     async def test_a_bare_key_is_refused_and_the_hosts_program_does_not_run(
         self, project: Path, service: OrchestraService, state_dir: Path
@@ -823,10 +863,10 @@ class TestBindings:
         _profile(project / ".llm-orc", "b", model="mock-other")
         real_write = run_request._write
 
-        def failing(path: Path, text: str, mode: int | None) -> None:
+        def failing(path: Path, text: str, mode: int | None, key: str) -> None:
             if path.name == "a.yaml":
                 raise run_request.RunRequestError("cannot write 'a.yaml': disk full")
-            real_write(path, text, mode)
+            real_write(path, text, mode, key)
 
         monkeypatch.setattr(run_request, "_write", failing)
 
