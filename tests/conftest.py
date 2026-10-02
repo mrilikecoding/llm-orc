@@ -1,6 +1,7 @@
 """Shared test fixtures and configuration."""
 
 import shutil
+import signal
 from collections.abc import Generator
 from pathlib import Path
 from unittest.mock import Mock, patch
@@ -15,6 +16,21 @@ from llm_orc.core.execution.executor_factory import ExecutorFactory
 pytest_plugins = ["pytest_bdd"]
 
 _project_root = Path(__file__).resolve().parent.parent
+
+
+@pytest.fixture
+def restored_signal_handlers() -> Generator[None, None, None]:
+    """Put back the SIGINT and SIGTERM handlers a test installs for real.
+
+    A handler left behind stops asyncio installing its own SIGINT handler
+    in a later test on the same worker (it does so only over the default
+    one), so a real Ctrl-C in that test kills the process or goes
+    unnoticed.
+    """
+    saved = {sig: signal.getsignal(sig) for sig in (signal.SIGINT, signal.SIGTERM)}
+    yield
+    for sig, handler in saved.items():
+        signal.signal(sig, handler)
 
 
 @pytest.fixture(autouse=True)

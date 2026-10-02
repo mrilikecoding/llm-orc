@@ -744,6 +744,19 @@ class TestFlagsThatNeedARemote:
             assert example in result.output
 
 
+@pytest.fixture
+def default_sigint() -> Iterator[None]:
+    """The default SIGINT handler for the test, then the one found. asyncio
+    installs its own handler only over the default one, so a handler an
+    earlier test on the same worker left behind would take the signal."""
+    saved = signal.getsignal(signal.SIGINT)
+    signal.signal(signal.SIGINT, signal.default_int_handler)
+    try:
+        yield
+    finally:
+        signal.signal(signal.SIGINT, saved)
+
+
 class TestWhileWaiting:
     def test_rich_mode_shows_the_remote_and_the_time_on_stderr(
         self, in_project: Path, remote: Remote, monkeypatch: pytest.MonkeyPatch
@@ -778,6 +791,7 @@ class TestWhileWaiting:
 
         assert result.exit_code == 130
 
+    @pytest.mark.usefixtures("default_sigint")
     def test_ctrl_c_closes_the_connection(
         self, in_project: Path, remotes: None, monkeypatch: pytest.MonkeyPatch
     ) -> None:
