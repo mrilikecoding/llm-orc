@@ -865,6 +865,64 @@ class TestAReferenceTheRemoteWouldReadAsAnotherFile:
         assert list(scratch.iterdir()) == []
 
 
+class TestAReferenceLeftToTheRemoteIsNotAnsweredByAShippedFile:
+    """Ruling 6: a left-out reference is judged by the remote's preflight
+    against the remote's own files. The layer must not answer it."""
+
+    def test_a_left_out_script_that_a_shipped_listed_file_would_answer_is_refused(
+        self, project: Path, service: OrchestraService
+    ) -> None:
+        """``scripts/main.py`` lists ``helper.py``, shipped at
+        ``scripts/helper.py``. The direct reference ``helper.py`` is not
+        found locally, but on the remote it would resolve to that file."""
+        _write(project / "scripts" / "main.py", _block("helper.py"))
+        _write(project / "scripts" / "helper.py", "print('helper')\n")
+        _uses(project, "scripts/main.py", "helper.py")
+
+        with pytest.raises(ShipError, match="script 'helper.py'.*'scripts/helper.py'"):
+            _ship(service, "top")
+
+    def test_a_left_out_child_that_a_shipped_child_would_answer_is_refused(
+        self, project: Path, service: OrchestraService
+    ) -> None:
+        """``sub/../kid`` finds nothing locally (``sub`` is in the project
+        tier and ``kid`` in the global one), but in the layer ``sub`` and
+        ``kid`` are both shipped and the path walks to ``kid``."""
+        tier = project / ".llm-orc"
+        _ensemble(
+            tier,
+            "top",
+            [
+                {"name": "a", "ensemble": "sub/inner"},
+                {"name": "b", "ensemble": "kid"},
+                {"name": "c", "ensemble": "sub/../kid"},
+            ],
+        )
+        _ensemble(tier, "sub/inner", [{"name": "x", "script": "echo hi"}])
+        _write(
+            resolve_global_config_dir() / "ensembles" / "kid.yaml",
+            yaml.safe_dump({"name": "kid", "description": "k", "agents": []}),
+        )
+
+        with pytest.raises(
+            ShipError, match="ensemble 'sub/../kid'.*'ensembles/kid.yaml'"
+        ):
+            _ship(service, "top")
+
+    def test_a_left_out_listed_file_that_another_shipped_script_would_answer(
+        self, project: Path, service: OrchestraService
+    ) -> None:
+        """``scripts/a/main.py`` lists ``h.py``, absent beside it locally.
+        The tier's ``a/h.py`` ships at the key where the remote would look
+        for that listed file."""
+        _write(project / "scripts" / "a" / "main.py", _block("h.py"))
+        _scripts(project, "a/h.py", "print('tier')\n")
+        _uses(project, "scripts/a/main.py", "a/h.py")
+
+        with pytest.raises(ShipError, match="file 'h.py' listed by script.*carries"):
+            _ship(service, "top")
+
+
 class TestASymlinkedScript:
     def test_the_helper_beside_the_target_is_the_one_that_ships_and_runs(
         self,
