@@ -1045,6 +1045,36 @@ class TestPull:
         assert not marker.exists()
         assert _runs(state_dir) == []
 
+    @pytest.mark.parametrize(
+        "answer",
+        [
+            {"status": "loading", "failed": False, "exit_code": None},
+            {"status": "unknown", "failed": False, "exit_code": None},
+        ],
+        ids=["loading at the deadline", "gone from the listing"],
+    )
+    async def test_a_load_that_does_not_end_loaded_is_refused(
+        self,
+        project: Path,
+        service: OrchestraService,
+        pulls: dict[str, Any],
+        answer: dict[str, Any],
+    ) -> None:
+        _profile(project / ".llm-orc", "seat", hf_repo="x/y:Q4")
+        _ensemble(project / ".llm-orc", "top", [{"name": "w", "model_profile": "seat"}])
+        pulls["answer"] = answer
+
+        result = await service.invoke(
+            {"ensemble_name": "top", "input": "hi", "pull": True}
+        )
+
+        assert result["error"]["kind"] == "not_equipped", result
+        assert _kinds(result)["seat"] == "pullable"
+        row = next(d for d in result["error"]["dependencies"] if d["name"] == "seat")
+        assert str(answer["status"]) in row["detail"]
+        assert "pulled" not in result
+        assert pulls["calls"] == ["mock-seat"]
+
     async def test_pull_waits_until_every_other_unmet_dependency_is_pullable(
         self, project: Path, service: OrchestraService, pulls: dict[str, Any]
     ) -> None:
