@@ -139,9 +139,11 @@ COLLISIONS = {
     "scripts differ in unicode form": {
         "scripts": {"caf\u00e9.py": "a", "cafe\u0301.py": "b"}
     },
-    "a script key is a directory of another": {"scripts": {"a": "x", "a/b.py": "y"}},
+    "a script key is a directory of another": {
+        "scripts": {"a.py": "x", "a.py/b.py": "y"}
+    },
     "a script key is a directory of another, folded": {
-        "scripts": {"A": "x", "a/b.py": "y"}
+        "scripts": {"A.py": "x", "a.py/b.py": "y"}
     },
     "a script lands inside a profile file": {
         "profiles": {"a": {"model": "m"}},
@@ -171,6 +173,21 @@ class TestDistinctNames:
         )
 
         assert len(request.scripts) == 3
+
+
+class TestScriptKeysHavePathSyntax:
+    @pytest.mark.parametrize("key", ["date", "mark", "echo hi"])
+    def test_a_key_with_no_path_syntax_is_rejected_naming_it(self, key: str) -> None:
+        with pytest.raises(RunRequestError, match="path syntax") as raised:
+            _parse(scripts={key: "echo hi"})
+
+        assert repr(key) in str(raised.value)
+
+    @pytest.mark.parametrize("key", ["x.py", "x.sh", "dir/x", "a/b/x.rb"])
+    def test_a_key_with_a_slash_or_a_script_extension_is_accepted(
+        self, key: str
+    ) -> None:
+        assert key in _parse(scripts={key: "echo hi"}).scripts
 
 
 class TestMaterialize:

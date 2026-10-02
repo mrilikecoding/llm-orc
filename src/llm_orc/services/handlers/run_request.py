@@ -21,6 +21,7 @@ import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from llm_orc.core.config.config_manager import ConfigurationManager
+from llm_orc.core.execution.scripting.resolver import ScriptResolver
 
 _FILE_MODE = 0o755
 
@@ -44,6 +45,17 @@ def _check_plain(key: str, what: str) -> None:
     _check_relative(key, what)
     if "/" in key:
         raise ValueError(f"{what} {key!r} must not contain '/'")
+
+
+def _check_reachable(key: str) -> None:
+    """A script key the resolver reads as a path, so the file written at
+    the key is the one an agent referencing the key runs. Without path
+    syntax the resolver takes the reference for inline shell content."""
+    if not ScriptResolver().has_path_syntax(key):
+        raise ValueError(
+            f"script key {key!r} has no path syntax (needs a '/' or a script "
+            f"extension: {', '.join(ScriptResolver.SCRIPT_EXTENSIONS)})"
+        )
 
 
 def _folded(path: str) -> tuple[str, ...]:
@@ -96,6 +108,7 @@ class RunRequest(BaseModel):
             _check_plain(key, "profile name")
         for key in self.scripts:
             _check_relative(key, "script key")
+            _check_reachable(key)
         if self.ensemble is not None:
             self._validate_root(self.ensemble)
         twice = sorted(set(self.profiles) & set(self.bind))
