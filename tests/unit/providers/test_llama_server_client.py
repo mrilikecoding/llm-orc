@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
-from llm_orc.providers.llama_server import LlamaServerClient
+import pytest
+
+from llm_orc.providers.llama_server import LlamaServerClient, model_source
 
 PROBE_LISTING = [
     {
@@ -87,6 +89,37 @@ class TestInventory:
             client.models()
             client.inventory()
         assert listing.call_count == 2  # one GET per call, never two per call
+
+
+def _args(*args: str) -> dict[str, object]:
+    return {"status": {"value": "unloaded", "args": ["/bin/llama-server", *args]}}
+
+
+class TestModelSource:
+    """llama.cpp reads the source from several spellings and the last one
+    on the command line wins; the router's own argv is the evidence."""
+
+    @pytest.mark.parametrize(
+        ("args", "expected"),
+        [
+            (["--hf-repo", "a/b:Q4"], "a/b:Q4"),
+            (["--hf-repo=a/b:Q4"], "a/b:Q4"),
+            (["-hf", "a/b:Q4"], "a/b:Q4"),
+            (["-hfr", "a/b:Q4"], "a/b:Q4"),
+            (["--hf-repo", "first/x:Q4", "--hf-repo", "last/y:Q8"], "last/y:Q8"),
+            (["-hf", "first/x:Q4", "--hf-repo=last/y:Q8"], "last/y:Q8"),
+            (
+                ["--hf-repo=first/x:Q4", "-hfr", "last/y:Q8", "--ctx-size", "8"],
+                "last/y:Q8",
+            ),
+            (["--ctx-size", "8192"], None),
+            (["--hf-repo"], None),
+        ],
+    )
+    def test_the_last_occurrence_of_any_spelling_wins(
+        self, args: list[str], expected: str | None
+    ) -> None:
+        assert model_source(_args(*args)) == expected
 
 
 def _entry(model: str, **status: object) -> list[dict[str, object]]:
