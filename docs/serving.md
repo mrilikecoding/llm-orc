@@ -226,11 +226,14 @@ misspelled `bind` cannot run the call without its binding. The MCP tool
 ignores unknown arguments instead, so a misspelled argument over MCP is
 dropped silently.
 
-Names must be distinct ignoring case: `Kid` and `kid`, or `a` and
-`a/b.py`, are `invalid_request`, since a case-folding disk would make each
+Names must be distinct ignoring case: `Kid` and `kid`, or `a.py` and
+`a.py/b.py`, are `invalid_request`, since a case-folding disk would make each
 pair one file. Script keys need path syntax (a `/` or a script extension);
 a bare key like `date` would be read as shell content, so it is
-`invalid_request` too.
+`invalid_request` too. So are two script keys one reference reaches, such
+as `x.py` and `scripts/x.py` (the resolver also tries a reference without
+a leading `scripts/` and with hyphens as underscores): the first match
+would win and the other script would be silently unused.
 
 Every run through REST or MCP is preflighted first, named ensembles
 included (`/v1/chat/completions` and the local CLI are not gated). The
@@ -277,7 +280,8 @@ would mix versions and still report success. Preflight does not read
 imports, so a missing helper fails the script at run time. Nothing
 persists: the run directory is removed on success, refusal, error and
 cancellation, and an inline root saves no artifact (an installed root
-keeps its own).
+keeps its own). A cancelled run (a cancelled call or a closed stream) kills
+its scripts, and their child processes, before the directory is removed.
 
 Trust: injected scripts run unsandboxed as the serve's user, and an inline
 profile can point the host at any endpoint. llm-orc does not sandbox any
