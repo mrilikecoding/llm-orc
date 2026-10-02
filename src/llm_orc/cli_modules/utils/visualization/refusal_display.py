@@ -33,6 +33,35 @@ def display_refusal(envelope: Mapping[str, Any], output_format: str | None) -> N
         _rich_table(rows)
 
 
+def display_preflight(document: Mapping[str, Any], output_format: str | None) -> bool:
+    """Print a preflight answer: the whole dependency table, met rows
+    included, or the JSON answer. A refusal envelope is shown as a refusal.
+    Returns whether the answer is a failure (not runnable, or a refusal)."""
+    error = document.get("error")
+    if isinstance(error, Mapping) and "kind" in error:
+        display_refusal(document, output_format)
+        return True
+    runnable = bool(document.get("runnable"))
+    if output_format == "json":
+        click.echo(json.dumps(document, indent=2, default=str))
+        return not runnable
+    click.echo(f"Preflight: {'runnable' if runnable else 'not runnable'}")
+    bindings = document.get("bindings") or {}
+    if bindings:
+        applied = ", ".join(f"{key} -> {target}" for key, target in bindings.items())
+        click.echo(f"Bindings that would apply: {applied}")
+    rows = _rows(document.get("dependencies") or [])
+    if rows and output_format == "text":
+        _plain_table(rows)
+    elif rows:
+        _rich_table(rows)
+    if document.get("pull_requested"):
+        click.echo(
+            "A run with --pull would download the pullable models; nothing was pulled"
+        )
+    return not runnable
+
+
 def display_run_record(
     bindings: Mapping[str, str],
     pulled: Sequence[str],

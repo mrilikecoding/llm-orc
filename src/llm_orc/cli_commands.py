@@ -23,6 +23,7 @@ from llm_orc.cli_modules.utils.visualization import (
     run_streaming_execution,
 )
 from llm_orc.cli_modules.utils.visualization.refusal_display import (
+    display_preflight,
     display_refusal,
     display_run_record,
 )
@@ -39,7 +40,11 @@ from llm_orc.services.handlers.run_preparation import (
     RunRefusedError,
 )
 from llm_orc.services.remote_probe import probe_remotes
-from llm_orc.services.remote_run import RemoteRunError, run_remote
+from llm_orc.services.remote_run import (
+    RemoteRunError,
+    preflight_remote,
+    run_remote,
+)
 
 WAIT_TICK_S = 1.0
 
@@ -381,6 +386,7 @@ def invoke_ensemble(
     remote: str | None = None,
     with_profiles: Sequence[str] = (),
     persist: str | None = None,
+    preflight: bool = False,
 ) -> bool:
     """Invoke an ensemble of agents.
 
@@ -394,6 +400,21 @@ def invoke_ensemble(
         uses this to set a non-zero process exit code in every output
         format (rich/text/json alike).
     """
+    if preflight:
+        return _preflight_invocation(
+            ensemble_name,
+            RemoteInvocation(
+                remote=remote,
+                input_data="",
+                config_dir=config_dir,
+                output_format=output_format,
+                max_concurrent=max_concurrent,
+                detailed=detailed,
+                bind=bind,
+                pull=pull,
+                with_profiles=with_profiles,
+            ),
+        )
     if remote is not None:
         return _invoke_remote(
             ensemble_name,
@@ -441,9 +462,10 @@ def invoke_ensemble(
 
 @dataclass(frozen=True)
 class RemoteInvocation:
-    """What ``invoke --remote`` was asked for."""
+    """What ``invoke --remote`` (or ``--preflight``, whose ``remote`` may be
+    None: a local gate) was asked for."""
 
-    remote: str
+    remote: str | None
     input_data: str
     config_dir: str | None
     output_format: str | None
@@ -481,13 +503,15 @@ def _invoke_remote(ensemble_name: str, invocation: RemoteInvocation) -> bool:
     has no place for it), an unknown remote, a closure that cannot ship
     and an interactive script.
     """
+    remote = invocation.remote
+    assert remote is not None
     service, root = _remote_root(ensemble_name, invocation)
     try:
-        with _waiting_on(invocation.remote, invocation.output_format):
+        with _waiting_on(remote, invocation.output_format):
             document = asyncio.run(
                 run_remote(
                     ensemble_name,
-                    invocation.remote,
+                    remote,
                     find_root=lambda _name: root,
                     config_manager=service.config_manager,
                     project_dir=service.project_path,
@@ -506,6 +530,55 @@ def _invoke_remote(ensemble_name: str, invocation: RemoteInvocation) -> bool:
     return _display_remote_document(
         document, root, invocation.output_format, invocation.detailed
     )
+
+
+def _preflight_invocation(ensemble_name: str, invocation: RemoteInvocation) -> bool:
+    """Gate the named root, here or on the remote, print the answer and run
+    nothing. Returns whether the answer is a failure."""
+    if invocation.remote is not None:
+        document = _preflight_on_remote(ensemble_name, invocation, invocation.remote)
+        return display_preflight(document, invocation.output_format)
+    service = _get_service()
+    request: dict[str, Any] = {"ensemble_name": ensemble_name}
+    if invocation.bind:
+        request["bind"] = dict(invocation.bind)
+    if invocation.pull:
+        request["pull"] = True
+    lookup = _root_lookup(service, ensemble_name, invocation.config_dir)
+    try:
+        document = asyncio.run(service.preflight_run(request, lookup))
+    except click.ClickException:
+        raise
+    except RootNotFoundError as e:
+        raise _not_found(service, e.name) from e
+    except Exception as e:
+        raise click.ClickException(f"Preflight failed: {e!s}") from e
+    return display_preflight(document, invocation.output_format)
+
+
+def _preflight_on_remote(
+    ensemble_name: str, invocation: RemoteInvocation, remote: str
+) -> dict[str, Any]:
+    service, root = _remote_root(ensemble_name, invocation)
+    try:
+        with _waiting_on(remote, invocation.output_format, "Checking"):
+            return asyncio.run(
+                preflight_remote(
+                    ensemble_name,
+                    remote,
+                    find_root=lambda _name: root,
+                    config_manager=service.config_manager,
+                    project_dir=service.project_path,
+                    with_profiles=invocation.with_profiles,
+                    bind=invocation.bind,
+                    pull=invocation.pull,
+                    on_left_out=_say_left_out,
+                )
+            )
+    except RemoteRunError as e:
+        raise click.ClickException(str(e)) from e
+    except KeyboardInterrupt:
+        raise SystemExit(130) from None
 
 
 def remotes_command(output_format: str | None) -> None:
@@ -548,7 +621,9 @@ def _say_left_out(left_out: list[LeftOut]) -> None:
 
 
 @contextmanager
-def _waiting_on(remote: str, output_format: str | None) -> Iterator[None]:
+def _waiting_on(
+    remote: str, output_format: str | None, verb: str = "Running"
+) -> Iterator[None]:
     """In rich mode, the remote's name and the elapsed time on stderr
     while the run is out. Text and JSON modes print nothing, so a pipe
     stays clean."""
@@ -562,7 +637,7 @@ def _waiting_on(remote: str, output_format: str | None) -> Iterator[None]:
     def tick() -> None:
         while True:
             elapsed = time.monotonic() - started
-            line = f"Running on {remote}... {elapsed:.0f}s"
+            line = f"{verb} on {remote}... {elapsed:.0f}s"
             click.echo(
                 f"\r{line}" if interactive else line, err=True, nl=not interactive
             )

@@ -53,6 +53,7 @@ class TestMainCLI:
                 remote=None,
                 with_profiles=(),
                 persist=None,
+                preflight=False,
             )
             assert result.exit_code == 0
 
@@ -111,6 +112,7 @@ class TestMainCLI:
                 remote=None,
                 with_profiles=(),
                 persist=None,
+                preflight=False,
             )
             assert result.exit_code == 0
 
@@ -147,6 +149,7 @@ class TestMainCLI:
                 remote=None,
                 with_profiles=(),
                 persist=None,
+                preflight=False,
             )
 
     def test_invoke_command_output_format_choices(self) -> None:

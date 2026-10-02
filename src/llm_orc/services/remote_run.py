@@ -41,6 +41,7 @@ CONNECT_TIMEOUT_S = 10
 # an ``httpx.AsyncBaseTransport`` and the real client code runs on it.
 transport: httpx.AsyncBaseTransport | None = None
 EXECUTE_PATH = "/api/ensembles/execute"
+PREFLIGHT_PATH = "/api/ensembles/preflight"
 _SHOWN_BODY_CHARS = 200
 _ASCII_WHITESPACE = re.compile(r"[ \t\n\r\f\v]+")
 _CLIENT_ENVIRONMENT = (
@@ -163,6 +164,43 @@ async def run_remote(
     )
 
 
+async def preflight_remote(
+    root_name: str,
+    remote: str,
+    *,
+    find_root: Callable[[str], EnsembleConfig | None],
+    config_manager: ConfigurationManager,
+    project_dir: Path | None,
+    with_profiles: Sequence[str] = (),
+    bind: Mapping[str, str] | None = None,
+    pull: bool = False,
+    on_left_out: Callable[[list[LeftOut]], None] | None = None,
+) -> dict[str, Any]:
+    """Judge ``root_name`` and its closure on ``remote`` without running
+    it: ship the same request a run ships (no input, no ``persist``), POST
+    it to the preflight endpoint and return the document, which is the
+    report (``runnable``, ``dependencies``, ``bindings``) or the refusal
+    envelope of an invalid request.
+
+    Raises:
+        RemoteRunError: as ``run_remote``, and when the answer is neither
+            a report nor an envelope.
+    """
+    return await _call_remote(
+        remote,
+        root_name,
+        PREFLIGHT_PATH,
+        _preflight_document,
+        on_left_out=on_left_out,
+        find_root=find_root,
+        config_manager=config_manager,
+        project_dir=project_dir,
+        with_profiles=with_profiles,
+        bind=bind,
+        pull=pull,
+    )
+
+
 async def _call_remote(
     remote: str,
     root_name: str,
@@ -254,6 +292,40 @@ def _refuse_interactive(remote: str, request: Mapping[str, Any]) -> None:
 
 
 def _result_document(remote: str, response: Any) -> dict[str, Any]:
+    return _accepted(remote, response, _is_result, "a result document")
+
+
+def _preflight_document(remote: str, response: Any) -> dict[str, Any]:
+    return _accepted(remote, response, _is_preflight, "a preflight document")
+
+
+def _is_result(document: Any) -> bool:
+    return (
+        isinstance(document, dict)
+        and document.get("status") in ("success", "error")
+        and isinstance(document.get("has_errors"), bool)
+    )
+
+
+def _is_preflight(document: Any) -> bool:
+    """A report (a boolean ``runnable``) or a refusal envelope (an
+    ``error`` with a ``kind``)."""
+    if not isinstance(document, dict):
+        return False
+    error = document.get("error")
+    return isinstance(document.get("runnable"), bool) or (
+        isinstance(error, dict) and isinstance(error.get("kind"), str)
+    )
+
+
+def _accepted(
+    remote: str,
+    response: Any,
+    is_document: Callable[[Any], bool],
+    noun: str,
+) -> dict[str, Any]:
+    """The JSON object of an HTTP 200 answer that ``is_document`` accepts;
+    anything else is a ``RemoteRunError`` naming the remote."""
     status_code = int(response.status_code)
     if status_code != 200:
         raise RemoteRunError(remote, _observed(response), status_code)
@@ -265,14 +337,10 @@ def _result_document(remote: str, response: Any) -> dict[str, Any]:
             f"answered 200 with a body that is not JSON: {_excerpt(response)}",
             status_code,
         ) from e
-    if (
-        not isinstance(document, dict)
-        or document.get("status") not in ("success", "error")
-        or not isinstance(document.get("has_errors"), bool)
-    ):
+    if not is_document(document):
         raise RemoteRunError(
             remote,
-            "answered 200 with a body that is not a result document "
+            f"answered 200 with a body that is not {noun} "
             f"(is this an llm-orc serve?): {_excerpt(response)}",
             status_code,
         )
