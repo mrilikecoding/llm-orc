@@ -120,18 +120,36 @@ def _classify(
     if dep.kind == "dispatch":
         return DependencyStatus.DYNAMIC, "dispatch target resolved at run time"
     if dep.kind == "script":
-        if script_found(dep.name):
-            return DependencyStatus.READY, "script resolved"
-        return (
-            DependencyStatus.MISSING_SCRIPT,
-            f"script {dep.name!r} not found on the search path",
-        )
+        return _classify_script(dep, script_found)
     if dep.kind == "model":
         return _classify_model({"provider": dep.provider, "model": dep.name}, providers)
     profile = profiles.get(dep.name)
     if profile is None:
         return DependencyStatus.MISSING_PROFILE, f"no profile named {dep.name!r}"
     return _classify_model(profile, providers)
+
+
+def _classify_script(dep: Dependency, script_found: Callable[[str], bool]) -> Verdict:
+    if dep.problem is not None:
+        return (
+            DependencyStatus.MISSING_SCRIPT,
+            f"script {dep.name!r} has an unreadable llm-orc block: {dep.problem}",
+        )
+    if dep.beside is not None:
+        # Looked for beside the resolved owner only, never on the search
+        # path: a host file at the same relative path is not this file.
+        if dep.found:
+            return DependencyStatus.READY, f"listed file found beside {dep.beside!r}"
+        return (
+            DependencyStatus.MISSING_SCRIPT,
+            f"file {dep.listed!r} listed by script {dep.beside!r} is not beside it",
+        )
+    if script_found(dep.name):
+        return DependencyStatus.READY, "script resolved"
+    return (
+        DependencyStatus.MISSING_SCRIPT,
+        f"script {dep.name!r} not found on the search path",
+    )
 
 
 def _classify_model(

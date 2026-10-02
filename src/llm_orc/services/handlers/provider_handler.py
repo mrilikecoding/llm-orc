@@ -39,6 +39,7 @@ from llm_orc.services.handlers.preflight import (
 )
 from llm_orc.services.handlers.profile_handler import ProfileHandler
 from llm_orc.services.handlers.run_preparation import LOAD_ERRORS, ChildLoadError
+from llm_orc.services.handlers.script_files import ScriptFileLocator
 
 _DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1"
 _DEFAULT_LLAMA_SERVER_URL = "http://127.0.0.1:8080/v1"
@@ -267,16 +268,20 @@ class ProviderHandler:
         if config_manager is None or project_dir is _MISSING:
             profiles = self._profile_handler.get_runtime_profiles()
             find_child = self._find_child
-            script_found: Callable[[str], bool] = self._script_found
+            resolver = self._script_resolver_factory()
         else:
             profiles = config_manager.get_model_profiles()
             find_child = _child_finder(config_manager, project_dir)
-            script_found = _script_finder(
-                ScriptResolver(
-                    project_dir=project_dir, run_dir=config_manager.run_layer_dir
-                )
+            resolver = ScriptResolver(
+                project_dir=project_dir, run_dir=config_manager.run_layer_dir
             )
-        closure = walk_closure(config, find_child, profiles, root_ref=root_ref)
+        closure = walk_closure(
+            config,
+            find_child,
+            profiles,
+            root_ref=root_ref,
+            script_files=ScriptFileLocator(resolver),
+        )
         probed = _probed_by(closure, profiles)
         if probe_host:
             probed = {**profiles, **probed}
@@ -288,15 +293,9 @@ class ProviderHandler:
             closure.dependencies,
             profiles=profiles,
             providers=providers,
-            script_found=script_found,
+            script_found=_script_finder(resolver),
         )
         return Preflight(closure=closure, reports=reports, providers=providers)
-
-    def _script_found(self, script_ref: str) -> bool:
-        """The executor's own resolution (ruling 5): a bare name is
-        inline content and resolves; only a path-syntax or absolute
-        reference can be missing."""
-        return _script_finder(self._script_resolver_factory())(script_ref)
 
     def _agent_view(
         self,

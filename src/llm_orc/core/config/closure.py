@@ -15,11 +15,13 @@ the CLI's closure shipper both consume it.
 
 from __future__ import annotations
 
+import posixpath
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Literal
 
 from llm_orc.core.config.ensemble_config import EnsembleConfig
+from llm_orc.core.execution.scripting.files_block import ListedFiles
 from llm_orc.schemas.agent_config import (
     DynamicDispatchAgentConfig,
     EnsembleAgentConfig,
@@ -42,6 +44,26 @@ class Dependency:
     via: tuple[str, ...]
     provider: str | None = None
     found: bool = True
+    # A file a script lists in its llm-orc block (ruling 8): the owner's
+    # name and the path as written. ``name`` is the path joined onto the
+    # owner's directory, so two scripts listing one name do not collide.
+    beside: str | None = None
+    listed: str | None = None
+    # Why the script's own block cannot be read; the script is unmet.
+    problem: str | None = None
+
+
+@dataclass(frozen=True)
+class ScriptListing:
+    """What the caller found for one script dependency: whether the file
+    is there (a listed file is looked for beside its owner only) and
+    what its block lists."""
+
+    found: bool
+    files: ListedFiles = ListedFiles()
+
+
+ScriptFilesOf = Callable[[Dependency], ScriptListing]
 
 
 @dataclass(frozen=True)
@@ -66,6 +88,7 @@ def walk_closure(
     profiles: Mapping[str, Mapping[str, Any]],
     *,
     root_ref: str,
+    script_files: ScriptFilesOf | None = None,
 ) -> Closure:
     """Depth-first in agent order from ``root``, which the caller named
     ``root_ref``.
@@ -74,8 +97,13 @@ def walk_closure(
     walked. A ``${...}`` dispatch target cannot be followed statically
     (issue #94) and is recorded as ``dispatch``. Cycles cannot load
     (Invariant 5) but the walk keeps its own visited set regardless.
+
+    ``script_files`` reads a script's llm-orc block (the caller resolves
+    the script with the run's own resolver); each listed file becomes a
+    ``script`` dependency the script's frames own, and a listed file's
+    own block is followed.
     """
-    walker = _Walker(find_ensemble, profiles)
+    walker = _Walker(find_ensemble, profiles, script_files)
     walker.add(Dependency("ensemble", root_ref, ()), ())
     walker.visit(root, (), root_ref)
     return Closure(walker.deps, {f: frozenset(k) for f, k in walker.owned.items()})
@@ -83,10 +111,14 @@ def walk_closure(
 
 class _Walker:
     def __init__(
-        self, find_ensemble: FindEnsemble, profiles: Mapping[str, Mapping[str, Any]]
+        self,
+        find_ensemble: FindEnsemble,
+        profiles: Mapping[str, Mapping[str, Any]],
+        script_files: ScriptFilesOf | None = None,
     ) -> None:
         self._find = find_ensemble
         self._profiles = profiles
+        self._script_files = script_files
         self.deps: list[Dependency] = []
         self.owned: dict[str, set[Key]] = {}
         self._seen: set[Key] = set()
@@ -124,7 +156,7 @@ class _Walker:
 
     def _visit_agent(self, agent: Any, via: tuple[str, ...]) -> None:
         if isinstance(agent, ScriptAgentConfig):
-            self.add(Dependency("script", agent.script, via), via)
+            self._script(Dependency("script", agent.script, via), via, frozenset())
         elif isinstance(agent, EnsembleAgentConfig):
             self._child(agent.ensemble, via)
         elif isinstance(agent, LoopAgentConfig):
@@ -136,6 +168,24 @@ class _Walker:
                 self._child(agent.dispatch, via)
         elif isinstance(agent, LlmAgentConfig):
             self._llm(agent, via)
+
+    def _script(
+        self, dep: Dependency, via: tuple[str, ...], following: frozenset[str]
+    ) -> None:
+        """Record ``dep`` and, through its block, the files it lists."""
+        listing = self._script_files(dep) if self._script_files else ScriptListing(True)
+        self.add(replace(dep, found=listing.found, problem=listing.files.error), via)
+        if dep.name in following:
+            return
+        for path in listing.files.paths:
+            member = Dependency(
+                "script",
+                posixpath.join(posixpath.dirname(dep.name), path),
+                via,
+                beside=dep.name,
+                listed=path,
+            )
+            self._script(member, via, following | {dep.name})
 
     def _child(self, name: str, via: tuple[str, ...]) -> None:
         child = self._find(name)

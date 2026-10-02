@@ -233,3 +233,46 @@ def test_runnable_requires_every_dependency_ready_or_dynamic() -> None:
 
 def test_every_status_has_a_resolve_hint() -> None:
     assert set(RESOLVE) == set(DependencyStatus)
+
+
+class TestListedScriptFiles:
+    """Ruling 8: a listed file is judged by the walker's observation, not
+    by the script search path."""
+
+    @staticmethod
+    def _one(dep: Dependency, search_path_has: bool = True) -> tuple[Any, str]:
+        [report] = classify_dependencies(
+            [dep],
+            profiles={},
+            providers={},
+            script_found=lambda _: search_path_has,
+        )
+        return report.status, report.detail
+
+    def test_a_listed_file_beside_its_script_is_ready(self) -> None:
+        dep = Dependency(
+            "script", "t/_h.py", ("top.a",), beside="t/x.py", listed="_h.py"
+        )
+        assert self._one(dep)[0] == DependencyStatus.READY
+
+    def test_a_listed_file_that_is_not_beside_its_script_is_missing(self) -> None:
+        dep = Dependency(
+            "script",
+            "t/_h.py",
+            ("top.a",),
+            found=False,
+            beside="t/x.py",
+            listed="_h.py",
+        )
+        status, detail = self._one(dep, search_path_has=True)
+
+        assert status == DependencyStatus.MISSING_SCRIPT
+        assert "_h.py" in detail
+        assert "t/x.py" in detail
+
+    def test_a_script_with_a_bad_block_is_missing_with_the_problem(self) -> None:
+        dep = Dependency("script", "t/x.py", ("top.a",), problem="not valid TOML")
+        status, detail = self._one(dep, search_path_has=True)
+
+        assert status == DependencyStatus.MISSING_SCRIPT
+        assert "not valid TOML" in detail
