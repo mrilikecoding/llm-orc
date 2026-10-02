@@ -10,15 +10,23 @@ import pytest
 import yaml
 from pytest_bdd import given, scenarios, then, when
 
+from llm_orc.providers.llama_server import LlamaServerClient
+
 # Load all scenarios from the feature file
 scenarios("features/adr-009-mcp-server-architecture.feature")
 
 
+# Router-served mock models: every run is gated now, so the profiles must be
+# ones this host can run. The listing is faked where a scenario runs agents.
 _MOCK_PROFILES = {
-    "fast": {"provider": "anthropic-api", "model": "claude-3-haiku-20240307"},
-    "standard": {"provider": "anthropic-api", "model": "claude-3-5-sonnet-20241022"},
-    "quality": {"provider": "anthropic-api", "model": "claude-3-opus-20240229"},
+    "fast": {"provider": "llama-server", "model": "mock-fast"},
+    "standard": {"provider": "llama-server", "model": "mock-standard"},
+    "quality": {"provider": "llama-server", "model": "mock-quality"},
 }
+_ROUTER_LISTING = [
+    {"id": profile["model"], "status": {"value": "unloaded"}}
+    for profile in _MOCK_PROFILES.values()
+]
 
 
 def _create_mock_config_manager(
@@ -666,7 +674,8 @@ def call_invoke_streaming(bdd_context: dict[str, Any]) -> None:
             bdd_context["tool_error"] = str(e)
             return None
 
-    bdd_context["tool_result"] = asyncio.run(_call())
+    with patch.object(LlamaServerClient, "_list", return_value=_ROUTER_LISTING):
+        bdd_context["tool_result"] = asyncio.run(_call())
 
 
 # ============================================================================

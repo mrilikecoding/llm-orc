@@ -294,6 +294,7 @@ class EnsembleExecutor:
             self._emit_performance_event,
             self._project_dir,
             performance_config=self._performance_config,
+            run_dir=self._config_manager.run_layer_dir,
         )
 
         self._llm_agent_runner = LlmAgentRunner(
@@ -409,8 +410,14 @@ class EnsembleExecutor:
             cache_config = {}
         defaults = ScriptCacheConfig()
 
+        # A run with a layer never caches: an entry's identity would name
+        # a path that is deleted when the run ends (Arc 4).
+        enabled = cache_config.get("enabled", defaults.enabled)
+        if self._config_manager.run_layer_dir is not None:
+            enabled = False
+
         return ScriptCacheConfig(
-            enabled=cache_config.get("enabled", defaults.enabled),
+            enabled=enabled,
             ttl_seconds=cache_config.get("ttl_seconds", defaults.ttl_seconds),
             max_size=cache_config.get("max_size", defaults.max_size),
             persist_to_artifacts=cache_config.get(
@@ -463,13 +470,20 @@ class EnsembleExecutor:
         start_time = time.time()
         execution_task = asyncio.create_task(self.execute(config, input_data))
 
-        # Merge events from progress tracker and performance queue
-        async for event in self._merge_streaming_events(
-            self._streaming_progress_tracker.track_execution_progress(
-                config, execution_task, start_time
-            )
-        ):
-            yield event
+        # Merge events from progress tracker and performance queue. A caller
+        # that stops reading leaves the task running, and its script
+        # subprocesses go on writing into the run layer: cancel it and wait.
+        try:
+            async for event in self._merge_streaming_events(
+                self._streaming_progress_tracker.track_execution_progress(
+                    config, execution_task, start_time
+                )
+            ):
+                yield event
+        finally:
+            if not execution_task.done():
+                execution_task.cancel()
+                await asyncio.gather(execution_task, return_exceptions=True)
 
     async def _merge_streaming_events(
         self, progress_events: AsyncGenerator[dict[str, Any], None]

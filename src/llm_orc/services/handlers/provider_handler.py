@@ -1,11 +1,20 @@
 """Provider status handler for MCP server."""
 
+import asyncio
 import os
 from collections.abc import Callable
-from typing import Any
+from dataclasses import dataclass
+from enum import Enum
+from pathlib import Path
+from typing import Any, Literal
 
 from llm_orc.core.config.closure import Closure, Key, walk_closure
-from llm_orc.core.config.ensemble_config import EnsembleConfig
+from llm_orc.core.config.config_manager import ConfigurationManager
+from llm_orc.core.config.ensemble_config import (
+    EnsembleConfig,
+    EnsembleLoader,
+    child_ensemble_search_dirs,
+)
 from llm_orc.core.execution.scripting.resolver import (
     ScriptNotFoundError,
     ScriptResolver,
@@ -29,9 +38,29 @@ from llm_orc.services.handlers.preflight import (
     is_runnable,
 )
 from llm_orc.services.handlers.profile_handler import ProfileHandler
+from llm_orc.services.handlers.run_preparation import LOAD_ERRORS, ChildLoadError
 
 _DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1"
 _DEFAULT_LLAMA_SERVER_URL = "http://127.0.0.1:8080/v1"
+
+
+class _Missing(Enum):
+    """The argument was not given (``None`` is a real project dir value)."""
+
+    MISSING = "missing"
+
+
+_MISSING = _Missing.MISSING
+
+
+@dataclass(frozen=True)
+class Preflight:
+    """What a gate run found: the closure, one report per dependency, and
+    the provider status they were classified against."""
+
+    closure: Closure
+    reports: list[DependencyReport]
+    providers: dict[str, Any]
 
 
 class ProviderHandler:
@@ -56,16 +85,27 @@ class ProviderHandler:
         self._find_child = find_child
         self._script_resolver_factory = script_resolver_factory or ScriptResolver
 
-    async def get_provider_status(self, arguments: dict[str, Any]) -> dict[str, Any]:
-        """Get status of all providers and available models."""
+    async def get_provider_status(
+        self,
+        arguments: dict[str, Any],
+        profiles: dict[str, dict[str, str]] | None = None,
+        config_manager: ConfigurationManager | None = None,
+    ) -> dict[str, Any]:
+        """Get status of all providers and available models.
+
+        ``profiles`` is the map the OpenAI-compatible endpoints are
+        grouped from; the service's own runtime profiles when omitted.
+        ``config_manager`` is where credentials are read from; the
+        service's own when omitted.
+        """
         providers: dict[str, Any] = {}
 
         providers["llama-server"] = await self._get_llama_server_status()
 
-        providers["anthropic-api"] = self._get_cloud_provider_status("anthropic-api")
-        providers["google-gemini"] = self._get_cloud_provider_status("google-gemini")
+        for cloud in ("anthropic-api", "google-gemini"):
+            providers[cloud] = self._get_cloud_provider_status(cloud, config_manager)
 
-        oai_status = await self._get_openai_compatible_status()
+        oai_status = await self._get_openai_compatible_status(profiles)
         providers["openai-compatible"] = oai_status.model_dump()
 
         return {"providers": providers}
@@ -78,7 +118,8 @@ class ProviderHandler:
         base_url = os.environ.get("LLAMA_SERVER_URL", _DEFAULT_LLAMA_SERVER_URL)
         client = LlamaServerClient.from_base_url(base_url)
         try:
-            inventory = client.inventory()
+            # Blocking urllib, up to 5 s on an unreachable router: off the loop.
+            inventory = await asyncio.to_thread(client.inventory)
         except (OSError, ValueError) as e:
             return LlamaServerProviderStatus(
                 available=False,
@@ -91,18 +132,27 @@ class ProviderHandler:
             models=models,
             cached=inventory.cached,
             loaded=inventory.loaded,
+            sources=inventory.sources,
             model_count=len(models),
             base_url=base_url,
         ).model_dump()
 
-    def _get_cloud_provider_status(self, provider: str) -> dict[str, Any]:
-        """Check if a cloud provider is configured."""
+    def _get_cloud_provider_status(
+        self, provider: str, config_manager: ConfigurationManager | None = None
+    ) -> dict[str, Any]:
+        """Check if a cloud provider is configured, reading credentials
+        through ``config_manager`` and creating nothing: a host with no
+        credentials file has no credentials, and building the storage
+        would write an encryption key into its global config dir."""
         from llm_orc.core.auth.authentication import (
             CredentialStorage,
         )
 
-        storage = CredentialStorage()
-        configured_providers = storage.list_providers()
+        manager = config_manager or self._profile_handler.config_manager
+        if manager.get_credentials_file().exists():
+            configured_providers = CredentialStorage(manager).list_providers()
+        else:
+            configured_providers = []
 
         if provider in configured_providers:
             return CloudProviderStatus(available=True, reason="configured").model_dump()
@@ -111,12 +161,18 @@ class ProviderHandler:
             available=False, reason="not configured"
         ).model_dump()
 
-    async def _get_openai_compatible_status(self) -> OpenAICompatibleStatus:
+    async def _get_openai_compatible_status(
+        self, profiles: dict[str, dict[str, str]] | None = None
+    ) -> OpenAICompatibleStatus:
         """Check OpenAI-compatible endpoints and discover models."""
         if self._test_openai_compat_status is not None:
             return self._test_openai_compat_status
 
-        all_profiles = self._profile_handler.get_runtime_profiles()
+        all_profiles = (
+            self._profile_handler.get_runtime_profiles()
+            if profiles is None
+            else profiles
+        )
 
         # Group profiles by base_url
         url_profiles: dict[str, list[str]] = {}
@@ -130,45 +186,15 @@ class ProviderHandler:
         if not url_profiles:
             return OpenAICompatibleStatus(available=False)
 
-        import httpx
-
-        endpoints: list[EndpointStatus] = []
-        all_models: list[str] = []
-
-        for base_url, profile_names in url_profiles.items():
-            try:
-                async with httpx.AsyncClient(timeout=5.0) as client:
-                    response = await client.get(f"{base_url}/models")
-                    if response.status_code == 200:
-                        data = response.json()
-                        models = sorted(m.get("id", "") for m in data.get("data", []))
-                        endpoints.append(
-                            EndpointStatus(
-                                base_url=base_url,
-                                available=True,
-                                models=models,
-                                profiles=sorted(profile_names),
-                            )
-                        )
-                        all_models.extend(models)
-                    else:
-                        endpoints.append(
-                            EndpointStatus(
-                                base_url=base_url,
-                                available=False,
-                                profiles=sorted(profile_names),
-                                reason=f"HTTP {response.status_code}",
-                            )
-                        )
-            except Exception as e:
-                endpoints.append(
-                    EndpointStatus(
-                        base_url=base_url,
-                        available=False,
-                        profiles=sorted(profile_names),
-                        reason=f"{type(e).__name__}: {e}",
-                    )
+        endpoints = list(
+            await asyncio.gather(
+                *(
+                    _probe_endpoint(base_url, names)
+                    for base_url, names in url_profiles.items()
                 )
+            )
+        )
+        all_models = [m for endpoint in endpoints for m in endpoint.models]
 
         unique_models = sorted(set(all_models))
         any_available = any(ep.available for ep in endpoints)
@@ -192,19 +218,9 @@ class ProviderHandler:
         if not config:
             raise ValueError(f"Ensemble not found: {ensemble_name}")
 
-        provider_status = await self.get_provider_status({})
-        providers = provider_status.get("providers", {})
-        profiles = self._profile_handler.get_runtime_profiles()
-
-        closure = walk_closure(
-            config, self._find_child, profiles, root_ref=ensemble_name
-        )
-        reports = classify_dependencies(
-            closure.dependencies,
-            profiles=profiles,
-            providers=providers,
-            script_found=self._script_found,
-        )
+        outcome = await self.preflight(config, ensemble_name, probe_host=True)
+        closure, providers = outcome.closure, outcome.providers
+        reports = outcome.reports
         by_key: dict[Key, DependencyReport] = {(r.kind, r.name): r for r in reports}
 
         agent_results = [
@@ -219,15 +235,68 @@ class ProviderHandler:
         result["dependencies"] = [r.model_dump() for r in reports]
         return result
 
+    async def preflight(
+        self,
+        config: EnsembleConfig,
+        root_ref: str,
+        *,
+        config_manager: ConfigurationManager | None = None,
+        project_dir: Path | None | Literal[_Missing.MISSING] = _MISSING,
+        probe_host: bool = False,
+    ) -> Preflight:
+        """The dependency closure of ``config`` and a report for each
+        dependency, with the providers they were classified against.
+
+        Given a ``config_manager`` and ``project_dir`` (a run's view),
+        the child finder, the profile map and the script resolver are
+        built from that pair and from nothing else the service holds, so
+        the verdict is the one the executor built on the same pair would
+        reach (Arc 4). Without one, the service's own wiring answers.
+        Half a pair raises: a view with the wrong project dir would
+        resolve scripts where the executor does not.
+
+        A run's gate probes only the endpoints its closure uses. The read
+        endpoint passes ``probe_host`` to probe every endpoint the host's
+        profiles name, so it can offer them as alternatives.
+        """
+        if (config_manager is None) != (project_dir is _MISSING):
+            raise ValueError(
+                "preflight takes both config_manager and project_dir, or neither"
+            )
+        manager = config_manager or self._profile_handler.config_manager
+        if config_manager is None or project_dir is _MISSING:
+            profiles = self._profile_handler.get_runtime_profiles()
+            find_child = self._find_child
+            script_found: Callable[[str], bool] = self._script_found
+        else:
+            profiles = config_manager.get_model_profiles()
+            find_child = _child_finder(config_manager, project_dir)
+            script_found = _script_finder(
+                ScriptResolver(
+                    project_dir=project_dir, run_dir=config_manager.run_layer_dir
+                )
+            )
+        closure = walk_closure(config, find_child, profiles, root_ref=root_ref)
+        probed = _probed_by(closure, profiles)
+        if probe_host:
+            probed = {**profiles, **probed}
+        provider_status = await self.get_provider_status(
+            {}, profiles=probed, config_manager=manager
+        )
+        providers = provider_status.get("providers", {})
+        reports = classify_dependencies(
+            closure.dependencies,
+            profiles=profiles,
+            providers=providers,
+            script_found=script_found,
+        )
+        return Preflight(closure=closure, reports=reports, providers=providers)
+
     def _script_found(self, script_ref: str) -> bool:
         """The executor's own resolution (ruling 5): a bare name is
         inline content and resolves; only a path-syntax or absolute
         reference can be missing."""
-        try:
-            self._script_resolver_factory().resolve_and_classify(script_ref)
-        except ScriptNotFoundError:
-            return False
-        return True
+        return _script_finder(self._script_resolver_factory())(script_ref)
 
     def _agent_view(
         self,
@@ -283,6 +352,79 @@ class ProviderHandler:
     def _suggest_available_models(self, available_models: list[str]) -> list[str]:
         """Suggest available models."""
         return sorted(available_models)[:5]
+
+
+async def _probe_endpoint(base_url: str, profile_names: list[str]) -> EndpointStatus:
+    """One OpenAI-compatible endpoint's reachability and model list."""
+    import httpx
+
+    names = sorted(profile_names)
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            response = await client.get(f"{base_url}/models")
+            if response.status_code != 200:
+                return EndpointStatus(
+                    base_url=base_url,
+                    available=False,
+                    profiles=names,
+                    reason=f"HTTP {response.status_code}",
+                )
+            models = sorted(m.get("id", "") for m in response.json().get("data", []))
+    except Exception as e:
+        return EndpointStatus(
+            base_url=base_url,
+            available=False,
+            profiles=names,
+            reason=f"{type(e).__name__}: {e}",
+        )
+    return EndpointStatus(
+        base_url=base_url, available=True, models=models, profiles=names
+    )
+
+
+def _probed_by(
+    closure: Closure, profiles: dict[str, dict[str, str]]
+) -> dict[str, dict[str, str]]:
+    """The profiles whose endpoints the gate contacts: those of the
+    closure, and an inline model standing for its provider's default
+    endpoint. Nothing else the host defines costs the run a request."""
+    probed: dict[str, dict[str, str]] = {}
+    for dep in closure.dependencies:
+        if dep.kind == "profile" and dep.name in profiles:
+            probed[dep.name] = profiles[dep.name]
+        elif dep.kind == "model" and dep.provider:
+            probed[f"model:{dep.name}"] = {"provider": dep.provider}
+    return probed
+
+
+def _script_finder(resolver: ScriptResolver) -> Callable[[str], bool]:
+    """Whether ``resolver`` resolves a script reference."""
+
+    def found(script_ref: str) -> bool:
+        try:
+            resolver.resolve_and_classify(script_ref)
+        except ScriptNotFoundError:
+            return False
+        return True
+
+    return found
+
+
+def _child_finder(
+    config_manager: ConfigurationManager, project_dir: Path | None
+) -> Callable[[str], EnsembleConfig | None]:
+    """The executor's child lookup over this manager and project dir:
+    the same search dirs, the same by-filename finder."""
+    loader = EnsembleLoader()
+
+    def find(reference: str) -> EnsembleConfig | None:
+        search_dirs = child_ensemble_search_dirs(project_dir, config_manager)
+        try:
+            return loader._find_ensemble_in_dirs(reference, search_dirs)
+        except LOAD_ERRORS as e:
+            raise ChildLoadError(reference, e) from e
+
+    return find
 
 
 def _is_openai_compatible(provider: str | None) -> bool:

@@ -1,13 +1,14 @@
 """Script-based agent execution for hybrid LLM/script workflows."""
 
 import asyncio
-import functools
 import json
 import os
 import shlex
+import signal
 import subprocess
 import sys
 import tempfile
+import threading
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -35,31 +36,151 @@ SCRIPT_POOL = ThreadPoolExecutor(
 )
 
 
+class _Child:
+    """The one script subprocess a ``_run_subprocess`` call starts.
+
+    The worker thread and the cancelling coroutine meet here. The lock
+    makes "cancel before the child exists" and "start the child" mutually
+    exclusive: whichever comes second sees the other's mark.
+    """
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._cancelled = False
+        self._process: subprocess.Popen[str] | None = None
+
+    def start(self, args: tuple[Any, ...], kwargs: dict[str, Any]) -> Any:
+        """Start the child in its own session, or None once cancelled."""
+        with self._lock:
+            if self._cancelled:
+                return None
+            self._process = subprocess.Popen(  # nosec B603 B602
+                *args, start_new_session=True, **kwargs
+            )
+            return self._process
+
+    def cancel(self) -> None:
+        with self._lock:
+            self._cancelled = True
+            if self._process is not None and self._process.returncode is None:
+                _kill_group(self._process)
+
+
+def _kill_group(process: subprocess.Popen[str]) -> None:
+    """Kill the child and everything it started (it leads its own group).
+
+    A reaped child's pid is free to be reused, so it is never signalled.
+    ``returncode`` is set only by a reap, and only the worker thread reaps.
+    """
+    if process.returncode is not None:
+        return
+    try:
+        os.killpg(process.pid, signal.SIGKILL)
+    except (ProcessLookupError, PermissionError):
+        process.kill()
+
+
+def _run_child(
+    child: _Child, args: tuple[Any, ...], kwargs: dict[str, Any]
+) -> subprocess.CompletedProcess[str] | None:
+    """``subprocess.run``'s contract, on a child the caller can kill.
+
+    ``input``, ``capture_output``, ``timeout`` and ``check`` behave as in
+    ``subprocess.run``, including the exceptions and their attributes. A
+    timeout kills the child's whole group. Returns None when the call was
+    cancelled before the child started.
+    """
+    options = dict(kwargs)
+    stdin_data = options.pop("input", None)
+    timeout = options.pop("timeout", None)
+    check = options.pop("check", False)
+    if options.pop("capture_output", False):
+        options["stdout"] = options["stderr"] = subprocess.PIPE
+    if stdin_data is not None:
+        options["stdin"] = subprocess.PIPE
+    process = child.start(args, options)
+    if process is None:
+        return None
+    with process:
+        try:
+            stdout, stderr = process.communicate(stdin_data, timeout=timeout)
+        except subprocess.TimeoutExpired as exc:
+            _kill_group(process)
+            # Reap, as subprocess.run does; reading to EOF would wait on a
+            # descendant outside the group that holds the pipes.
+            process.wait()
+            raise subprocess.TimeoutExpired(
+                process.args, timeout, output=exc.output, stderr=exc.stderr
+            ) from exc
+        except BaseException:
+            _kill_group(process)
+            raise
+        returncode = process.poll()
+    if check and returncode:
+        raise subprocess.CalledProcessError(
+            returncode, process.args, output=stdout, stderr=stderr
+        )
+    return subprocess.CompletedProcess(process.args, returncode or 0, stdout, stderr)
+
+
+_CANCEL_GRACE_SECONDS = 1.0
+
+
 async def _run_subprocess(
     *args: Any, **kwargs: Any
 ) -> subprocess.CompletedProcess[str]:
-    """Run ``subprocess.run`` on the script pool without blocking the loop.
+    """Run a script subprocess on the script pool without blocking the loop.
 
-    ``functools.partial`` rather than a lambda so nothing closes over loop
-    variables. Exceptions propagate exactly as they would inline, which is
-    what keeps ``ScriptAgent.execute``'s TimeoutExpired/CalledProcessError
-    envelopes intact.
+    Exceptions propagate exactly as ``subprocess.run`` raises them, which
+    is what keeps ``ScriptAgent.execute``'s TimeoutExpired/CalledProcessError
+    envelopes intact. The child leads its own process group. When the
+    awaiting task is cancelled the group is killed and the worker thread is
+    awaited for up to a second. If a descendant outside the group still
+    holds the pipes, the cancellation propagates anyway; the worker, the
+    only code that reaps the child, finishes on its own when the holder
+    lets go or the script's timeout fires, and its result is discarded.
+    Until then the killed child is a zombie, which keeps its pid unusable
+    and cannot write.
     """
     loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(
-        SCRIPT_POOL, functools.partial(subprocess.run, *args, **kwargs)
-    )
+    child = _Child()
+    future = SCRIPT_POOL.submit(_run_child, child, args, kwargs)
+    waiting = asyncio.wrap_future(future, loop=loop)
+    try:
+        result = await asyncio.shield(waiting)
+    except asyncio.CancelledError:
+        child.cancel()
+        future.cancel()
+        # Whatever the worker ends with belongs to a cancelled call: consume
+        # it so a late failure is not logged, and never hand it to anyone.
+        waiting.add_done_callback(lambda done: done.cancelled() or done.exception())
+        deadline = loop.time() + _CANCEL_GRACE_SECONDS
+        while not waiting.done() and loop.time() < deadline:
+            try:
+                await asyncio.wait([waiting], timeout=deadline - loop.time())
+            except asyncio.CancelledError:
+                continue
+        raise
+    if result is None:
+        raise asyncio.CancelledError
+    return result
 
 
-def _bytecode_environment(project_dir: Path | None) -> dict[str, str]:
+def _bytecode_environment(
+    project_dir: Path | None, run_dir: Path | None = None
+) -> dict[str, str]:
     """Send a script's bytecode to the state dir, never beside the script.
 
     A serving script imports its sibling ``_helpers``; run in place, the
     interpreter would write ``__pycache__`` under the read-only packaged
     tier (#196). Every subprocess environment in this module starts from
-    ``self.environment``, so setting it here covers every run path. A
-    caller's own ``PYTHONPYCACHEPREFIX`` wins.
+    ``self.environment``, so setting it here covers every run path. A run
+    with a layer keeps it under the run directory, whatever the
+    environment says: any other prefix would outlive the run (Arc 4).
+    Without a layer a caller's own ``PYTHONPYCACHEPREFIX`` wins.
     """
+    if run_dir is not None:
+        return {"PYTHONPYCACHEPREFIX": str(run_dir / PYCACHE_DIRNAME)}
     if "PYTHONPYCACHEPREFIX" in os.environ:
         return {}
     local = ConfigurationManager(
@@ -146,6 +267,7 @@ class ScriptAgent:
         name: str,
         config: dict[str, Any],
         project_dir: Path | None = None,
+        run_dir: Path | None = None,
     ):
         """Initialize script agent with configuration.
 
@@ -153,6 +275,7 @@ class ScriptAgent:
             name: Agent name
             config: Agent configuration including script and parameters
             project_dir: Optional project directory for script resolution
+            run_dir: Optional run layer directory (one-run injection)
         """
         self.name = name
         self.config = config
@@ -167,7 +290,7 @@ class ScriptAgent:
         configured_timeout = config.get("timeout_seconds")
         self.timeout = 60 if configured_timeout is None else configured_timeout
         self.environment = {
-            **_bytecode_environment(project_dir),
+            **_bytecode_environment(project_dir, run_dir),
             **config.get("environment", {}),
         }
 
@@ -176,7 +299,7 @@ class ScriptAgent:
                 f"Script agent {name} must have either 'script' or 'command'"
             )
 
-        self._script_resolver = ScriptResolver(project_dir=project_dir)
+        self._script_resolver = ScriptResolver(project_dir=project_dir, run_dir=run_dir)
         self.parameters = config.get("parameters", {})
         self._env_manager = ScriptEnvironmentManager(self.environment, self.parameters)
 

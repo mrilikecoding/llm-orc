@@ -4,10 +4,33 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
-from llm_orc.providers.llama_server import LlamaServerClient
+import pytest
+
+from llm_orc.providers.llama_server import LlamaServerClient, model_source
 
 PROBE_LISTING = [
-    {"id": "qwen3-8b", "status": {"value": "unloaded"}, "source": "preset"},
+    {
+        "id": "qwen3-8b",
+        "status": {
+            "value": "unloaded",
+            "args": [
+                "/opt/llama-server",
+                "--host",
+                "127.0.0.1",
+                "--alias",
+                "qwen3-8b",
+                "--ctx-size",
+                "8192",
+                "--hf-repo",
+                "unsloth/Qwen3-8B-GGUF:Q4_K_M",
+                "--n-gpu-layers",
+                "999",
+            ],
+            "preset": "version = 1",
+        },
+        "source": "preset",
+        "can_remove": False,
+    },
     {"id": "qwen3-14b", "status": {"value": "unloaded"}, "source": "preset"},
     {"id": "qwen3-1.7b", "status": {"value": "loaded"}, "source": "preset"},
     {"id": "qwen3-4b", "status": "loaded", "source": "preset"},
@@ -38,6 +61,15 @@ class TestInventory:
             inventory = client.inventory()
         assert inventory.cached == ["unsloth/Qwen3-8B-GGUF:Q4_K_M"]
 
+    def test_sources_are_the_value_after_hf_repo_in_the_status_args(self) -> None:
+        """The router states which file a model name serves (probe
+        2026-10-01); a model with no ``--hf-repo`` arg, or a bare-string
+        status, is absent rather than guessed."""
+        client = LlamaServerClient("http://127.0.0.1:8791")
+        with patch.object(LlamaServerClient, "_list", return_value=PROBE_LISTING):
+            inventory = client.inventory()
+        assert inventory.sources == {"qwen3-8b": "unsloth/Qwen3-8B-GGUF:Q4_K_M"}
+
     def test_loaded_is_the_preset_models_whose_live_status_is_loaded(self) -> None:
         """A status is ``{"value": ...}`` or a bare string (web/api/models.py)."""
         client = LlamaServerClient("http://127.0.0.1:8791")
@@ -57,3 +89,90 @@ class TestInventory:
             client.models()
             client.inventory()
         assert listing.call_count == 2  # one GET per call, never two per call
+
+
+def _args(*args: str) -> dict[str, object]:
+    return {"status": {"value": "unloaded", "args": ["/bin/llama-server", *args]}}
+
+
+class TestModelSource:
+    """llama.cpp reads the source from several spellings and the last one
+    on the command line wins; the router's own argv is the evidence."""
+
+    @pytest.mark.parametrize(
+        ("args", "expected"),
+        [
+            (["--hf-repo", "a/b:Q4"], "a/b:Q4"),
+            (["--hf-repo=a/b:Q4"], "a/b:Q4"),
+            (["-hf", "a/b:Q4"], "a/b:Q4"),
+            (["-hfr", "a/b:Q4"], "a/b:Q4"),
+            (["--hf-repo", "first/x:Q4", "--hf-repo", "last/y:Q8"], "last/y:Q8"),
+            (["-hf", "first/x:Q4", "--hf-repo=last/y:Q8"], "last/y:Q8"),
+            (
+                ["--hf-repo=first/x:Q4", "-hfr", "last/y:Q8", "--ctx-size", "8"],
+                "last/y:Q8",
+            ),
+            (["--ctx-size", "8192"], None),
+            (["--hf-repo"], None),
+        ],
+    )
+    def test_the_last_occurrence_of_any_spelling_wins(
+        self, args: list[str], expected: str | None
+    ) -> None:
+        assert model_source(_args(*args)) == expected
+
+
+def _entry(model: str, **status: object) -> list[dict[str, object]]:
+    return [{"id": model, "status": status, "source": "preset"}]
+
+
+class TestPull:
+    """One pull-and-wait for every caller (spec Arc 4 re-cut, ruling 4);
+    the shapes are the failed and good loads the 2026-10-01 probe saw."""
+
+    def test_waits_through_loading_and_returns_the_loaded_status(self) -> None:
+        client = LlamaServerClient("http://127.0.0.1:8791")
+        listings = [
+            _entry("qwen3-8b", value="loading"),
+            _entry("qwen3-8b", value="loading"),
+            _entry("qwen3-8b", value="loaded"),
+        ]
+        with (
+            patch.object(LlamaServerClient, "load") as load,
+            patch.object(LlamaServerClient, "_list", side_effect=listings),
+        ):
+            result = client.pull("qwen3-8b", timeout_s=5, poll_s=0)
+        load.assert_called_once_with("qwen3-8b")
+        assert result == {"status": "loaded", "failed": False, "exit_code": None}
+
+    def test_a_failed_load_is_unloaded_failed_with_its_exit_code(self) -> None:
+        client = LlamaServerClient("http://127.0.0.1:8791")
+        failed = _entry("bogus", value="unloaded", exit_code=1, failed=True)
+        with (
+            patch.object(LlamaServerClient, "load"),
+            patch.object(LlamaServerClient, "_list", return_value=failed),
+        ):
+            result = client.pull("bogus", timeout_s=5, poll_s=0)
+        assert result == {"status": "unloaded", "failed": True, "exit_code": 1}
+
+    def test_a_load_still_loading_at_the_deadline_reports_loading(self) -> None:
+        client = LlamaServerClient("http://127.0.0.1:8791")
+        with (
+            patch.object(LlamaServerClient, "load"),
+            patch.object(
+                LlamaServerClient,
+                "_list",
+                return_value=_entry("slow", value="loading"),
+            ),
+        ):
+            result = client.pull("slow", timeout_s=0, poll_s=0)
+        assert result["status"] == "loading"
+
+    def test_a_model_the_router_does_not_list_is_unknown(self) -> None:
+        client = LlamaServerClient("http://127.0.0.1:8791")
+        with (
+            patch.object(LlamaServerClient, "load"),
+            patch.object(LlamaServerClient, "_list", return_value=PROBE_LISTING),
+        ):
+            result = client.pull("nope", timeout_s=5, poll_s=0)
+        assert result == {"status": "unknown", "failed": False, "exit_code": None}

@@ -20,6 +20,10 @@ ROUTER_UP: dict[str, Any] = {
         "models": ["qwen3-8b", "qwen3-14b", "qwen3-1.7b", "handmade"],
         "cached": ["unsloth/Qwen3-8B-GGUF:Q4_K_M"],
         "loaded": ["qwen3-1.7b"],
+        "sources": {
+            "qwen3-8b": "unsloth/Qwen3-8B-GGUF:Q4_K_M",
+            "qwen3-14b": "unsloth/Qwen3-14B-GGUF:Q4_K_M",
+        },
     },
     "anthropic-api": {"available": False, "reason": "not configured"},
     "google-gemini": {"available": True, "reason": "configured"},
@@ -58,6 +62,11 @@ PROFILES: dict[str, dict[str, Any]] = {
         "hf_repo": "unsloth/Qwen3-4B-GGUF:Q4_K_M",
     },
     "handmade": {"provider": "llama-server", "model": "handmade"},
+    "repointed": {
+        "provider": "llama-server",
+        "model": "qwen3-8b",
+        "hf_repo": "bartowski/Qwen3-8B-GGUF:Q4_K_M",
+    },
     "nosrc": {"provider": "llama-server", "model": "mystery"},
     "claude": {"provider": "anthropic-api", "model": "claude-x"},
     "gemini": {"provider": "google-gemini", "model": "gemini-x"},
@@ -104,6 +113,7 @@ def _one(
         ("pull", DependencyStatus.PULLABLE, "pull"),
         ("loaded", DependencyStatus.READY, "none"),  # live row: pulled, running
         ("new", DependencyStatus.NEEDS_RESTART, "restart"),
+        ("repointed", DependencyStatus.NEEDS_RESTART, "restart"),
         ("handmade", DependencyStatus.READY, "none"),  # review focus 3
         ("nosrc", DependencyStatus.MISSING_MODEL_SOURCE, "add_source"),
         ("claude", DependencyStatus.NEEDS_CREDENTIALS, "add_credentials"),
@@ -168,6 +178,31 @@ def test_detail_names_the_observed_fact_for_pullable() -> None:
     assert "qwen3-14b" in report.detail
     assert "unsloth/Qwen3-14B-GGUF:Q4_K_M" in report.detail
     assert "/api/models/qwen3-14b/pull" in report.detail
+
+
+def test_detail_names_both_sources_when_the_router_serves_another() -> None:
+    [report] = classify_dependencies(
+        [_profile("repointed")],
+        profiles=PROFILES,
+        providers=ROUTER_UP,
+        script_found=lambda _: True,
+    )
+    assert "qwen3-8b" in report.detail
+    assert "unsloth/Qwen3-8B-GGUF:Q4_K_M" in report.detail
+    assert "bartowski/Qwen3-8B-GGUF:Q4_K_M" in report.detail
+
+
+def test_unknown_router_source_classifies_as_before() -> None:
+    """A model with no source in the router's listing (older router, no
+    ``status.args``) is judged on the cache alone."""
+    providers = {
+        **ROUTER_UP,
+        "llama-server": {**ROUTER_UP["llama-server"], "sources": {}},
+    }
+    assert _one(_profile("repointed"), providers) == (
+        DependencyStatus.PULLABLE,
+        "pull",
+    )
 
 
 def test_detail_names_the_fact_behind_ready() -> None:

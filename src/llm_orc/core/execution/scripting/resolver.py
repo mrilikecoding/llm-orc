@@ -62,16 +62,19 @@ class ScriptResolver:
         self,
         search_paths: list[str] | None = None,
         project_dir: Path | None = None,
+        run_dir: Path | None = None,
     ) -> None:
         """Initialize the script resolver with optional custom search paths."""
         self._cache: dict[str, str] = {}
         self._custom_search_paths = search_paths
         self._project_dir = project_dir
+        self._run_dir = run_dir
 
     def _get_search_paths(self) -> list[str]:
         """Get search paths in priority order.
 
-        Project (three entries), package primitives, library submodule,
+        The run layer's two entries (Arc 4) when there is one, then
+        project (three entries), package primitives, library submodule,
         global config scripts, then the packaged serving project (#196).
 
         Returns:
@@ -82,6 +85,12 @@ class ScriptResolver:
 
         base = self._project_dir or Path(os.getcwd())
         search_paths = []
+
+        # Priority -1: the one-run layer, ahead of everything (Arc 4)
+        if self._run_dir is not None:
+            search_paths.extend(
+                [str(self._run_dir / self.SCRIPTS_DIR), str(self._run_dir)]
+            )
 
         # Priority 0: Test primitives directory (for BDD tests)
         test_primitives_dir = os.environ.get("LLM_ORC_TEST_PRIMITIVES_DIR")
@@ -156,7 +165,7 @@ class ScriptResolver:
         self._cache[script_ref] = resolved
         return resolved
 
-    def _has_path_syntax(self, script_ref: str) -> bool:
+    def has_path_syntax(self, script_ref: str) -> bool:
         """Whether a reference LOOKS like a path: a separator or a
         ``SCRIPT_EXTENSIONS`` suffix.
 
@@ -227,7 +236,7 @@ class ScriptResolver:
                 return str(path), True
             raise ScriptNotFoundError(script_ref)
 
-        if self._has_path_syntax(script_ref):
+        if self.has_path_syntax(script_ref):
             # Path syntax never falls back to inline (trap 3): the search
             # itself is the one observation, since each candidate is
             # necessarily probed with `.exists()` to find it. Every
@@ -256,6 +265,17 @@ class ScriptResolver:
         resolved, _ = self.resolve_and_classify(script_ref)
         return resolved
 
+    @staticmethod
+    def underscored(script_ref: str) -> str:
+        """The hyphen-to-underscore form the search also tries."""
+        return script_ref.replace("-", "_")
+
+    @classmethod
+    def unprefixed(cls, script_ref: str) -> str:
+        """``script_ref`` without a leading ``scripts/``, a form the
+        search also tries."""
+        return script_ref.removeprefix(f"{cls.SCRIPTS_DIR}/")
+
     def _try_resolve_with_search_paths(self, script_ref: str) -> str | None:
         """Try to resolve script using library-aware search paths.
 
@@ -276,18 +296,16 @@ class ScriptResolver:
                 return str(candidate)
 
             # Try hyphen-to-underscore normalization
-            normalized_ref = script_ref.replace("-", "_")
+            normalized_ref = self.underscored(script_ref)
             if normalized_ref != script_ref:
                 candidate_norm = search_dir / normalized_ref
                 if candidate_norm.exists():
                     return str(candidate_norm)
 
             # Try without "scripts/" prefix for backward compatibility
-            scripts_prefix = f"{self.SCRIPTS_DIR}/"
-            if script_ref.startswith(scripts_prefix):
-                candidate_no_prefix = search_dir / script_ref.removeprefix(
-                    scripts_prefix
-                )
+            unprefixed_ref = self.unprefixed(script_ref)
+            if unprefixed_ref != script_ref:
+                candidate_no_prefix = search_dir / unprefixed_ref
                 if candidate_no_prefix.exists():
                     return str(candidate_no_prefix)
 

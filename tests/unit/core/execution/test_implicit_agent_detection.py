@@ -145,7 +145,7 @@ class TestImplicitAgentDetection:
                 )
             )
             mock_agent_class.assert_called_once_with(
-                "enhanced_script", expected_config, project_dir=None
+                "enhanced_script", expected_config, project_dir=None, run_dir=None
             )
             # The assertion above only catches a broken hand-off while the
             # ambient default_timeout differs from ScriptAgent's own floor;
