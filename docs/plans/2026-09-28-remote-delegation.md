@@ -109,7 +109,7 @@ Record findings as a dated "Spike findings" section appended to this file.
   `~/.config/llm-orc/ensembles/`.
 
 **Arc 1 live row (2026-09-28).** `llm-orc` 0.21.0, worktree
-`feat/crud-scope` @ 2de1b5b5, serve on `--port 8766 --backend-port 8790
+`feat/crud-scope` @ 5140634c, serve on `--port 8766 --backend-port 8790
 --models-max 1` against the real `~/.config/llm-orc/ensembles/`, agent
 profile `local-qwen3-0.6b`.
 
@@ -238,7 +238,7 @@ plan: `docs/plans/2026-09-29-remote-delegation-arc2.md`.
     says so. The practitioner does the move.
 
 **Arc 2 live row (2026-09-29).** Laptop, branch `feat/packaged-serving` @
-`fcfc8bcf`, `make wheel-check` → `ok: 162 serving project files match git
+`eab47538`, `make wheel-check` → `ok: 162 serving project files match git
 ls-files`; the wheel (`llm_orchestra-0.21.0-py3-none-any.whl`) installed into
 a fresh `python3 -m venv`; `site-packages/llm_orc/serving_project/` carries
 `config.yaml`, `ensembles/`, `profiles/`, `scripts/`. Serve started from an
@@ -272,7 +272,7 @@ temp dirs: `llm-orc serve --port 8766 --backend-port 8790 --models-max 1`
 - `find <venv> -path '*serving_project*' -newer <marker>` → nothing: no write
   under the packaged tier. cwd empty throughout. SIGTERM to the serve stopped
   the router; ports free.
-- **Real client, after the final-review fix (`7ad5b3d5`).** Wheel rebuilt
+- **Real client, after the final-review fix (`c9b53815`).** Wheel rebuilt
   (162 ok), installed with `pip install --no-compile` (0 `.pyc` under
   `serving_project/`, the brew shape), served from a second empty dir.
   `opencode run --format json -m llm-orc-live/agentic-tier-cheap-general
@@ -421,7 +421,7 @@ points. Implementation plan: `docs/plans/2026-09-29-remote-delegation-arc3.md`.
    promotion readiness (reads provider status directly, untouched).
 
 **Arc 3 live row (2026-09-29).** Laptop, branch `feat/transitive-preflight` @
-`1092796f`, llama-server 9850 (`4f31eedb0`), GGUFs from the Hugging Face hub
+`05dba879`, llama-server 9850 (`4f31eedb0`), GGUFs from the Hugging Face hub
 cache (`llama-server --cache-list`: Qwen3-0.6B, Qwen3-8B, nomic-embed-text).
 Serve started from a temp project dir with `XDG_CONFIG_HOME` and
 `XDG_STATE_HOME` pointed at fresh temp dirs: `llm-orc serve --port 8766

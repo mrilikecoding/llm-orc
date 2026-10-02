@@ -77,17 +77,19 @@ applications (#90's packaging goal). Standing directives from 2026-09-11
 hold (daily driver on existing repos; real OpenCode sessions; Go spend
 and paid comparison runs within reason; cheaper subagents; meter usage).
 
-### 2026-10-01: history rewritten, `deploy/remote-host/` removed
+### 2026-10-01: history rewritten, machine-specific files removed
 
 llm-orc is a machine-agnostic tool (practitioner, 2026-10-01): files for
-one machine's deployment do not belong in this repo. `deploy/remote-host/`
-(a launchd unit and setup notes) was removed from every commit that
-carried it and moved to the homelab repo. On local main the 219 commits
-since 2026-09-16 have new hashes (three that touched only that directory
-are gone) and tags v0.20.0 through v0.22.0 point at the rewritten
-commits; commits and tags before that are unchanged. Every hash cited in
-this document and in `docs/plans/` is the new one. The old history is
-kept under `refs/backup/pre-deploy-rewrite/` until the push is verified.
+one machine's deployment do not belong in this repo. Two things were
+removed from every commit that carried them: `deploy/remote-host/` (a launchd
+unit and setup notes, moved to the homelab repo) and the second
+`.mcp.json` entry that pointed at one host's serve (now a user-level MCP
+entry on the practitioner's laptop). The 219 commits since 2026-09-16
+have new hashes (three that touched only `deploy/remote-host/` are gone) and
+tags v0.20.0 through v0.22.0 point at the rewritten commits; commits and
+tags before that are unchanged. Every hash cited in this document and in
+`docs/plans/` is the new one. The pre-rewrite history is kept locally
+under `refs/backup/pre-deploy-rewrite/` until the push is verified.
 
 The practitioner gave the go for the force-push on 2026-10-01: main and
 the nine tags. It has landed when `git ls-remote origin main` matches
@@ -105,15 +107,15 @@ this date are the old ones.
 
 ### 2026-10-01: v0.22.0 released; Arc 4 in flight
 
-Released v0.22.0 on the practitioner's go: push `3442fa63..665e7961`,
+Released v0.22.0 on the practitioner's go: push `1e5cfc02..f9089aa4`,
 tag, GitHub release, PyPI, tap formula bumped (`1b3cdb00`, Intel
 `cryptography<49` constraint intact). It carries Arc 1's `scope`, Arc 2
 (packaged serving tier, state dir, serving root) and Arc 3 (transitive
 preflight). CI is green on main: six test cells, security, wheel check.
 On the way: `make wheel-check` now runs in CI (one cell) and in the
-publish build before upload (`8fca7937`); pip-audit failed CI on new
+publish build before upload (`c54dd9e8`); pip-audit failed CI on new
 advisories for `pyjwt` 2.13.0 and `urllib3` 2.7.0 (both transitive), the
-lock pins moved to 2.15.1 and 2.8.0 (`435d863b`).
+lock pins moved to 2.15.1 and 2.8.0 (`b6ad88a6`).
 
 Lesson, binding: `publish.yml` runs on every push to main and publishes
 the version in `pyproject.toml`. The push that carries a version bump IS
@@ -167,7 +169,7 @@ reads `needs_restart`.
 
 ### 2026-09-27: fail-closed composition, released v0.21.0
 
-Merged `6fbff81a`, released v0.21.0 (breaking fix for callers; see
+Merged `c5700ee3`, released v0.21.0 (breaking fix for callers; see
 CHANGELOG). Plan and addenda: `docs/plans/2026-09-22-fail-closed-composition.md`.
 Invariant: a failed step never reaches a consumer, parent, or caller as
 a success. Shape: implicit 0.6b fallback removed (explicit
@@ -185,7 +187,7 @@ carry User-Agent and a salted per-invocation `x-opencode-session`.
 Four independent review rounds; suite 4677.
 
 **T1 regression-gate row (laptop, llama-server qwen3-8b, OpenCode, r=5
-each, same fixture):** main `728534a6` 0 correct / 1 shipped broken /
+each, same fixture):** main `14421dd1` 0 correct / 1 shipped broken /
 3 refused / 1 client timeout; branch 0 / 1 / 4 / 0. No branch
 regression. The backend result is the finding: T1 is 0 of 10 correct on
 llama-server vs 3 of 8 on Ollama. Every miss traces to the 8b
@@ -223,7 +225,7 @@ This is Next up 2's owed #90 gate, now measured for T1.
   edge nginx set to 3600 s / buffering off / 50 m body);
   http://llm-orc.remote.example answers 502 until the serve exists on
   remote-host. The launchd unit and setup notes live in the homelab repo.
-- **#202 (2026-09-22, PR #203 merged as `09b5383d`, released v0.20.6,
+- **#202 (2026-09-22, PR #203 merged as `a5c4bc7d`, released v0.20.6,
   formula bumped).** Core-engine fix outside the serving track but landing
   on it: `ensemble:`/`loop:`/`dispatch:` children now share one input
   contract (Option B on the issue: `input_key` value verbatim; otherwise
@@ -251,7 +253,7 @@ the llama-server backend yet — that is the regression gate below.
 cards: `docs/plans/2026-09-28-remote-delegation.md` (#196, #191);
 implementation plan for Arc 0 + Arc 1:
 `docs/plans/2026-09-28-remote-delegation-arc0-arc1.md`. **Arc 0 and Arc 1
-merged on local main 2026-09-28 (`06b085c6`), pushed 2026-09-29 (`3442fa63`, CI green).** S1: the
+merged on local main 2026-09-28 (`c75daed8`), pushed 2026-09-29 (`1e5cfc02`, CI green).** S1: the
 packaged serving project can be a read-only layer; artifacts,
 agentic-sessions, serve-trace, the rendered preset and the CRUD write
 fallback move to a state dir; `get_model_profiles` has no layer list
@@ -270,7 +272,7 @@ adversarial review plus two scoped re-reviews. Live row in the plan doc.
 still lives in the checkout. v0.21.0 is deployed on remote-host
 (practitioner, 2026-09-28).
 
-**Arc 2 merged on local main 2026-09-29 (`e4b1e5b8`; released in v0.22.0).**
+**Arc 2 merged on local main 2026-09-29 (`1dd75100`; released in v0.22.0).**
 Re-cut rulings in the spec doc ("Arc 2 re-cut (2026-09-29)"); plan
 `docs/plans/2026-09-29-remote-delegation-arc2.md`; summary and findings
 posted on #196 and #191. Shape: the repo's `.llm-orc/` ships in the wheel
@@ -306,7 +308,7 @@ repo's `docs/llm-orc-serve.md`: move `*.local.yaml` overrides to
 2026-10-01; the wheel check runs in CI. **Next:** re-cut Arc 4 (one-run injection) from the merged Arc 3 shape:
 the `not_equipped` error carries the Arc 3 `dependencies` list.
 
-**Arc 3 merged on local main 2026-09-29 (`75fa5927`; released in v0.22.0).**
+**Arc 3 merged on local main 2026-09-29 (`bf3d7287`; released in v0.22.0).**
 Rulings in the spec doc ("Arc 3 re-cut (2026-09-29)", amended by the
 review round); plan `docs/plans/2026-09-29-remote-delegation-arc3.md`; live
 row in the spec. Shape: `check_ensemble_runnable` (REST
@@ -398,7 +400,7 @@ parameter is the `Scope` literal so `/mcp` advertises the enum.
    behind REST, `/v1` and MCP; DNS-rebinding guard off for the proxied
    host; design `docs/plans/2026-09-16-mcp-in-serve.md`). Suite 4328,
    lint clean, independent review found one wrong-accept (fixed, pinned
-   red/green). `.mcp.json` carries `llm-orc-remote` pointing at it.
+   red/green). A user-level MCP entry on the laptop points at it.
    Deployed and accepted on the rig (design doc, Result). **Released
    as v0.20.1** on the practitioner's go (push, PyPI, GitHub release,
    formula bump). Policy from the practitioner: the mini runs releases,
