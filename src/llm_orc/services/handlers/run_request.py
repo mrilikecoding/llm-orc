@@ -180,6 +180,35 @@ class RunRequest(BaseModel):
         )
 
 
+def overlay(stored: Mapping[str, Any], request: RunRequest) -> RunRequest:
+    """The stored closure with ``request``'s injections laid over it key
+    by key, plus its ``pull``, then validated as one request.
+
+    A role the caller defines, as ``bind[a]`` or as ``profiles[a]``,
+    replaces the stored definition of that role in either form: the union
+    would otherwise define it twice. Everything else the validator
+    hardened for one request holds for the union, so an injection that
+    meets what the bundle holds (``Kid`` against ``kid``, ``x.py`` against
+    ``scripts/x.py``) is a ``RunRequestError``.
+    """
+    roles = set(request.profiles) | set(request.bind)
+    kept_profiles = {
+        k: v for k, v in stored.get("profiles", {}).items() if k not in roles
+    }
+    kept_bind = {k: v for k, v in stored.get("bind", {}).items() if k not in roles}
+    return RunRequest.parse(
+        {
+            "ensemble": stored["ensemble"],
+            "ensembles": {**stored.get("ensembles", {}), **request.ensembles},
+            "profiles": {**kept_profiles, **request.profiles},
+            "scripts": {**stored.get("scripts", {}), **request.scripts},
+            "bind": {**kept_bind, **request.bind},
+            "pull": request.pull,
+            "input": request.input,
+        }
+    )
+
+
 def _first_message(error: ValidationError) -> str:
     first = error.errors()[0]
     where = ".".join(str(part) for part in first["loc"])

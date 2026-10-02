@@ -50,6 +50,7 @@ from llm_orc.services.handlers.run_request import (
     RunRequestError,
     apply_bindings,
     materialize,
+    overlay,
 )
 
 if TYPE_CHECKING:
@@ -213,8 +214,11 @@ class ExecutionHandler:
         """
         request = _parse(data)
         self._refuse_shadowed_persist(request, lookup)
+        request, from_bundle = self._expand_bundle(request, lookup)
         with self._run_dir(request) as run_dir:
-            yield await self._prepare(request, run_dir, lookup, missing)
+            yield await self._prepare(
+                request, run_dir, lookup, missing, keep_artifact=from_bundle
+            )
 
     @contextmanager
     def _run_dir(self, request: RunRequest) -> Iterator[Path | None]:
@@ -238,10 +242,13 @@ class ExecutionHandler:
         run_dir: Path | None,
         lookup: Callable[[str], Any],
         missing: str,
+        *,
+        keep_artifact: bool = False,
     ) -> PreparedRun:
         root = self._materialize(request, run_dir, lookup, missing)
         layer, manager, config = root.layer, root.manager, root.config
-        inline = request.ensemble is not None and request.persist is None
+        keep = keep_artifact or request.persist is not None
+        inline = request.ensemble is not None and not keep
         outcome = await self._gate(config, root.ref, manager)
         stray = unnamed_bind_keys(request.bind, outcome.closure.dependencies)
         if stray:
@@ -260,6 +267,24 @@ class ExecutionHandler:
             return PreparedRun(config, self._get_executor(), inline, {}, pulled)
         executor = self._layer_executor(layer.view, not inline)
         return PreparedRun(config, executor, inline, layer.applied, pulled, persisted)
+
+    def _expand_bundle(
+        self, request: RunRequest, lookup: Callable[[str], Any]
+    ) -> tuple[RunRequest, bool]:
+        """A named root no tier resolves, that a bundle holds, becomes the
+        stored request with the caller's injections laid over it; the
+        flag says it did. The tiers are asked first, as for any named
+        root, so a tier file added under a bundle's name wins (ruling 9)."""
+        name = request.ensemble_name
+        if name is None or lookup(name) is not None:
+            return request, False
+        try:
+            stored = self._bundles.read(name)
+            if stored is None:
+                return request, False
+            return overlay(stored, request), True
+        except (BundleError, RunRequestError) as e:
+            raise RunRefusedError(INVALID_REQUEST, str(e)) from e
 
     def _refuse_shadowed_persist(
         self, request: RunRequest, lookup: Callable[[str], Any]
