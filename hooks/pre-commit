@@ -1,0 +1,23 @@
+#!/bin/bash
+# Pre-commit hook for llm-orc
+# Runs make lint before allowing commits
+# Can be bypassed with: git commit --no-verify
+
+set -e
+
+echo "🔍 Running pre-commit checks..."
+
+# Change to the repository root (llm-orc directory)
+cd "$(git rev-parse --show-toplevel)"
+
+# Run make lint (check mode — does not modify files)
+# If this fails due to formatting, run: make format && git add -u
+if make lint; then
+    echo "✅ Pre-commit checks passed"
+    exit 0
+else
+    echo "❌ Pre-commit checks failed"
+    echo "💡 If formatting issues, run: make format && git add -u"
+    echo "🚫 To bypass this check, use: git commit --no-verify"
+    exit 1
+fi

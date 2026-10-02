@@ -36,6 +36,7 @@ make dead-code       # Run dead code analysis with vulture
 
 ### Pre-commit and Push
 ```bash
+make install-hooks   # Install the tracked git hooks (hooks/) into this clone
 make pre-commit      # Run all CI checks locally before commit
 make push            # Pre-commit checks + push + workflow monitoring
 ```
