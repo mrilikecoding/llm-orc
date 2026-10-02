@@ -23,6 +23,7 @@ from fastapi.testclient import TestClient
 import llm_orc.web.api as web_api
 from llm_orc.core.config.config_manager import resolve_global_config_dir
 from llm_orc.mcp.server import MCPServer
+from llm_orc.services.handlers.execution_handler import ExecutionHandler
 from llm_orc.services.orchestra_service import OrchestraService
 from llm_orc.web.server import create_app
 from tests.unit.services.test_one_run_injection import (  # noqa: F401
@@ -210,6 +211,29 @@ class TestPersist:
         assert _run_named(client, "pack")["status"] == "success"
         deleted = client.delete("/api/ensembles/pack", params={"scope": "global"})
         assert deleted.json()["deleted"] is True
+
+    def test_a_spelling_that_lands_during_the_gate_is_refused_before_the_write(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The first check runs before the gate, which can take long (a
+        model pull). A persist of ``Pack`` that finishes in that time must
+        stop this one at the write."""
+        real_gate = ExecutionHandler._gate
+
+        async def gate_then_a_rival_lands(*args: Any, **more: Any) -> Any:
+            outcome = await real_gate(*args, **more)
+            _bundle_file("Pack").parent.mkdir(parents=True, exist_ok=True)
+            _bundle_file("Pack").write_text("{}")
+            return outcome
+
+        monkeypatch.setattr(ExecutionHandler, "_gate", gate_then_a_rival_lands)
+
+        result = _run(client, _pack(persist="global"))
+
+        assert result["error"]["kind"] == "invalid_request"
+        assert "'Pack'" in result["error"]["message"]
+        assert "another spelling" in result["error"]["message"]
+        assert os.listdir(_bundle_file().parent) == ["Pack.json"]
 
     def test_persist_needs_an_inline_root(self, client: TestClient) -> None:
         body = {"ensemble_name": "pack", "persist": "global", "input": "hi"}
