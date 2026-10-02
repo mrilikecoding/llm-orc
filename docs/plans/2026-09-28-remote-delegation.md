@@ -1242,6 +1242,57 @@ rounds of key rules passed it and each was wrong on a layout it did not
 hold. What closed the class was running the run's own resolver over the
 request before sending it, for what ships and for what does not.
 
+### Arc 6: remotes are discoverable (Sonnet, about a day, after Arc 5)
+
+Asked for by the practitioner on 2026-10-02 after the first remote run
+from a fresh install: a new session must be able to find the configured
+remotes, see what one is missing for a local ensemble without running
+it, and then run. Today `invoke --remote` needs a name the caller
+already knows, nothing lists or probes remotes, and the only preflight a
+remote offers is for what is installed there.
+
+1. **List and probe.** `llm-orc remotes` and an MCP tool `list_remotes`
+   answer each configured remote with its name, URL and a live
+   `GET /health` probe (connect timeout 5 s): `reachable`, `version`, or
+   the error observed. The probe uses the same client set-up as a run
+   (`build_client`), so a proxy or TLS problem shows here first. The
+   tool exists on a relaying server only; on a serve's mount it answers
+   that this serve does not relay. Reading `remotes` follows ruling 2:
+   the global config only.
+2. **Preflight a remote without running.** `POST /api/ensembles/preflight`
+   takes the full run request (the body of `/execute`) and answers the
+   Arc 3 report over the run's view: `runnable`, `dependencies`, the
+   `bindings` that would apply, and `left_out` is not its concern. It
+   validates, materializes the layer, gates and removes the layer, and
+   runs nothing: no pull (a `pullable` row stays `pullable` and says
+   `pull: true` would resolve it), no agent, no artifact, no bundle
+   written whatever `persist` says. A refusal that would be
+   `invalid_request` on `/execute` is the same envelope here. The MCP
+   `check_ensemble_runnable` gains `remote` (ships the closure as
+   `invoke` does and calls the endpoint) and the CLI gains
+   `--preflight` on `invoke`, local or remote: gate, print the table
+   (every row, met rows included) or the JSON report, exit 0 when
+   runnable and 1 when not, and run nothing. One flag, one meaning.
+3. **Help.** `get_help` and the CLI's top-level help say what remotes
+   are, how to configure one, and the three steps: list, preflight,
+   run.
+4. **Not in this arc:** reading a remote's inventory through the local
+   server (its own MCP entry or REST answers that; a relay for reads is
+   still a relay); remotes in a project config; credentials for a
+   remote (#205).
+
+Pins: through `CliRunner` and the real tool call, with the transport
+seam on a second service: `remotes` lists the configured names with a
+version for a reachable one and an error for an unreachable one, and
+reads nothing from a project config; `--preflight` against the second
+service answers the table with a `missing_profile` row and exits 1,
+then with `--bind` answers runnable and exits 0, and the second
+service's trees are unchanged and its `runs/` empty after each; the
+endpoint with `persist: global` writes no bundle; with `pull: true`
+pulls nothing (the router fake's load is never called). Mutants: the
+probe always says reachable; the endpoint runs the executor; `persist`
+honored on preflight.
+
 ## Gates (every arc)
 
 Hermetic suite green, lint clean, mutant-red pins, a live row, and an
