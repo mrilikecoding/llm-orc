@@ -6,7 +6,7 @@ Provides REST API for ensemble management, delegating to OrchestraService.
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from llm_orc.services.handlers.scope import Scope
 from llm_orc.web.api import get_orchestra_service
@@ -15,9 +15,33 @@ router = APIRouter(prefix="/api/ensembles", tags=["ensembles"])
 
 
 class ExecuteRequest(BaseModel):
-    """Request body for ensemble execution."""
+    """Request body for running the ensemble named in the path.
+
+    Unknown keys are a 422: a misspelled ``bind`` must not run the call
+    without its binding. A root (``ensemble_name`` or ``ensemble``) is an
+    unknown key here, since the path names the root.
+    """
+
+    model_config = ConfigDict(extra="forbid")
 
     input: str
+    ensembles: dict[str, dict[str, Any]] | None = None
+    profiles: dict[str, dict[str, Any]] | None = None
+    scripts: dict[str, str] | None = None
+    bind: dict[str, str] | None = None
+    pull: bool | None = None
+
+
+class RunRequest(ExecuteRequest):
+    """Request body for ``POST /api/ensembles/execute``: the full request.
+
+    The root is ``ensemble_name`` (an installed ensemble) or ``ensemble``
+    (an inline definition); the service refuses a request with both or
+    neither.
+    """
+
+    ensemble_name: str | None = None
+    ensemble: dict[str, Any] | None = None
 
 
 class CreateEnsembleRequest(BaseModel):
@@ -59,14 +83,27 @@ async def get_ensemble(name: str) -> dict[str, Any]:
     return result
 
 
+@router.post("/execute")
+async def run_request(request: RunRequest) -> dict[str, Any]:
+    """Run one request: a named or inline ensemble with its injections.
+
+    Returns the execution result, or the refusal envelope (HTTP 200, like
+    every run outcome) when the host cannot run it.
+    """
+    service = get_orchestra_service()
+    return await service.invoke(request.model_dump(exclude_none=True))
+
+
 @router.post("/{name}/execute")
 async def execute_ensemble(name: str, request: ExecuteRequest) -> dict[str, Any]:
-    """Execute an ensemble with the given input.
+    """Execute the ensemble ``name`` with the given input and injections.
 
     Returns the execution result including agent outputs.
     """
     service = get_orchestra_service()
-    result = await service.invoke({"ensemble_name": name, "input": request.input})
+    result = await service.invoke(
+        {**request.model_dump(exclude_none=True), "ensemble_name": name}
+    )
     return result
 
 

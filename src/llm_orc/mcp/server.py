@@ -239,16 +239,41 @@ class MCPServer:
 
         @self._mcp.tool()
         async def invoke(
-            ensemble_name: str, input_data: str, ctx: Context[Any, Any, Any]
+            input_data: str,
+            ctx: Context[Any, Any, Any],
+            ensemble_name: str | None = None,
+            ensemble: dict[str, Any] | None = None,
+            ensembles: dict[str, dict[str, Any]] | None = None,
+            profiles: dict[str, dict[str, Any]] | None = None,
+            scripts: dict[str, str] | None = None,
+            bind: dict[str, str] | None = None,
+            pull: bool = False,
         ) -> dict[str, Any]:
             """Execute an ensemble with input data.
 
             Args:
-                ensemble_name: Name of the ensemble to execute
                 input_data: Input data for the ensemble
+                ensemble_name: Name of an installed ensemble to execute
+                ensemble: An ensemble definition to run inline instead
+                ensembles: Child ensembles by name, for this run only
+                profiles: Model profiles by name, for this run only
+                scripts: Script source by path key, for this run only
+                bind: Profile name to profile name; runs the first as the second
+                pull: Download pullable models first (default: refuse)
             """
+            injection = {
+                "ensemble": ensemble,
+                "ensembles": ensembles,
+                "profiles": profiles,
+                "scripts": scripts,
+                "bind": bind,
+                "pull": pull or None,
+            }
             result = await self._invoke_tool_with_streaming(
-                ensemble_name, input_data, ctx
+                ensemble_name,
+                input_data,
+                ctx,
+                {k: v for k, v in injection.items() if v is not None},
             )
             return result
 
@@ -849,7 +874,41 @@ class MCPServer:
                     "properties": {
                         "ensemble_name": {
                             "type": "string",
-                            "description": "Name of the ensemble to execute",
+                            "description": "Name of an installed ensemble to execute",
+                        },
+                        "ensemble": {
+                            "type": "object",
+                            "description": "An ensemble definition to run inline",
+                        },
+                        "ensembles": {
+                            "type": "object",
+                            "description": (
+                                "Child ensembles by name, for this run only"
+                            ),
+                        },
+                        "profiles": {
+                            "type": "object",
+                            "description": "Model profiles by name, for this run only",
+                        },
+                        "scripts": {
+                            "type": "object",
+                            "description": (
+                                "Script source by path key, for this run only"
+                            ),
+                        },
+                        "bind": {
+                            "type": "object",
+                            "description": (
+                                "Profile name to profile name; runs the first "
+                                "as the second"
+                            ),
+                        },
+                        "pull": {
+                            "type": "boolean",
+                            "default": False,
+                            "description": (
+                                "Download pullable models first (default: refuse)"
+                            ),
                         },
                         "input": {
                             "type": "string",
@@ -867,7 +926,7 @@ class MCPServer:
                             "default": "json",
                         },
                     },
-                    "required": ["ensemble_name"],
+                    "required": [],
                 },
             },
             {
@@ -1047,7 +1106,11 @@ class MCPServer:
         return self._service.handle_set_project(path)
 
     async def _invoke_tool_with_streaming(
-        self, ensemble_name: str, input_data: str, ctx: Context[Any, Any, Any]
+        self,
+        ensemble_name: str | None,
+        input_data: str,
+        ctx: Context[Any, Any, Any],
+        injection: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Execute invoke tool with streaming progress updates.
 
@@ -1055,18 +1118,19 @@ class MCPServer:
         """
         reporter = FastMCPProgressReporter(ctx)
         return await self._execute_ensemble_streaming(
-            ensemble_name, input_data, reporter
+            ensemble_name, input_data, reporter, injection
         )
 
     async def _execute_ensemble_streaming(
         self,
-        ensemble_name: str,
+        ensemble_name: str | None,
         input_data: str,
         reporter: ProgressReporter,
+        injection: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Execute streaming (thin wrapper for tests)."""
         return await self._service.execute_streaming(
-            ensemble_name, input_data, reporter
+            ensemble_name, input_data, reporter, injection
         )
 
     async def _handle_streaming_event(
