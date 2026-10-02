@@ -38,7 +38,11 @@ from llm_orc.services.handlers.preflight import (
     is_runnable,
 )
 from llm_orc.services.handlers.profile_handler import ProfileHandler
-from llm_orc.services.handlers.run_preparation import LOAD_ERRORS, ChildLoadError
+from llm_orc.services.handlers.run_preparation import (
+    LOAD_ERRORS,
+    ChildLoadError,
+    MaterializedRoot,
+)
 from llm_orc.services.handlers.script_files import ScriptFileLocator
 
 _DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1"
@@ -208,20 +212,36 @@ class ProviderHandler:
         )
 
     async def check_ensemble_runnable(
-        self, arguments: dict[str, Any]
+        self, arguments: dict[str, Any], *, root: MaterializedRoot | None = None
     ) -> dict[str, Any]:
-        """Check if an ensemble can run with current providers."""
+        """Check if an ensemble can run with current providers.
+
+        ``root`` is a bundle's root materialized in a run layer: it is
+        judged over that layer's view, with the rows its bindings add,
+        instead of being looked up in the tiers.
+        """
         ensemble_name = arguments.get("ensemble_name")
         if not ensemble_name:
             raise ValueError("ensemble_name is required")
 
-        config = self._find_ensemble(ensemble_name)
-        if not config:
-            raise ValueError(f"Ensemble not found: {ensemble_name}")
-
-        outcome = await self.preflight(config, ensemble_name, probe_host=True)
+        if root is None:
+            config = self._find_ensemble(ensemble_name)
+            if not config:
+                raise ValueError(f"Ensemble not found: {ensemble_name}")
+            outcome = await self.preflight(config, ensemble_name, probe_host=True)
+            extra: list[DependencyReport] = []
+        else:
+            config = root.config
+            outcome = await self.preflight(
+                config,
+                ensemble_name,
+                config_manager=root.manager,
+                project_dir=root.project_dir,
+                probe_host=True,
+            )
+            extra = root.extra_reports
         closure, providers = outcome.closure, outcome.providers
-        reports = outcome.reports
+        reports = [*outcome.reports, *extra]
         by_key: dict[Key, DependencyReport] = {(r.kind, r.name): r for r in reports}
 
         agent_results = [

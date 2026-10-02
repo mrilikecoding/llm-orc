@@ -13,6 +13,7 @@ from llm_orc.core.config.ensemble_config import EnsembleLoader
 from llm_orc.mcp.project_context import ProjectContext
 from llm_orc.mcp.utils import get_agent_attr as _get_agent_attr
 from llm_orc.schemas.agent_config import parse_agent_config
+from llm_orc.services.handlers.bundle_store import BundleStore
 from llm_orc.services.handlers.scope import Scope, find_in_scope, parse_scope
 
 _PRESERVED_FIELDS = (
@@ -66,6 +67,7 @@ class EnsembleCrudHandler:
         ensemble_loader: EnsembleLoader,
         find_ensemble_fn: Callable[[str], Any],
         read_artifact_fn: Callable[..., Any],
+        bundle_store: BundleStore | None = None,
     ) -> None:
         """Initialize with dependencies.
 
@@ -74,11 +76,16 @@ class EnsembleCrudHandler:
             ensemble_loader: Ensemble loader instance.
             find_ensemble_fn: Callback to find ensemble by name.
             read_artifact_fn: Callback to read an artifact resource.
+            bundle_store: Bundles, which ``scope: global`` deletes by name
+                when no global tier file has it.
         """
         self._config_manager = config_manager
         self._ensemble_loader = ensemble_loader
         self._find_ensemble = find_ensemble_fn
         self._read_artifact = read_artifact_fn
+        self._bundles = bundle_store or BundleStore(
+            lambda: self._config_manager.global_config_dir
+        )
 
     def set_project_context(self, ctx: ProjectContext) -> None:
         """Update handler to use new project context."""
@@ -166,6 +173,8 @@ class EnsembleCrudHandler:
             raise ValueError("Confirmation required to delete ensemble")
 
         scope = parse_scope(arguments)
+        if scope == "global" and self._delete_bundle(ensemble_name):
+            return {"deleted": True, "bundle": ensemble_name}
         ensemble_file = self._find_in_scope(ensemble_name, scope)
 
         ensemble_file.unlink()
@@ -174,6 +183,15 @@ class EnsembleCrudHandler:
             "deleted": True,
             "path": str(ensemble_file),
         }
+
+    def _delete_bundle(self, name: str) -> bool:
+        """Remove the bundle ``name`` unless the global tier holds an
+        ensemble file of that name, which is what the delete means."""
+        if (
+            self._config_manager.global_config_dir / "ensembles" / f"{name}.yaml"
+        ).exists():
+            return False
+        return self._bundles.delete(name)
 
     async def update_ensemble(self, arguments: dict[str, Any]) -> dict[str, Any]:
         """Update an ensemble configuration.

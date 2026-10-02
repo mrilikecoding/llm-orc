@@ -38,6 +38,7 @@ from llm_orc.services.handlers.run_preparation import (
     LOAD_ERRORS,
     NOT_EQUIPPED,
     ChildLoadError,
+    MaterializedRoot,
     RunRefusedError,
     load_problem,
     only_pullable_unmet,
@@ -285,6 +286,38 @@ class ExecutionHandler:
             return overlay(stored, request), True
         except (BundleError, RunRequestError) as e:
             raise RunRefusedError(INVALID_REQUEST, str(e)) from e
+
+    @contextmanager
+    def bundle_root(
+        self, name: str | None, lookup: Callable[[str], Any]
+    ) -> Iterator[MaterializedRoot | None]:
+        """The root of the bundle ``name`` materialized in a run layer, for
+        a check that judges it; None when ``name`` is not a bundle (a tier
+        resolves it first, or no bundle holds it). The layer is removed on
+        the way out."""
+        if not name:
+            yield None
+            return
+        try:
+            request, from_bundle = self._expand_bundle(
+                RunRequest(ensemble_name=name), lookup
+            )
+        except RunRefusedError as refusal:
+            raise ValueError(refusal.message) from refusal
+        if not from_bundle:
+            yield None
+            return
+        with self._run_dir(request) as run_dir:
+            try:
+                root = self._materialize(request, run_dir, lookup, "not found")
+            except RunRefusedError as refusal:
+                raise ValueError(refusal.message) from refusal
+            yield MaterializedRoot(
+                root.config,
+                root.manager,
+                self._project_path,
+                unmet_binding_rows(root.layer.unmet),
+            )
 
     def _refuse_shadowed_persist(
         self, request: RunRequest, lookup: Callable[[str], Any]
