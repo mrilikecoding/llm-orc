@@ -60,9 +60,10 @@ def _check_reachable(key: str) -> None:
 
 def _folded(path: str) -> tuple[str, ...]:
     """The segments of ``path`` as a case-folding, Unicode-normalizing
-    disk (macOS) sees them: two spellings that fold equal are one name."""
-    normalized = unicodedata.normalize("NFC", path)
-    folded = unicodedata.normalize("NFC", normalized.casefold())
+    disk (macOS) sees them: two spellings that fold equal are one name.
+    The canonical caseless form is NFD(casefold(NFD(x)))."""
+    decomposed = unicodedata.normalize("NFD", path)
+    folded = unicodedata.normalize("NFD", decomposed.casefold())
     return tuple(folded.split("/"))
 
 
