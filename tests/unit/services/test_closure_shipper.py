@@ -24,7 +24,12 @@ from fastapi.testclient import TestClient
 import llm_orc.web.api as web_api
 from llm_orc.core.config.config_manager import resolve_global_config_dir
 from llm_orc.core.execution.scripting.resolver import ScriptResolver
-from llm_orc.services.closure_shipper import ShipError, ship_closure
+from llm_orc.services.closure_shipper import (
+    LeftOut,
+    ShipError,
+    ship_closure,
+    ship_closure_reporting,
+)
 from llm_orc.services.handlers.run_request import RunRequest, materialize
 from llm_orc.services.orchestra_service import OrchestraService
 from llm_orc.web.server import create_app
@@ -572,6 +577,62 @@ class TestProfilesAndTheRestOfTheRequest:
 
         with pytest.raises(ShipError, match="would be refused.*must not contain '/'"):
             _ship(service, "pack/nested", persist="global")
+
+
+class TestWhatTheShipperLeftOut:
+    def _reporting(self, service: OrchestraService) -> list[LeftOut]:
+        request, left_out = ship_closure_reporting(
+            "top",
+            find_root=service.find_ensemble_by_name,
+            config_manager=service.config_manager,
+            project_dir=service.project_path,
+        )
+        assert request == _ship(service, "top")
+        return left_out
+
+    def test_a_child_a_script_and_a_listed_file_that_do_not_resolve(
+        self, project: Path, service: OrchestraService
+    ) -> None:
+        base = project / ".llm-orc"
+        _ensemble(
+            base,
+            "top",
+            [
+                {"name": "k", "ensemble": "kids/x"},
+                {"name": "g", "script": "tools/y.py"},
+                {"name": "o", "script": "tools/o.py"},
+            ],
+        )
+        _scripts(project, "tools/o.py", _block("_h.py"))
+
+        left_out = self._reporting(service)
+
+        assert [(item.kind, item.reference) for item in left_out] == [
+            ("ensemble", "kids/x"),
+            ("script", "tools/y.py"),
+            ("file", "_h.py"),
+        ]
+        assert [item.label for item in left_out] == [
+            "ensemble 'kids/x'",
+            "script 'tools/y.py'",
+            "file '_h.py' listed by script 'tools/o.py'",
+        ]
+
+    def test_inline_shell_and_what_ships_are_not_left_out(
+        self, project: Path, service: OrchestraService
+    ) -> None:
+        _scripts(project, "tools/x.py", _block("_h.py"))
+        _scripts(project, "tools/_h.py")
+        _ensemble(
+            project / ".llm-orc",
+            "top",
+            [
+                {"name": "a", "script": "echo hi"},
+                {"name": "b", "script": "tools/x.py"},
+            ],
+        )
+
+        assert self._reporting(service) == []
 
 
 class TestErrorsOnTheShipPath:
