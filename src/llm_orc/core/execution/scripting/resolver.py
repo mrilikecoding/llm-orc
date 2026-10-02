@@ -73,7 +73,8 @@ class ScriptResolver:
     def _get_search_paths(self) -> list[str]:
         """Get search paths in priority order.
 
-        Project (three entries), package primitives, library submodule,
+        The run layer's two entries (Arc 4) when there is one, then
+        project (three entries), package primitives, library submodule,
         global config scripts, then the packaged serving project (#196).
 
         Returns:
@@ -84,6 +85,12 @@ class ScriptResolver:
 
         base = self._project_dir or Path(os.getcwd())
         search_paths = []
+
+        # Priority -1: the one-run layer, ahead of everything (Arc 4)
+        if self._run_dir is not None:
+            search_paths.extend(
+                [str(self._run_dir / self.SCRIPTS_DIR), str(self._run_dir)]
+            )
 
         # Priority 0: Test primitives directory (for BDD tests)
         test_primitives_dir = os.environ.get("LLM_ORC_TEST_PRIMITIVES_DIR")
