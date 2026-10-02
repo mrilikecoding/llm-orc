@@ -150,7 +150,7 @@ class ExecutionHandler:
             input_data = path.read_text()
 
         try:
-            async with self._prepared(
+            async with self.prepared(
                 _request_data(arguments),
                 self._find_ensemble,
                 "Ensemble does not exist",
@@ -171,7 +171,7 @@ class ExecutionHandler:
             return refusal.envelope()
 
     @asynccontextmanager
-    async def _prepared(
+    async def prepared(
         self,
         data: Mapping[str, Any],
         lookup: Callable[[str], Any],
@@ -300,7 +300,7 @@ class ExecutionHandler:
             Execution result.
         """
         try:
-            async with self._prepared(
+            async with self.prepared(
                 _request_data({**(injection or {}), "ensemble_name": ensemble_name}),
                 self._find_ensemble,
                 "Ensemble does not exist",
@@ -471,7 +471,7 @@ class ExecutionHandler:
         """
         input_data = params.get("input", "")
         try:
-            async with self._prepared(
+            async with self.prepared(
                 _request_data(params), self._find_ensemble, "Ensemble not found"
             ) as run:
                 events = run.executor.execute_streaming(run.config, input_data)
