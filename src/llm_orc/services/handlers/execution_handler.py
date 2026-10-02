@@ -247,10 +247,10 @@ class ExecutionHandler:
             return _Layer()
         try:
             root_path = materialize(request, run_dir)
+            view = self._config_manager.with_run_layer(run_dir)
+            applied, unmet = apply_bindings(request.bind, view, run_dir)
         except RunRequestError as e:
             raise RunRefusedError(INVALID_REQUEST, str(e)) from e
-        view = self._config_manager.with_run_layer(run_dir)
-        applied, unmet = apply_bindings(request.bind, view, run_dir)
         return _Layer(view, root_path, applied, unmet)
 
     def _load_root(
