@@ -212,6 +212,29 @@ class TestPersist:
         deleted = client.delete("/api/ensembles/pack", params={"scope": "global"})
         assert deleted.json()["deleted"] is True
 
+    @pytest.mark.parametrize(
+        ("first", "second"),
+        [("caf\u00e9", "cafe\u0301"), ("cafe\u0301", "caf\u00e9")],
+        ids=["nfc-then-nfd", "nfd-then-nfc"],
+    )
+    def test_the_same_name_in_another_unicode_form_is_refused(
+        self, client: TestClient, first: str, second: str
+    ) -> None:
+        """macOS stores and opens names in decomposed form, so ``café``
+        spelled with one code point and with two are one file there."""
+        stored = _pack(persist="global")
+        stored["ensemble"] = {**PACK, "name": first}
+        assert _run(client, stored)["status"] == "success"
+        before = sorted(os.listdir(_bundle_file().parent))
+        rival = _pack(persist="global")
+        rival["ensemble"] = {**PACK, "name": second}
+
+        result = _run(client, rival)
+
+        assert result["error"]["kind"] == "invalid_request"
+        assert "another spelling" in result["error"]["message"]
+        assert sorted(os.listdir(_bundle_file().parent)) == before
+
     def test_a_spelling_that_lands_during_the_gate_is_refused_before_the_write(
         self, client: TestClient, monkeypatch: pytest.MonkeyPatch
     ) -> None:
