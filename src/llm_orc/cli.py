@@ -623,7 +623,9 @@ def mcp_serve(transport: str, port: int) -> None:
     signal.signal(signal.SIGINT, handle_shutdown)
     signal.signal(signal.SIGTERM, handle_shutdown)
 
-    server = MCPServer()
+    # Only stdio relays (``remote``): it has one local client. A network
+    # port has any number of clients, and a serve is not a relay.
+    server = MCPServer(relay=transport == "stdio")
 
     if transport == "stdio":
         # Minimal output for stdio - it's typically auto-spawned by MCP clients
