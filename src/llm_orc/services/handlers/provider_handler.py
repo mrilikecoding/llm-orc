@@ -3,8 +3,9 @@
 import os
 from collections.abc import Callable
 from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from llm_orc.core.config.closure import Closure, Key, walk_closure
 from llm_orc.core.config.config_manager import ConfigurationManager
@@ -39,6 +40,15 @@ from llm_orc.services.handlers.profile_handler import ProfileHandler
 
 _DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1"
 _DEFAULT_LLAMA_SERVER_URL = "http://127.0.0.1:8080/v1"
+
+
+class _Missing(Enum):
+    """The argument was not given (``None`` is a real project dir value)."""
+
+    MISSING = "missing"
+
+
+_MISSING = _Missing.MISSING
 
 
 @dataclass(frozen=True)
@@ -245,8 +255,9 @@ class ProviderHandler:
         self,
         config: EnsembleConfig,
         root_ref: str,
+        *,
         config_manager: ConfigurationManager | None = None,
-        project_dir: Path | None = None,
+        project_dir: Path | None | Literal[_Missing.MISSING] = _MISSING,
     ) -> Preflight:
         """The dependency closure of ``config`` and a report for each
         dependency, with the providers they were classified against.
@@ -256,8 +267,14 @@ class ProviderHandler:
         built from that pair and from nothing else the service holds, so
         the verdict is the one the executor built on the same pair would
         reach (Arc 4). Without one, the service's own wiring answers.
+        Half a pair raises: a view with the wrong project dir would
+        resolve scripts where the executor does not.
         """
-        if config_manager is None:
+        if (config_manager is None) != (project_dir is _MISSING):
+            raise ValueError(
+                "preflight takes both config_manager and project_dir, or neither"
+            )
+        if config_manager is None or project_dir is _MISSING:
             profiles = self._profile_handler.get_runtime_profiles()
             find_child = self._find_child
             script_found: Callable[[str], bool] = self._script_found
