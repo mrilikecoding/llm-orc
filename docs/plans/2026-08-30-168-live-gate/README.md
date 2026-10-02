@@ -7,7 +7,7 @@ this turn (resolve: exited non-zero, status 1); nothing was built or
 written` — no separator, no username, no trace of the injected message.
 The 2026-08-14 capture of the same scenario
 (`../2026-08-14-152-live-gate/gate-build-ask.json`) carried
-`Command '['python3', '/Users/nathangreen/.../resolve.py']'` verbatim;
+`Command '['python3', '/Users/dev/.../resolve.py']'` verbatim;
 that is the before-picture this converts.
 
 Bonus row, found before the gate: **entry 9's fault precondition is
@@ -26,7 +26,7 @@ needed a live fault injection rather than the recorded replay.
    write+read tools advertised): `finish: tool_calls`, a real
    `write add.py` call. Precondition extinct (#154). `168-response.json`.
 2. Fault injection: appended
-   `raise RuntimeError("injected crash naming /Users/nathangreen/secret-inject-probe-XYZ")`
+   `raise RuntimeError("injected crash naming /Users/dev/secret-inject-probe-XYZ")`
    to `.llm-orc/scripts/agentic_serving/resolve.py` (uncommitted,
    restored after). **Mutant confirmed live first** (rule 16):
    `echo '{}' | .venv/bin/python .llm-orc/scripts/agentic_serving/resolve.py`
@@ -35,7 +35,7 @@ needed a live fault injection rather than the recorded replay.
    chain running, which is what running the mutant directly caught.
 3. Direct wire (`168-inject3-response.json`): `finish: stop`, NO
    tool_calls, content = the sanitized refusal. Checks run on the body:
-   `'/' in content` False, `'nathangreen' in content` False,
+   `'/' in content` False, `'dev' in content` False,
    `'secret-inject-probe-XYZ' in content` False.
 4. Real client (`oc-out.json`): `opencode run "write a function that
    adds two numbers in add.py" --format json -m llm-orc/agentic` from an

@@ -1,8 +1,8 @@
 #!/bin/zsh
-S=/private/tmp/claude-501/-Users-nathangreen-Development-eddi-lab-llm-orc/32dba98e-5297-4a48-8e23-9f8b5e88d5e8/scratchpad
+S=/tmp/scratch
 O=$S/think-ab; touch $S/BENCH-RUNNING; trap "rm -f $S/BENCH-RUNNING" EXIT
 until curl -s -m 3 localhost:8777/v1/models >/dev/null; do sleep 2; done
-TOOLS=$(python3 -c "import json; print(json.dumps(json.load(open('/Users/nathangreen/Development/eddi-lab/llm-orc/docs/plans/2026-08-30-168-live-gate/168-ask.json'))['tools']))")
+TOOLS=$(python3 -c "import json; print(json.dumps(json.load(open('/Users/dev/Development/eddi-lab/llm-orc/docs/plans/2026-08-30-168-live-gate/168-ask.json'))['tools']))")
 run() { # port ask tag
   local port=$1 ask=$2 tag=$3
   local body=$(python3 -c "import json,sys; print(json.dumps({'model':'agentic','messages':[{'role':'user','content':sys.argv[1]}],'tools':json.loads(sys.argv[2])}))" "$ask" "$TOOLS")
