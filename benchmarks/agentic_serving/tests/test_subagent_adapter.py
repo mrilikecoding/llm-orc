@@ -134,9 +134,8 @@ class TestFullTurnFromRealCapture:
         assert write_call.path.endswith("todo.py")
         assert write_call.result_text == (
             "File created successfully at: "
-            "/private/tmp/claude-501/-Users-nathangreen-Development-eddi-lab-"
-            "llm-orc/104e20a5-2397-4b36-9013-eda538b066e0/scratchpad/"
-            "arm2-haiku-repo/todo.py (file state is current in your context "
+            "/tmp/scratch/arm2-haiku-repo/todo.py "
+            "(file state is current in your context "
             "— no need to Read it back)"
         )
 

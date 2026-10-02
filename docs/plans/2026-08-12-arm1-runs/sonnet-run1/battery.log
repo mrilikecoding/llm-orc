@@ -1,4 +1,4 @@
-=== LADDER START: model=opencode/claude-sonnet-5 repo=/private/tmp/claude-501/-Users-nathangreen-Development-eddi-lab-llm-orc/16be7720-2d73-4863-931b-da8381afd238/scratchpad/arm1/sonnet-run1-repo out=/private/tmp/claude-501/-Users-nathangreen-Development-eddi-lab-llm-orc/16be7720-2d73-4863-931b-da8381afd238/scratchpad/arm1/sonnet-run1-out ===
+=== LADDER START: model=opencode/claude-sonnet-5 repo=/tmp/scratch/arm1/sonnet-run1-repo out=/tmp/scratch/arm1/sonnet-run1-out ===
 === TURN 1: write a function that adds a todo item to a list in todo.py ===
 --- truth 01 | suite_rc 1 | seeded_rc 1 ---
 --- exit 0 ---

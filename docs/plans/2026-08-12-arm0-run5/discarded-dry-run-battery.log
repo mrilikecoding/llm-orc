@@ -1,4 +1,4 @@
-=== LADDER START: model=llm-orc/agentic repo=/private/tmp/claude-501/-Users-nathangreen-Development-eddi-lab-llm-orc/11d60d4f-64ac-41db-9f65-ff21dd72ba6d/scratchpad/ladder-repo out=/private/tmp/claude-501/-Users-nathangreen-Development-eddi-lab-llm-orc/11d60d4f-64ac-41db-9f65-ff21dd72ba6d/scratchpad/ladder-out ===
+=== LADDER START: model=llm-orc/agentic repo=/tmp/scratch/ladder-repo out=/tmp/scratch/ladder-out ===
 === TURN 1: write a function that adds a todo item to a list in todo.py ===
 --- truth 01 | suite_rc 5 | seeded_rc 4 ---
 --- exit 0 ---

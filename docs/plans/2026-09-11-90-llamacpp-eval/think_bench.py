@@ -23,4 +23,4 @@ def run(think,npred=1500):
         thinking_chars=len(th), content_chars=len(b["message"].get("content") or ""))
 for t in (False,True):
     r=run(t); print(r)
-    json.dump(r,open(f"/private/tmp/claude-501/-Users-nathangreen-Development-eddi-lab-llm-orc/32dba98e-5297-4a48-8e23-9f8b5e88d5e8/scratchpad/90-eval/think-{t}.json","w"))
+    json.dump(r,open(f"/tmp/scratch/90-eval/think-{t}.json","w"))

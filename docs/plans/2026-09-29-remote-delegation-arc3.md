@@ -96,7 +96,7 @@ about the cache.
 - [ ] **Step 1: Worktree.**
 
 ```bash
-cd /Users/nathangreen/Development/eddi-lab/llm-orc
+cd /Users/dev/Development/eddi-lab/llm-orc
 git worktree add .claude/worktrees/arc3-preflight -b feat/transitive-preflight main
 cd .claude/worktrees/arc3-preflight
 uv sync -q

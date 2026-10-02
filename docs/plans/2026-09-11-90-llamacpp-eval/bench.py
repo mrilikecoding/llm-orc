@@ -1,5 +1,5 @@
 import json,sys,time,urllib.request
-BLOB="/Users/nathangreen/.ollama/models/blobs/sha256-a3de86cd1c132c822487ededd47a324c50491393e6565cd14bafa40d0b8e686f"
+BLOB="/Users/dev/.ollama/models/blobs/sha256-a3de86cd1c132c822487ededd47a324c50491393e6565cd14bafa40d0b8e686f"
 P_SHORT="Write a Python function that merges two sorted lists into one sorted list. Explain the algorithm step by step, then show the code.\n"
 para=("The storage module keeps todos in a JSON file on disk. Each todo is a dict with an id, a text field, and a done flag. "
       "The TodoStore class loads the file on construction, exposes add, list, and complete methods, and writes the file back after every mutation. ")
@@ -43,4 +43,4 @@ if __name__=="__main__":
         out.append(row(f"{which} B-long3k-gen32 r{rep}", f(P_LONG,32)))
     for rep in (1,2):
         out.append(row(f"{which} C-repeatA-gen64 r{rep}", f(P_SHORT,64)))
-    json.dump(out,open(f"/private/tmp/claude-501/-Users-nathangreen-Development-eddi-lab-llm-orc/32dba98e-5297-4a48-8e23-9f8b5e88d5e8/scratchpad/90-eval/bench-{which}.json","w"),indent=1)
+    json.dump(out,open(f"/tmp/scratch/90-eval/bench-{which}.json","w"),indent=1)

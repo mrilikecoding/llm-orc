@@ -1,8 +1,8 @@
 #!/bin/zsh
 # dd-turn.sh N "prompt" [cont]  — one daily-driver turn through real OpenCode against the serve.
 N=$1; P=$2; CONT=$3
-S=/private/tmp/claude-501/-Users-nathangreen-Development-eddi-lab-llm-orc/32dba98e-5297-4a48-8e23-9f8b5e88d5e8/scratchpad
-R=$S/dd-repo; OUT=$S/dd-out; PY=/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/bin/python
+S=/tmp/scratch
+R=$S/dd-repo; OUT=$S/dd-out; PY=/Users/dev/Development/eddi-lab/llm-orc/.venv/bin/python
 n=$(printf %02d $N)
 cd $R || exit 9; touch $OUT/RUNNING; trap "rm -f $OUT/RUNNING" EXIT
 echo "$P" > $OUT/ask-$n.txt

@@ -106,8 +106,8 @@ branch, and three residual bounds recorded here rather than fixed:
   terminal `_dead_seat_reason` just declared unrecognizable — an
   independent parse of one dead payload. Capture:
   `{"success": false, "error": "...", "diagnostics": {"accept": false,
-  "accept_reason": "see /Users/nathangreen/x.py"}}` on a build turn
-  shipped `Another round needed: see /Users/nathangreen/x.py`. Fixed by
+  "accept_reason": "see /Users/dev/x.py"}}` on a build turn
+  shipped `Another round needed: see /Users/dev/x.py`. Fixed by
   moving the dead-seat refusal (`build and seat_failed`, no longer gated
   on `valid`) ahead of both, still below `routing_failed` / the seam asks
   / `seat_admitted is False` (a separate validator-authored node, whose

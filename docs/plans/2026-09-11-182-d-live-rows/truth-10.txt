@@ -7,7 +7,7 @@ exit=0
 --- pytest (throwaway copy) ---
 ___________________________ test_complete_marks_done ___________________________
 
-tmp_path = PosixPath('/private/var/folders/91/yhfbl6_d22sc8ncqln1tj2k00000gn/T/pytest-of-nathangreen/pytest-3757/test_complete_marks_done0')
+tmp_path = PosixPath('/private/var/folders/xx/devtmp/T/pytest-of-dev/pytest-3757/test_complete_marks_done0')
 
     def test_complete_marks_done(tmp_path):
 >       store = TodoStore(tmp_path / "t.json")
