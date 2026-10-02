@@ -262,17 +262,27 @@ interrupt a ship that is itself stuck; `REQUESTS_CA_BUNDLE` is not read
 live row is that check); on a tty the left-out line can share a line
 with the ticker.
 
-**Next: push and release on the practitioner's go (push at 0.23.0
-first, wait for CI on both OSes, then the version bump), deploy to the
-remote host (`llm-orc-deploy.sh` over ssh), then the remote rows:
-`research-dossier --remote` (the first model run past 200 s through its
-proxy), the missing profile and `--bind`, Ctrl-C through the proxy,
-`--persist global` and a run by name.** The changelog needs the
-breaking-change paragraph from `docs/serving.md` ("Local runs: bind,
-pull and the gate"). After that the remote delegation plan's arcs are
-done; what remains of #191 is the one-service shape, and #205 (access
-levels) is where a serve would say what it permits before a client
-ships. Left on #94: candidates for a `${...}` dispatch.
+**Released as v0.24.0 and deployed to the remote host (2026-10-02, on
+the practitioner's go).** Pushed at 0.23.0 first, CI green, then the
+bump (`06fba7da`) and tag; PyPI, GitHub release; the tap formula is
+bumped by the repo's `update-homebrew.yml` action on release (no hand
+bump needed from now on); the host runs 0.24.0 via the homelab deploy
+script. Remote rows (spec, "Released as v0.24.0 and the remote rows"):
+the missing profile and `--bind`, Ctrl-C through the proxy (the host's
+script dead within 2 s), persist, a run by name, the leak check and
+delete all passed. `research-dossier --remote` ran 212 s and 204 s
+through the proxy and returned each time, which closes the long-run
+question, but ended `status: error` both times: `ddgs` raises
+`DDGSException` on some queries and the packaged `web_searcher.py` does
+not catch it, so two or three of five searches exit 1 and the compiler
+is not run. Running the ensemble by name on the host, nothing shipped,
+fails the same way. A packaged-script defect, on #196, and the first
+thing to fix for the daily driver.
+
+The remote delegation plan's arcs are done. What remains of #191 is the
+one-service shape; #205 (access levels) is where a serve would say what
+it permits before a client ships; #94 holds candidates for a `${...}`
+dispatch. Local `main` equals `origin/main`.
 
 Tooling since the last handoff: `hooks/pre-commit` and `hooks/pre-push`
 are tracked and both run `make lint` (`make install-hooks`; `make setup`
