@@ -311,8 +311,9 @@ PEP 723 reserves for tools:
 The opening line is `# /// llm-orc` (`// /// llm-orc` in a script whose
 comments start with `//`), the body is TOML with one key, `files`, and
 `# ///` closes it. Every line of the block starts with the same comment
-leader. The first block in the file is the one read, and a script with no
-block lists nothing.
+leader. The first `/// llm-orc` opening line in the file starts the block:
+if that block does not close or does not parse, that is the error, whatever
+follows it. A script with no block, or an empty one, lists nothing.
 
 Each path is relative to the script's own directory: no `..`, no leading
 `/`, no backslash, no empty or `.` segment. A listed file can carry a block
@@ -321,7 +322,9 @@ of its own, and the files it lists are followed.
 Nothing is inferred from imports. The list is what a closure carries, and
 preflight and `invoke --remote` read the same list. A listed file is looked
 for beside the script that resolved and nowhere else, so a host file at the
-same relative path in another tier never stands in for it.
+same relative path in another tier never stands in for it. For a script
+that is a symlink, beside means beside its target, which is where Python
+imports from.
 
 Preflight reports a listed file that is not beside its script as
 `missing_script` with resolve `ship`, on a row named for the file's path
@@ -363,17 +366,25 @@ The request is the one in the previous section, sent as a single POST to
   (repeatable), as an inline profile.
 
 Profiles stay behind unless asked for, since a host binds roles to its own
-models. Anything that does not resolve locally is not sent, and the
-remote's preflight judges it. A `${...}` dispatch target reads `dynamic`
-and is left to the remote.
+models. A child ensemble, script or listed file that does not resolve
+locally is not sent, and the remote's preflight judges it: the remote may
+have its own copy. The CLI names each one on stderr before the run goes
+out (`Left to the remote (not found locally): ensemble 'kids/x'`). A
+`${...}` dispatch target reads `dynamic` and is left to the remote.
+
+Before sending, the CLI resolves every script reference against a copy of
+the request laid out as the remote will lay it out, with the resolver the
+remote uses. A reference that would reach a different file there is
+refused.
 
 These are refused before anything is sent, with exit 1: `--max-concurrent`,
 an unknown remote, a `--with-profile` name with no local profile, a script
 given as an absolute path, a script that is a bare file name in the working
-directory (the remote would read it as inline shell), a script that is not
-UTF-8 text, an ensemble or profile that is not plain data, an interactive
-script, and
-a request the remote's validator would refuse. `--with-profile` and
+directory (the remote would read it as inline shell), a script reference
+with a `.` or `..` segment, a script that cannot be read or is not UTF-8
+text, two local files the remote would reach by one reference, an ensemble
+or profile that is not plain data, an interactive script, and a request the
+remote's validator would refuse. `--with-profile` and
 `--persist` without `--remote` are usage errors (exit 2).
 
 The CLI prints a remote result the way it prints a local one, in rich,
@@ -389,9 +400,9 @@ of `success` or `error` and a boolean `has_errors`. Anything else is an
 error naming the remote and the status code: a 422 from an older serve, a
 404, or the web UI's page answered with 200 for an unknown API path.
 
-Exit codes: 0 for `status: success`, 1 for `status: error` (a failed run,
-a refusal, a closure that cannot ship, an unreachable remote, an answer that is not a
-result), 130 for Ctrl-C. Ctrl-C closes the connection, and the serve then
+Exit codes: 0 for `status: success` with no errors, 1 for `status: error`
+or `has_errors` (a failed run, a refusal, a closure that cannot ship, an
+unreachable remote, an answer that is not a result), 130 for Ctrl-C. Ctrl-C closes the connection, and the serve then
 cancels the run.
 
 A run on a profile the remote lacks, then the same run bound to one it has
@@ -411,14 +422,20 @@ Bindings applied: seat -> general
 
 The MCP `invoke` tool does the same for an agent. With `remote` (a name or
 a URL) and `ensemble_name`, the server ships that local root's closure and
-returns the remote's result document unchanged. `bind`, `pull`, `persist`
-and `with_profiles` (a list of profile names) travel with it. `remote`
+returns the remote's result document, adding `left_out` (what did not
+resolve locally) when there is any. `bind`, `pull`, `persist`
+and `with_profiles` (a list of profile names) travel with it. Cancelling
+the call closes the connection, and the remote cancels the run. `remote`
 with an inline `ensemble`, `ensembles`, `profiles` or `scripts` is
 `invalid_request`: a client that holds a definition can send it to the
 remote itself. When nothing was sent (an unknown remote, a closure that
 cannot ship, an interactive script) the error kind is `invalid_request`.
 When the remote could not be reached or did not answer with a result, it
-is `remote_error`. REST takes no `remote`; a serve does not relay.
+is `remote_error`.
+
+`remote` works on the stdio server (`llm-orc mcp serve`). A serve does not
+relay: REST takes no `remote`, and the MCP endpoint a serve mounts at
+`/mcp` answers `remote` and `with_profiles` with `invalid_request`.
 
 ## Local runs: bind, pull and the gate
 
