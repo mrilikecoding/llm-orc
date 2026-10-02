@@ -1,8 +1,9 @@
 """Run a local root on another serve (Arc 5, Task 8).
 
 One coroutine, ``run_remote``, does a remote run for the CLI and the MCP
-tool: it resolves the remote, ships the closure as one run request,
-posts it with an ``httpx.AsyncClient`` and checks the answer. The POST
+tool: it resolves the remote, ships the closure as one run request (in a
+worker thread, so the event loop stays free), posts it with an
+``httpx.AsyncClient`` and checks the answer. The POST
 sits inside the client's ``async with``, so cancelling the awaiting task
 closes the connection and the remote serve sees the disconnect. An
 answer counts as a result only when it is HTTP 200, a JSON object,
@@ -14,6 +15,7 @@ answers 422 to a key it forbids, so anything else raises
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
@@ -107,7 +109,8 @@ async def run_remote(
         base_url = resolve_remote(remote, config_manager)
     except RemoteError as e:
         raise RemoteRunError(remote, str(e), kind=INVALID_REQUEST) from e
-    request, left_out = _ship(
+    request, left_out = await asyncio.to_thread(
+        _ship_checked,
         remote,
         root_name,
         find_root=find_root,
@@ -119,7 +122,6 @@ async def run_remote(
         persist=persist,
         input_text=input_text,
     )
-    _refuse_interactive(remote, request)
     if left_out and on_left_out is not None:
         on_left_out(left_out)
     try:
@@ -135,6 +137,16 @@ async def run_remote(
             remote, f"could not reach {base_url}: {str(e) or type(e).__name__}"
         ) from e
     return _result_document(remote, response)
+
+
+def _ship_checked(
+    remote: str, root_name: str, **more: Any
+) -> tuple[dict[str, Any], list[LeftOut]]:
+    """The ship half of a run: the closure walk, the proof and the file
+    reads block, so this runs in a worker thread, not on the event loop."""
+    request, left_out = _ship(remote, root_name, **more)
+    _refuse_interactive(remote, request)
+    return request, left_out
 
 
 def _ship(
