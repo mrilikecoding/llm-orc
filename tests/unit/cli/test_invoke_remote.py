@@ -931,3 +931,34 @@ def test_a_redirects_location_is_capped_and_stripped_of_control_characters(
     assert "https://other.example/" + "a" * 20 in result.output
     assert "a" * 200 not in result.output
     assert "\x85" not in result.output
+
+
+def test_a_422_detail_is_capped_and_stripped_of_control_characters(
+    in_project: Path, remotes: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _write_top(in_project)
+    detail = "refused\x1b\x07here " + "d" * 300
+    _canned(monkeypatch, Canned(422, json.dumps({"detail": detail})))
+
+    result = _remote_invoke("--output-format", "text")
+
+    assert result.exit_code == 1, result.output
+    assert "refusedhere " + "d" * 20 in result.output
+    assert "d" * 200 not in result.output
+    assert "\x1b" not in result.output
+    assert "\x07" not in result.output
+
+
+def test_a_non_200_body_is_capped_and_stripped_of_control_characters(
+    in_project: Path, remotes: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _write_top(in_project)
+    _canned(monkeypatch, Canned(502, "bad\x1b\x07gateway " + "b" * 300))
+
+    result = _remote_invoke("--output-format", "text")
+
+    assert result.exit_code == 1, result.output
+    assert "badgateway " + "b" * 20 in result.output
+    assert "b" * 200 not in result.output
+    assert "\x1b" not in result.output
+    assert "\x07" not in result.output
