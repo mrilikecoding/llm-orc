@@ -933,7 +933,7 @@ def test_a_dead_seat_outranks_the_accept_branch_and_quotes_nothing_from_it() -> 
     Reviewer capture:
     ``{"success": false, "error": "Script failed with exit code 1",
     "diagnostics": {"accept": false, "accept_reason":
-    "see /Users/nathangreen/x.py"}}``. The gated dict below is not a
+    "see /Users/dev/x.py"}}``. The gated dict below is not a
     hand-picked shape — it is what shape.py + form_gate.py actually produce
     for that exact terminal (verified by running them): `content` zeroed,
     `accept`/`accept_reason` read from the same dead dict, `seat_failed`
@@ -946,7 +946,7 @@ def test_a_dead_seat_outranks_the_accept_branch_and_quotes_nothing_from_it() -> 
             "file": "a.py",
             "content": "",
             "accept": False,
-            "accept_reason": "see /Users/nathangreen/x.py",
+            "accept_reason": "see /Users/dev/x.py",
             "seat_admitted": True,
             "seat_contract_reason": "",
             "seat_gate_failed": "",
@@ -957,7 +957,7 @@ def test_a_dead_seat_outranks_the_accept_branch_and_quotes_nothing_from_it() -> 
     assert outcome["content"].startswith(BUILD_REFUSED_PREFIX)
     assert "exited non-zero, status 1" in outcome["content"]
     assert "Another round needed" not in outcome["content"]
-    assert "/Users/nathangreen" not in outcome["content"]
+    assert "/Users/dev" not in outcome["content"]
     assert "x.py" not in outcome["content"]
 
 

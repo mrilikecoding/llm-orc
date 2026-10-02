@@ -333,8 +333,8 @@ def main() -> None:
         # dead dict with no `status` check of its own. Trusting any of them
         # below this point is a wrong-accept: the reviewer's capture
         # (`{"success": false, "error": "...", "diagnostics": {"accept":
-        # false, "accept_reason": "see /Users/nathangreen/x.py"}}`) shipped
-        # `Another round needed: see /Users/nathangreen/x.py` — a path from
+        # false, "accept_reason": "see /Users/dev/x.py"}}`) shipped
+        # `Another round needed: see /Users/dev/x.py` — a path from
         # a dead terminal — when the accept branch sat above this one.
         #
         # NOT gated on `valid` (unlike seat_gate_failed below, whose
