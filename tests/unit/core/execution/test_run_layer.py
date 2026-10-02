@@ -361,7 +361,7 @@ class TestRunLayerSideEffects:
 
         assert counter.read_text() == "x"
 
-    async def test_a_callers_own_bytecode_prefix_still_wins(
+    async def test_a_layer_run_keeps_bytecode_under_the_run_dir_whatever_the_env(
         self,
         tmp_path: Path,
         project: Path,
@@ -371,11 +371,42 @@ class TestRunLayerSideEffects:
         monkeypatch.setenv("PYTHONPYCACHEPREFIX", str(tmp_path / "theirs"))
         run = _run_dir(tmp_path)
         _script(run / "scripts" / "a" / "x.py", "layer")
+        (run / "scripts" / "a" / "_helpers.py").write_text("tag = 'h'\n")
+        (run / "scripts" / "a" / "x.py").write_text(
+            "import json, sys\n"
+            "from _helpers import tag\n"
+            "sys.stdin.read()\n"
+            'print(json.dumps({"success": True, "data": {"tag": tag}}))\n'
+        )
         root = _ensemble(tmp_path, "root", _SCRIPT_ROOT)
 
         await _run(base.with_run_layer(run), project, root)
 
-        assert not (run / "pycache").exists()
+        assert list((run / "pycache").rglob("*.pyc"))
+        assert not (tmp_path / "theirs").exists()
+
+    async def test_a_callers_own_bytecode_prefix_wins_without_a_layer(
+        self,
+        tmp_path: Path,
+        project: Path,
+        base: ConfigurationManager,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setenv("PYTHONPYCACHEPREFIX", str(tmp_path / "theirs"))
+        _script(project / ".llm-orc" / "scripts" / "a" / "x.py", "plain")
+        (project / ".llm-orc" / "scripts" / "a" / "_helpers.py").write_text(
+            "tag = 'h'\n"
+        )
+        (project / ".llm-orc" / "scripts" / "a" / "x.py").write_text(
+            "import json, sys\n"
+            "from _helpers import tag\n"
+            "sys.stdin.read()\n"
+            'print(json.dumps({"success": True, "data": {"tag": tag}}))\n'
+        )
+        root = _ensemble(tmp_path, "root", _SCRIPT_ROOT)
+
+        await _run(base, project, root)
+
         assert list((tmp_path / "theirs").rglob("*.pyc"))
 
 
