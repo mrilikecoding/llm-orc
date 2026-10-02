@@ -686,6 +686,21 @@ class TestTheOtherSurfacesKnowBundles:
         with pytest.raises(ValueError, match="does not exist"):
             _run_named(client, "pack")
 
+    def test_another_spelling_of_the_name_deletes_nothing_and_runs_nothing(
+        self, client: TestClient
+    ) -> None:
+        """On a case-folding disk ``PACK`` opens ``pack.json``; the name is
+        a bundle only where the directory entry is exactly ``PACK.json``."""
+        _persisted(client)
+
+        with pytest.raises(ValueError, match="not found"):
+            client.delete("/api/ensembles/PACK", params={"scope": "global"})
+        with pytest.raises(ValueError, match="does not exist"):
+            _run_named(client, "PACK")
+
+        assert _bundle_file().exists()
+        assert _run_named(client, "pack")["status"] == "success"
+
     def test_delete_with_scope_project_does_not_touch_a_bundle(
         self, client: TestClient
     ) -> None:

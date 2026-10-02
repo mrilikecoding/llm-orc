@@ -69,9 +69,34 @@ class BundleStore:
             return None
         return self.directory / f"{name}{_SUFFIX}"
 
-    def has(self, name: str) -> bool:
+    def _entry(self, name: str) -> Path | None:
+        """The file of ``name`` when the directory holds an entry named
+        exactly ``<name>.json``. A case-folding disk opens ``pack.json``
+        for ``PACK.json``; the directory listing is what tells them apart."""
         path = self._path(name)
-        return path is not None and path.is_file()
+        if path is None:
+            return None
+        try:
+            held = path.name in os.listdir(self.directory)
+        except OSError:
+            return None
+        return path if held and path.is_file() else None
+
+    def _entry_named(self, name: str) -> Path | None:
+        """``_entry`` unless the file readably holds a root named
+        otherwise. An unreadable file stays a bundle: it can be deleted
+        and a read of it says what is wrong."""
+        path = self._entry(name)
+        if path is None:
+            return None
+        try:
+            root = json.loads(path.read_text())["ensemble"]["name"]
+        except (OSError, ValueError, KeyError, TypeError):
+            return path
+        return path if root == name else None
+
+    def has(self, name: str) -> bool:
+        return self._entry_named(name) is not None
 
     def names(self) -> list[str]:
         """The names of the bundle files, sorted."""
@@ -85,8 +110,8 @@ class BundleStore:
         Raises ``BundleError`` naming the bundle when its file does not
         parse or does not validate as a request for this root.
         """
-        path = self._path(name)
-        if path is None or not path.is_file():
+        path = self._entry(name)
+        if path is None:
             return None
         try:
             stored = json.loads(path.read_text())
@@ -137,8 +162,8 @@ class BundleStore:
 
     def delete(self, name: str) -> bool:
         """Remove ``name``; whether a bundle was there."""
-        path = self._path(name)
-        if path is None or not path.is_file():
+        path = self._entry_named(name)
+        if path is None:
             return False
         path.unlink()
         return True

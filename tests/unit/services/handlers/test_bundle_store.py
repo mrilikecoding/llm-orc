@@ -155,6 +155,33 @@ class TestAnUnreadableBundle:
             store.read("other")
 
 
+class TestOnlyTheExactNameIsABundle:
+    """Pins that hold on a case-folding disk and a case-sensitive one."""
+
+    def test_another_spelling_is_not_read_had_or_deleted(
+        self, store: BundleStore, tmp_path: Path
+    ) -> None:
+        store.write("pack", _stored())
+
+        assert store.read("PACK") is None
+        assert not store.has("PACK")
+        assert store.delete("PACK") is False
+        assert (tmp_path / "global" / "bundles" / "pack.json").exists()
+        assert store.has("pack")
+        assert store.read("pack") is not None
+
+    def test_a_file_whose_root_is_named_otherwise_is_not_a_bundle_to_has_or_delete(
+        self, store: BundleStore, tmp_path: Path
+    ) -> None:
+        store.write("pack", _stored())
+        other = tmp_path / "global" / "bundles" / "other.json"
+        other.write_text((tmp_path / "global" / "bundles" / "pack.json").read_text())
+
+        assert not store.has("other")
+        assert store.delete("other") is False
+        assert other.exists()
+
+
 class TestDeleteAndNames:
     def test_delete_removes_it_and_says_so(self, store: BundleStore) -> None:
         store.write("pack", _stored())
