@@ -27,6 +27,7 @@ from llm_orc.services.handlers.run_preparation import (
     INVALID_REQUEST,
     NOT_EQUIPPED,
     RunRefusedError,
+    pull_pullable,
     unmet_binding_rows,
     unnamed_bind_keys,
 )
@@ -73,6 +74,7 @@ class PreparedRun:
     executor: EnsembleExecutor
     inline: bool = False
     bindings: dict[str, str] = field(default_factory=dict)
+    pulled: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -230,12 +232,15 @@ class ExecutionHandler:
                 f"bind key {stray[0]!r} names no profile in the closure",
             )
         reports = [*outcome.reports, *unmet_binding_rows(layer.unmet)]
+        pulled: list[str] = []
+        if request.pull:
+            reports, pulled = await pull_pullable(reports, manager.get_model_profiles())
         if not is_runnable(reports):
             raise RunRefusedError(NOT_EQUIPPED, _unmet_message(reports), reports)
         if layer.view is None:
-            return PreparedRun(config, self._get_executor(), inline)
+            return PreparedRun(config, self._get_executor(), inline, {}, pulled)
         executor = self._layer_executor(layer.view, not inline)
-        return PreparedRun(config, executor, inline, layer.applied)
+        return PreparedRun(config, executor, inline, layer.applied, pulled)
 
     def _open_layer(self, request: RunRequest, run_dir: Path | None) -> _Layer:
         """Materialize the request into ``run_dir`` and bind over it."""
@@ -491,8 +496,13 @@ class ExecutionHandler:
 
 def _run_record(run: PreparedRun) -> dict[str, Any]:
     """What the run was asked to do that the caller should see: the
-    bindings applied, when there are any."""
-    return {"bindings": run.bindings} if run.bindings else {}
+    bindings applied and the models pulled, when there are any."""
+    record: dict[str, Any] = {}
+    if run.bindings:
+        record["bindings"] = run.bindings
+    if run.pulled:
+        record["pulled"] = run.pulled
+    return record
 
 
 def _request_data(arguments: Mapping[str, Any]) -> dict[str, Any]:
