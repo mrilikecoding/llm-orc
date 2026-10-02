@@ -44,6 +44,21 @@ from llm_orc.cli_modules.commands.validation_commands import (
 )
 
 
+def _parse_bindings(
+    _ctx: click.Context, _param: click.Parameter, values: tuple[str, ...]
+) -> dict[str, str]:
+    """``--bind a=b`` pairs as a dict; a value without ``=`` is a usage error."""
+    bindings: dict[str, str] = {}
+    for value in values:
+        key, separator, target = value.partition("=")
+        if not (separator and key and target):
+            raise click.BadParameter(f"{value!r} is not NAME=TARGET")
+        if key in bindings:
+            raise click.BadParameter(f"{key!r} is bound twice")
+        bindings[key] = target
+    return bindings
+
+
 @click.group()
 @click.version_option(package_name="llm-orchestra")
 def cli() -> None:
@@ -141,6 +156,19 @@ def completion(shell: str | None) -> None:
     default=True,
     help="Show detailed results and performance metrics",
 )
+@click.option(
+    "--bind",
+    "bind",
+    multiple=True,
+    callback=_parse_bindings,
+    help="Run a profile name on another profile: NAME=TARGET (repeatable)",
+)
+@click.option(
+    "--pull",
+    is_flag=True,
+    default=False,
+    help="Download a model this host lacks but can pull, then run",
+)
 def invoke(
     ensemble_name: str,
     input_data: str | None,
@@ -151,6 +179,8 @@ def invoke(
     streaming: bool,
     max_concurrent: int | None,
     detailed: bool,
+    bind: dict[str, str],
+    pull: bool,
 ) -> None:
     """Invoke an ensemble of agents."""
     has_errors = invoke_ensemble(
@@ -163,6 +193,8 @@ def invoke(
         max_concurrent,
         detailed,
         input_file=input_file,
+        bind=bind,
+        pull=pull,
     )
     if has_errors:
         sys.exit(1)

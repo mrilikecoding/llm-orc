@@ -3,7 +3,8 @@
 import asyncio
 import json
 import sys
-from collections.abc import Sequence
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
 
@@ -18,7 +19,12 @@ from llm_orc.cli_modules.utils.visualization import (
     run_standard_execution,
     run_streaming_execution,
 )
+from llm_orc.cli_modules.utils.visualization.refusal_display import (
+    display_refusal,
+    display_run_record,
+)
 from llm_orc.core.config.ensemble_config import EnsembleConfig
+from llm_orc.services.handlers.run_preparation import RunRefusedError
 
 
 def _get_service() -> Any:
@@ -204,7 +210,7 @@ def _determine_effective_streaming(
             return streaming  # Use just the CLI flag
 
 
-def _execute_ensemble_with_mode(
+async def _execute_ensemble_with_mode(
     executor: Any,
     ensemble_config: "EnsembleConfig",
     input_data: str,
@@ -212,6 +218,7 @@ def _execute_ensemble_with_mode(
     detailed: bool,
     requires_user_input: bool,
     effective_streaming: bool,
+    record: dict[str, Any] | None = None,
 ) -> bool:
     """Execute ensemble with the appropriate execution mode.
 
@@ -223,6 +230,7 @@ def _execute_ensemble_with_mode(
         detailed: Detailed output flag
         requires_user_input: Whether ensemble requires user input
         effective_streaming: Whether to use streaming execution
+        record: Bindings applied and models pulled, for the JSON document
 
     Returns:
         Whether the run's caller-facing status is "error" (fail-closed-
@@ -232,27 +240,104 @@ def _execute_ensemble_with_mode(
     # Convert None output_format to "rich" for execution functions
     execution_format = output_format or "rich"
 
-    if requires_user_input:
-        # Interactive execution with streaming visualization for progress control
-        return asyncio.run(
-            run_streaming_execution(
-                executor, ensemble_config, input_data, execution_format, detailed
-            )
+    if requires_user_input or effective_streaming:
+        # Streaming visualization; interactive scripts need its progress control
+        return await run_streaming_execution(
+            executor, ensemble_config, input_data, execution_format, detailed
         )
-    elif effective_streaming:
-        # Streaming execution with Rich status
-        return asyncio.run(
-            run_streaming_execution(
-                executor, ensemble_config, input_data, execution_format, detailed
+    return await run_standard_execution(
+        executor, ensemble_config, input_data, execution_format, detailed, record
+    )
+
+
+def _root_lookup(
+    service: Any, ensemble_name: str, config_dir: str | None
+) -> Callable[[str], Any]:
+    """The lookup the prepared run is given for the named root: the
+    service's tiers, or the one ``--config-dir`` directory. A root that
+    is not there ends the command with the searched directories."""
+
+    def lookup(name: str) -> Any:
+        if config_dir is not None:
+            return _find_ensemble_config(name, [Path(config_dir)], service)
+        config = service.find_ensemble_by_name(name)
+        if config is None:
+            searched = [str(d) for d in service.config_manager.get_ensembles_dirs()]
+            raise click.ClickException(
+                f"Ensemble '{name}' not found in: {', '.join(searched)}"
             )
-        )
-    else:
-        # Standard execution
-        return asyncio.run(
-            run_standard_execution(
-                executor, ensemble_config, input_data, execution_format, detailed
-            )
-        )
+        return config
+
+    return lookup
+
+
+async def _run_prepared(
+    service: Any,
+    request: dict[str, Any],
+    lookup: Callable[[str], Any],
+    input_data: str,
+    options: "_RunOptions",
+) -> bool:
+    """Run ``request`` inside the preparation step and display it. A
+    refusal is displayed and counts as an error."""
+    try:
+        async with service.prepared_run(request, lookup) as run:
+            return await _run_with_display(run, input_data, service, options)
+    except RunRefusedError as refusal:
+        display_refusal(refusal.envelope(), options.output_format)
+        return True
+
+
+async def _run_with_display(
+    run: Any, input_data: str, service: Any, options: "_RunOptions"
+) -> bool:
+    from llm_orc.core.execution.scripting.user_input_handler import (
+        ScriptUserInputHandler,
+    )
+
+    requires_user_input = ScriptUserInputHandler().ensemble_requires_user_input(
+        run.config
+    )
+
+    # Override concurrency settings if provided
+    if options.max_concurrent is not None:
+        run.executor.set_max_concurrent_agents(options.max_concurrent)
+
+    # Show performance configuration only for default Rich interface (not text/json)
+    _setup_performance_display(
+        service.config_manager,
+        run.executor,
+        options.ensemble_name,
+        run.config,
+        options.streaming,
+        options.output_format,
+        input_data,
+    )
+    display_run_record(run.bindings, run.pulled, options.output_format)
+
+    effective_streaming = _determine_effective_streaming(
+        service.config_manager, options.output_format, options.streaming
+    )
+    record = {"bindings": run.bindings, "pulled": run.pulled}
+    return await _execute_ensemble_with_mode(
+        run.executor,
+        run.config,
+        input_data,
+        options.output_format,
+        options.detailed,
+        requires_user_input,
+        effective_streaming,
+        record,
+    )
+
+
+@dataclass(frozen=True)
+class _RunOptions:
+    ensemble_name: str
+    output_format: str | None
+    streaming: bool
+    max_concurrent: int | None
+    detailed: bool
 
 
 def invoke_ensemble(
@@ -266,8 +351,14 @@ def invoke_ensemble(
     detailed: bool,
     *,
     input_file: str | None = None,
+    bind: Mapping[str, str] | None = None,
+    pull: bool = False,
 ) -> bool:
     """Invoke an ensemble of agents.
+
+    The run is a request (``ensemble_name``, ``bind``, ``pull``) handed to
+    the preparation step REST and MCP use, so an ensemble this host
+    cannot run is refused before any agent starts.
 
     Returns:
         Whether the run's caller-facing status is "error" (fail-closed-
@@ -282,62 +373,20 @@ def invoke_ensemble(
         input_data, input_data_option, file_input=input_file
     )
 
-    # Find ensemble configuration
-    if config_dir is not None:
-        ensemble_config = _find_ensemble_config(
-            ensemble_name, [Path(config_dir)], service
-        )
-    else:
-        ensemble_config = service.find_ensemble_by_name(ensemble_name)
-        if ensemble_config is None:
-            ensemble_dirs = service.config_manager.get_ensembles_dirs()
-            searched = [str(d) for d in ensemble_dirs]
-            raise click.ClickException(
-                f"Ensemble '{ensemble_name}' not found in: {', '.join(searched)}"
-            )
-
-    # Get executor from service
-    executor = service._get_executor()
-
-    # Check if ensemble contains interactive scripts
-    from llm_orc.core.execution.scripting.user_input_handler import (
-        ScriptUserInputHandler,
+    request: dict[str, Any] = {"ensemble_name": ensemble_name}
+    if bind:
+        request["bind"] = dict(bind)
+    if pull:
+        request["pull"] = True
+    options = _RunOptions(
+        ensemble_name, output_format, streaming, max_concurrent, detailed
     )
+    lookup = _root_lookup(service, ensemble_name, config_dir)
 
-    input_handler = ScriptUserInputHandler()
-    requires_user_input = input_handler.ensemble_requires_user_input(ensemble_config)
-
-    # Override concurrency settings if provided
-    if max_concurrent is not None:
-        executor.set_max_concurrent_agents(max_concurrent)
-
-    # Show performance configuration only for default Rich interface (not text/json)
-    _setup_performance_display(
-        service.config_manager,
-        executor,
-        ensemble_name,
-        ensemble_config,
-        streaming,
-        output_format,
-        input_data,
-    )
-
-    # Determine effective streaming setting
-    effective_streaming = _determine_effective_streaming(
-        service.config_manager, output_format, streaming
-    )
-
-    # Execute the ensemble
     try:
-        return _execute_ensemble_with_mode(
-            executor,
-            ensemble_config,
-            input_data,
-            output_format,
-            detailed,
-            requires_user_input,
-            effective_streaming,
-        )
+        return asyncio.run(_run_prepared(service, request, lookup, input_data, options))
+    except click.ClickException:
+        raise
     except Exception as e:
         raise click.ClickException(f"Ensemble execution failed: {e!s}") from e
 

@@ -11,6 +11,7 @@ from click.testing import CliRunner
 
 from llm_orc.cli import cli
 from llm_orc.cli_modules.utils.config_utils import get_available_providers
+from tests.unit.cli.prepared_service import use_prepared_run
 
 
 @pytest.fixture(autouse=True)
@@ -154,7 +155,7 @@ class TestCLI:
             real_loader = EnsembleLoader()
             mock_service = Mock()
             mock_service.config_manager = Mock()
-            mock_service._get_executor.return_value = mock_executor
+            use_prepared_run(mock_service, mock_executor)
             mock_service.find_ensemble_in_dir.side_effect = lambda name, dir_path: (
                 real_loader.find_ensemble(dir_path, name)
             )
