@@ -28,7 +28,11 @@ from llm_orc.services.handlers.run_preparation import INVALID_REQUEST, RunRefuse
 from llm_orc.services.handlers.scope import Scope
 from llm_orc.services.orchestra_service import OrchestraService
 from llm_orc.services.remote_probe import probe_remotes
-from llm_orc.services.remote_run import RemoteRunError, run_remote
+from llm_orc.services.remote_run import (
+    RemoteRunError,
+    preflight_remote,
+    run_remote,
+)
 
 if TYPE_CHECKING:
     from llm_orc.core.execution.ensemble_execution import EnsembleExecutor
@@ -756,11 +760,23 @@ class MCPServer:
             return result
 
         @self._mcp.tool()
-        async def check_ensemble_runnable(ensemble_name: str) -> dict[str, Any]:
+        async def check_ensemble_runnable(
+            ensemble_name: str,
+            remote: str | None = None,
+            bind: dict[str, str] | None = None,
+            pull: bool = False,
+            with_profiles: list[str] | None = None,
+        ) -> dict[str, Any]:
             """Check if ensemble can run with current providers.
 
             Args:
                 ensemble_name: Name of the ensemble to check
+                remote: Check the ensemble's closure on this remote instead:
+                    ships it as invoke does and asks the remote to judge it,
+                    running nothing there (see list_remotes)
+                bind: Profile name to profile name, as for invoke (needs remote)
+                pull: Say a pull was asked for; nothing is pulled (needs remote)
+                with_profiles: Local profiles to ship (needs remote)
 
             Returns runnable status with:
             - Whether ensemble can run
@@ -768,11 +784,28 @@ class MCPServer:
             - Suggested local alternatives for unavailable profiles
             - dependencies: every child ensemble, script, profile and model in the
               closure with status and resolve hint (docs/serving.md, Preflight)
+            With remote, the answer is the remote's: runnable, dependencies,
+            bindings that would apply, and left_out when the closure left
+            something to the remote.
             """
-            result = await self._service.check_ensemble_runnable(
-                {"ensemble_name": ensemble_name}
+            if not self._relay and (remote is not None or with_profiles):
+                return RunRefusedError(INVALID_REQUEST, _NOT_A_RELAY).envelope()
+            if remote is None and (bind or pull or with_profiles):
+                return RunRefusedError(
+                    INVALID_REQUEST, "bind, pull and with_profiles need remote"
+                ).envelope()
+            if remote is None:
+                return await self._service.check_ensemble_runnable(
+                    {"ensemble_name": ensemble_name}
+                )
+            return await self._relayed(
+                preflight_remote,
+                ensemble_name,
+                remote,
+                with_profiles=with_profiles or [],
+                bind=bind,
+                pull=pull,
             )
-            return result
 
     def _setup_remote_tools(self) -> None:
         """Register the tools that look at remotes."""
