@@ -563,3 +563,163 @@ class TestInjectedKindsGateLikeTheRun:
 
         assert result["error"]["kind"] == "not_equipped"
         assert _kinds(result)["probe/x.py"] == "missing_script"
+
+
+def _bound_ensemble(project: Path, tmp_path: Path) -> Path:
+    """An ensemble naming profile ``a`` after a phase-0 marker script."""
+    marker = tmp_path / "marker.txt"
+    _marker_script(project, marker)
+    _ensemble(
+        project / ".llm-orc",
+        "top",
+        [
+            {"name": "first", "script": "mark.py"},
+            {"name": "w", "model_profile": "a", "depends_on": ["first"]},
+        ],
+    )
+    return marker
+
+
+@pytest.fixture
+def loaded_models(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    seen: list[str] = []
+    original = ModelFactory.load_model
+
+    async def spy(self: ModelFactory, model_name: str, *a: Any, **kw: Any) -> Any:
+        seen.append(model_name)
+        return await original(self, model_name, *a, **kw)
+
+    monkeypatch.setattr(ModelFactory, "load_model", spy)
+    return seen
+
+
+class TestBindings:
+    async def test_a_missing_profile_refuses_and_the_same_call_with_bind_runs(
+        self,
+        project: Path,
+        service: OrchestraService,
+        tmp_path: Path,
+        loaded_models: list[str],
+    ) -> None:
+        marker = _bound_ensemble(project, tmp_path)
+        _profile(project / ".llm-orc", "b", model="mock-other")
+
+        refused = await service.invoke({"ensemble_name": "top", "input": "hi"})
+        assert refused["error"]["kind"] == "not_equipped"
+        assert not marker.exists()
+
+        result = await service.invoke(
+            {"ensemble_name": "top", "input": "hi", "bind": {"a": "b"}}
+        )
+
+        assert result["status"] == "success", result
+        assert result["bindings"] == {"a": "b"}
+        assert loaded_models == ["mock-other"]
+        assert marker.exists()
+
+    async def test_a_bind_target_the_host_lacks_is_refused_even_when_it_has_the_key(
+        self,
+        project: Path,
+        service: OrchestraService,
+        tmp_path: Path,
+        loaded_models: list[str],
+    ) -> None:
+        marker = _bound_ensemble(project, tmp_path)
+        _profile(project / ".llm-orc", "a", model="mock-seat")
+
+        result = await service.invoke(
+            {"ensemble_name": "top", "input": "hi", "bind": {"a": "missing-b"}}
+        )
+
+        assert result["error"]["kind"] == "not_equipped", result
+        rows = [d for d in result["error"]["dependencies"] if d["name"] == "missing-b"]
+        assert [(r["status"], r["via"]) for r in rows] == [
+            ("missing_profile", ["bind:a"])
+        ]
+        assert not marker.exists()
+        assert loaded_models == []
+
+    async def test_a_binding_beats_the_hosts_own_profile_of_that_name(
+        self,
+        project: Path,
+        service: OrchestraService,
+        tmp_path: Path,
+        loaded_models: list[str],
+    ) -> None:
+        _bound_ensemble(project, tmp_path)
+        _profile(project / ".llm-orc", "a", model="mock-seat")
+        _profile(project / ".llm-orc", "b", model="mock-other")
+
+        result = await service.invoke(
+            {"ensemble_name": "top", "input": "hi", "bind": {"a": "b"}}
+        )
+
+        assert result["bindings"] == {"a": "b"}
+        assert loaded_models == ["mock-other"]
+
+    async def test_a_target_defined_only_inline_works(
+        self,
+        project: Path,
+        service: OrchestraService,
+        tmp_path: Path,
+        loaded_models: list[str],
+    ) -> None:
+        _bound_ensemble(project, tmp_path)
+
+        result = await service.invoke(
+            {
+                "ensemble_name": "top",
+                "input": "hi",
+                "profiles": {"b": {"provider": "llama-server", "model": "mock-b"}},
+                "bind": {"a": "b"},
+            }
+        )
+
+        assert result["bindings"] == {"a": "b"}
+        assert loaded_models == ["mock-b"]
+
+    async def test_the_targets_fallback_chain_is_gated_too(
+        self, project: Path, service: OrchestraService, tmp_path: Path
+    ) -> None:
+        _bound_ensemble(project, tmp_path)
+        _profile(project / ".llm-orc", "b", fallback_model_profile="gone")
+
+        result = await service.invoke(
+            {"ensemble_name": "top", "input": "hi", "bind": {"a": "b"}}
+        )
+
+        assert result["error"]["kind"] == "not_equipped"
+        assert _kinds(result)["gone"] == "missing_profile"
+
+    async def test_a_bind_key_no_profile_in_the_closure_names_is_invalid(
+        self,
+        project: Path,
+        service: OrchestraService,
+        tmp_path: Path,
+        loaded_models: list[str],
+    ) -> None:
+        # The misspelled key must not fall through to the host's `a`.
+        marker = _bound_ensemble(project, tmp_path)
+        _profile(project / ".llm-orc", "a", model="mock-seat")
+        _profile(project / ".llm-orc", "b", model="mock-other")
+
+        result = await service.invoke(
+            {"ensemble_name": "top", "input": "hi", "bind": {"aa": "b"}}
+        )
+
+        assert result["error"]["kind"] == "invalid_request", result
+        assert "aa" in result["error"]["message"]
+        assert not marker.exists()
+        assert loaded_models == []
+
+    async def test_execute_streaming_returns_the_bindings(
+        self, project: Path, service: OrchestraService, tmp_path: Path
+    ) -> None:
+        _bound_ensemble(project, tmp_path)
+        _profile(project / ".llm-orc", "b", model="mock-other")
+
+        result = await service.execute_streaming(
+            "top", "hi", Reporter(), injection={"bind": {"a": "b"}}
+        )
+
+        assert result["bindings"] == {"a": "b"}

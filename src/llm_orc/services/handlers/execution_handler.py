@@ -7,7 +7,7 @@ import shutil
 import tempfile
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from contextlib import asynccontextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -27,10 +27,13 @@ from llm_orc.services.handlers.run_preparation import (
     INVALID_REQUEST,
     NOT_EQUIPPED,
     RunRefusedError,
+    unmet_binding_rows,
+    unnamed_bind_keys,
 )
 from llm_orc.services.handlers.run_request import (
     RunRequest,
     RunRequestError,
+    apply_bindings,
     materialize,
 )
 
@@ -69,6 +72,17 @@ class PreparedRun:
     config: Any
     executor: EnsembleExecutor
     inline: bool = False
+    bindings: dict[str, str] = field(default_factory=dict)
+
+
+@dataclass
+class _Layer:
+    """The run layer's view, the inline root's file and the bindings."""
+
+    view: ConfigurationManager | None = None
+    root_path: Path | None = None
+    applied: dict[str, str] = field(default_factory=dict)
+    unmet: list[tuple[str, str]] = field(default_factory=list)
 
 
 class ExecutionHandler:
@@ -149,6 +163,7 @@ class ExecutionHandler:
                     "status": status,
                     "has_errors": has_errors,
                     "raw_output": run.config.raw_output,
+                    **_run_record(run),
                 }
         except RunRefusedError as refusal:
             return refusal.envelope()
@@ -200,28 +215,39 @@ class ExecutionHandler:
         lookup: Callable[[str], Any],
         missing: str,
     ) -> PreparedRun:
-        view: ConfigurationManager | None = None
-        root_path: Path | None = None
-        if run_dir is not None:
-            try:
-                root_path = materialize(request, run_dir)
-            except RunRequestError as e:
-                raise RunRefusedError(INVALID_REQUEST, str(e)) from e
-            view = self._config_manager.with_run_layer(run_dir)
-        manager = view or self._config_manager
+        layer = self._open_layer(request, run_dir)
+        manager = layer.view or self._config_manager
         inline = request.ensemble is not None
-        config = self._load_root(request, root_path, manager, lookup, missing)
+        config = self._load_root(request, layer.root_path, manager, lookup, missing)
         root_ref = str(
             request.ensemble["name"] if request.ensemble else request.ensemble_name
         )
         outcome = await self._gate(config, root_ref, manager)
-        if not is_runnable(outcome.reports):
+        stray = unnamed_bind_keys(request.bind, outcome.closure.dependencies)
+        if stray:
             raise RunRefusedError(
-                NOT_EQUIPPED, _unmet_message(outcome.reports), outcome.reports
+                INVALID_REQUEST,
+                f"bind key {stray[0]!r} names no profile in the closure",
             )
-        if view is None:
+        reports = [*outcome.reports, *unmet_binding_rows(layer.unmet)]
+        if not is_runnable(reports):
+            raise RunRefusedError(NOT_EQUIPPED, _unmet_message(reports), reports)
+        if layer.view is None:
             return PreparedRun(config, self._get_executor(), inline)
-        return PreparedRun(config, self._layer_executor(view, not inline), inline)
+        executor = self._layer_executor(layer.view, not inline)
+        return PreparedRun(config, executor, inline, layer.applied)
+
+    def _open_layer(self, request: RunRequest, run_dir: Path | None) -> _Layer:
+        """Materialize the request into ``run_dir`` and bind over it."""
+        if run_dir is None:
+            return _Layer()
+        try:
+            root_path = materialize(request, run_dir)
+        except RunRequestError as e:
+            raise RunRefusedError(INVALID_REQUEST, str(e)) from e
+        view = self._config_manager.with_run_layer(run_dir)
+        applied, unmet = apply_bindings(request.bind, view, run_dir)
+        return _Layer(view, root_path, applied, unmet)
 
     def _load_root(
         self,
@@ -319,7 +345,7 @@ class ExecutionHandler:
         result = state.get("result", {})
         if not isinstance(result, dict):
             result = {}
-        return result
+        return {**result, **_run_record(run)} if result else result
 
     async def handle_streaming_event(
         self,
@@ -461,6 +487,12 @@ class ExecutionHandler:
                     yield event
         except RunRefusedError as refusal:
             yield {"type": "execution_failed", "data": {"error": refusal.error}}
+
+
+def _run_record(run: PreparedRun) -> dict[str, Any]:
+    """What the run was asked to do that the caller should see: the
+    bindings applied, when there are any."""
+    return {"bindings": run.bindings} if run.bindings else {}
 
 
 def _request_data(arguments: Mapping[str, Any]) -> dict[str, Any]:
