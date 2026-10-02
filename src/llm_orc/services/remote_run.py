@@ -146,28 +146,51 @@ async def run_remote(
             ``invalid_request`` for everything refused before a send,
             including a client that could not be built.
     """
+    return await _call_remote(
+        remote,
+        root_name,
+        EXECUTE_PATH,
+        _result_document,
+        on_left_out=on_left_out,
+        find_root=find_root,
+        config_manager=config_manager,
+        project_dir=project_dir,
+        input_text=input_text,
+        with_profiles=with_profiles,
+        bind=bind,
+        pull=pull,
+        persist=persist,
+    )
+
+
+async def _call_remote(
+    remote: str,
+    root_name: str,
+    path: str,
+    accept: Callable[[str, Any], dict[str, Any]],
+    *,
+    on_left_out: Callable[[list[LeftOut]], None] | None,
+    config_manager: ConfigurationManager,
+    **ship: Any,
+) -> dict[str, Any]:
+    """The call a run and a remote preflight share: resolve ``remote``,
+    ship the closure of ``root_name`` (``ship`` is what
+    ``ship_closure_reporting`` takes), POST it to ``path`` and hand the
+    response to ``accept``, which returns the document or raises
+    ``RemoteRunError``. The two differ in the path and in what an
+    acceptable answer is."""
     try:
         base_url = resolve_remote(remote, config_manager)
     except RemoteError as e:
         raise RemoteRunError(remote, str(e), kind=INVALID_REQUEST) from e
     request, left_out = await asyncio.to_thread(
-        _ship_checked,
-        remote,
-        root_name,
-        find_root=find_root,
-        config_manager=config_manager,
-        project_dir=project_dir,
-        with_profiles=with_profiles,
-        bind=bind,
-        pull=pull,
-        persist=persist,
-        input_text=input_text,
+        _ship_checked, remote, root_name, config_manager=config_manager, **ship
     )
     if left_out and on_left_out is not None:
         on_left_out(left_out)
     client = build_client(remote)
     try:
-        response = await post_run(client, base_url + EXECUTE_PATH, request)
+        response = await post_run(client, base_url + path, request)
     except httpx.InvalidURL as e:
         raise RemoteRunError(
             remote,
@@ -178,7 +201,7 @@ async def run_remote(
         raise RemoteRunError(
             remote, f"could not reach {base_url}: {_first_leaf(e)}"
         ) from e
-    return _result_document(remote, response)
+    return accept(remote, response)
 
 
 def _first_leaf(error: BaseException) -> str:
