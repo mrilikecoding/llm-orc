@@ -28,6 +28,7 @@ from llm_orc.core.models.model_factory import ModelFactory
 from llm_orc.mcp.server import MCPServer
 from llm_orc.providers.llama_server import LlamaServerClient
 from llm_orc.services.handlers import provider_handler, run_request
+from llm_orc.services.handlers.run_preparation import load_problem
 from llm_orc.services.orchestra_service import OrchestraService
 
 LISTING: list[dict[str, Any]] = [
@@ -796,6 +797,21 @@ class TestMalformedRequestsWriteNothing:
         assert _runs(state_dir) == []
 
 
+class TestLoadProblemReplacesOnlyFilesystemPaths:
+    def test_a_url_in_the_message_survives(self) -> None:
+        error = ValueError(
+            "1 validation error for X\n  For further information visit "
+            "https://errors.pydantic.dev/2.5/v/missing"
+        )
+
+        assert "https://errors.pydantic.dev/2.5/v/missing" in load_problem(error)
+
+    def test_an_absolute_path_is_still_replaced(self) -> None:
+        error = ValueError("cannot read /home/someone/proj/a.yaml: bad")
+
+        assert load_problem(error) == "cannot read <path>: bad"
+
+
 class TestKeysOneReferenceResolvesToFoldTogether:
     async def test_two_script_keys_differing_by_case_run_nothing(
         self, service: OrchestraService, tmp_path: Path
@@ -962,6 +978,20 @@ class TestOnlyALoadFailureIsTheCallersFault:
         assert str(tmp_path.parent.resolve()) not in message, message
         assert "inline ensemble" in message
         assert "bad agents" in message
+
+    async def test_a_child_missing_a_required_key_says_which(
+        self, project: Path, service: OrchestraService
+    ) -> None:
+        bad = resolve_global_config_dir() / "ensembles" / "nokey.yaml"
+        bad.parent.mkdir(parents=True, exist_ok=True)
+        bad.write_text("name: nokey\ndescription: no agents here\n")
+        _ensemble(project / ".llm-orc", "top", [{"name": "k", "ensemble": "nokey"}])
+
+        result = await service.invoke({"ensemble_name": "top", "input": "hi"})
+
+        message = result["error"]["message"]
+        assert result["error"]["kind"] == "invalid_request", result
+        assert "missing key 'agents'" in message, message
 
     async def test_a_classifier_bug_propagates_and_the_run_dir_is_removed(
         self,
