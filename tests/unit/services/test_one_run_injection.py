@@ -1281,6 +1281,30 @@ class TestPull:
         assert "pulled" not in result
         assert pulls["calls"] == ["mock-seat"]
 
+    async def test_a_pull_that_does_not_end_loaded_stops_the_next_one(
+        self, project: Path, service: OrchestraService, pulls: dict[str, Any]
+    ) -> None:
+        _profile(project / ".llm-orc", "a", model="mock-seat", hf_repo="x/y:Q4")
+        _profile(project / ".llm-orc", "b", model="mock-other", hf_repo="x/z:Q4")
+        _ensemble(
+            project / ".llm-orc",
+            "top",
+            [
+                {"name": "w", "model_profile": "a"},
+                {"name": "v", "model_profile": "b"},
+            ],
+        )
+        pulls["answer"] = {"status": "unloaded", "failed": True, "exit_code": 1}
+
+        result = await service.invoke(
+            {"ensemble_name": "top", "input": "hi", "pull": True}
+        )
+
+        assert result["error"]["kind"] == "not_equipped", result
+        assert pulls["calls"] == ["mock-other"]
+        assert (_kinds(result)["a"], _kinds(result)["b"]) == ("pullable",) * 2
+        assert "pulled" not in result
+
     async def test_pull_waits_until_every_other_unmet_dependency_is_pullable(
         self, project: Path, service: OrchestraService, pulls: dict[str, Any]
     ) -> None:

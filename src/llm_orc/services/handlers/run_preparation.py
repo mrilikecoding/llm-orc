@@ -129,6 +129,10 @@ async def pull_pullable(
 ) -> tuple[list[DependencyReport], list[str]]:
     """Pull each ``pullable`` model once, off the event loop.
 
+    Stops at the first pull that does not end ``loaded``: the run is
+    refused anyway, and a further download could evict what was loaded.
+    The models after it keep their ``pullable`` reports.
+
     Returns the reports (a dependency whose model answered ``loaded`` is
     ``ready``; any other answer leaves it ``pullable`` with the observed
     status in its detail) and the models that loaded.
@@ -141,7 +145,11 @@ async def pull_pullable(
         }
         - {""}
     )
-    outcomes = {model: await _pull_one(model) for model in models}
+    outcomes: dict[str, tuple[bool, str]] = {}
+    for model in models:
+        outcomes[model] = await _pull_one(model)
+        if not outcomes[model][0]:
+            break
     loaded = [m for m, (ok, _) in outcomes.items() if ok]
     updated: list[DependencyReport] = []
     for report in reports:
