@@ -490,9 +490,11 @@ def _threads_in_the_transport() -> list[str]:
 
 
 class TestCancellingARemoteRun:
-    """Cancelling the tool call closes the connection, so the second
-    service sees the disconnect, kills the script's process group and
-    removes the run's layer, long before the script's own end."""
+    """Cancelling the tool call cancels the request into the second
+    service's app (an in-process transport), which kills the script's
+    process group and removes the run's layer long before the script's
+    own end. This shows the cancellation reaching the remote app; that a
+    real socket close does the same is checked only by a live run."""
 
     @pytest.fixture
     def pids(self, tmp_path: Path) -> Iterator[dict[str, Path]]:
