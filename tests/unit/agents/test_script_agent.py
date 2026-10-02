@@ -19,6 +19,7 @@ from llm_orc.agents.script_agent import (
     SCRIPT_POOL_THREAD_PREFIX,
     ScriptAgent,
     _Child,
+    _kill_group,
     _run_subprocess,
 )
 
@@ -1040,6 +1041,68 @@ class TestAScriptNeverHangsOnItsDescendants:
                 return
             time.sleep(0.05)
         raise AssertionError("the grandchild outlived the timeout")
+
+    def test_a_blocked_worker_never_signals_a_pid_already_reaped(
+        self, marks: Path
+    ) -> None:
+        """After a cancel the foreign holder keeps the worker blocked in
+        ``communicate`` until the script's timeout; only the worker may
+        reap the child, so its timeout kill still targets a live pid."""
+        argv = self._foreign_holder(marks)
+        started: list[Any] = []
+        real_start = _Child.start
+        real_killpg = os.killpg
+        signalled: list[tuple[int, bool]] = []
+
+        def start(child: _Child, args: Any, kwargs: Any) -> Any:
+            process = real_start(child, args, kwargs)
+            started.append(process)
+            return process
+
+        def killpg(pid: int, sig: int) -> None:
+            process = started[0]
+            if pid == process.pid:
+                signalled.append((pid, process.returncode is None))
+            real_killpg(pid, sig)
+
+        async def run() -> None:
+            task = asyncio.ensure_future(
+                _run_subprocess(argv, capture_output=True, text=True, timeout=2)
+            )
+            for _ in range(100):
+                if (marks / "foreign.pid").exists() and (
+                    marks / "foreign.pid"
+                ).read_text():
+                    break
+                await asyncio.sleep(0.05)
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+            await asyncio.sleep(3)
+
+        with (
+            patch.object(_Child, "start", start),
+            patch("llm_orc.agents.script_agent.os.killpg", killpg),
+        ):
+            asyncio.run(run())
+
+        pid = started[0].pid
+        assert signalled
+        assert all(live for _, live in signalled), signalled
+        assert started[0].returncode is not None
+        stat = subprocess.run(
+            ["ps", "-o", "stat=", "-p", str(pid)], capture_output=True, text=True
+        )
+        assert stat.stdout.strip() == "", "the child was left a zombie"
+
+    def test_kill_group_skips_a_process_already_reaped(self) -> None:
+        process = subprocess.Popen(["true"], text=True)
+        process.wait()
+
+        with patch("llm_orc.agents.script_agent.os.killpg") as killpg:
+            _kill_group(process)
+
+        killpg.assert_not_called()
 
     def test_cancel_does_not_signal_a_reaped_child(self) -> None:
         child = _Child()
