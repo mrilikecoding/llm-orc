@@ -138,20 +138,23 @@ with the web UI's HTML; the plain name works.
 `research-dossier.yaml` moved from the checkout's `.llm-orc/ensembles/`
 to the laptop's global tier, so local `make wheel-check` is green.
 
-**Owed (practitioner):** the mini cut-over. Observed 2026-10-01 over
-ssh: the mini has brew 0.22.0 and `/health` answers 0.22.0, but the
-launchd plist's `WorkingDirectory` is still the old checkout (at the
-0.20.4 commit). That checkout's `.llm-orc` is the local tier, so it
-shadows the packaged serving project: 227 ensembles listed, 79 duplicate
-names, the router preset is the checkout's. `/v1` results from the mini
-are suspect until the working directory is a plain directory. The
-cut-over checklist and the launchd unit now live in the homelab repo
-(`docs/llm-orc-serve.md`, `launchd/com.llm-orc.serve.plist`). Already
-checked on the mini: `GET /api/ensembles/research-dossier/runnable` is
-`runnable: true` and the cache-id rule holds on its llama-server build
-(a cache entry's id equals the profile's `hf_repo`), so spec ruling 1
-stands there. The homelab cert renewal daemon fix is still owed before
-December.
+**Mini cut-over done (2026-10-01, on the practitioner's go).** The
+deploy procedure is a script in the homelab repo (`llm-orc-deploy.sh`,
+with the unit rendered from a template and that machine's `config.sh`),
+run over ssh. Before it the unit's working directory was still the old
+checkout, whose `.llm-orc` shadowed the packaged serving project (227
+ensembles listed, 79 duplicate names, the checkout's router preset).
+After it: the serve runs 0.22.0 from a plain directory, 126 ensembles
+{library 15, global 10, packaged 101}, no ensemble name lost, the 60
+profiles and six router models unchanged, the preset in
+`~/.local/state/llm-orc/`, `research-dossier` and `serving` both
+`runnable: true`, `/v1/embeddings` and `/mcp` answering. The cache-id
+rule holds on the mini's llama-server build (a cache entry's id equals
+the profile's `hf_repo`), so spec ruling 1 stands there. The library
+ensembles stay listed through `LLM_ORC_LIBRARY_PATH` in the mini's
+config. `/v1` results taken from the mini before this date ran the
+checkout's 0.20.4-era serving project on a newer engine. The homelab
+cert renewal daemon fix is still owed before December.
 
 **In flight: Arc 4 (one-run injection).** The re-cut is done: twelve
 rulings in the spec ("Arc 4 re-cut (2026-10-01)", with the code read and
