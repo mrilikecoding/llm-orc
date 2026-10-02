@@ -61,6 +61,7 @@ def test_primitives_with_script_resolver(
         self: ScriptResolver,
         search_paths: list[str] | None = None,
         project_dir: Path | None = None,
+        run_dir: Path | None = None,
     ) -> None:
         """Initialize with test search paths."""
         test_search_paths = [

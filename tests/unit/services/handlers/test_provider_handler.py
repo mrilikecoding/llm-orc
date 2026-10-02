@@ -147,6 +147,25 @@ class TestLlamaServerStatusCarriesCache:
         assert status["cached"] == ["unsloth/Qwen3-8B-GGUF:Q4_K_M"]
         assert status["loaded"] == ["qwen3-8b"]
 
+    async def test_status_reports_the_source_each_model_serves(self) -> None:
+        from llm_orc.providers.llama_server import LlamaServerClient
+
+        handler = _make_handler()
+        listing = [
+            {
+                "id": "qwen3-8b",
+                "status": {
+                    "value": "unloaded",
+                    "args": ["llama-server", "--hf-repo", "unsloth/Qwen3-8B-GGUF"],
+                },
+            },
+            {"id": "handmade", "status": {"value": "unloaded"}},
+        ]
+        with patch.object(LlamaServerClient, "_list", return_value=listing):
+            status = await handler._get_llama_server_status()
+
+        assert status["sources"] == {"qwen3-8b": "unsloth/Qwen3-8B-GGUF"}
+
 
 def test_every_status_maps_to_a_coarse_agent_status_or_unblocks() -> None:
     assert set(_COARSE) | UNBLOCKING == set(DependencyStatus)

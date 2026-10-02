@@ -1485,8 +1485,9 @@ class TestFileVsInlineClassification:
     production callers once `resolve_and_classify` unified resolution and
     classification, and survived only because these tests asserted it —
     test-only surface this repo has been bitten by twice. Deleted the
-    public method; the syntactic clause is pinned directly against the
-    now-private `_has_path_syntax`, and the full classification (the
+    public method; the syntactic clause is pinned directly against
+    `has_path_syntax` (public again, now that run-request validation calls
+    it), and the full classification (the
     clause that needs a filesystem observation) against
     `resolve_and_classify`, the one call production actually makes.
     """
@@ -1508,7 +1509,7 @@ class TestFileVsInlineClassification:
         self, ref: str, has_path_syntax: bool, why: str
     ) -> None:
         resolver = ScriptResolver(project_dir=None)
-        assert resolver._has_path_syntax(ref) is has_path_syntax, why
+        assert resolver.has_path_syntax(ref) is has_path_syntax, why
 
     @pytest.mark.parametrize(
         "ref",

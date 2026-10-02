@@ -8,7 +8,15 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from llm_orc.core.config.closure import Closure
 from llm_orc.services.handlers.execution_handler import ExecutionHandler
+from llm_orc.services.handlers.provider_handler import Preflight
+
+
+async def _runnable(*args: Any, **kwargs: Any) -> Preflight:
+    """A gate that finds nothing unmet: these tests are about the result
+    projection, the gate has its own pins."""
+    return Preflight(closure=Closure([], {}), reports=[], providers={})
 
 
 def _make_handler(
@@ -32,6 +40,8 @@ def _make_handler(
         artifact_manager=artifact_manager,
         get_executor_fn=lambda: mock_executor,
         find_ensemble_fn=lambda name: ensemble_config,
+        preflight_fn=_runnable,
+        layer_executor_fn=lambda view, save_artifacts: mock_executor,
     )
 
 

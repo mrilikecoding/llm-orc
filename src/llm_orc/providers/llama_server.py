@@ -9,6 +9,7 @@ project knows how a model gets onto the box.
 """
 
 import json
+import os
 import signal
 import subprocess
 import tempfile
@@ -204,15 +205,38 @@ def model_status(model: Mapping[str, Any]) -> str | None:
     return str(value) if value else None
 
 
+_SOURCE_FLAGS = ("--hf-repo", "-hf", "-hfr")
+
+
+def model_source(model: Mapping[str, Any]) -> str | None:
+    """The source a preset entry serves: the value of the last
+    ``--hf-repo`` / ``-hf`` / ``-hfr`` (or ``--hf-repo=X``) in its
+    ``status.args``, the argv the router would spawn (probe 2026-10-01).
+    The last one wins, as in llama.cpp. None when the entry carries no
+    such arg (a bare-string status has no args at all)."""
+    status = model.get("status")
+    args = status.get("args") if isinstance(status, dict) else None
+    if not isinstance(args, list):
+        return None
+    source: str | None = None
+    for index, arg in enumerate(args):
+        if isinstance(arg, str) and arg.startswith("--hf-repo="):
+            source = arg.split("=", 1)[1]
+        elif arg in _SOURCE_FLAGS and index + 1 < len(args):
+            source = str(args[index + 1])
+    return source
+
+
 @dataclass(frozen=True)
 class RouterInventory:
     """What one ``GET /models`` says: the models the router routes to
-    (preset sections), the sources it had on disk at start, and the
-    models loaded now."""
+    (preset sections), the sources it had on disk at start, the models
+    loaded now, and the source each routable model serves."""
 
     models: list[dict[str, Any]]
     cached: list[str]
     loaded: list[str]
+    sources: dict[str, str] = field(default_factory=dict)
 
 
 #: The router is reached directly, never through an HTTP proxy from the
@@ -261,6 +285,11 @@ class LlamaServerClient:
             models=models,
             cached=sorted(str(m["id"]) for m in listing if _is_cache_entry(m)),
             loaded=sorted(str(m["id"]) for m in models if model_status(m) == "loaded"),
+            sources={
+                str(m["id"]): source
+                for m in models
+                if (source := model_source(m)) is not None
+            },
         )
 
     def models(self) -> list[dict[str, Any]]:
@@ -277,6 +306,35 @@ class LlamaServerClient:
         )
         with _DIRECT.open(request, timeout=3600) as resp:
             json.load(resp)
+
+    def pull(self, model: str, *, timeout_s: float, poll_s: float) -> dict[str, Any]:
+        """Load one model and wait for the router's verdict.
+
+        The router's load call returns as soon as loading starts (e2e
+        2026-09-16: ``loaded`` reported while the status was ``loading``),
+        so this polls the listing until the status is anything but
+        ``loading`` or the deadline passes. A failed load reads
+        ``unloaded`` with ``failed`` true and an exit code (probe
+        2026-10-01), reported as observed. Blocking: callers on an event
+        loop run it in a worker thread.
+        """
+        self.load(model)
+        deadline = time.monotonic() + timeout_s
+        entry = self._observe(model)
+        while model_status(entry) == "loading" and time.monotonic() < deadline:
+            time.sleep(poll_s)
+            entry = self._observe(model)
+        status = entry.get("status")
+        detail = status if isinstance(status, dict) else {}
+        return {
+            "status": model_status(entry) or "unknown",
+            "failed": bool(detail.get("failed")),
+            "exit_code": detail.get("exit_code"),
+        }
+
+    def _observe(self, model: str) -> dict[str, Any]:
+        """The model's current listing entry, empty when not listed."""
+        return next((m for m in self.models() if m.get("id") == model), {})
 
     def embeddings(self, body: Mapping[str, Any], *, timeout: float) -> tuple[int, Any]:
         """Forward an OpenAI-compatible embeddings request to the router,
@@ -297,6 +355,17 @@ class LlamaServerClient:
                 return resp.status, json.load(resp)
         except urllib.request.HTTPError as e:
             return e.code, json.load(e)
+
+
+DEFAULT_LLAMA_SERVER_URL = "http://127.0.0.1:8080/v1"
+PULL_TIMEOUT_S = 3600.0
+PULL_POLL_S = 1.0
+
+
+def router_client() -> LlamaServerClient:
+    """The router this serve talks to (owned or reached by URL)."""
+    base_url = os.environ.get("LLAMA_SERVER_URL", DEFAULT_LLAMA_SERVER_URL)
+    return LlamaServerClient.from_base_url(base_url)
 
 
 class LlamaServerSupervisor:

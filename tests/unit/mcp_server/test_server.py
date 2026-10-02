@@ -107,12 +107,15 @@ class TestMCPServerCallTool:
             await server.call_tool("unknown_tool", {})
 
     @pytest.mark.asyncio
-    async def test_call_tool_invoke_missing_ensemble_raises_error(
+    async def test_call_tool_invoke_missing_ensemble_is_an_invalid_request(
         self, server: MCPServer
     ) -> None:
-        """Invoke without ensemble_name raises error."""
-        with pytest.raises(ValueError, match="ensemble_name is required"):
-            await server.call_tool("invoke", {"input_data": "test"})
+        """Invoke with no root gets the invalid_request envelope."""
+        result = await server.call_tool("invoke", {"input_data": "test"})
+
+        assert result["status"] == "error"
+        assert result["error"]["kind"] == "invalid_request"
+        assert "exactly one" in result["error"]["message"]
 
     @pytest.mark.asyncio
     async def test_call_tool_validate_missing_ensemble_raises_error(
@@ -1422,12 +1425,14 @@ class TestMCPServerStreamingExecution:
         mock_reporter.warning.assert_called_once_with(msg)
 
     @pytest.mark.asyncio
-    async def test_execute_ensemble_streaming_raises_if_no_name(
+    async def test_execute_ensemble_streaming_refuses_if_no_name(
         self, server: MCPServer, mock_reporter: MagicMock
     ) -> None:
-        """Execute streaming raises if no ensemble name."""
-        with pytest.raises(ValueError, match="ensemble_name is required"):
-            await server._execute_ensemble_streaming("", "input", mock_reporter)
+        """Execute streaming with no root reports and returns the envelope."""
+        result = await server._execute_ensemble_streaming("", "input", mock_reporter)
+
+        assert result["error"]["kind"] == "invalid_request"
+        mock_reporter.error.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_execute_ensemble_streaming_raises_if_not_found(
@@ -1507,6 +1512,7 @@ class TestGetLlamaServerStatus:
             "models": ["qwen3-14b", "qwen3-8b"],
             "cached": ["unsloth/Qwen3-8B-GGUF:Q4_K_M"],
             "loaded": ["qwen3-8b"],
+            "sources": {},
             "model_count": 2,
             "reason": "",
             "base_url": "http://remote-host:8080/v1",

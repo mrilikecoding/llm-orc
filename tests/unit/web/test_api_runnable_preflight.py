@@ -10,6 +10,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+import httpx
 import pytest
 import yaml
 from fastapi.testclient import TestClient
@@ -19,7 +20,20 @@ from llm_orc.providers.llama_server import LlamaServerClient
 from llm_orc.web.server import create_app
 
 LISTING: list[dict[str, Any]] = [
-    {"id": "qwen3-8b", "status": {"value": "unloaded"}},
+    {
+        "id": "qwen3-8b",
+        "status": {
+            "value": "unloaded",
+            "args": [
+                "llama-server",
+                "--alias",
+                "qwen3-8b",
+                "--hf-repo",
+                "unsloth/Qwen3-8B-GGUF:Q4_K_M",
+            ],
+        },
+        "source": "preset",
+    },
     {"id": "qwen3-14b", "status": {"value": "unloaded"}},
     {"id": "qwen3-1.7b", "status": {"value": "loaded"}},
     {"id": "default", "status": {"value": "unloaded"}},
@@ -47,8 +61,18 @@ PROFILES: dict[str, dict[str, Any]] = {
         "model": "qwen3-4b",
         "hf_repo": "unsloth/Qwen3-4B-GGUF:Q4_K_M",
     },
+    "repointed-prof": {
+        "provider": "llama-server",
+        "model": "qwen3-8b",
+        "hf_repo": "bartowski/Qwen3-8B-GGUF:Q4_K_M",
+    },
     "nosrc-prof": {"provider": "llama-server", "model": "mystery"},
     "claude-prof": {"provider": "anthropic-api", "model": "claude-x"},
+    "aa-remote": {
+        "provider": "openai-compatible",
+        "model": "theirs",
+        "base_url": "http://remote.test/v1",
+    },
 }
 
 
@@ -97,6 +121,16 @@ def project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
             {"name": "writer", "model_profile": "ready-prof"},
             {"name": "keeper", "script": "scripts/here.py"},
         ],
+    )
+    _ensemble(
+        dot / "ensembles",
+        "repointed",
+        [{"name": "writer", "model_profile": "repointed-prof"}],
+    )
+    _ensemble(
+        dot / "ensembles",
+        "lost",
+        [{"name": "ghost", "model_profile": "nope"}],
     )
     _ensemble(
         dot / "ensembles",
@@ -194,3 +228,42 @@ class TestPreflightOverRest:
         data = _runnable("only-pull")
         assert data["runnable"] is False
         assert [d["status"] for d in data["dependencies"]] == ["ready", "pullable"]
+
+    def test_a_model_listed_under_another_source_needs_a_restart(
+        self, project: Path
+    ) -> None:
+        """Ruling 6: the router lists the name but serves a different
+        file, so the run would use the wrong model; the profile with the
+        matching source (``clean``) still reads ready."""
+        data = _runnable("repointed")
+
+        assert data["runnable"] is False
+        [row] = [d for d in data["dependencies"] if d["kind"] == "profile"]
+        assert (row["status"], row["resolve"]) == ("needs_restart", "restart")
+        assert "unsloth/Qwen3-8B-GGUF:Q4_K_M" in row["detail"]
+        assert "bartowski/Qwen3-8B-GGUF:Q4_K_M" in row["detail"]
+
+
+class TestAlternativesAreStillOffered:
+    def test_a_live_openai_compatible_profile_is_an_alternative(
+        self, project: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The read endpoint probes the host's endpoints, not only the
+        closure's, so it can name a profile the closure does not use."""
+
+        class _Response:
+            status_code = 200
+
+            def json(self) -> dict[str, Any]:
+                return {"data": [{"id": "theirs"}]}
+
+        async def get(self: httpx.AsyncClient, url: str, **kwargs: Any) -> Any:
+            return _Response()
+
+        monkeypatch.setattr(httpx.AsyncClient, "get", get)
+
+        data = _runnable("lost")
+
+        [agent] = data["agents"]
+        assert agent["status"] == "missing_profile"
+        assert "aa-remote" in agent["alternatives"]

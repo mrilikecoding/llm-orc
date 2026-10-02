@@ -1,5 +1,6 @@
 """Configuration management system for llm-orc."""
 
+import copy
 import logging
 import os
 import shutil
@@ -71,12 +72,34 @@ class ConfigurationManager:
         # the profile merge each skip it then, so nothing is read twice.
         self._packaged_serving_dir = packaged_serving_project_dir()
 
+        # The one-run layer (Arc 4), set only on a view; see with_run_layer.
+        self._run_layer_dir: Path | None = None
+
         # Profile cache
         self._profiles_cache: dict[str, dict[str, str]] | None = None
         self._profiles_cache_mtimes: dict[str, float] = {}
 
         if provision:
             self.provision()
+
+    @property
+    def run_layer_dir(self) -> Path | None:
+        """The run layer directory when this is a view, else ``None``."""
+        return self._run_layer_dir
+
+    def with_run_layer(self, run_dir: Path) -> "ConfigurationManager":
+        """A copy whose tier lists put ``run_dir`` highest (Arc 4).
+
+        The layer is shaped like every other tier: ``ensembles/``,
+        ``profiles/``, scripts at their keys. The copy gets its own,
+        empty profile cache so two views never see each other's profiles
+        and neither touches this manager's.
+        """
+        view = copy.copy(self)
+        view._run_layer_dir = run_dir
+        view._profiles_cache = None
+        view._profiles_cache_mtimes = {}
+        return view
 
     def provision(self) -> None:
         """Create global config directories and copy default templates."""
@@ -277,6 +300,7 @@ class ConfigurationManager:
 
     def _tier_dirs(self, subdir: str) -> list[Path]:
         candidates: list[Path | None] = [
+            self._run_layer_dir,
             self._local_config_dir,
             self.library_dir,
             self._global_config_dir,
@@ -512,7 +536,7 @@ class ConfigurationManager:
     def _profile_tiers(self) -> list[Path]:
         """Config dirs whose profiles resolve at runtime, lowest precedence first.
 
-        packaged -> global -> local. The library tier is listed by
+        packaged -> global -> local -> run layer. The library tier is listed by
         ``get_profiles_dirs`` but never resolved here, as before this
         tier loop existed: a submodule profile must not shadow a global
         one by name. In a checkout the packaged dir is the local dot-dir
@@ -525,6 +549,8 @@ class ConfigurationManager:
         tiers.append(self._global_config_dir)
         if self._local_config_dir is not None:
             tiers.append(self._local_config_dir)
+        if self._run_layer_dir is not None:
+            tiers.append(self._run_layer_dir)
         return tiers
 
     def get_model_profiles(self) -> dict[str, dict[str, str]]:

@@ -18,6 +18,9 @@ from llm_orc.agents.script_agent import (
     SCRIPT_POOL_SIZE,
     SCRIPT_POOL_THREAD_PREFIX,
     ScriptAgent,
+    _Child,
+    _kill_group,
+    _run_subprocess,
 )
 
 
@@ -130,7 +133,7 @@ class TestScriptAgent:
         agent = ScriptAgent("test_agent", config)
 
         with patch(
-            "llm_orc.agents.script_agent.subprocess.run",
+            "llm_orc.agents.script_agent.subprocess.Popen",
             side_effect=__import__("subprocess").TimeoutExpired(cmd="", timeout=1),
         ):
             result = await agent.execute("test input")
@@ -160,7 +163,7 @@ class TestScriptAgent:
         agent = ScriptAgent("test_agent", config)
 
         with patch(
-            "llm_orc.agents.script_agent.subprocess.run",
+            "llm_orc.agents.script_agent.subprocess.Popen",
             side_effect=OSError("Permission denied"),
         ):
             result = await agent.execute("test input")
@@ -194,14 +197,17 @@ print(json.dumps({"received": data}))
             }
             agent = ScriptAgent("test_agent", config)
 
-            with patch("subprocess.run") as mock_run:
-                mock_run.return_value.stdout = '{"success": true}'
-                mock_run.return_value.returncode = 0
+            with patch("subprocess.Popen") as mock_popen:
+                mock_popen.return_value.communicate.return_value = (
+                    '{"success": true}',
+                    "",
+                )
+                mock_popen.return_value.poll.return_value = 0
 
                 asyncio.run(agent.execute("test input"))
 
-                call_args = mock_run.call_args
-                stdin_data = call_args.kwargs.get("input")
+                call_args = mock_popen.return_value.communicate.call_args
+                stdin_data = call_args.args[0]
                 assert stdin_data is not None
 
                 parsed = json.loads(stdin_data)
@@ -348,9 +354,12 @@ sys.exit(1)
         ) as mock_resolve:
             mock_resolve.return_value = ("/absolute/path/to/script.py", True)
 
-            with patch("subprocess.run") as mock_run:
-                mock_run.return_value.stdout = '{"success": true}'
-                mock_run.return_value.returncode = 0
+            with patch("subprocess.Popen") as mock_popen:
+                mock_popen.return_value.communicate.return_value = (
+                    '{"success": true}',
+                    "",
+                )
+                mock_popen.return_value.poll.return_value = 0
 
                 await agent.execute("test input")
 
@@ -888,18 +897,18 @@ class TestScriptAgentsOffTheEventLoop:
         # Observed in the PARENT: the child process reports its own
         # MainThread, so only the caller's thread reveals which pool ran it.
         seen: list[str] = []
-        real_run = subprocess.run
 
-        def _spy(*args: Any, **kwargs: Any) -> Any:
-            seen.append(threading.current_thread().name)
-            return real_run(*args, **kwargs)
+        class _Spy(subprocess.Popen):  # type: ignore[type-arg]
+            def __init__(self, *args: Any, **kwargs: Any) -> None:
+                seen.append(threading.current_thread().name)
+                super().__init__(*args, **kwargs)
 
-        with patch("llm_orc.agents.script_agent.subprocess.run", _spy):
+        with patch("llm_orc.agents.script_agent.subprocess.Popen", _Spy):
             asyncio.run(
                 ScriptAgent("a", {"script": path, "timeout_seconds": 30}).execute("{}")
             )
 
-        assert seen, "subprocess.run was never called"
+        assert seen, "the subprocess was never started"
         assert SCRIPT_POOL_THREAD_PREFIX in seen[0], seen[0]
 
     def test_a_hanging_subprocess_still_fails_at_its_inner_bound(
@@ -939,6 +948,221 @@ class TestScriptAgentsOffTheEventLoop:
         assert len(results) == count
         for raw in results:
             assert json.loads(raw)["ok"] == 1
+
+
+class TestAScriptNeverHangsOnItsDescendants:
+    """A descendant that left the process group and holds the output pipes
+    must not delay a timeout or a cancel (subprocess.run reaps with wait()
+    after a timeout; it never reads to EOF)."""
+
+    @pytest.fixture
+    def marks(self, tmp_path: Path) -> Any:
+        """Pid files of everything a test starts; all killed afterwards."""
+        yield tmp_path
+        for mark in tmp_path.glob("*.pid"):
+            if mark.read_text().strip():
+                try:
+                    os.kill(int(mark.read_text()), 9)
+                except ProcessLookupError:
+                    pass
+
+    def _foreign_holder(self, marks: Path) -> list[str]:
+        """A script that starts a descendant in its own session; the
+        descendant inherits stdout and sleeps 8 seconds."""
+        body = (
+            "import os, subprocess, sys, time\n"
+            "kid = subprocess.Popen([sys.executable, '-c',"
+            " 'import time; time.sleep(8)'], start_new_session=True)\n"
+            f"open(r'{marks / 'foreign.pid'}', 'w').write(str(kid.pid))\n"
+            f"open(r'{marks / 'self.pid'}', 'w').write(str(os.getpid()))\n"
+            "time.sleep(30)\n"
+        )
+        return [sys.executable, "-c", body]
+
+    def test_a_timeout_returns_promptly_whatever_holds_the_pipes(
+        self, marks: Path
+    ) -> None:
+        argv = self._foreign_holder(marks)
+
+        async def run() -> float:
+            started = time.monotonic()
+            with pytest.raises(subprocess.TimeoutExpired):
+                await _run_subprocess(argv, capture_output=True, text=True, timeout=1)
+            return time.monotonic() - started
+
+        assert asyncio.run(run()) < 3
+
+    def test_a_cancel_returns_promptly_whatever_holds_the_pipes(
+        self, marks: Path
+    ) -> None:
+        argv = self._foreign_holder(marks)
+
+        async def run() -> float:
+            task = asyncio.ensure_future(
+                _run_subprocess(argv, capture_output=True, text=True)
+            )
+            for _ in range(100):
+                if (marks / "foreign.pid").exists() and (
+                    marks / "foreign.pid"
+                ).read_text():
+                    break
+                await asyncio.sleep(0.05)
+            started = time.monotonic()
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+            return time.monotonic() - started
+
+        assert asyncio.run(run()) < 3
+
+    def test_a_timeout_kills_the_whole_group(self, marks: Path) -> None:
+        body = (
+            "import subprocess, time\n"
+            "kid = subprocess.Popen(['sleep', '30'])\n"
+            f"open(r'{marks / 'kid.pid'}', 'w').write(str(kid.pid))\n"
+            "time.sleep(30)\n"
+        )
+
+        async def run() -> None:
+            with pytest.raises(subprocess.TimeoutExpired):
+                await _run_subprocess(
+                    [sys.executable, "-c", body],
+                    capture_output=True,
+                    text=True,
+                    timeout=1,
+                )
+
+        asyncio.run(run())
+        pid = int((marks / "kid.pid").read_text())
+        for _ in range(40):
+            try:
+                os.kill(pid, 0)
+            except ProcessLookupError:
+                return
+            time.sleep(0.05)
+        raise AssertionError("the grandchild outlived the timeout")
+
+    def test_a_blocked_worker_never_signals_a_pid_already_reaped(
+        self, marks: Path
+    ) -> None:
+        """After a cancel the foreign holder keeps the worker blocked in
+        ``communicate`` until the script's timeout; only the worker may
+        reap the child, so its timeout kill still targets a live pid."""
+        argv = self._foreign_holder(marks)
+        started: list[Any] = []
+        real_start = _Child.start
+        real_killpg = os.killpg
+        signalled: list[tuple[int, bool]] = []
+
+        def start(child: _Child, args: Any, kwargs: Any) -> Any:
+            process = real_start(child, args, kwargs)
+            started.append(process)
+            return process
+
+        def killpg(pid: int, sig: int) -> None:
+            process = started[0]
+            if pid == process.pid:
+                signalled.append((pid, process.returncode is None))
+            real_killpg(pid, sig)
+
+        async def run() -> None:
+            task = asyncio.ensure_future(
+                _run_subprocess(argv, capture_output=True, text=True, timeout=2)
+            )
+            for _ in range(100):
+                if (marks / "foreign.pid").exists() and (
+                    marks / "foreign.pid"
+                ).read_text():
+                    break
+                await asyncio.sleep(0.05)
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+            await asyncio.sleep(3)
+
+        with (
+            patch.object(_Child, "start", start),
+            patch("llm_orc.agents.script_agent.os.killpg", killpg),
+        ):
+            asyncio.run(run())
+
+        pid = started[0].pid
+        assert signalled
+        assert all(live for _, live in signalled), signalled
+        assert started[0].returncode is not None
+        stat = subprocess.run(
+            ["ps", "-o", "stat=", "-p", str(pid)], capture_output=True, text=True
+        )
+        assert stat.stdout.strip() == "", "the child was left a zombie"
+
+    def test_kill_group_skips_a_process_already_reaped(self) -> None:
+        process = subprocess.Popen(["true"], text=True)
+        process.wait()
+
+        with patch("llm_orc.agents.script_agent.os.killpg") as killpg:
+            _kill_group(process)
+
+        killpg.assert_not_called()
+
+    def test_cancel_does_not_signal_a_reaped_child(self) -> None:
+        child = _Child()
+        process = child.start(("true",), {})
+        process.wait()
+
+        with patch("llm_orc.agents.script_agent.os.killpg") as killpg:
+            child.cancel()
+
+        killpg.assert_not_called()
+
+
+class TestALargeInputReachesASlowReader:
+    """``communicate`` cannot be resumed after a timeout while it still has
+    input to send, so the read must not be sliced: a child that starts
+    reading late still gets all of its input and its EOF."""
+
+    READER = "import sys, time\ntime.sleep(0.5)\nprint(len(sys.stdin.read()))\n"
+
+    def test_run_subprocess_delivers_two_megabytes_to_a_slow_reader(self) -> None:
+        async def run() -> tuple[float, str]:
+            started = time.monotonic()
+            result = await _run_subprocess(
+                [sys.executable, "-c", self.READER],
+                input="x" * 2_000_000,
+                capture_output=True,
+                text=True,
+                timeout=6,
+            )
+            return time.monotonic() - started, result.stdout
+
+        elapsed, stdout = asyncio.run(run())
+
+        assert stdout.strip() == "2000000"
+        assert elapsed < 5
+
+    def test_a_script_agent_completes_with_an_input_past_the_pipe_buffer(
+        self,
+    ) -> None:
+        # The agent also mirrors the input into the environment, which the
+        # OS caps near 1 MB, so this input is 200 KB: well past the pipe
+        # buffer (16-64 KB), which is what stalls the write.
+        with tempfile.TemporaryDirectory() as directory:
+            script = Path(directory) / "reader.py"
+            script.write_text(
+                "import json, sys, time\n"
+                "time.sleep(0.5)\n"
+                "data = json.loads(sys.stdin.read())\n"
+                "print(json.dumps({'n': len(data['input'])}))\n"
+            )
+            agent = ScriptAgent(
+                "reader", {"script": str(script), "timeout_seconds": 10}
+            )
+
+            started = time.monotonic()
+            result = asyncio.run(agent.execute("x" * 200_000))
+            elapsed = time.monotonic() - started
+
+        assert json.loads(result) == {"n": 200_000}
+        assert elapsed < 5
 
 
 class TestOnePredicateFileVsInline:
