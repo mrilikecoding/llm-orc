@@ -91,6 +91,7 @@ class TestListEnsemblesGrouped:
             "library": [],
             "global": [],
             "packaged": [],
+            "bundle": [],
         }
 
     def test_local_tier_goes_into_local_bucket(self, tmp_path: Path) -> None:

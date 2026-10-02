@@ -39,6 +39,7 @@ from llm_orc.services.handlers.run_preparation import (
     NOT_EQUIPPED,
     ChildLoadError,
     MaterializedRoot,
+    RootNotFoundError,
     RunRefusedError,
     load_problem,
     only_pullable_unmet,
@@ -390,7 +391,7 @@ class ExecutionHandler:
             name = str(request.ensemble_name)
             config = lookup(name)
             if not config:
-                raise ValueError(f"{missing}: {name}")
+                raise RootNotFoundError(f"{missing}: {name}", name)
             return config
         try:
             return self._ensemble_loader.load_from_file(
