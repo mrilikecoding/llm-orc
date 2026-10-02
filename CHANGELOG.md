@@ -5,6 +5,67 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.24.0] - 2026-10-02
+
+### Added
+- `llm-orc invoke <ensemble> --remote <name|url>` runs a local ensemble
+  on another serve (#191, #196). The CLI ships the root, every child
+  ensemble and every script that resolves locally as one run request,
+  posts it to `<url>/api/ensembles/execute`, and prints the result as it
+  prints a local run's. Named remotes live in the user's global
+  `config.yaml` under `remotes:`; a project config's `remotes` is not
+  read. `--bind a=b`, `--pull`, `--with-profile NAME` (ship a local
+  profile definition) and `--persist global` travel with the request.
+  Anything that does not resolve locally is left to the remote's
+  preflight and named on stderr. Exit 1 on `status: error`, 130 on
+  Ctrl-C, which closes the connection so the serve cancels the run.
+- A script lists the files it needs beside it in a `# /// llm-orc` block
+  (`files = ["_helpers.py"]`, the form PEP 723 reserves for tools). The
+  listed files are closure members: preflight reports one that is not
+  beside the script as `missing_script` before any agent runs, and
+  `invoke --remote` ships them with the script. Nothing is inferred from
+  imports. The packaged scripts carry their blocks.
+- Bundles: a run request with `persist: "global"` and an inline root
+  stores the closure on the serve as one file under the global config's
+  `bundles/` once the gate passes, then runs it. A later run of that
+  name replays the stored request through the injection path, with the
+  caller's own injections and bindings laid over it. A bundle shadows
+  nothing on the host: its children and scripts resolve for its own
+  root only. Listings show it with source `bundle`; `delete_ensemble`
+  with `scope: global` removes it when no tier resolves the name.
+- The MCP `invoke` tool takes `remote`, `with_profiles` and `persist` on
+  the stdio server (`llm-orc mcp serve`). The MCP endpoint a serve mounts
+  and `mcp serve --transport http` refuse `remote`: a serve does not
+  relay. A new error kind, `remote_error`, says a remote could not be
+  reached or did not answer with a result; `invalid_request` on that
+  path means nothing was sent.
+- The run result carries `metadata` (usage and durations) on REST, MCP
+  and the CLI's JSON output, and `raw_output` on all three. A stored
+  bundle is reported as `persisted`.
+
+### Changed
+- **Breaking for local CLI callers:** `llm-orc invoke` and
+  `llm-orc validate run` go through the same preflight gate as REST and
+  MCP. An ensemble this host cannot run is refused before any agent
+  starts, with the dependency table and exit 1. A local model that is
+  listed but not downloaded blocks until the call carries `--pull`.
+  Both commands take `--bind NAME=TARGET` (repeatable) and `--pull`.
+- A REST run is cancelled when its client disconnects; the run's scripts
+  are killed and its run layer removed. The two execute routes answer
+  499 to a connection that is already gone.
+- The CLI's `--output-format json` prints the result document with every
+  key it carries, plus `config`, instead of a fixed key list. The CLI
+  exits 1 when `status` is not `success` or `has_errors` is true.
+- Bundle names are exact: a persist under another spelling of an
+  existing bundle's name (case or Unicode form) is refused, naming it.
+
+### Fixed
+- The MCP `invoke` result carries `raw_output`, as REST's always did.
+- An interactive-script ensemble run with `--output-format text` exits
+  0 when it succeeds.
+- The test suite's artifact cleanup no longer races under xdist, and
+  two tests no longer leak a SIGINT handler.
+
 ## [0.23.0] - 2026-10-02
 
 ### Added
