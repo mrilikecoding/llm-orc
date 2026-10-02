@@ -217,25 +217,62 @@ unscrubbed. #205 (P2) is the spike on access levels for a serve with
 clients it does not trust; until then injection relies on who can reach
 the port.
 
-**Arc 5 (the CLI as the remote client) is re-cut (2026-10-02); next is
-its implementation.** Rulings 1-12, the code read and the probes are in
-the spec ("Arc 5 re-cut (2026-10-02)"); task cards in
-`docs/plans/2026-10-02-remote-delegation-arc5.md`; branch
-`feat/cli-remote-client` in `.claude/worktrees/arc5-cli-remote`. What
-the practitioner ruled: the local CLI goes through the preparation step
-in this arc (breaking for local callers, as 0.23.0 was for REST and
-MCP); `--persist global` is in this arc; a script declares the files it
-needs in a header block, nothing is inferred; a persisted closure is
-kept as one unit (a stored run request under the global config's
-`bundles/`), never copied into the global tier, so it shadows nothing on
-the host. Also in the arc: named remotes in the user's global config,
-a REST run cancelled when its client disconnects, `metadata` on the run
-result, `remote` on the MCP `invoke` tool. Probes against the remote
-host: a 12 MB injected body and a 200 s silent POST both pass its
-proxy; a model run of 8 to 15 minutes through it is not measured until
-the arc's live row. Left out, on #94: candidates for a `${...}`
-dispatch. A serve's access level (#205) is still where the CLI would
-read what a remote permits.
+**Arc 5 (the CLI as the remote client) merged on local main
+(`af5a1553`, 2026-10-02), not pushed.** 80 commits; suite 5521, about
+66 s parallel. Rulings 1-12, what the build and four review rounds
+changed, the live rows and the review record are in the spec ("Arc 5
+re-cut (2026-10-02)" to its "Lesson, binding"); task cards in
+`docs/plans/2026-10-02-remote-delegation-arc5.md`; user docs in
+`docs/serving.md` from "A script's files block" to "Bundles". Shape:
+`llm-orc invoke <ensemble> --remote <name|url> [--bind a=b] [--pull]
+[--with-profile NAME] [--persist global]` ships the root, its children
+and its scripts with the files their `# /// llm-orc` blocks list, as one
+run request, and prints the result as a local run's; the local CLI
+(`invoke`, `validate run`) goes through the same preparation step as
+REST and MCP (breaking: a not-runnable ensemble is refused up front, a
+not-downloaded model needs `--pull`); a persisted closure is one stored
+request under the host's global `bundles/`, replayed through the
+injection path, shadowing nothing; the MCP `invoke` tool takes `remote`
+on the stdio server only; a REST run is cancelled when its client
+disconnects; the result carries `metadata`. Live rows on the laptop
+passed at `def0b958` with spot checks after each wave, two real serves
+and a router: Ctrl-C and an MCP cancel each stop the remote in under
+0.1 s.
+
+What the practitioner ruled on the way: the local gate in this arc;
+`--persist` in this arc; a declared files block, nothing inferred; a
+bundle kept as a unit. Mine, open to veto: a third error kind
+`remote_error`; `httpx` as the transport (already used by the model
+clients, still undeclared in `pyproject.toml`); redirects not followed;
+one "Lesson, binding" in the spec.
+
+Review record: four author-independent rounds (8, 8, 1+notes, 1+notes
+findings), each fix wave reproduced red first, and two of the waves
+introduced regressions the next round caught (a parity pin that proved
+only its own layouts; a dropped guard). The last wave (five small fixes,
+mutant-red pins) was read by the lead, not reviewed independently.
+
+Known limits, on #196 and #191: the shipper refuses a
+`scripts/scripts/x.py` beside `scripts/x.py` layout that would run;
+`update_ensemble`, `from_template`, completion and `/v1` do not know
+bundles; a shadowed bundle is listed; a tier root in a subdirectory
+cannot be deleted by name and a bundle behind it stays; Ctrl-C cannot
+interrupt a ship that is itself stuck; `REQUESTS_CA_BUNDLE` is not read
+(`SSL_CERT_FILE` is); no MCP remote pin runs over an MCP wire (the stdio
+live row is that check); on a tty the left-out line can share a line
+with the ticker.
+
+**Next: push and release on the practitioner's go (push at 0.23.0
+first, wait for CI on both OSes, then the version bump), deploy to the
+remote host (`llm-orc-deploy.sh` over ssh), then the remote rows:
+`research-dossier --remote` (the first model run past 200 s through its
+proxy), the missing profile and `--bind`, Ctrl-C through the proxy,
+`--persist global` and a run by name.** The changelog needs the
+breaking-change paragraph from `docs/serving.md` ("Local runs: bind,
+pull and the gate"). After that the remote delegation plan's arcs are
+done; what remains of #191 is the one-service shape, and #205 (access
+levels) is where a serve would say what it permits before a client
+ships. Left on #94: candidates for a `${...}` dispatch.
 
 Tooling since the last handoff: `hooks/pre-commit` and `hooks/pre-push`
 are tracked and both run `make lint` (`make install-hooks`; `make setup`
