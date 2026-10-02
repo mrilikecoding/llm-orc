@@ -109,7 +109,7 @@ the removed content and cannot be changed, only yanked (left as they
 are; the wheels never carried it). Hashes cited in GitHub issue comments before
 this date are the old ones.
 
-### 2026-10-02: Arc 4 merged on local main; v0.22.0 is the release
+### 2026-10-02: Arc 4 released as v0.23.0; next is the Arc 5 re-cut
 
 Released v0.22.0 on the practitioner's go: push `923fa5a6..a3aa6e70`,
 tag, GitHub release, PyPI, tap formula bumped (`1b3cdb00`, Intel
@@ -162,7 +162,9 @@ config. `/v1` results taken from the mini before this date ran the
 checkout's 0.20.4-era serving project on a newer engine. The homelab
 cert renewal daemon fix is still owed before December.
 
-**Arc 4 merged on local main 2026-10-02 (`4e1b52da`), not pushed.**
+**Arc 4 merged 2026-10-02 (`4e1b52da`) and released as v0.23.0** (pushed,
+PyPI, GitHub release, tap formula; verified by a clean install from
+PyPI; deployed to the remote host, live row in the spec).
 Rulings, the two probes, the live rows and the review record are in the
 spec (`docs/plans/2026-09-28-remote-delegation.md`, "Arc 4 re-cut
 (2026-10-01)" through "Review rounds and the re-run"); task cards in
@@ -177,7 +179,7 @@ not_equipped | invalid_request, message, dependencies}}` before any agent
 runs. Suite 5043; parallel about 70 s (`uv run pytest -n auto`), serial
 about 6.5 min.
 
-What a caller will notice (breaking, for the release notes): every REST
+What a caller will notice (breaking, in the 0.23.0 changelog): every REST
 and MCP run is gated, named ensembles too, so an ensemble that is not
 `runnable` answers `not_equipped` instead of starting, including a ready
 primary with an unmet fallback hop; a `pullable` model blocks unless
@@ -205,7 +207,8 @@ the layer is removed); the MCP tool ignores unknown arguments where REST
 rejects them; unused inline definitions are accepted; `input_file`
 pointing nowhere and a malformed named root still raise (500 on REST);
 a script agent's input is also copied into the subprocess environment,
-so one above about 1 MB fails with "Argument list too long"; a cancel
+so one above 128 KB on Linux (one variable), or about 1 MB on macOS,
+fails with "Argument list too long"; a cancel
 during a pull leaves the worker thread polling the router; a cancelled
 run whose script left a process outside its group holds one pool thread
 until the script's timeout; context size is not compared (ruling 6);
@@ -214,16 +217,21 @@ unscrubbed. #205 (P2) is the spike on access levels for a serve with
 clients it does not trust; until then injection relies on who can reach
 the port.
 
-**Next:** on the practitioner's go, push and release (the push carries
-61 local commits; `publish.yml` publishes on every push to main, so push
-at 0.22.0 first, wait for CI, then the release commit), deploy to the
-remote host, and take the live row there. Then re-cut Arc 5 (the CLI as
-the remote client) from the merged shape. Carry into the re-cut: named
-remotes in the user's config so no URL lives in a repo; the CLI ships a
-script's sibling modules with it (ruling 7: an injected script imports
-only what ships beside it); script keys need path syntax and names must
-be distinct ignoring case; a serve's access level (#205) is where the
-CLI would read what the remote permits.
+**Next: re-cut Arc 5 (the CLI as the remote client)** from the merged
+shape. Carry into the re-cut: named remotes in the user's config so no
+URL lives in a repo; the CLI ships a script's sibling modules with it
+(ruling 7: an injected script imports only what ships beside it); script
+keys need path syntax and names must be distinct ignoring case; a
+serve's access level (#205) is where the CLI would read what the remote
+permits; the CLI itself is not gated yet and should go through the same
+preparation step (#191).
+
+Tooling since the last handoff: `hooks/pre-commit` and `hooks/pre-push`
+are tracked and both run `make lint` (`make install-hooks`; `make setup`
+calls it). The pre-push hook exists because a tree can reach a push
+without a commit in the clone. Run the suite in parallel (`make test`,
+about 70 s); the serial command the earlier plans name takes about
+6.5 min.
 
 ### 2026-09-27: fail-closed composition, released v0.21.0
 
