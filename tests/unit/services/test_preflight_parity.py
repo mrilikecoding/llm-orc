@@ -25,6 +25,7 @@ from llm_orc.core.config.config_manager import (
 from llm_orc.core.config.ensemble_config import EnsembleConfig, EnsembleLoader
 from llm_orc.core.execution.executor_factory import ExecutorFactory
 from llm_orc.providers.llama_server import LlamaServerClient
+from llm_orc.services.handlers.preflight import is_runnable
 from llm_orc.services.handlers.provider_handler import Preflight
 from llm_orc.services.orchestra_service import OrchestraService
 
@@ -536,15 +537,20 @@ class TestTheGateProbesOnlyWhatTheRunUses:
         )
         return urls
 
-    async def test_a_closure_with_no_such_profile_probes_nothing_on_the_read_path(
+    async def test_the_read_path_probes_the_hosts_endpoints_together(
         self, project: Path, probed: list[str]
     ) -> None:
+        """The read endpoint offers the host's live endpoints as
+        alternatives, so it asks every one, as it always has."""
         service = _service(project)
+        started = time.monotonic()
 
         result = await service.check_ensemble_runnable({"ensemble_name": "idle"})
 
+        elapsed = time.monotonic() - started
         assert result["runnable"] is True
-        assert probed == []
+        assert sorted(probed) == [f"{u}/models" for u in HOST_ENDPOINTS]
+        assert elapsed < ENDPOINT_DELAY_S * 1.8, f"probed in series: {elapsed:.2f}s"
 
     async def test_a_closure_with_no_such_profile_probes_nothing_on_the_gate_path(
         self, project: Path, probed: list[str]
@@ -562,16 +568,46 @@ class TestTheGateProbesOnlyWhatTheRunUses:
         assert outcome.closure.dependencies
         assert probed == []
 
+    async def test_an_inline_openai_compatible_model_is_probed_at_the_default_endpoint(
+        self, project: Path, probed: list[str]
+    ) -> None:
+        """An inline model names no profile, so the endpoint it would run
+        against is its provider's default; without that probe the gate
+        could only say it has no status for it."""
+        service = _service(project)
+        _ensemble(
+            project / ".llm-orc" / "ensembles" / "inline-model.yaml",
+            "inline-model",
+            [{"name": "w", "model": "their-model", "provider": "openai-compatible"}],
+        )
+        root = service.find_ensemble_by_name("inline-model")
+
+        outcome = await service._provider_handler.preflight(
+            root,
+            "inline-model",
+            config_manager=service.config_manager,
+            project_dir=service.project_path,
+        )
+
+        assert probed == ["https://api.openai.com/v1/models"]
+        assert is_runnable(outcome.reports)
+
     async def test_a_closure_probes_its_own_endpoints_together_and_no_others(
         self, project: Path, probed: list[str]
     ) -> None:
         service = _service(project)
+        root = service.find_ensemble_by_name("uses-two")
         started = time.monotonic()
 
-        result = await service.check_ensemble_runnable({"ensemble_name": "uses-two"})
+        outcome = await service._provider_handler.preflight(
+            root,
+            "uses-two",
+            config_manager=service.config_manager,
+            project_dir=service.project_path,
+        )
 
         elapsed = time.monotonic() - started
-        assert result["runnable"] is True
+        assert is_runnable(outcome.reports)
         assert sorted(probed) == [f"{u}/models" for u in HOST_ENDPOINTS[:2]]
         assert elapsed < ENDPOINT_DELAY_S * 1.8, f"probed in series: {elapsed:.2f}s"
 
