@@ -9,8 +9,14 @@ from typing import Any
 import pytest
 import yaml
 
-from llm_orc.core.config.closure import Dependency, walk_closure
+from llm_orc.core.config.closure import (
+    Dependency,
+    ScriptFilesOf,
+    ScriptListing,
+    walk_closure,
+)
 from llm_orc.core.config.ensemble_config import EnsembleConfig, EnsembleLoader
+from llm_orc.core.execution.scripting.files_block import ListedFiles
 from llm_orc.schemas.agent_config import (
     EnsembleAgentConfig,
     LoopAgentConfig,
@@ -411,3 +417,91 @@ class TestWalkerKeysOnReferences:
 
         assert [d.name for d in closure.dependencies] == ["a", "b"]
         assert ("ensemble", "a") in closure.owned["a.spin"]
+
+
+class TestListedScriptFiles:
+    """Ruling 8: files a script lists are closure members its frames own."""
+
+    @staticmethod
+    def _listings(table: dict[str, tuple[bool, tuple[str, ...]]]) -> ScriptFilesOf:
+        def files_of(dep: Dependency) -> ScriptListing:
+            found, paths = table.get(dep.name, (True, ()))
+            return ScriptListing(found, ListedFiles(paths=paths))
+
+        return files_of
+
+    def _walk(
+        self, ensembles: Path, files_of: ScriptFilesOf, script: str = "tools/x.py"
+    ) -> list[Dependency]:
+        _write(ensembles, "top", [{"name": "run", "script": script}])
+        root = _finder(ensembles)("top")
+        assert root is not None
+        return walk_closure(
+            root, _finder(ensembles), {}, root_ref="top", script_files=files_of
+        ).dependencies
+
+    def test_a_listed_file_is_a_dependency_named_beside_its_script(
+        self, ensembles: Path
+    ) -> None:
+        deps = self._walk(
+            ensembles, self._listings({"tools/x.py": (True, ("_helpers.py",))})
+        )
+
+        assert _keys(deps)[1:] == [
+            ("script", "tools/x.py", ("top.run",)),
+            ("script", "tools/_helpers.py", ("top.run",)),
+        ]
+        listed = deps[2]
+        assert (listed.beside, listed.listed) == ("tools/x.py", "_helpers.py")
+
+    def test_a_listed_file_that_lists_files_is_followed(self, ensembles: Path) -> None:
+        deps = self._walk(
+            ensembles,
+            self._listings(
+                {
+                    "tools/x.py": (True, ("a/b.py",)),
+                    "tools/a/b.py": (True, ("c.py",)),
+                }
+            ),
+        )
+
+        assert [d.name for d in deps[1:]] == [
+            "tools/x.py",
+            "tools/a/b.py",
+            "tools/a/c.py",
+        ]
+
+    def test_files_that_list_each_other_terminate(self, ensembles: Path) -> None:
+        deps = self._walk(
+            ensembles,
+            self._listings(
+                {"tools/x.py": (True, ("y.py",)), "tools/y.py": (True, ("x.py",))}
+            ),
+        )
+
+        assert [d.name for d in deps[1:]] == ["tools/x.py", "tools/y.py"]
+
+    def test_a_listing_that_cannot_be_read_marks_the_script(
+        self, ensembles: Path
+    ) -> None:
+        def files_of(dep: Dependency) -> ScriptListing:
+            return ScriptListing(True, ListedFiles(error="not valid TOML"))
+
+        [_, script] = self._walk(ensembles, files_of)
+
+        assert script.problem == "not valid TOML"
+
+    def test_the_frame_owns_the_listed_file(self, ensembles: Path) -> None:
+        _write(ensembles, "top", [{"name": "run", "script": "tools/x.py"}])
+        root = _finder(ensembles)("top")
+        assert root is not None
+
+        closure = walk_closure(
+            root,
+            _finder(ensembles),
+            {},
+            root_ref="top",
+            script_files=self._listings({"tools/x.py": (True, ("_h.py",))}),
+        )
+
+        assert ("script", "tools/_h.py") in closure.owned["top.run"]
