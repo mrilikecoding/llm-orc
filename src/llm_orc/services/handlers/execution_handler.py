@@ -109,6 +109,17 @@ class _Root:
     ref: str
 
 
+@dataclass
+class _Verdict:
+    """What the gate found: the materialized root and the dependency rows
+    (the bind rows and any pull's outcome included), judged but not yet
+    refused on."""
+
+    root: _Root
+    reports: list[DependencyReport]
+    pulled: list[str] = field(default_factory=list)
+
+
 class ExecutionHandler:
     """Handles ensemble execution and streaming operations."""
 
@@ -214,13 +225,23 @@ class ExecutionHandler:
         removed on every way out: success, refusal, an exception and
         cancellation.
         """
+        with self._staged(data, lookup) as (request, run_dir, from_bundle):
+            yield await self._prepare(
+                request, run_dir, lookup, missing, keep_artifact=from_bundle
+            )
+
+    @contextmanager
+    def _staged(
+        self, data: Mapping[str, Any], lookup: Callable[[str], Any]
+    ) -> Iterator[tuple[RunRequest, Path | None, bool]]:
+        """The request parsed and checked, a bundle root expanded, and the
+        run directory it needs, removed on every way out. The flag says
+        the root came from a bundle."""
         request = _parse(data)
         self._refuse_shadowed_persist(request, lookup)
         request, from_bundle = self._expand_bundle(request, lookup)
         with self._run_dir(request) as run_dir:
-            yield await self._prepare(
-                request, run_dir, lookup, missing, keep_artifact=from_bundle
-            )
+            yield request, run_dir, from_bundle
 
     @contextmanager
     def _run_dir(self, request: RunRequest) -> Iterator[Path | None]:
@@ -247,21 +268,13 @@ class ExecutionHandler:
         *,
         keep_artifact: bool = False,
     ) -> PreparedRun:
-        root = self._materialize(request, run_dir, lookup, missing)
-        layer, manager, config = root.layer, root.manager, root.config
+        verdict = await self._judge(
+            request, run_dir, lookup, missing, pull=request.pull
+        )
+        root, reports, pulled = verdict.root, verdict.reports, verdict.pulled
+        layer, config = root.layer, root.config
         keep = keep_artifact or request.persist is not None
         inline = request.ensemble is not None and not keep
-        outcome = await self._gate(config, root.ref, manager)
-        stray = unnamed_bind_keys(request.bind, outcome.closure.dependencies)
-        if stray:
-            raise RunRefusedError(
-                INVALID_REQUEST,
-                f"bind key {stray[0]!r} names no profile in the closure",
-            )
-        reports = [*outcome.reports, *unmet_binding_rows(layer.unmet)]
-        pulled: list[str] = []
-        if request.pull and only_pullable_unmet(reports):
-            reports, pulled = await pull_pullable(reports, manager.get_model_profiles())
         if not is_runnable(reports):
             raise RunRefusedError(NOT_EQUIPPED, _unmet_message(reports), reports)
         persisted = self._persist(request, lookup)
@@ -269,6 +282,36 @@ class ExecutionHandler:
             return PreparedRun(config, self._get_executor(), inline, {}, pulled)
         executor = self._layer_executor(layer.view, not inline)
         return PreparedRun(config, executor, inline, layer.applied, pulled, persisted)
+
+    async def _judge(
+        self,
+        request: RunRequest,
+        run_dir: Path | None,
+        lookup: Callable[[str], Any],
+        missing: str,
+        *,
+        pull: bool,
+    ) -> _Verdict:
+        """Materialize the request and gate it: the dependency rows over
+        the run's view, with the rows the bindings add, after a pull when
+        ``pull`` is set and a pull could make the run runnable. Refuses a
+        bind key the closure does not name; whether the rows are runnable
+        is for the caller."""
+        root = self._materialize(request, run_dir, lookup, missing)
+        outcome = await self._gate(root.config, root.ref, root.manager)
+        stray = unnamed_bind_keys(request.bind, outcome.closure.dependencies)
+        if stray:
+            raise RunRefusedError(
+                INVALID_REQUEST,
+                f"bind key {stray[0]!r} names no profile in the closure",
+            )
+        reports = [*outcome.reports, *unmet_binding_rows(root.layer.unmet)]
+        pulled: list[str] = []
+        if pull and only_pullable_unmet(reports):
+            reports, pulled = await pull_pullable(
+                reports, root.manager.get_model_profiles()
+            )
+        return _Verdict(root, reports, pulled)
 
     def _expand_bundle(
         self, request: RunRequest, lookup: Callable[[str], Any]
