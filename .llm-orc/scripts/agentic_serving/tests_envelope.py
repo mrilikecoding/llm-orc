@@ -8,6 +8,10 @@ shape has no held mode: tests are the moving side by definition, and the
 executor's real-workspace failure report is the retry evidence.
 """
 
+# /// llm-orc
+# files = ["_helpers.py"]
+# ///
+
 from __future__ import annotations
 
 import json

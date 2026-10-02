@@ -14,6 +14,7 @@ from llm_orc.core.config.packaged import (
     has_serving_ensemble,
     packaged_serving_project_dir,
 )
+from llm_orc.core.config.remotes import RemoteError
 from llm_orc.core.config.template_provider import TemplateProvider
 
 logger = logging.getLogger(__name__)
@@ -346,6 +347,29 @@ class ConfigurationManager:
                 return yaml.safe_load(f) or {}
         except (yaml.YAMLError, OSError):
             return {}
+
+    def remotes(self) -> dict[str, str]:
+        """Named remotes from the global ``config.yaml`` only: name to URL.
+
+        A project config is never read here, so a checked-in file cannot
+        point a run at a host the user did not configure.
+
+        Raises:
+            RemoteError: ``remotes`` is not a mapping, or an entry has no
+                string ``url``.
+        """
+        raw = self._load_global_config().get("remotes")
+        if raw is None:
+            return {}
+        if not isinstance(raw, dict):
+            raise RemoteError("'remotes' in the global config must be a mapping")
+        remotes: dict[str, str] = {}
+        for name, entry in raw.items():
+            url = entry.get("url") if isinstance(entry, dict) else None
+            if not isinstance(url, str) or not url:
+                raise RemoteError(f"Remote '{name}' needs a 'url' string")
+            remotes[str(name)] = url.rstrip("/")
+        return remotes
 
     def _load_packaged_config(self) -> dict[str, Any]:
         """The packaged serving project's ``config.yaml``, or ``{}``.

@@ -1569,3 +1569,30 @@ class TestOtherSeams:
         assert result["status"] == "success", result
         assert _tag(result, "s") == "injected"
         assert Sentinel.calls == 0
+
+
+class TestPreparedRunIsPublic:
+    """The CLI enters the preparation step the entry paths share."""
+
+    async def test_a_runnable_root_yields_its_config_and_an_executor(
+        self, project: Path, service: OrchestraService
+    ) -> None:
+        _ensemble(project / ".llm-orc", "top", [{"name": "w", "model_profile": "p"}])
+        _profile(project / ".llm-orc", "p")
+
+        async with service.prepared_run({"ensemble_name": "top"}) as run:
+            assert run.config.name == "top"
+            assert run.executor is not None
+
+    async def test_a_missing_profile_is_refused_before_it_yields(
+        self, project: Path, service: OrchestraService
+    ) -> None:
+        from llm_orc.services.handlers.run_preparation import RunRefusedError
+
+        _ensemble(project / ".llm-orc", "top", [{"name": "w", "model_profile": "x"}])
+
+        with pytest.raises(RunRefusedError) as refused:
+            async with service.prepared_run({"ensemble_name": "top"}):
+                pytest.fail("a refused run must not yield")
+
+        assert refused.value.kind == "not_equipped"

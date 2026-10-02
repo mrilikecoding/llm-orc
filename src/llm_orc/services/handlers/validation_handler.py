@@ -12,6 +12,7 @@ from llm_orc.core.config.ensemble_config import (
 )
 from llm_orc.mcp.project_context import ProjectContext
 from llm_orc.mcp.utils import get_agent_attr as _get_agent_attr
+from llm_orc.services.handlers.bundle_store import not_a_tier_ensemble
 
 
 def _is_non_llm_agent(agent: Any) -> bool:
@@ -37,8 +38,11 @@ class ValidationHandler:
         config_manager: Any,
         find_ensemble: Callable[[str], EnsembleConfig | None],
         get_all_profiles_fn: Callable[[], dict[str, dict[str, Any]]],
+        *,
+        is_bundle: Callable[[str], bool] | None = None,
     ) -> None:
         self._config_manager = config_manager
+        self._is_bundle = is_bundle or (lambda name: False)
         self._find_ensemble = find_ensemble
         self._get_all_profiles_fn = get_all_profiles_fn
 
@@ -55,6 +59,8 @@ class ValidationHandler:
 
         config = self._find_ensemble(ensemble_name)
         if not config:
+            if self._is_bundle(ensemble_name):
+                raise ValueError(not_a_tier_ensemble(ensemble_name))
             raise ValueError(f"Ensemble not found: {ensemble_name}")
 
         validation_errors = self._collect_validation_errors(config)

@@ -2,7 +2,9 @@
 
 import os
 import sys
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 import click
 
@@ -42,6 +44,39 @@ from llm_orc.cli_modules.commands.validation_commands import (
     validate_ensemble,
     validate_ensemble_category,
 )
+
+
+def _parse_bindings(
+    _ctx: click.Context, _param: click.Parameter, values: tuple[str, ...]
+) -> dict[str, str]:
+    """``--bind a=b`` pairs as a dict; a value without ``=`` is a usage error."""
+    bindings: dict[str, str] = {}
+    for value in values:
+        key, separator, target = value.partition("=")
+        if not (separator and key and target):
+            raise click.BadParameter(f"{value!r} is not NAME=TARGET")
+        if key in bindings:
+            raise click.BadParameter(f"{key!r} is bound twice")
+        bindings[key] = target
+    return bindings
+
+
+def _bind_and_pull_options(command: Callable[..., Any]) -> Callable[..., Any]:
+    """The ``--bind`` and ``--pull`` options of a command whose run goes
+    through the preparation step, with one parsing for both commands."""
+    command = click.option(
+        "--pull",
+        is_flag=True,
+        default=False,
+        help="Download a model this host lacks but can pull, then run",
+    )(command)
+    return click.option(
+        "--bind",
+        "bind",
+        multiple=True,
+        callback=_parse_bindings,
+        help="Run a profile name on another profile: NAME=TARGET (repeatable)",
+    )(command)
 
 
 @click.group()
@@ -141,6 +176,24 @@ def completion(shell: str | None) -> None:
     default=True,
     help="Show detailed results and performance metrics",
 )
+@_bind_and_pull_options
+@click.option(
+    "--remote",
+    default=None,
+    help="Run on another serve: a name from the global config or a URL",
+)
+@click.option(
+    "--with-profile",
+    "with_profile",
+    multiple=True,
+    help="Ship a local profile's definition with the run (repeatable, --remote)",
+)
+@click.option(
+    "--persist",
+    type=click.Choice(["global"]),
+    default=None,
+    help="Keep the shipped closure on the remote under its name (--remote)",
+)
 def invoke(
     ensemble_name: str,
     input_data: str | None,
@@ -151,8 +204,29 @@ def invoke(
     streaming: bool,
     max_concurrent: int | None,
     detailed: bool,
+    bind: dict[str, str],
+    pull: bool,
+    remote: str | None,
+    with_profile: tuple[str, ...],
+    persist: str | None,
 ) -> None:
-    """Invoke an ensemble of agents."""
+    """Invoke an ensemble of agents.
+
+    \b
+    Download a model this host lacks but can pull, then run:
+      llm-orc invoke review "the diff" --pull
+    Run a profile name on another profile:
+      llm-orc invoke review "the diff" --bind seat=other
+    Run on another serve, shipping the ensemble and what it needs:
+      llm-orc invoke review "the diff" --remote remote-host
+    A profile the remote lacks: bind it to one the remote has, or ship yours:
+      llm-orc invoke review --remote remote-host --bind seat=other
+      llm-orc invoke review --remote remote-host --with-profile seat
+    Keep the shipped ensemble on the remote, to run it there by name:
+      llm-orc invoke review --remote remote-host --persist global
+    """
+    if remote is None and (with_profile or persist):
+        raise click.UsageError("--with-profile and --persist need --remote")
     has_errors = invoke_ensemble(
         ensemble_name,
         input_data,
@@ -163,6 +237,11 @@ def invoke(
         max_concurrent,
         detailed,
         input_file=input_file,
+        bind=bind,
+        pull=pull,
+        remote=remote,
+        with_profiles=with_profile,
+        persist=persist,
     )
     if has_errors:
         sys.exit(1)
@@ -544,7 +623,9 @@ def mcp_serve(transport: str, port: int) -> None:
     signal.signal(signal.SIGINT, handle_shutdown)
     signal.signal(signal.SIGTERM, handle_shutdown)
 
-    server = MCPServer()
+    # Only stdio relays (``remote``): it has one local client. A network
+    # port has any number of clients, and a serve is not a relay.
+    server = MCPServer(relay=transport == "stdio")
 
     if transport == "stdio":
         # Minimal output for stdio - it's typically auto-spawned by MCP clients
@@ -643,9 +724,16 @@ def artifacts_show(name: str, format_type: str, execution: str | None) -> None:
     default=None,
     help="Directory containing ensemble configurations",
 )
-def run(ensemble_name: str, verbose: bool, config_dir: str | None) -> None:
+@_bind_and_pull_options
+def run(
+    ensemble_name: str,
+    verbose: bool,
+    config_dir: str | None,
+    bind: dict[str, str],
+    pull: bool,
+) -> None:
     """Validate a single ensemble."""
-    validate_ensemble(ensemble_name, verbose, config_dir)
+    validate_ensemble(ensemble_name, verbose, config_dir, bind, pull)
 
 
 @validate.command()

@@ -36,6 +36,10 @@ a function ``_search_<backend>(query, api_key) -> dict`` and registering
 it in ``BACKEND_ADAPTERS``.
 """
 
+# /// llm-orc
+# files = ["_helpers.py"]
+# ///
+
 from __future__ import annotations
 
 import json

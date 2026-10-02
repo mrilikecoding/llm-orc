@@ -95,6 +95,7 @@ async def run_standard_execution(
     input_data: str,
     output_format: str = "rich",
     detailed: bool = True,
+    record: dict[str, Any] | None = None,
 ) -> bool:
     """Run standard execution without streaming.
 
@@ -104,21 +105,66 @@ async def run_standard_execution(
     """
     # Execute and get the result dict with "results" and "metadata"
     result = await executor.execute(ensemble_config, input_data)
-    _, has_errors = caller_status(result.get("status"))
+    document = _result_document(result, record)
+    document["raw_output"] = bool(ensemble_config.raw_output)
+    return display_result(
+        document,
+        ensemble_config.agents,
+        output_format,
+        detailed,
+        ensemble_config,
+    )
+
+
+_EXECUTOR_RESULT_KEYS = ("results", "metadata", "deliverable")
+
+
+def _result_document(
+    result: dict[str, Any], record: dict[str, Any] | None = None
+) -> dict[str, Any]:
+    """The executor's raw result in the caller vocabulary REST and MCP
+    return: ``status`` is ``success`` or ``error``, with ``has_errors``,
+    plus the bindings applied and models pulled when there are any. Only
+    the keys the service's document has are kept: the executor's own
+    ``input``, ``ensemble`` and ``execution_order`` are not part of it."""
+    status, has_errors = caller_status(result.get("status"))
+    kept = {k: v for k, v in result.items() if k in _EXECUTOR_RESULT_KEYS}
+    applied = {k: v for k, v in (record or {}).items() if v}
+    return {**kept, "status": status, "has_errors": has_errors, **applied}
+
+
+def display_result(
+    document: dict[str, Any],
+    agents: list[Any],
+    output_format: str,
+    detailed: bool,
+    config: Any = None,
+) -> bool:
+    """Print a result document in ``output_format`` and return whether its
+    caller-facing status is "error".
+
+    The document is what REST and MCP return (``results``, ``metadata``,
+    ``deliverable``, ``status`` of success or error, ``has_errors``);
+    ``agents`` are the ensemble's agent configs. ``config`` only adds the
+    JSON document's ``config`` key. The run is an error when ``status`` is
+    not ``success`` or ``has_errors`` is true, so a document with neither
+    key is an error.
+    """
+    has_errors = document.get("status") != "success" or bool(
+        document.get("has_errors", True)
+    )
 
     if output_format == "json":
-        # Display JSON results
-        _display_json_results(result, ensemble_config)
+        _display_json_results(document, config)
     elif output_format == "text":
         # Use plain text output for clean piping
         display_plain_text_results(
-            result["results"], result["metadata"], detailed, ensemble_config.agents
+            document["results"], document["metadata"], detailed, agents
         )
     else:
         # Use Rich formatting for default output
-        agents = ensemble_config.agents
         display_results(
-            result["results"], result["metadata"], agents, detailed=detailed
+            document["results"], document["metadata"], agents, detailed=detailed
         )
 
     return has_errors
@@ -152,9 +198,8 @@ async def _run_text_json_execution(
         else:
             # For text output, execute and display results in plain text
             result = await executor.execute(ensemble_config, input_data)
-            _, has_errors = caller_status(result.get("status"))
-            display_plain_text_results(
-                result["results"], result["metadata"], detailed, ensemble_config.agents
+            has_errors = display_result(
+                _result_document(result), ensemble_config.agents, "text", detailed
             )
     except Exception as e:
         has_errors = True
@@ -302,7 +347,7 @@ def _handle_execution_completed_event(
 
     if detailed:
         _display_detailed_execution_results(
-            results, metadata, ensemble_config, results_console
+            results, metadata, ensemble_config.agents, results_console
         )
     else:
         _display_simple_results(
@@ -315,7 +360,7 @@ def _handle_execution_completed_event(
 def _display_detailed_execution_results(
     results: dict[str, Any],
     metadata: dict[str, Any],
-    ensemble_config: Any,
+    agents: list[Any],
     results_console: Any,
 ) -> None:
     """Display detailed execution results."""
@@ -325,7 +370,7 @@ def _display_detailed_execution_results(
         for name in results.keys()
         if results[name].get("status") == "success"
     }
-    final_tree = create_dependency_tree(ensemble_config.agents, final_statuses)
+    final_tree = create_dependency_tree(agents, final_statuses)
     results_console.print(final_tree)
 
     # Force display directly without Rich status interference
@@ -345,7 +390,7 @@ def _display_detailed_execution_results(
             results_console,
             agent_name,
             result,
-            ensemble_config.agents,
+            agents,
             metadata,
         )
 
@@ -373,27 +418,35 @@ def _update_agent_status_by_names_from_lists(
 def _display_json_results(result: dict[str, Any], ensemble_config: Any) -> None:
     """Display results in JSON format.
 
-    Includes the caller contract fields (fail-closed-composition):
-    ``status`` ("success"/"error"), ``has_errors``, and ``deliverable``
-    — the same vocabulary REST and MCP invoke report, so a script
-    parsing this output doesn't need a fourth, CLI-only shape.
+    ``result`` is a result document in the caller vocabulary
+    (fail-closed-composition): ``status`` ("success"/"error"),
+    ``has_errors`` and ``deliverable``, as REST and MCP invoke report
+    them, so a script parsing this output doesn't need a fourth,
+    CLI-only shape.
     """
     try:
         # Safely get config dict, handling mocks/objects that aren't serializable
-        try:
-            config_dict = ensemble_config.to_dict()
-        except (AttributeError, TypeError):
-            config_dict = {"type": "mock_config"}
+        config_dict: dict[str, Any] | None = None
+        if ensemble_config is not None:
+            try:
+                config_dict = ensemble_config.to_dict()
+            except (AttributeError, TypeError):
+                config_dict = {"type": "mock_config"}
 
-        status, has_errors = caller_status(result.get("status"))
-        output = {
+        # Every key of the document passes through, so a key the service
+        # adds is never dropped here; the CLI adds only ``config``.
+        output: dict[str, Any] = {
             "results": result.get("results", {}),
             "metadata": result.get("metadata", {}),
-            "config": config_dict,
-            "status": status,
-            "has_errors": has_errors,
-            "deliverable": result.get("deliverable"),
         }
+        if config_dict is not None:
+            output["config"] = config_dict
+        output.update(
+            {k: v for k, v in result.items() if k not in ("results", "metadata")}
+        )
+        output["status"] = result.get("status", "error")
+        output["has_errors"] = bool(result.get("has_errors", True))
+        output["deliverable"] = result.get("deliverable")
 
         click.echo(json.dumps(output, indent=2, default=str))
     except Exception as e:

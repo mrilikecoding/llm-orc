@@ -25,6 +25,13 @@ seat strategy is a change to this decision or the operator default, never to the
 skeleton (AS-11).
 """
 
+# /// llm-orc
+# files = [
+#   "_helpers.py",
+#   "chain_plan.py",
+# ]
+# ///
+
 from __future__ import annotations
 
 import ast

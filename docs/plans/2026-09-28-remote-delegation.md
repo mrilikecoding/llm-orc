@@ -981,6 +981,232 @@ Probes (2026-10-02, the remote host at 0.23.0 through its https proxy,
     level before shipping (#205); candidates for a `${...}` dispatch
     (#94), which today reads `dynamic` and is left to the host.
 
+**What the build and the review changed (2026-10-02).** The rulings
+above stand except as amended here.
+
+- Ruling 1: `llm-orc validate run` ran its ensemble on its own executor
+  too. It goes through the same step and takes `--bind` and `--pull`.
+- Ruling 3: the transport is an async `httpx` client (connect timeout
+  10 s, no read timeout, no redirect followed, no retry), where the
+  ruling said `requests`. A blocking POST in a worker thread cannot be
+  cancelled, so a cancelled MCP call left the remote running. `httpx` is
+  what the model clients already use.
+- Ruling 5: a document is an error when `status` is not `success` or
+  `has_errors` is true; the CLI had read `has_errors` alone. JSON mode
+  prints the whole result document and adds `config`. A local document
+  carries `raw_output` as REST's does, and so does the MCP result. A
+  stored bundle prints `Bundle persisted: <name>`.
+- Ruling 6: what the shipper leaves out is said. The CLI prints one
+  stderr line naming each child or script that did not resolve locally;
+  the MCP result carries them as `left_out`. The remote may satisfy one
+  with its own copy, which the ruling allows and no longer hides.
+- Ruling 7: a script's key is `scripts/` plus the tail of the locally
+  resolved path, as many segments as the reference has without its
+  `scripts/`. The file keeps its real name and the layer mirrors a
+  tier. Before a request is returned it is materialized into a
+  temporary directory and every reference is resolved there with the
+  run's own `ScriptResolver`; a reference that would reach another file
+  is refused. The first key rule passed the parity pin and still let
+  `scripts/foo.py` reach a listed `scripts/scripts/foo.py` on the
+  remote. Also refused: a reference with a `.` or `..` segment, two
+  local files that meet on one key, YAML that does not survive a JSON
+  round trip, a script that cannot be read.
+- Ruling 8: one script name can be sighted twice with different
+  outcomes (referenced directly and listed, or listed by owners in two
+  tiers); an unmet sighting wins, so the row cannot read `ready`. A
+  listed file is looked for beside the script's real location: Python
+  imports from beside a symlink's target, not beside the link. The
+  first `/// llm-orc` opening line decides the block; an unknown key or
+  a block that does not close is an error; an empty block lists
+  nothing.
+- Ruling 9: the bundle is written once the gate passes, before any
+  agent runs, so a run that then fails or is cancelled leaves it
+  stored. A bundle name reads, runs and lists only the directory entry
+  spelled exactly like it whose root has that name (a case-folding disk
+  let `PACK` delete `pack.json`); `delete` removes the entry spelled
+  exactly `<name>.json` whatever root it stores, so a stranded file can
+  always be removed. `delete_ensemble` with `scope: global` removes the
+  bundle only when no tier resolves the name (the lookup persist uses);
+  otherwise it is the tier delete, so a flat global `.yaml` or `.yml`
+  goes first and the bundle on a second call. A caller's `bind` or
+  inline profile for a role replaces
+  the stored definition of that role in either form. A bundle is read
+  (`GET /api/ensembles/{name}`, the MCP resource) with source `bundle`.
+  Not taught about bundles: `update_ensemble`, `from_template`, shell
+  completion, `/v1/chat/completions`. A bundle root is not shipped
+  onward with `--remote`.
+- Ruling 10: the MCP tool also takes `with_profiles`. The MCP server a
+  serve mounts at `/mcp` refuses `remote` and `with_profiles`
+  (`invalid_request`, nothing sent): through it a client could have had
+  the serve post its own ensembles and scripts to any URL. The stdio
+  server keeps `remote`. A third error kind, `remote_error`, says the
+  remote could not be reached or did not answer with a result;
+  `invalid_request` on this path means nothing was sent.
+- A REST run cancelled by a disconnect answers 499 to the closed
+  connection.
+
+**Arc 5 live row (2026-10-02).** Laptop, branch `feat/cli-remote-client`
+@ `def0b958`, llama-server from the Hugging Face hub cache. The remote: a
+serve started from an empty directory with `XDG_CONFIG_HOME` and
+`XDG_STATE_HOME` on fresh temp dirs, `llm-orc serve --port 8766
+--backend-port 8790 --models-max 1`. The caller: the CLI in a separate
+temp project with its own temp XDG dirs and one `remotes` entry for that
+serve. The caller's root `live-top` has a script `live/prep.py` whose
+block lists `_h.py`, a hierarchical child `kids/echo` with a script
+referenced as `scripts/live/who.py`, and an LLM agent on
+`local-qwen3-0.6b`. File listings (paths and sizes) of the remote's
+working, config and state directories were taken around the rows.
+
+- `invoke live-top --remote remote-host`: `success` in about 3 s, the
+  scripts ran from the remote's run layer through the helper, the model
+  answered. JSON mode: one document on stdout with `metadata` and
+  `raw_output`, nothing on stderr. The remote's tree was unchanged but
+  for the key file a first run creates; `runs/` empty.
+- A root on a profile the remote lacks: the table, exit 1. With
+  `--bind`: `success` and the `Bindings applied` line. With
+  `--with-profile`: `success`.
+- A script whose listed helper is absent locally: the stderr line
+  "Left to the remote (not found locally): file '_h.py' listed by script
+  'live2/prep.py'", then the remote's `missing_script`, exit 1. The same
+  ensemble run locally is refused by the local gate with the same row.
+- A child that exists nowhere: the stderr line naming it, then
+  `missing_ensemble`.
+- The review's collision (`scripts/foo.py` beside a listed
+  `scripts/scripts/foo.py`): the local run answers A; with `--remote`
+  the ship is refused before anything is sent, naming the reference and
+  the file it would reach.
+- Ctrl-C (a real SIGINT) while a shipped script sleeps 60 s: the CLI
+  exits 130 in 0.06 s; the script's process is gone and `runs/` is empty
+  within the same 0.06 s.
+- `--persist global`: `Bundle persisted: live-top`; one file under the
+  remote's `bundles/` (mode 600) and the run's artifact. A run by name
+  over REST: `success`, the bundle file byte-identical after it, `runs/`
+  empty. The listing shows it with source `bundle`, the read answers,
+  the runnable check reports six dependencies.
+- An inline request on the remote that references the bundle's child
+  and script: `missing_ensemble` and `missing_script`.
+- Persisting a name the remote's global tier has: `invalid_request`
+  naming the tier. `DELETE` of the bundle's name in capitals: not found,
+  the bundle untouched.
+- Persist again after a local edit: the file's hash changes and the run
+  shows the new helper. `DELETE` with `scope: global`: gone, and the
+  remote's config and state match the start but for artifacts.
+- Over stdio MCP on the caller: `invoke` with `remote` runs there and
+  returns the document; a left-out child comes back in `left_out`; an
+  unreachable URL is `remote_error`. A `notifications/cancelled` for a
+  call whose shipped script sleeps: the script is gone and `runs/` empty
+  0.05 s later, and the server answers the next call. (Cancelling only
+  the client's own task sends no notification with the Python SDK, and
+  the run then goes on.)
+- Through the remote serve's own `/mcp`, `invoke` with `remote`:
+  `invalid_request`, "this serve does not relay".
+- At the end: nothing under the remote's working directory, `runs/`
+  empty, no `bundles` directory in the caller's config, the serve
+  stopped by PID, ports 8766 and 8790 free.
+
+Mid-run a mistyped command persisted the sleeping root; its pipe broke,
+the serve cancelled the run, and the bundle stayed stored, which is the
+behavior recorded under ruling 9 above.
+
+**Review round (2026-10-02).** One author-independent whole-branch
+review at `55c1fba1`, CHANGES REQUIRED, eight findings, six of them
+demonstrated by a running test: the `scripts/` key collision that ran
+another file with `success`; listed files looked for beside a symlink
+where Python imports beside its target; an exit code that read
+`has_errors` alone; a commit labelled refactor that made an
+interactive-script text run exit 1 on success; an MCP cancel that left
+the POST open; a serve that relayed through its own `/mcp`; a bundle
+name acting on another spelling on a case-folding disk; ship errors
+escaping as tracebacks. It also found two pins that could not fail (a
+replaced bundle not reaching a run in flight, which stayed green under
+the design ruling 9 rejected; the delete order, which nothing pinned).
+All were fixed with the amendments above; each fix was reproduced red
+first except the transport change, whose pin was shown red under a
+mutant and then confirmed in the live row. The fourteen review-focus
+items each have a pin through a real surface.
+
+A scoped re-review of that fix wave at `def0b958`: CHANGES REQUIRED
+again. The eight were fixed; three of the fixes had brought problems of
+their own and the review found gaps the wave had not covered. What the
+second wave changed:
+
+- Ruling 9: a persist whose name matches an existing bundle's ignoring
+  case and Unicode normalization, spelled differently, is
+  `invalid_request` naming that bundle. The first wave had made read and
+  delete exact and left write: on a case-folding disk `PACK` overwrote
+  `pack.json` and neither name could then be run, listed or deleted.
+  `delete` removes the entry spelled exactly `<name>.json` whatever root
+  it stores.
+- Rulings 6 and 7: the proof covers what is left out. A script, child
+  or listed file that did not resolve locally must not resolve inside
+  the materialized layer; if it would, the ship is refused. Otherwise a
+  left-out `helper.py` was answered on the remote by a listed file
+  shipped at `scripts/helper.py`, and the remote ran the caller's file
+  where the caller's own host refused the run.
+- Ruling 3: a malformed URL is `invalid_request` (the new client raised
+  it outside its own error tree). A redirect is still not followed, and
+  the error names its `Location`. `REQUESTS_CA_BUNDLE` is no longer
+  read; `SSL_CERT_FILE` is.
+- Ruling 10: the ship runs in a worker thread and the POST stays on the
+  loop; after the transport change the walk and the proof (about 144 ms
+  for a packaged closure) had moved onto the MCP event loop, and the
+  pin for it could not fail. `llm-orc mcp serve --transport http` does
+  not relay; only the stdio transport does.
+- The teardown error seen twice in the arc was a race in the suite's
+  artifact cleanup fixture, which walks a directory every worker
+  shares. The fixture tolerates a directory that disappears.
+
+Known limit, left as is: the shipper refuses a layout that would run,
+`.llm-orc/scripts/scripts/x.py` beside `.llm-orc/scripts/x.py` with both
+referenced. Its key rule gives both one key; the proof would accept two.
+A loud refusal of a rare layout. No MCP remote pin goes through an MCP
+wire, since the mounted server refuses `remote`; the stdio live row is
+that check.
+
+A third scoped review at `aedcb66a`: one blocker and notes. The blocker:
+the client's own set-up raised outside its error tree on common
+environments (a SOCKS proxy without `socksio`, a proxy with an unknown
+scheme, a stale `SSL_CERT_FILE`, a port above 65535), and each reached
+the CLI as a traceback and the MCP tool as a tool exception. Now the
+resolver accepts only `http` and `https` with a host and a port in
+range; building the client is its own step whose failure is
+`invalid_request` naming the proxy and TLS variables; the POST's errors
+stay `remote_error`. From the notes: a left-out reference with a `.` or
+`..` segment is refused like a found one, and nothing outside the layer
+counts as answering one; a redirect's `Location` is cut at 200
+characters and stripped of control characters; the other-spelling
+check is repeated right before the bundle is written; the MCP tool
+resolves the root on the loop before the ship thread starts, so a
+`set_project` cannot split root from closure; `MCPServer` does not
+relay unless asked, and only the stdio command asks; the delete order
+also respects a global `.yml` file; two tests that leaked a SIGINT
+handler restore it. Left as is: Ctrl-C cannot interrupt a ship that is
+itself stuck. The event-loop pin's longest-gap assertion was dropped
+after it failed 3 of 20 times under a concurrent suite; its tick
+counts alone go red for both regressions it guards.
+
+A fourth, narrow review at `51a080e1`: one regression and notes. The
+third wave had dropped the `InvalidURL` catch in favor of the resolver's
+check, and `urlsplit` silently drops tabs and newlines, so a YAML
+`url: |` block (which ends in a newline) crashed the run again with a
+raw exception. Now the resolver refuses whitespace and control
+characters by name, a query or a fragment too, and the catch is back as
+a guard (`http://☃` passes the check and fails the client's IDNA step,
+so the guard has a real input). From the notes: the tier-shadow check
+is repeated with the spelling check right before the bundle write; a
+non-200 body and a 422 `detail` are cleaned like a `Location`; a bundle
+delete defers to any tier that resolves the name, with the lookup
+persist uses, and the flat tier delete takes `.yml`. A tier root in a
+subdirectory or under another file name still cannot be deleted by
+name, and a bundle behind it stays until that file is removed. All 21
+of the third wave's new pins went red under their mutants; a
+whole-suite check found no leaked signal handler.
+
+Lesson, binding: a parity pin proves the layouts it was given. Two
+rounds of key rules passed it and each was wrong on a layout it did not
+hold. What closed the class was running the run's own resolver over the
+request before sending it, for what ships and for what does not.
+
 ## Gates (every arc)
 
 Hermetic suite green, lint clean, mutant-red pins, a live row, and an

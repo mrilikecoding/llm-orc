@@ -1,14 +1,16 @@
 """Validation CLI commands."""
 
 import asyncio
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
 import click
 
 from llm_orc.cli_commands import _find_ensemble_config
+from llm_orc.cli_modules.utils.visualization.refusal_display import display_refusal
 from llm_orc.core.config.config_manager import ConfigurationManager
-from llm_orc.core.execution.executor_factory import ExecutorFactory
+from llm_orc.services.handlers.run_preparation import RunRefusedError
 from llm_orc.services.orchestra_service import OrchestraService
 
 
@@ -58,8 +60,33 @@ def _resolve_ensemble_dirs(
     return dirs
 
 
+async def _gated_execute(
+    service: OrchestraService,
+    ensemble_name: str,
+    ensemble_config: Any,
+    bind: Mapping[str, str],
+    pull: bool,
+) -> dict[str, Any]:
+    """Run the ensemble through the preparation step ``invoke``, REST and
+    MCP use, so one the host cannot run is refused before any agent starts."""
+    request: dict[str, Any] = {"ensemble_name": ensemble_name}
+    if bind:
+        request["bind"] = dict(bind)
+    if pull:
+        request["pull"] = True
+    async with service.prepared_run(request, lambda _name: ensemble_config) as run:
+        result: dict[str, Any] = await run.executor.execute(
+            run.config, "validation test input"
+        )
+        return result
+
+
 def validate_ensemble(
-    ensemble_name: str, verbose: bool, config_dir: str | None
+    ensemble_name: str,
+    verbose: bool,
+    config_dir: str | None,
+    bind: Mapping[str, str] | None = None,
+    pull: bool = False,
 ) -> None:
     """Validate a single ensemble in test mode.
 
@@ -67,6 +94,8 @@ def validate_ensemble(
         ensemble_name: Name of the ensemble to validate
         verbose: Show detailed validation output
         config_dir: Custom config directory path
+        bind: Profile names to run on other profiles (``--bind``)
+        pull: Download a model the host can pull before the run (``--pull``)
 
     Raises:
         SystemExit: Exit with code 0 on pass, 1 on fail
@@ -88,14 +117,12 @@ def validate_ensemble(
         )
         raise SystemExit(1)
 
-    executor = ExecutorFactory.create_root_executor()
-
     click.echo(f"Validating ensemble: {ensemble_name}")
     click.echo("\u2500" * 50)
 
     try:
         result_dict = asyncio.run(
-            executor.execute(ensemble_config, "validation test input")
+            _gated_execute(service, ensemble_name, ensemble_config, bind or {}, pull)
         )
         execution_result = _build_execution_result(result_dict, ensemble_name)
         validation_config = ValidationConfig.model_validate(ensemble_config.validation)
@@ -114,6 +141,9 @@ def validate_ensemble(
 
     except SystemExit:
         raise
+    except RunRefusedError as refusal:
+        display_refusal(refusal.envelope(), "text")
+        raise SystemExit(1) from refusal
     except NotImplementedError as e:
         click.echo(
             "Validation execution not yet fully implemented.",

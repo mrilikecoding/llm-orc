@@ -31,6 +31,10 @@ tests_adequate is a fresh-context judge (ADR-048 §3).
 Emits JSON: {accept, tests_pass, tests_adequate, reason}
 """
 
+# /// llm-orc
+# files = ["_helpers.py"]
+# ///
+
 from __future__ import annotations
 
 import json

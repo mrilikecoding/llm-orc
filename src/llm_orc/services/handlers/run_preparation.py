@@ -13,11 +13,14 @@ from __future__ import annotations
 import asyncio
 import re
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 import yaml
 
 from llm_orc.core.config.closure import Dependency
+from llm_orc.core.config.config_manager import ConfigurationManager
 from llm_orc.providers.llama_server import PULL_POLL_S, PULL_TIMEOUT_S, router_client
 from llm_orc.services.handlers.preflight import (
     RESOLVE,
@@ -28,6 +31,8 @@ from llm_orc.services.handlers.preflight import (
 
 NOT_EQUIPPED = "not_equipped"
 INVALID_REQUEST = "invalid_request"
+#: A remote that could not be reached or did not answer with a result.
+REMOTE_ERROR = "remote_error"
 
 #: What loading an ensemble definition can raise: a file that is not YAML,
 #: or YAML that is not an ensemble.
@@ -105,6 +110,26 @@ class RunRefusedError(Exception):
             "deliverable": None,
             "error": self.error,
         }
+
+
+@dataclass(frozen=True)
+class MaterializedRoot:
+    """A root loaded from a run layer, for a check that judges it without
+    running it: the config, the manager view it resolves through, the
+    project dir the view pairs with and the rows its bindings add."""
+
+    config: Any
+    manager: ConfigurationManager
+    project_dir: Path | None
+    extra_reports: list[DependencyReport] = field(default_factory=list)
+
+
+class RootNotFoundError(ValueError):
+    """A named root that no tier and no bundle holds."""
+
+    def __init__(self, message: str, name: str) -> None:
+        super().__init__(message)
+        self.name = name
 
 
 def unmet_binding_rows(unmet: Sequence[tuple[str, str]]) -> list[DependencyReport]:
