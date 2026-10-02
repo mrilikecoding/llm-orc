@@ -77,9 +77,15 @@ class RemoteRunError(RuntimeError):
         super().__init__(f"Remote '{remote}'{code}: {detail}")
 
 
-def build_client(remote: str) -> httpx.AsyncClient:
-    """The client a run posts with: connect timeout only, no read timeout,
-    no redirect followed, the environment's proxy and TLS settings kept.
+def build_client(
+    remote: str,
+    *,
+    connect_s: float = CONNECT_TIMEOUT_S,
+    read_s: float | None = None,
+) -> httpx.AsyncClient:
+    """The client a run posts with: a connect timeout only (``read_s`` is
+    for the health probe, a run waits), no redirect followed, the
+    environment's proxy and TLS settings kept.
 
     Building it reads those settings, and a bad one raises (a SOCKS proxy
     without its package, a proxy URL of the wrong scheme, a CA file that is
@@ -89,7 +95,7 @@ def build_client(remote: str) -> httpx.AsyncClient:
     try:
         return httpx.AsyncClient(
             transport=transport,
-            timeout=httpx.Timeout(None, connect=CONNECT_TIMEOUT_S),
+            timeout=httpx.Timeout(read_s, connect=connect_s),
             follow_redirects=False,
             trust_env=True,
         )
