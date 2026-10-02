@@ -11,6 +11,7 @@ listing is never re-read to decide.
 from __future__ import annotations
 
 import asyncio
+import re
 from collections.abc import Mapping, Sequence
 from typing import Any
 
@@ -40,11 +41,31 @@ LOAD_ERRORS = (
 )
 
 
+_ABSOLUTE_PATH = re.compile(r"(?<![\w.])/(?:[\w.\-~ ]+/)*[\w.\-]+")
+
+
+def load_problem(error: Exception) -> str:
+    """What was wrong with a definition that did not load, without the
+    host path of the file it was read from: the serve's user and home
+    must not reach a caller. A YAML error keeps the parser's problem and
+    its line and column; any other text has absolute paths replaced."""
+    if isinstance(error, yaml.MarkedYAMLError):
+        parts = [error.context, error.problem]
+        text = " ".join(str(part) for part in parts if part)
+        mark = error.problem_mark
+        if mark is not None:
+            text += f" (line {mark.line + 1}, column {mark.column + 1})"
+        return text
+    return _ABSOLUTE_PATH.sub("<path>", str(error))
+
+
 class ChildLoadError(Exception):
     """A child ensemble the closure walk reached did not load."""
 
     def __init__(self, reference: str, cause: Exception) -> None:
-        super().__init__(f"child ensemble {reference!r} does not load: {cause}")
+        super().__init__(
+            f"child ensemble {reference!r} does not load: {load_problem(cause)}"
+        )
         self.reference = reference
 
 

@@ -21,6 +21,7 @@ import pytest
 import yaml
 
 from llm_orc.core.config.config_manager import resolve_global_config_dir
+from llm_orc.core.config.ensemble_config import EnsembleLoader
 from llm_orc.core.execution.ensemble_execution import EnsembleExecutor
 from llm_orc.core.execution.executor_factory import ExecutorFactory
 from llm_orc.core.models.model_factory import ModelFactory
@@ -851,6 +852,44 @@ class TestOnlyALoadFailureIsTheCallersFault:
 
         assert result["error"]["kind"] == "invalid_request", result
         assert "'badkid'" in result["error"]["message"]
+
+    async def test_a_refused_child_names_the_reference_never_a_host_path(
+        self, project: Path, service: OrchestraService, tmp_path: Path
+    ) -> None:
+        bad = resolve_global_config_dir() / "ensembles" / "badkid.yaml"
+        bad.parent.mkdir(parents=True, exist_ok=True)
+        bad.write_text("a: [\n")
+        _ensemble(project / ".llm-orc", "top", [{"name": "k", "ensemble": "badkid"}])
+
+        result = await service.invoke({"ensemble_name": "top", "input": "hi"})
+
+        message = result["error"]["message"]
+        assert result["error"]["kind"] == "invalid_request", result
+        assert str(tmp_path.parent) not in message, message
+        assert str(tmp_path.parent.resolve()) not in message, message
+        assert '.yaml"' not in message, message
+        assert "'badkid'" in message
+        assert "line 2" in message
+
+    async def test_a_refused_inline_root_names_no_host_path(
+        self,
+        service: OrchestraService,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        def unreadable(self: Any, file_path: str, search_dirs: Any = None) -> Any:
+            raise ValueError(f"cannot read {file_path}: bad agents")
+
+        monkeypatch.setattr(EnsembleLoader, "load_from_file", unreadable)
+
+        result = await service.invoke(_inline_request())
+
+        message = result["error"]["message"]
+        assert result["error"]["kind"] == "invalid_request", result
+        assert str(tmp_path.parent) not in message, message
+        assert str(tmp_path.parent.resolve()) not in message, message
+        assert "inline ensemble" in message
+        assert "bad agents" in message
 
     async def test_a_classifier_bug_propagates_and_the_run_dir_is_removed(
         self,
