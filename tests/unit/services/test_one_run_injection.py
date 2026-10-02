@@ -21,7 +21,7 @@ from llm_orc.core.execution.ensemble_execution import EnsembleExecutor
 from llm_orc.core.execution.executor_factory import ExecutorFactory
 from llm_orc.core.models.model_factory import ModelFactory
 from llm_orc.providers.llama_server import LlamaServerClient
-from llm_orc.services.handlers import run_request
+from llm_orc.services.handlers import provider_handler, run_request
 from llm_orc.services.orchestra_service import OrchestraService
 
 LISTING: list[dict[str, Any]] = [
@@ -596,6 +596,38 @@ class TestRefusalsNameNoRunDirectory:
         self._assert_no_run_dir(result, state_dir)
         assert "inline-top" in result["error"]["message"]
         assert "No space left on device" in result["error"]["message"]
+
+
+class TestOnlyALoadFailureIsTheCallersFault:
+    async def test_a_child_that_is_not_yaml_is_invalid_request_naming_it(
+        self, project: Path, service: OrchestraService
+    ) -> None:
+        # In another tier than the root, so the root itself still loads.
+        bad = resolve_global_config_dir() / "ensembles" / "badkid.yaml"
+        bad.parent.mkdir(parents=True, exist_ok=True)
+        bad.write_text("a: [\n")
+        _ensemble(project / ".llm-orc", "top", [{"name": "k", "ensemble": "badkid"}])
+
+        result = await service.invoke({"ensemble_name": "top", "input": "hi"})
+
+        assert result["error"]["kind"] == "invalid_request", result
+        assert "'badkid'" in result["error"]["message"]
+
+    async def test_a_classifier_bug_propagates_and_the_run_dir_is_removed(
+        self,
+        service: OrchestraService,
+        state_dir: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        def broken(*args: Any, **kwargs: Any) -> Any:
+            raise TypeError("classifier bug")
+
+        monkeypatch.setattr(provider_handler, "classify_dependencies", broken)
+
+        with pytest.raises(TypeError, match="classifier bug"):
+            await service.invoke(_inline_request())
+
+        assert _runs(state_dir) == []
 
 
 class TestAScriptKeyIsReachable:
