@@ -400,8 +400,9 @@ A run on a profile the remote lacks, then the same run bound to one it has
 ```
 $ llm-orc invoke review "the diff" --remote remote-host --output-format text
 Run refused (not_equipped): this host cannot run the ensemble, unmet: seat (missing_profile)
-kind     name  status           via           resolve
-profile  seat  missing_profile  review.write  bind
+kind      name    status           via           resolve
+ensemble  review  ready                          none
+profile   seat    missing_profile  review.write  bind
 
 $ llm-orc invoke review "the diff" --remote remote-host --bind seat=general
 Bindings applied: seat -> general
