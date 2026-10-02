@@ -33,6 +33,12 @@ def _checked_url(url: str, source: str | None) -> str:
     """``url`` without a trailing slash, or ``RemoteError`` saying what is
     wrong with it (``source`` names the configured remote it came from)."""
     where = f"{source}: " if source else ""
+    for char in url:
+        if not char.isprintable() or char.isspace():
+            raise RemoteError(
+                f"{where}{url!r} contains a character that is not allowed "
+                f"in a URL: {char!r}"
+            )
     try:
         parts = urlsplit(url)
     except ValueError as e:

@@ -388,6 +388,51 @@ class TestAMalformedRemoteUrl:
         assert "http://[::1" in result["error"]["message"]
         assert calls == []
 
+    def test_a_url_with_a_tab_is_an_envelope_naming_the_character(
+        self,
+        project: Path,
+        stdio_tool: ToolCall,
+        monkeypatch: pytest.MonkeyPatch,
+        remotes: None,
+    ) -> None:
+        _write_top(project)
+        calls = _canned(monkeypatch, Canned(200, "{}"))
+
+        result = stdio_tool(
+            "invoke",
+            {
+                "ensemble_name": "top",
+                "input_data": "hi",
+                "remote": REMOTE_URL + "\t",
+            },
+        )
+
+        assert result["status"] == "error"
+        assert result["error"]["kind"] == "invalid_request"
+        assert "not allowed in a URL" in result["error"]["message"]
+        assert "'\\t'" in result["error"]["message"]
+        assert calls == []
+
+    def test_a_url_the_resolver_passes_and_httpx_refuses_is_an_envelope(
+        self,
+        project: Path,
+        stdio_tool: ToolCall,
+        monkeypatch: pytest.MonkeyPatch,
+        remotes: None,
+    ) -> None:
+        _write_top(project)
+        calls = _canned(monkeypatch, Canned(200, "{}"))
+
+        result = stdio_tool(
+            "invoke",
+            {"ensemble_name": "top", "input_data": "hi", "remote": "http://\u2603"},
+        )
+
+        assert result["status"] == "error"
+        assert result["error"]["kind"] == "invalid_request"
+        assert "not a usable URL" in result["error"]["message"]
+        assert calls == []
+
 
 @pytest.mark.usefixtures("no_connection")
 class TestAClientThatCannotBeBuilt:

@@ -110,6 +110,51 @@ class TestOnlyHttpAndHttpsWithAHostAndAPort:
             resolve_remote("remote-host", _manager(tmp_path))
 
 
+class TestAControlOrWhitespaceCharacter:
+    """``urlsplit`` drops tab, CR and LF, and ``httpx`` refuses the rest,
+    so the resolver names the character itself."""
+
+    @pytest.mark.parametrize(
+        ("value", "named"),
+        [
+            ("https://host.example\t", "'\\t'"),
+            ("https://host.example\n", "'\\n'"),
+            ("https://host.example/\x7f", "'\\x7f'"),
+            ("https://host.example/\x00", "'\\x00'"),
+            ("https://host.example/a b", "' '"),
+        ],
+    )
+    def test_a_url_with_one_is_refused_naming_it(
+        self, tmp_path: Path, value: str, named: str
+    ) -> None:
+        with pytest.raises(RemoteError) as raised:
+            resolve_remote(value, _manager(tmp_path))
+
+        assert named in str(raised.value)
+
+    @pytest.mark.parametrize(("tail", "named"), [("\n", "'\\n'"), ("\t", "'\\t'")])
+    def test_a_configured_url_with_one_is_refused_naming_it(
+        self, tmp_path: Path, tail: str, named: str
+    ) -> None:
+        _global({"remotes": {"remote-host": {"url": REMOTE_URL + tail}}})
+
+        with pytest.raises(RemoteError) as raised:
+            resolve_remote("remote-host", _manager(tmp_path))
+
+        assert "remote-host" in str(raised.value)
+        assert named in str(raised.value)
+
+    def test_a_yaml_block_scalar_url_gets_a_clear_message(self, tmp_path: Path) -> None:
+        directory = resolve_global_config_dir()
+        directory.mkdir(parents=True, exist_ok=True)
+        (directory / "config.yaml").write_text(
+            f"remotes:\n  remote-host:\n    url: |\n      {REMOTE_URL}\n"
+        )
+
+        with pytest.raises(RemoteError, match=r"remote-host.*'\\n'"):
+            resolve_remote("remote-host", _manager(tmp_path))
+
+
 class TestOnlyTheGlobalConfigIsRead:
     def test_a_project_remote_does_not_resolve(self, tmp_path: Path) -> None:
         _global({"remotes": {"remote-host": {"url": REMOTE_URL}}})
