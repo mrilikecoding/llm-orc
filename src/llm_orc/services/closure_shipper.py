@@ -82,9 +82,9 @@ def ship_closure(
         "pull": pull,
         "input": input_text,
     }
-    _require_valid(request)
     if persist is not None:
         request["persist"] = persist
+    _require_valid(request)
     return request
 
 

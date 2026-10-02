@@ -555,6 +555,21 @@ class TestProfilesAndTheRestOfTheRequest:
         with pytest.raises(ShipError, match="would be refused.*ignoring case"):
             _ship(service, "Kid")
 
+    def test_a_persist_the_validator_would_refuse_is_refused_locally(
+        self, project: Path, service: OrchestraService
+    ) -> None:
+        _yaml(
+            project / ".llm-orc" / "ensembles" / "pack" / "nested.yaml",
+            {
+                "name": "pack/nested",
+                "description": "d",
+                "agents": [{"name": "s", "script": "echo hi"}],
+            },
+        )
+
+        with pytest.raises(ShipError, match="would be refused.*must not contain '/'"):
+            _ship(service, "pack/nested", persist="global")
+
 
 @pytest.fixture
 def remote(tmp_path: Path, listing: Any, state_dir: Path) -> OrchestraService:
