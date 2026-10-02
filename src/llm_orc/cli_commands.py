@@ -535,7 +535,10 @@ def _display_remote_document(
         display_refusal(document, output_format)
         return True
     display_run_record(
-        document.get("bindings") or {}, document.get("pulled") or [], output_format
+        document.get("bindings") or {},
+        document.get("pulled") or [],
+        output_format,
+        document.get("persisted"),
     )
     return display_result(
         {"results": {}, "metadata": {}, **document},

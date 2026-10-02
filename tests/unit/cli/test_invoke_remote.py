@@ -250,6 +250,29 @@ class TestPersistingOnTheRemote:
         assert not (caller_config / "bundles").exists()
         assert not (in_project / ".llm-orc" / "ensembles" / "top.json").exists()
 
+    @pytest.mark.parametrize("fmt", ["text", "rich"])
+    def test_the_stored_bundle_is_named_next_to_the_other_run_lines(
+        self, in_project: Path, remote: Remote, fmt: str
+    ) -> None:
+        _write_top(in_project)
+        args = [] if fmt == "rich" else ["--output-format", fmt]
+
+        result = _remote_invoke("--persist", "global", *args)
+
+        assert result.exit_code == 0, result.output
+        assert "Bundle persisted: top" in result.stdout
+
+    def test_without_persist_no_line_and_no_key(
+        self, in_project: Path, remote: Remote
+    ) -> None:
+        _write_top(in_project)
+
+        text = _remote_invoke("--output-format", "text")
+        as_json = _remote_invoke("--output-format", "json")
+
+        assert "Bundle persisted" not in text.stdout
+        assert "persisted" not in json.loads(as_json.stdout)
+
     def test_a_name_the_remotes_tiers_resolve_is_refused_with_its_message(
         self, in_project: Path, remote: Remote
     ) -> None:
