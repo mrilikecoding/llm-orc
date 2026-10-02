@@ -1202,6 +1202,41 @@ name, and a bundle behind it stays until that file is removed. All 21
 of the third wave's new pins went red under their mutants; a
 whole-suite check found no leaked signal handler.
 
+**Released as v0.24.0 and the remote rows (2026-10-02).** Pushed at
+0.23.0 first (CI green on six cells and security), then the bump and
+the tag; PyPI, the GitHub release, the tap formula (bumped by the
+repo's own `update-homebrew.yml` action on the release, same content as
+the hand bump). The remote host took it with the homelab deploy script
+in about 50 s and answers `/health` 0.24.0. Rows driven from the laptop
+CLI over the host's https URL, the host inspected over ssh, a temp
+caller config holding one `remotes` entry:
+
+- A root on a profile the remote lacks: `not_equipped` with the table.
+  With `--bind`: `success` in 14.8 s.
+- Ctrl-C while a shipped script sleeps, through the proxy: the CLI
+  exits 130 in 0.28 s; the script's process on the host is gone and its
+  run layer removed within 2 s. The disconnect propagates through the
+  real proxy, which the laptop rows could not show.
+- `--persist global`: `Bundle persisted`, one mode-600 file under the
+  host's `bundles/`. A run by name over the proxy: `success`, the
+  scripts ran from the host's run layer, the file byte-identical after.
+  Listed with source `bundle`; a host request naming the bundle's child
+  reads `missing_ensemble`; `DELETE ... ?scope=global` removes it.
+- `research-dossier --remote` (the first model run past 200 s through
+  the proxy): returned after 212 s, and again after 204 s, each time
+  `status: error`. The shipped `web-searcher` ran on the host and
+  returned results for two or three of the five fan-out queries; the
+  others failed with a script exit 1, so the compiler was not run. The
+  same ensemble run by name on the host, with the host's own packaged
+  copies and nothing shipped, failed the same way (one of five). The
+  script run by hand on the host: `ddgs` raises
+  `DDGSException("No results found.")` on some queries and
+  `web_searcher.py` does not catch it, though its docstring says
+  backend failures come back as structured errors. A packaged-script
+  defect, not a delegation one; recorded on #196. The delegation path
+  itself held: 200 s and more through the proxy, the result returned,
+  `runs/` and `bundles/` empty on the host afterwards.
+
 Lesson, binding: a parity pin proves the layouts it was given. Two
 rounds of key rules passed it and each was wrong on a layout it did not
 hold. What closed the class was running the run's own resolver over the
