@@ -18,6 +18,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 import llm_orc.web.api as web_api
+from llm_orc.providers.llama_server import LlamaServerClient
 from llm_orc.services.orchestra_service import OrchestraService
 from llm_orc.web.server import create_app
 from tests.unit.services.test_one_run_injection import (  # noqa: F401
@@ -230,6 +231,35 @@ class TestNamedRoot:
         assert result["status"] == "success", result
         assert result["bindings"] == {"a": "b"}
         assert marker.exists()
+
+
+class TestPullOverMcp:
+    def test_pull_true_reaches_the_handler(
+        self,
+        client: TestClient,
+        project: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        calls: list[str] = []
+
+        def pull(self: Any, model: str, *, timeout_s: float, poll_s: float) -> Any:
+            calls.append(model)
+            return {"status": "loaded", "failed": False, "exit_code": None}
+
+        monkeypatch.setattr(LlamaServerClient, "pull", pull)
+        _profile(project / ".llm-orc", "seat", hf_repo="x/y:Q4")
+        _ensemble(project / ".llm-orc", "top", [{"name": "w", "model_profile": "seat"}])
+        call = _caller(client, "mcp")
+
+        refused = call("top", {"input": "hi"})
+        assert refused["error"]["kind"] == "not_equipped"
+        assert calls == []
+
+        result = call("top", {"input": "hi", "pull": True})
+
+        assert result["status"] == "success", result
+        assert result["pulled"] == ["mock-seat"]
+        assert calls == ["mock-seat"]
 
 
 class TestRequestBodies:
