@@ -94,6 +94,9 @@ a bounded retry round), and emit it through the client's own tool surface.
 Conversation context threads from the client-sent history; the builder never
 grades itself. Runs entirely on local models by default.
 
+Run a local ensemble on another serve with `llm-orc invoke <ensemble> --remote <name|url>`
+([docs/cli-reference.md](docs/cli-reference.md#running-an-ensemble-on-a-remote-serve)).
+
 Architecture and operator guide: [docs/serving.md](docs/serving.md) ·
 Staged path to full model parity: [docs/serving-roadmap.md](docs/serving-roadmap.md)
 

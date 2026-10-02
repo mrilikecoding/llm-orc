@@ -289,6 +289,12 @@ agents:
 
 ## Best Practices
 
+- **List sibling files.** If your script imports or runs a file beside it,
+  declare it in a `# /// llm-orc` block (`files = ["_helpers.py"]`) under
+  the shebang or docstring. Without it, preflight cannot see the
+  dependency and a run on a remote serve fails for a missing module. See
+  [docs/serving.md](serving.md), "A script's files block".
+
 ### Error Handling
 - Always use exception chaining
 - Provide meaningful error messages

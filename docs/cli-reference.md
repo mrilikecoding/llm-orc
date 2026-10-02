@@ -37,6 +37,46 @@ llm-orc invoke code-review --config-dir ./custom-config
 llm-orc invoke code-review --streaming
 ```
 
+### Preflight, bind and pull
+
+Every `llm-orc invoke` (and `llm-orc validate run`) goes through the same
+preflight gate as REST and MCP. An ensemble this host cannot run is
+refused before any agent starts, with a table of what is unmet, and the
+command exits 1. Two options resolve the common cases:
+
+```bash
+# Run profile name "seat" on this host's profile "general" for this run
+llm-orc invoke code-review --bind seat=general --input "..."
+
+# Download a model that is listed but not yet pulled, then run
+llm-orc invoke code-review --pull --input "..."
+```
+
+### Running an Ensemble on a Remote Serve
+
+`--remote` ships a local ensemble, its child ensembles and its scripts to
+another llm-orc serve as one request and prints the result as a local
+run's. Nothing is installed on the remote; everything injected is removed
+when the run ends.
+
+```bash
+# A name from `remotes:` in ~/.config/llm-orc/config.yaml, or a URL
+llm-orc invoke code-review --remote mini --input "..."
+
+# Bind a role the remote lacks, or ship a local profile definition
+llm-orc invoke code-review --remote mini --bind seat=general
+llm-orc invoke code-review --remote mini --with-profile seat
+
+# Keep the closure on the remote so it can be run there by name
+llm-orc invoke code-review --remote mini --persist global --input "..."
+```
+
+A script that imports or runs a file beside it must list that file in a
+`# /// llm-orc` block, or the remote will not have it (see
+[Script Files Block](#script-files-block) below). What ships, what is
+refused before sending, exit codes and bundles are in
+[docs/serving.md](serving.md), from "A script's files block" to "Bundles".
+
 ### Output Formats
 
 LLM Orchestra supports three output formats for different use cases:
@@ -648,6 +688,36 @@ LLM Orchestra follows a configuration hierarchy:
 1. **Local project configuration** (`.llm-orc/` in current directory)
 2. **Global user configuration** (`~/.config/llm-orc/`)
 3. **Command-line options** (highest priority)
+
+### Remotes
+
+Named remotes live in the global `config.yaml` only; a project's
+`config.yaml` is never read for them, so a checked-in file cannot point a
+run at a host you did not configure.
+
+```yaml
+remotes:
+  mini:
+    url: https://llm-orc.example.net
+```
+
+`--remote` takes a name from this map or a URL (`http` or `https`, with a
+host, no query or fragment).
+
+### Script Files Block
+
+A script lists the files it needs beside it, in the form PEP 723 reserves
+for tools. Nothing is inferred from imports.
+
+```python
+# /// llm-orc
+# files = ["_helpers.py"]
+# ///
+```
+
+Preflight reports a listed file that is missing as `missing_script`, and
+`invoke --remote` ships the listed files with the script. Full rules in
+[docs/serving.md](serving.md), "A script's files block".
 
 ### Library Path Configuration
 
