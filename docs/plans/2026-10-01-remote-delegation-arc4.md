@@ -37,9 +37,12 @@ ruling wins and you say so in your report.
 - Commit prefixes `feat:` `fix:` `refactor:` `test:` `docs:` `chore:`.
   No AI attribution of any kind, no session links, no scratch paths in
   tracked files.
-- Full suite: `uv run pytest -q -p no:cacheprovider`. Known local-only
-  failure: the auth-only providers test when a router listens on :8080.
-  Record the baseline count in Task 0.
+- Full suite, in parallel: `uv run pytest -n auto -q -p no:cacheprovider`
+  (about 2 minutes; serial is about 6). One known flake under `-n auto`
+  (#165): the artifact manager integration test fails about 1 run in 6;
+  re-run it alone before treating it as real. Known local-only failure:
+  the auth-only providers test when a router listens on :8080. Record
+  the baseline count in Task 0.
 - Doctrine 11: pins assert outcomes through the real surface (a real
   `OrchestraService` on a temp project dir, REST `TestClient`, the real
   executor, files on disk). Each key pin is shown RED under a named
