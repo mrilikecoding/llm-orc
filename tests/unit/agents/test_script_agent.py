@@ -130,7 +130,7 @@ class TestScriptAgent:
         agent = ScriptAgent("test_agent", config)
 
         with patch(
-            "llm_orc.agents.script_agent.subprocess.run",
+            "llm_orc.agents.script_agent.subprocess.Popen",
             side_effect=__import__("subprocess").TimeoutExpired(cmd="", timeout=1),
         ):
             result = await agent.execute("test input")
@@ -160,7 +160,7 @@ class TestScriptAgent:
         agent = ScriptAgent("test_agent", config)
 
         with patch(
-            "llm_orc.agents.script_agent.subprocess.run",
+            "llm_orc.agents.script_agent.subprocess.Popen",
             side_effect=OSError("Permission denied"),
         ):
             result = await agent.execute("test input")
@@ -194,14 +194,17 @@ print(json.dumps({"received": data}))
             }
             agent = ScriptAgent("test_agent", config)
 
-            with patch("subprocess.run") as mock_run:
-                mock_run.return_value.stdout = '{"success": true}'
-                mock_run.return_value.returncode = 0
+            with patch("subprocess.Popen") as mock_popen:
+                mock_popen.return_value.communicate.return_value = (
+                    '{"success": true}',
+                    "",
+                )
+                mock_popen.return_value.poll.return_value = 0
 
                 asyncio.run(agent.execute("test input"))
 
-                call_args = mock_run.call_args
-                stdin_data = call_args.kwargs.get("input")
+                call_args = mock_popen.return_value.communicate.call_args
+                stdin_data = call_args.args[0]
                 assert stdin_data is not None
 
                 parsed = json.loads(stdin_data)
@@ -348,9 +351,12 @@ sys.exit(1)
         ) as mock_resolve:
             mock_resolve.return_value = ("/absolute/path/to/script.py", True)
 
-            with patch("subprocess.run") as mock_run:
-                mock_run.return_value.stdout = '{"success": true}'
-                mock_run.return_value.returncode = 0
+            with patch("subprocess.Popen") as mock_popen:
+                mock_popen.return_value.communicate.return_value = (
+                    '{"success": true}',
+                    "",
+                )
+                mock_popen.return_value.poll.return_value = 0
 
                 await agent.execute("test input")
 
@@ -888,18 +894,18 @@ class TestScriptAgentsOffTheEventLoop:
         # Observed in the PARENT: the child process reports its own
         # MainThread, so only the caller's thread reveals which pool ran it.
         seen: list[str] = []
-        real_run = subprocess.run
 
-        def _spy(*args: Any, **kwargs: Any) -> Any:
-            seen.append(threading.current_thread().name)
-            return real_run(*args, **kwargs)
+        class _Spy(subprocess.Popen):  # type: ignore[type-arg]
+            def __init__(self, *args: Any, **kwargs: Any) -> None:
+                seen.append(threading.current_thread().name)
+                super().__init__(*args, **kwargs)
 
-        with patch("llm_orc.agents.script_agent.subprocess.run", _spy):
+        with patch("llm_orc.agents.script_agent.subprocess.Popen", _Spy):
             asyncio.run(
                 ScriptAgent("a", {"script": path, "timeout_seconds": 30}).execute("{}")
             )
 
-        assert seen, "subprocess.run was never called"
+        assert seen, "the subprocess was never started"
         assert SCRIPT_POOL_THREAD_PREFIX in seen[0], seen[0]
 
     def test_a_hanging_subprocess_still_fails_at_its_inner_bound(
