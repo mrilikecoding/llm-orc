@@ -41,7 +41,7 @@ before touching anything.
   No AI attribution of any kind. No session links, no scratch paths.
 - Full suite: `uv run pytest -q -p no:cacheprovider`. Known local-only
   failure: `testget_available_providers_auth_only` when a router listens
-  on :8080. Baseline on `main` (`31d59b94`) before this arc: 4786 passed
+  on :8080. Baseline on `main` (`07be7bb4`) before this arc: 4786 passed
   (verify in Task 0 and record the real number).
 - Doctrine 11: pins assert outcomes through the real surface (REST
   TestClient over a real `OrchestraService` on a temp project dir, the

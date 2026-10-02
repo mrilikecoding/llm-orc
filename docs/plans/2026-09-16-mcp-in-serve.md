@@ -56,7 +56,7 @@ runs it there.
 
 ## Result (2026-09-16, evening)
 
-Merged on local main (#194, merge 56a35afe; suite 4328, coverage 92.55%,
+Merged on local main (#194, merge bfd28c1d; suite 4328, coverage 92.55%,
 lint clean). Deployed to remote-host from the checkout on the practitioner's
 go (one-time exception: the mini runs releases from now on, see below).
 
