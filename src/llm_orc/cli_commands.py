@@ -455,13 +455,12 @@ class RemoteInvocation:
     persist: str | None = None
 
 
-def _invoke_remote(ensemble_name: str, invocation: RemoteInvocation) -> bool:
-    """Run the named local root on the remote and display its answer.
-
-    Refused before anything is sent: ``--max-concurrent`` (the request
-    has no place for it), an unknown remote, a closure that cannot ship
-    and an interactive script.
-    """
+def _remote_root(
+    ensemble_name: str, invocation: RemoteInvocation
+) -> tuple[Any, EnsembleConfig]:
+    """The service and the local root a remote call ships. Refused before
+    anything is sent: ``--max-concurrent`` (the request has no place for
+    it) and a root that is not a tier ensemble."""
     if invocation.max_concurrent is not None:
         raise click.ClickException(
             "--max-concurrent cannot be used with --remote: "
@@ -472,6 +471,17 @@ def _invoke_remote(ensemble_name: str, invocation: RemoteInvocation) -> bool:
     if root is None:
         # Only a tier root ships: a bundle is a stored request, not a file.
         raise _not_found(service, ensemble_name)
+    return service, root
+
+
+def _invoke_remote(ensemble_name: str, invocation: RemoteInvocation) -> bool:
+    """Run the named local root on the remote and display its answer.
+
+    Refused before anything is sent: ``--max-concurrent`` (the request
+    has no place for it), an unknown remote, a closure that cannot ship
+    and an interactive script.
+    """
+    service, root = _remote_root(ensemble_name, invocation)
     try:
         with _waiting_on(invocation.remote, invocation.output_format):
             document = asyncio.run(
