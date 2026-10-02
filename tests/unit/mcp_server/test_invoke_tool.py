@@ -5,24 +5,44 @@ integration items). Nothing here opens a connection."""
 # ruff: noqa: F811  (imported fixtures are redefined as test parameters)
 from __future__ import annotations
 
+import asyncio
 import json
+import threading
+import time
 from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any
 
 import pytest
+import requests
 from fastapi.testclient import TestClient
 
 import llm_orc.web.api as web_api
+from llm_orc.core.config.config_manager import resolve_global_config_dir
+from llm_orc.mcp.server import MCPServer
+from llm_orc.services import remote_run
 from llm_orc.services.orchestra_service import OrchestraService
 from llm_orc.web.server import create_app
+from tests.unit.cli.test_invoke_remote import (  # noqa: F401
+    REMOTE_URL,
+    Canned,
+    Remote,
+    _canned,
+    _write_top,
+    in_project,
+    remote,
+    remotes,
+)
 from tests.unit.services.test_one_run_injection import (  # noqa: F401
+    _ensemble,
+    _profile,
     _yaml,
     listing,
     project,
     service,
     state_dir,
 )
+from tests.unit.web.test_api_bundles import _pack
 from tests.unit.web.test_api_mcp import _ACCEPT_HEADERS, _initialize
 
 _MARK = (
@@ -105,3 +125,309 @@ class TestRawOutput:
 
         assert over_rest["raw_output"] is True
         assert over_mcp["raw_output"] is True
+
+
+def _where_script(project: Path, record: Path) -> None:
+    """A script that records the directory it runs from, so a test can
+    tell which host ran it."""
+    scripts = project / ".llm-orc" / "scripts"
+    scripts.mkdir(parents=True, exist_ok=True)
+    (scripts / "where.py").write_text(
+        "import json, os, sys\n"
+        "sys.stdin.read()\n"
+        "here = os.path.dirname(os.path.abspath(__file__))\n"
+        f'open(r"{record}", "w").write(here)\n'
+        'print(json.dumps({"success": True, "data": "ran"}))\n'
+    )
+    _ensemble(project / ".llm-orc", "top", [{"name": "first", "script": "where.py"}])
+
+
+class TestRemoteRun:
+    def test_a_local_named_root_runs_on_the_second_service(
+        self,
+        project: Path,
+        remote: Remote,
+        tool: ToolCall,
+        tmp_path: Path,
+    ) -> None:
+        record = tmp_path / "where.txt"
+        _where_script(project, record)
+
+        result = tool(
+            "invoke",
+            {"ensemble_name": "top", "input_data": "hi", "remote": "remote-host"},
+        )
+
+        assert result["status"] == "success", result
+        assert "metadata" in result
+        assert result["raw_output"] is False
+        assert len(remote.calls) == 1
+        assert Path(record.read_text()).is_relative_to(remote.state / "runs")
+
+    def test_a_profile_the_remote_lacks_returns_its_not_equipped_envelope(
+        self, project: Path, remote: Remote, tool: ToolCall
+    ) -> None:
+        _write_top(project, with_profile=True)
+
+        result = tool(
+            "invoke",
+            {"ensemble_name": "top", "input_data": "hi", "remote": "remote-host"},
+        )
+
+        assert result["status"] == "error"
+        assert result["error"]["kind"] == "not_equipped"
+        rows = {d["name"]: d["status"] for d in result["error"]["dependencies"]}
+        assert rows["seat"] == "missing_profile"
+
+    def test_bind_travels_and_the_run_carries_its_bindings(
+        self, project: Path, remote: Remote, tool: ToolCall
+    ) -> None:
+        _write_top(project, with_profile=True)
+        _profile(remote.project / ".llm-orc", "other", model="mock-other")
+
+        result = tool(
+            "invoke",
+            {
+                "ensemble_name": "top",
+                "input_data": "hi",
+                "remote": "remote-host",
+                "bind": {"seat": "other"},
+            },
+        )
+
+        assert result["status"] == "success", result
+        assert result["bindings"] == {"seat": "other"}
+
+    def test_with_profiles_ships_the_definition(
+        self, project: Path, remote: Remote, tool: ToolCall
+    ) -> None:
+        _write_top(project, with_profile=True)
+
+        result = tool(
+            "invoke",
+            {
+                "ensemble_name": "top",
+                "input_data": "hi",
+                "remote": "remote-host",
+                "with_profiles": ["seat"],
+            },
+        )
+
+        assert result["status"] == "success", result
+        assert "seat" in remote.calls[0][1]["profiles"]
+
+    def test_persist_global_leaves_the_bundle_on_the_second_service(
+        self, project: Path, remote: Remote, tool: ToolCall
+    ) -> None:
+        _write_top(project)
+
+        result = tool(
+            "invoke",
+            {
+                "ensemble_name": "top",
+                "input_data": "hi",
+                "remote": "remote-host",
+                "persist": "global",
+            },
+        )
+
+        assert result["persisted"] == "top", result
+        assert (remote.config / "llm-orc" / "bundles" / "top.json").is_file()
+        assert not (resolve_global_config_dir() / "bundles").exists()
+
+    def test_the_remote_name_is_a_name_in_the_config_or_a_url(
+        self, project: Path, remote: Remote, tool: ToolCall
+    ) -> None:
+        _write_top(project)
+
+        result = tool(
+            "invoke",
+            {"ensemble_name": "top", "input_data": "hi", "remote": REMOTE_URL},
+        )
+
+        assert result["status"] == "success", result
+
+
+class TestPersistWithoutRemote:
+    def test_an_inline_root_persists_in_the_local_global_config(
+        self, project: Path, tool: ToolCall
+    ) -> None:
+        request = {k: v for k, v in _pack().items() if k != "input"}
+
+        result = tool("invoke", {**request, "input_data": "hi", "persist": "global"})
+
+        assert result["persisted"] == "pack", result
+        assert (resolve_global_config_dir() / "bundles" / "pack.json").is_file()
+
+
+class TestARemoteThatDoesNotAnswer:
+    def test_an_unknown_remote_is_invalid_and_lists_the_known_names(
+        self,
+        project: Path,
+        tool: ToolCall,
+        monkeypatch: pytest.MonkeyPatch,
+        remotes: None,
+    ) -> None:
+        _write_top(project)
+        calls = _canned(monkeypatch, Canned(200, "{}"))
+
+        result = tool(
+            "invoke",
+            {"ensemble_name": "top", "input_data": "hi", "remote": "nowhere"},
+        )
+
+        assert result["error"]["kind"] == "invalid_request"
+        assert "known remotes: remote-host" in result["error"]["message"]
+        assert calls == []
+
+    @pytest.mark.parametrize(
+        "answer",
+        [
+            requests.ConnectionError("connection refused"),
+            Canned(200, "<!doctype html><title>llm-orc</title>"),
+        ],
+        ids=["unreachable", "html"],
+    )
+    def test_no_answer_or_no_result_is_a_remote_error_naming_it(
+        self,
+        project: Path,
+        tool: ToolCall,
+        monkeypatch: pytest.MonkeyPatch,
+        remotes: None,
+        answer: Canned | BaseException,
+    ) -> None:
+        _write_top(project)
+        _canned(monkeypatch, answer)
+
+        result = tool(
+            "invoke",
+            {"ensemble_name": "top", "input_data": "hi", "remote": "remote-host"},
+        )
+
+        assert result["status"] == "error"
+        assert result["has_errors"] is True
+        assert result["results"] == {}
+        assert result["deliverable"] is None
+        assert result["error"]["kind"] == "remote_error"
+        assert result["error"]["dependencies"] == []
+        assert "remote-host" in result["error"]["message"]
+
+
+class TestTheEventLoop:
+    async def test_it_is_not_blocked_while_a_remote_run_is_out(
+        self,
+        project: Path,
+        service: OrchestraService,
+        remote: Remote,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        _write_top(project)
+        sent = threading.Event()
+        post = remote.post
+
+        def slow(url: str, request: dict[str, Any]) -> Any:
+            sent.set()
+            time.sleep(0.5)
+            return post(url, request)
+
+        monkeypatch.setattr(remote_run, "post_run", slow)
+        call = asyncio.create_task(
+            MCPServer(service=service)._mcp.call_tool(
+                "invoke",
+                {"ensemble_name": "top", "input_data": "hi", "remote": "remote-host"},
+            )
+        )
+        ticks = 0
+        while not call.done():
+            await asyncio.sleep(0.01)
+            ticks += 1
+
+        assert sent.is_set()
+        assert ticks >= 10
+        await call
+
+
+INLINE_ROOT = {"name": "inline", "agents": [{"name": "a", "script": "echo hi"}]}
+
+
+class TestARefusalBeforeAnythingIsSent:
+    @pytest.mark.parametrize(
+        "inline",
+        [
+            {"ensemble": INLINE_ROOT},
+            {"ensembles": {"kid": INLINE_ROOT}},
+            {"profiles": {"p": {"provider": "llama-server", "model": "m"}}},
+            {"scripts": {"tools/x.py": "print(1)"}},
+        ],
+        ids=["ensemble", "ensembles", "profiles", "scripts"],
+    )
+    def test_an_inline_part_with_remote_is_invalid_and_nothing_is_sent(
+        self,
+        project: Path,
+        tool: ToolCall,
+        monkeypatch: pytest.MonkeyPatch,
+        remotes: None,
+        inline: dict[str, Any],
+    ) -> None:
+        _write_top(project)
+        calls = _canned(monkeypatch, Canned(200, "{}"))
+
+        result = tool(
+            "invoke",
+            {
+                "ensemble_name": "top",
+                "input_data": "hi",
+                "remote": "remote-host",
+                **inline,
+            },
+        )
+
+        assert result["error"]["kind"] == "invalid_request"
+        assert "send it to the remote itself" in result["error"]["message"]
+        assert calls == []
+
+    def test_with_profiles_without_remote_is_invalid(
+        self, project: Path, tool: ToolCall, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _write_top(project)
+        calls = _canned(monkeypatch, Canned(200, "{}"))
+
+        result = tool(
+            "invoke",
+            {"ensemble_name": "top", "input_data": "hi", "with_profiles": ["seat"]},
+        )
+
+        assert result["error"]["kind"] == "invalid_request"
+        assert "with_profiles needs remote" in result["error"]["message"]
+        assert calls == []
+
+    def test_remote_without_a_name_is_invalid(
+        self,
+        tool: ToolCall,
+        monkeypatch: pytest.MonkeyPatch,
+        remotes: None,
+    ) -> None:
+        calls = _canned(monkeypatch, Canned(200, "{}"))
+
+        result = tool("invoke", {"input_data": "hi", "remote": "remote-host"})
+
+        assert result["error"]["kind"] == "invalid_request"
+        assert "ensemble_name" in result["error"]["message"]
+        assert calls == []
+
+
+class TestRestDoesNotGainRemote:
+    def test_a_remote_key_on_the_execute_endpoint_is_still_a_422(
+        self, project: Path, service: OrchestraService, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _write_top(project)
+        monkeypatch.setattr(web_api, "_orchestra_service", service)
+
+        with TestClient(create_app()) as client:
+            response = client.post(
+                "/api/ensembles/execute",
+                json={"ensemble_name": "top", "input": "hi", "remote": "remote-host"},
+            )
+
+        assert response.status_code == 422
+        assert "remote" in response.text
