@@ -758,6 +758,34 @@ with the same outcome. Added rows:
   end, and `runs/` was empty once it finished. A plain REST request is
   not tied to its connection; recorded on #191.
 
+**Released as v0.23.0 and the remote live row (2026-10-02).** Pushed at
+0.22.0 first (CI caught one new test on ubuntu: a script agent mirrors
+its input into the environment and Linux caps one variable at 128 KB, so
+the 200 KB pin became 100 KB), then the release commit, tag, GitHub
+release, PyPI and the tap formula. Verified by a clean install from
+PyPI: 162 packaged files, a serve from an empty directory refused a
+missing profile and ran the same request with `bind`, nothing left
+behind. The remote host took the release with one command over ssh
+(brew upgrade, same unit, restart, health at 0.23.0 in under a minute).
+
+Rows against the remote serve, driven from the laptop over its https
+URL, file listings of its config, state and working directories taken
+over ssh:
+
+- Inline root with an injected script and helper on `local-qwen3-0.6b`
+  (CPU-only host): `success` in 8.0 s; 15 files before and after, none
+  changed; `runs/` empty.
+- The same root on a profile the remote lacks: `not_equipped` in 0.1 s.
+  With `bind`: `success` in 3.7 s, `bindings` returned.
+- An inline profile naming another source for a listed model:
+  `not_equipped`, `needs_restart`, the detail names both sources.
+- Two concurrent runs with one script path and different content: each
+  returned its own; `runs/` empty after.
+- `x.py` with `scripts/x.py`, and a body with no root: `invalid_request`.
+  A misspelled key on a named route: 422.
+- The MCP `invoke` tool over `/mcp`: an inline root with an injected
+  script ran in 0.3 s.
+
 ### Arc 5: CLI as the remote client (Sonnet, ~1-2 days, after Arc 4)
 
 - `llm-orc invoke <ensemble> --remote <url> [--bind a=b] [--pull]
