@@ -40,6 +40,14 @@ LOAD_ERRORS = (
 )
 
 
+class ChildLoadError(Exception):
+    """A child ensemble the closure walk reached did not load."""
+
+    def __init__(self, reference: str, cause: Exception) -> None:
+        super().__init__(f"child ensemble {reference!r} does not load: {cause}")
+        self.reference = reference
+
+
 class RunRefusedError(Exception):
     """The run is refused before any agent starts."""
 

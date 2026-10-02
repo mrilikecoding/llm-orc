@@ -38,6 +38,7 @@ from llm_orc.services.handlers.preflight import (
     is_runnable,
 )
 from llm_orc.services.handlers.profile_handler import ProfileHandler
+from llm_orc.services.handlers.run_preparation import LOAD_ERRORS, ChildLoadError
 
 _DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1"
 _DEFAULT_LLAMA_SERVER_URL = "http://127.0.0.1:8080/v1"
@@ -398,7 +399,10 @@ def _child_finder(
 
     def find(reference: str) -> EnsembleConfig | None:
         search_dirs = child_ensemble_search_dirs(project_dir, config_manager)
-        return loader._find_ensemble_in_dirs(reference, search_dirs)
+        try:
+            return loader._find_ensemble_in_dirs(reference, search_dirs)
+        except LOAD_ERRORS as e:
+            raise ChildLoadError(reference, e) from e
 
     return find
 

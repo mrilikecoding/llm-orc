@@ -31,6 +31,7 @@ from llm_orc.services.handlers.run_preparation import (
     INVALID_REQUEST,
     LOAD_ERRORS,
     NOT_EQUIPPED,
+    ChildLoadError,
     RunRefusedError,
     only_pullable_unmet,
     pull_pullable,
@@ -284,10 +285,8 @@ class ExecutionHandler:
                 config_manager=manager,
                 project_dir=self._project_path,
             )
-        except LOAD_ERRORS as e:
-            raise RunRefusedError(
-                INVALID_REQUEST, f"a child ensemble does not load: {e}"
-            ) from e
+        except ChildLoadError as e:
+            raise RunRefusedError(INVALID_REQUEST, str(e)) from e
 
     async def execute_streaming(
         self,
