@@ -144,6 +144,24 @@ class TestRunnableRoute:
         assert script["status"] == "missing_script"
         assert "TOML" in script["detail"]
 
+    def test_a_first_block_that_never_closes_is_the_error_whatever_follows(
+        self, client: TestClient, project: Path
+    ) -> None:
+        _script(
+            project,
+            "tools/x.py",
+            '# /// llm-orc\n# files = ["_h.py"]\nimport _h\n' + _block("_h.py"),
+        )
+        _script(project, "tools/_h.py")
+        _top(project)
+
+        data = _runnable(client)
+
+        assert data["runnable"] is False
+        [_, script] = data["dependencies"]
+        assert script["status"] == "missing_script"
+        assert "never closed" in script["detail"]
+
     def test_a_listed_file_beside_the_link_but_not_its_target_is_missing(
         self, client: TestClient, project: Path
     ) -> None:
