@@ -453,6 +453,46 @@ class TestUserinfoIsMasked:
         assert "ftp://user:***@a.example" in result.output
 
 
+HINT = (
+    "the remote may be older than 0.25.0 and have no preflight route; "
+    "`llm-orc remotes` shows its version"
+)
+
+
+class TestAnOlderRemoteHasNoPreflightRoute:
+    @pytest.mark.parametrize("status", [404, 405])
+    def test_the_message_carries_the_hint(
+        self,
+        in_project: Path,
+        remotes: None,
+        monkeypatch: pytest.MonkeyPatch,
+        status: int,
+    ) -> None:
+        _write_top(in_project)
+        _canned(monkeypatch, Canned(status, '{"detail": "Method Not Allowed"}'))
+
+        result = CliRunner().invoke(
+            cli, ["invoke", "top", "--remote", "remote-host", "--preflight"]
+        )
+
+        assert result.exit_code == 1, result.output
+        assert f"Remote 'remote-host' ({status})" in result.stderr
+        assert HINT in result.stderr
+
+    def test_a_run_refused_with_405_gets_no_hint(
+        self, in_project: Path, remotes: None, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _write_top(in_project)
+        _canned(monkeypatch, Canned(405, "no"))
+
+        result = CliRunner().invoke(
+            cli, ["invoke", "top", "hi", "--remote", "remote-host"]
+        )
+
+        assert result.exit_code == 1, result.output
+        assert "older than" not in result.stderr
+
+
 def _one_remote_line(result: Result) -> None:
     assert result.exit_code == 1, result.output
     assert "Traceback" not in result.output

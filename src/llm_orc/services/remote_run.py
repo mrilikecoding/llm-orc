@@ -47,6 +47,11 @@ transport: httpx.AsyncBaseTransport | None = None
 EXECUTE_PATH = "/api/ensembles/execute"
 PREFLIGHT_PATH = "/api/ensembles/preflight"
 _SHOWN_BODY_CHARS = 200
+_NO_ROUTE_STATUSES = (404, 405)
+_NO_PREFLIGHT_ROUTE = (
+    "the remote may be older than 0.25.0 and have no preflight route; "
+    "`llm-orc remotes` shows its version"
+)
 _ASCII_WHITESPACE = re.compile(r"[ \t\n\r\f\v]+")
 _CLIENT_ENVIRONMENT = (
     "HTTP_PROXY",
@@ -318,7 +323,14 @@ def _result_document(remote: str, response: Any) -> dict[str, Any]:
 
 
 def _preflight_document(remote: str, response: Any) -> dict[str, Any]:
-    return _accepted(remote, response, _is_preflight, "a preflight document")
+    try:
+        return _accepted(remote, response, _is_preflight, "a preflight document")
+    except RemoteRunError as e:
+        if e.status_code not in _NO_ROUTE_STATUSES:
+            raise
+        raise RemoteRunError(
+            remote, f"{e.detail}; {_NO_PREFLIGHT_ROUTE}", e.status_code, e.kind
+        ) from e
 
 
 def _is_result(document: Any) -> bool:
