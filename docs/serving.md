@@ -186,6 +186,17 @@ string, built when the router starts) or a model loaded now is
 downloaded. The `agents` list keeps the coarse per-agent
 status the web UI reads.
 
+`POST /api/ensembles/preflight` answers the same report for a whole run
+request (the body of `/execute`, `input` optional) without running it:
+`runnable`, `dependencies`, the `bindings` that would apply, and
+`pull_requested: true` when the request asked to pull. It validates,
+materializes the run layer, gates and removes the layer; no agent runs,
+nothing is pulled (a `pullable` row stays not runnable), no artifact is
+kept and no bundle is written whatever `persist` says. A malformed
+request is the `invalid_request` envelope, as on `/execute`. This is what
+`invoke --preflight` and `check_ensemble_runnable(remote=...)` call on a
+remote; see "Finding remotes and preflighting them".
+
 ## Running a request: inline ensembles, bind and pull
 
 One request shape runs an ensemble on the serve, whether the ensemble is
@@ -459,6 +470,44 @@ local client. Nothing reachable over the network relays: REST takes no
 `remote`, and the MCP endpoint a serve mounts at `/mcp` and
 `llm-orc mcp serve --transport http` both answer `remote` and
 `with_profiles` with `invalid_request`.
+
+## Finding remotes and preflighting them
+
+A fresh session needs no prior knowledge of a remote: list, preflight,
+run.
+
+`llm-orc remotes` (and the MCP tool `list_remotes`, on the stdio server)
+prints each configured remote with a live probe of its `GET /health`:
+
+```
+$ llm-orc remotes
+mini  https://llm-orc.remote.example  reachable, llm-orc 0.24.0
+lab   https://lab.remote.example      unreachable: connection refused
+```
+
+The probe uses the same client set-up as a run, with 5 s timeouts, so a
+proxy or TLS problem shows here first. `--output-format json` gives the
+rows as an array (`name`, `url`, `reachable`, then `version` or
+`error`). The command exits 0 whether or not a remote answers; only a
+malformed `remotes:` block exits 1.
+
+`llm-orc invoke <ensemble> --preflight` gates and prints, and runs
+nothing. Locally it is the same gate a run passes. With `--remote` it
+ships the closure and asks the remote's `POST /api/ensembles/preflight`,
+which validates, materializes the run layer, applies `bind`, gates and
+removes the layer: no agent runs, nothing is pulled (a `pullable` row
+stays `pullable`, and the answer says a run with `pull` would download
+it), no artifact is saved, and no bundle is written whatever `persist`
+says. The output is `Preflight: runnable` or `Preflight: not runnable`,
+the bindings that would apply, and the full dependency table, met rows
+included; exit 0 when runnable, 1 when not. `--preflight` with
+`--persist` is a usage error. The MCP `check_ensemble_runnable` tool
+takes `remote`, `bind`, `pull` and `with_profiles` and answers the same
+report plus `left_out`; those arguments without `remote` are
+`invalid_request`.
+
+A remote older than 0.25.0 has no `/preflight` route and answers 405,
+which the CLI reports as an error naming the remote.
 
 ## Local runs: bind, pull and the gate
 

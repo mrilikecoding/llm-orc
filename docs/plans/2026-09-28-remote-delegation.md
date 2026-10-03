@@ -1293,6 +1293,42 @@ pulls nothing (the router fake's load is never called). Mutants: the
 probe always says reachable; the endpoint runs the executor; `persist`
 honored on preflight.
 
+**Built and reviewed (2026-10-02).** Branch `feat/remotes-discoverable`.
+Shape as the card, with these particulars: the preparation step is split
+into staging and judging, and `/preflight` is the judging half with the
+run left out, so its verdict is `/execute`'s; one `_call_remote` does
+resolve, ship, build client, post and check for a run and a preflight;
+`check_ensemble_runnable` on MCP takes `remote`, `bind`, `pull`,
+`with_profiles`, and those three without `remote` are `invalid_request`;
+`--preflight --persist` is a usage error; a 404 or 405 from a preflight
+says the remote may be older than 0.25.0. Two review rounds. The first
+found one blocker, a probe that could fail the whole `remotes` list (a
+health body of 200,000 `[` raised `RecursionError`; an IDNA error raised
+outside the client's error tree), fixed by a per-remote catch-all, a 10 s
+deadline and a 64 KB body cap, with the same catch-all on the run and
+preflight paths; and notes, taken: the preflight answer is accepted only
+in the shape the display prints; text mode cleans a remote's cells (JSON
+mode prints the document byte for byte); a remote name cannot contain
+`://`; a URL's password is masked wherever echoed; four pins made able
+to fail. The second round found one leak, a password after an email-style
+user name echoed in full, fixed with the refused URL masked too, and
+notes taken: a run's record lines cleaned in text mode, pins for the
+classified-error re-raise, JSON fidelity and the cap boundary. Nothing
+from Arc 5 broke; every new pin goes red under its mutant; the timing
+pins passed 20 of 20 under a concurrent suite. Live rows on the laptop
+(two serves, a router): `remotes` lists a live and a dead entry;
+`--preflight --remote` answers the table and exit 1 for a missing
+profile, runnable and exit 0 with `--bind`, the remote's tree unchanged
+and `runs/` empty; over stdio MCP, `list_remotes`,
+`check_ensemble_runnable(remote=...)` with and without `bind`, and
+`get_help` all answer. Against the remote host at 0.24.0: `remotes`
+reads it reachable at 0.24.0 and a `--preflight` gets the 405 with the
+hint. Left as is: `--input`, `--streaming` and `--detailed` are ignored
+with `--preflight`; `--preflight --pull` exits 1 when only pullable rows
+are unmet; the legacy dict-dispatch MCP surface does not know `remote`
+or `list_remotes`; one gzip chunk can expand past the cap in memory
+before it is dropped.
+
 ## Gates (every arc)
 
 Hermetic suite green, lint clean, mutant-red pins, a live row, and an
