@@ -10,7 +10,11 @@ if TYPE_CHECKING:
     from llm_orc.core.config.config_manager import ConfigurationManager
 
 
-_PASSWORD = re.compile(r"(://[^/\s:@]*):[^/\s]*@")
+# The user part may hold an "@" of its own (an email-style user name).
+_PASSWORD = re.compile(r"(://[^/\s:]*):[^/\s]*@")
+# For a URL that failed the checks: hide everything between the first ":"
+# after the scheme and the last "@", whatever characters it holds.
+_PASSWORD_LOOSE = re.compile(r"(://.*?):.*@")
 
 
 def mask_password(text: str) -> str:
@@ -43,33 +47,40 @@ def resolve_remote(value: str, config: ConfigurationManager) -> str:
     return _checked_url(remotes[value], f"remote '{value}'")
 
 
+def _refused(url: str) -> str:
+    """A URL that failed the checks, as an error may echo it: the user part
+    kept, anything that could be a password hidden."""
+    return _PASSWORD_LOOSE.sub(r"\1:***@", url)
+
+
 def _checked_url(url: str, source: str | None) -> str:
     """``url`` without a trailing slash, or ``RemoteError`` saying what is
     wrong with it (``source`` names the configured remote it came from)."""
     where = f"{source}: " if source else ""
+    shown = _refused(url)
     for char in url:
         if not char.isprintable() or char.isspace():
             raise RemoteError(
-                f"{where}{url!r} contains a character that is not allowed "
+                f"{where}{shown!r} contains a character that is not allowed "
                 f"in a URL: {char!r}"
             )
     try:
         parts = urlsplit(url)
     except ValueError as e:
-        raise RemoteError(f"{where}{url!r} is not a usable URL: {e}") from e
+        raise RemoteError(f"{where}{shown!r} is not a usable URL: {e}") from e
     if parts.scheme not in ("http", "https"):
         raise RemoteError(
-            f"{where}{url!r} must use http or https, not {parts.scheme!r}"
+            f"{where}{shown!r} must use http or https, not {parts.scheme!r}"
         )
     for mark, name in (("?", "query"), ("#", "fragment")):
         if mark in url:
-            raise RemoteError(f"{where}{url!r} has a {name}; give the base URL alone")
+            raise RemoteError(f"{where}{shown!r} has a {name}; give the base URL alone")
     if not parts.hostname:
-        raise RemoteError(f"{where}{url!r} has no host")
+        raise RemoteError(f"{where}{shown!r} has no host")
     try:
         port = parts.port
     except ValueError:
         port = 0
     if port is not None and port < 1:
-        raise RemoteError(f"{where}{url!r} has a port that is not 1-65535")
+        raise RemoteError(f"{where}{shown!r} has a port that is not 1-65535")
     return url.rstrip("/")
