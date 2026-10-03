@@ -186,6 +186,72 @@ class TestARunOrPreflightOnAHostileRemote:
         _one_remote_line(result)
 
 
+ROW = {"kind": "profile", "name": "seat", "status": "ready", "via": ["top"]}
+BAD_PREFLIGHTS = [
+    pytest.param(
+        {"runnable": True, "dependencies": [], "bindings": ["x"]},
+        id="bindings-a-list",
+    ),
+    pytest.param(
+        {"runnable": False, "dependencies": "abc", "bindings": {}},
+        id="dependencies-a-string",
+    ),
+    pytest.param(
+        {"runnable": False, "dependencies": [{**ROW, "via": 5}], "bindings": {}},
+        id="via-an-int",
+    ),
+    pytest.param(
+        {"runnable": False, "dependencies": [{**ROW, "name": 7}], "bindings": {}},
+        id="name-an-int",
+    ),
+    pytest.param(
+        {"runnable": True, "dependencies": ["y"], "bindings": {}},
+        id="row-a-string",
+    ),
+    pytest.param(
+        {"runnable": True, "dependencies": [], "bindings": {"k": 1}},
+        id="binding-value-an-int",
+    ),
+    pytest.param(
+        {"error": {"kind": "invalid_request", "message": "m", "dependencies": ["y"]}},
+        id="envelope-dependencies-strings",
+    ),
+    pytest.param(
+        {"error": {"kind": "invalid_request", "message": 5, "dependencies": []}},
+        id="envelope-message-an-int",
+    ),
+]
+
+
+class TestAPreflightAnswerIsCheckedForShape:
+    @pytest.mark.parametrize("body", BAD_PREFLIGHTS)
+    def test_a_body_that_would_crash_the_display_is_not_a_preflight_answer(
+        self,
+        in_project: Path,
+        remotes: None,
+        monkeypatch: pytest.MonkeyPatch,
+        body: dict[str, Any],
+    ) -> None:
+        _write_top(in_project)
+        _canned(monkeypatch, Canned(200, json.dumps(body)))
+
+        result = CliRunner().invoke(
+            cli,
+            [
+                "invoke",
+                "top",
+                "--remote",
+                "remote-host",
+                "--preflight",
+                "--output-format",
+                "text",
+            ],
+        )
+
+        _one_remote_line(result)
+        assert "not a preflight document" in result.stderr
+
+
 def _one_remote_line(result: Result) -> None:
     assert result.exit_code == 1, result.output
     assert "Traceback" not in result.output
