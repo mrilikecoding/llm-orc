@@ -96,6 +96,16 @@ class TestARemotePreflight:
         assert remote.tree() == before
         _nothing_ran(remote)
 
+    def test_with_profile_ships_the_definition_and_it_reads_runnable(
+        self, in_project: Path, remote: Remote
+    ) -> None:
+        _write_top(in_project, with_profile=True)
+
+        result = _remote_preflight("--with-profile", "seat", "--output-format", "text")
+
+        assert result.exit_code == 0, result.output
+        assert "seat" in remote.calls[0][1]["profiles"]
+
     @pytest.mark.parametrize("fmt", [[], ["--output-format", "text"]])
     def test_rich_and_text_both_print_a_row_for_every_dependency(
         self, in_project: Path, remote: Remote, fmt: list[str]

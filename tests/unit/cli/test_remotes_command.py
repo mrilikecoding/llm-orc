@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from pathlib import Path
 from typing import Any
 
@@ -21,6 +22,7 @@ from llm_orc.services import remote_run
 from llm_orc.web import server as web_server
 from tests.unit.cli.test_invoke_remote import (  # noqa: F401
     REMOTE_URL,
+    Delayed,
     Remote,
     in_project,
     remote,
@@ -211,6 +213,60 @@ class TestSeveralRemotes:
         assert rows["bad"]["reachable"] is False
         assert "http or https" in rows["bad"]["error"]
         assert rows["bad"]["url"] == "ftp://bad.example"
+
+
+class TestTheVersionIsAStringAndShownSafely:
+    @pytest.mark.parametrize("version", [5, True, ["1"], {"v": 1}, ""])
+    def test_a_version_that_is_not_a_string_is_not_reachable(
+        self,
+        remotes: None,
+        in_project: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        version: Any,
+    ) -> None:
+        _answer(monkeypatch, httpx.Response(200, json={"version": version}))
+
+        result = _remotes("--output-format", "json")
+
+        (row,) = json.loads(result.stdout)
+        assert row["reachable"] is False
+        assert "version" not in row
+
+    def test_a_version_is_stripped_of_control_characters_and_capped(
+        self, remotes: None, in_project: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _answer(
+            monkeypatch,
+            httpx.Response(200, json={"version": "1.0\x1b[31m\n" + "9" * 500}),
+        )
+
+        result = _remotes("--output-format", "json")
+
+        (row,) = json.loads(result.stdout)
+        assert row["reachable"] is True
+        assert "\x1b" not in row["version"]
+        assert "\n" not in row["version"]
+        assert row["version"].startswith("1.0[31m 9")
+        assert len(row["version"]) <= 200
+
+
+class TestTheProbesRunTogether:
+    def test_four_remotes_at_300_ms_each_finish_well_under_the_sum(
+        self, in_project: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _global_config(
+            {"remotes": {f"r{i}": {"url": f"https://r{i}.example"} for i in range(4)}}
+        )
+        inner = httpx.MockTransport(
+            lambda _: httpx.Response(200, json={"version": "1.0.0"})
+        )
+        monkeypatch.setattr(remote_run, "transport", Delayed(inner, 0.3))
+        started = time.monotonic()
+
+        result = _remotes("--output-format", "json")
+
+        assert time.monotonic() - started < 0.8
+        assert [row["reachable"] for row in json.loads(result.stdout)] == [True] * 4
 
 
 class TestTheConfig:
