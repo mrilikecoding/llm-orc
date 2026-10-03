@@ -12,6 +12,7 @@ from llm_orc.cli_commands import (
     invoke_ensemble,
     list_ensembles_command,
     list_profiles_command,
+    remotes_command,
 )
 from llm_orc.cli_completion import (
     complete_ensemble_names,
@@ -82,7 +83,20 @@ def _bind_and_pull_options(command: Callable[..., Any]) -> Callable[..., Any]:
 @click.group()
 @click.version_option(package_name="llm-orchestra")
 def cli() -> None:
-    """LLM Orchestra - Multi-agent LLM communication system."""
+    """LLM Orchestra - Multi-agent LLM communication system.
+
+    \b
+    Run an ensemble on another llm-orc serve (a remote). Name remotes in
+    the global config.yaml (a project config is not read):
+      remotes:
+        remote-host:
+          url: https://llm-orc.remote.example
+    Then three steps:
+      llm-orc remotes                                    list, with a probe
+      llm-orc invoke NAME --remote remote-host --preflight   what it lacks
+      llm-orc invoke NAME --remote remote-host           run
+    The MCP tools are list_remotes, check_ensemble_runnable and invoke.
+    """
     pass
 
 
@@ -194,6 +208,12 @@ def completion(shell: str | None) -> None:
     default=None,
     help="Keep the shipped closure on the remote under its name (--remote)",
 )
+@click.option(
+    "--preflight",
+    is_flag=True,
+    default=False,
+    help="Check what the ensemble needs and print it; run nothing",
+)
 def invoke(
     ensemble_name: str,
     input_data: str | None,
@@ -209,6 +229,7 @@ def invoke(
     remote: str | None,
     with_profile: tuple[str, ...],
     persist: str | None,
+    preflight: bool,
 ) -> None:
     """Invoke an ensemble of agents.
 
@@ -224,9 +245,16 @@ def invoke(
       llm-orc invoke review --remote remote-host --with-profile seat
     Keep the shipped ensemble on the remote, to run it there by name:
       llm-orc invoke review --remote remote-host --persist global
+    See what the ensemble needs, here or on a remote, without running it:
+      llm-orc invoke review --preflight
+      llm-orc invoke review --remote remote-host --preflight
     """
     if remote is None and (with_profile or persist):
         raise click.UsageError("--with-profile and --persist need --remote")
+    if preflight and persist:
+        raise click.UsageError(
+            "--preflight cannot be used with --persist: a preflight stores nothing"
+        )
     has_errors = invoke_ensemble(
         ensemble_name,
         input_data,
@@ -242,9 +270,22 @@ def invoke(
         remote=remote,
         with_profiles=with_profile,
         persist=persist,
+        preflight=preflight,
     )
     if has_errors:
         sys.exit(1)
+
+
+@cli.command()
+@click.option(
+    "--output-format",
+    type=click.Choice(["json", "text"]),
+    default=None,
+    help="Output format (default: one line per remote)",
+)
+def remotes(output_format: str | None) -> None:
+    """List the remotes in the global config, each with a health probe."""
+    remotes_command(output_format)
 
 
 @cli.command("list-ensembles")
@@ -883,6 +924,15 @@ def help_command() -> None:
     for cmd, alias, desc in commands_with_aliases:
         click.echo(f"  {cmd:<15} ({alias:<2}) {desc}")
 
+    click.echo()
+    click.echo("Remotes: run an ensemble on another llm-orc serve.")
+    click.echo("Name remotes under 'remotes:' in the global config.yaml, then:")
+    click.echo("  llm-orc remotes                                  list and probe")
+    click.echo(
+        "  llm-orc invoke NAME --remote remote-host --preflight  check, run nothing"
+    )
+    click.echo("  llm-orc invoke NAME --remote remote-host         run")
+    click.echo("The MCP tools are list_remotes, check_ensemble_runnable and invoke.")
     click.echo()
     click.echo("You can use either the full command name or its alias.")
     click.echo(

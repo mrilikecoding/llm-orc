@@ -25,7 +25,11 @@ import httpx
 
 from llm_orc.core.config.config_manager import ConfigurationManager
 from llm_orc.core.config.ensemble_config import EnsembleConfig
-from llm_orc.core.config.remotes import RemoteError, resolve_remote
+from llm_orc.core.config.remotes import (
+    RemoteError,
+    mask_password,
+    resolve_remote,
+)
 from llm_orc.core.execution.scripting.user_input_handler import (
     ScriptUserInputHandler,
 )
@@ -41,7 +45,13 @@ CONNECT_TIMEOUT_S = 10
 # an ``httpx.AsyncBaseTransport`` and the real client code runs on it.
 transport: httpx.AsyncBaseTransport | None = None
 EXECUTE_PATH = "/api/ensembles/execute"
+PREFLIGHT_PATH = "/api/ensembles/preflight"
 _SHOWN_BODY_CHARS = 200
+_NO_ROUTE_STATUSES = (404, 405)
+_NO_PREFLIGHT_ROUTE = (
+    "the remote may be older than 0.25.0 and have no preflight route; "
+    "`llm-orc remotes` shows its version"
+)
 _ASCII_WHITESPACE = re.compile(r"[ \t\n\r\f\v]+")
 _CLIENT_ENVIRONMENT = (
     "HTTP_PROXY",
@@ -69,6 +79,8 @@ class RemoteRunError(RuntimeError):
         status_code: int | None = None,
         kind: str = REMOTE_ERROR,
     ) -> None:
+        remote = mask_password(remote)
+        detail = mask_password(detail)
         self.remote = remote
         self.kind = kind
         self.status_code = status_code
@@ -77,9 +89,15 @@ class RemoteRunError(RuntimeError):
         super().__init__(f"Remote '{remote}'{code}: {detail}")
 
 
-def build_client(remote: str) -> httpx.AsyncClient:
-    """The client a run posts with: connect timeout only, no read timeout,
-    no redirect followed, the environment's proxy and TLS settings kept.
+def build_client(
+    remote: str,
+    *,
+    connect_s: float = CONNECT_TIMEOUT_S,
+    read_s: float | None = None,
+) -> httpx.AsyncClient:
+    """The client a run posts with: a connect timeout only (``read_s`` is
+    for the health probe, a run waits), no redirect followed, the
+    environment's proxy and TLS settings kept.
 
     Building it reads those settings, and a bad one raises (a SOCKS proxy
     without its package, a proxy URL of the wrong scheme, a CA file that is
@@ -89,7 +107,7 @@ def build_client(remote: str) -> httpx.AsyncClient:
     try:
         return httpx.AsyncClient(
             transport=transport,
-            timeout=httpx.Timeout(None, connect=CONNECT_TIMEOUT_S),
+            timeout=httpx.Timeout(read_s, connect=connect_s),
             follow_redirects=False,
             trust_env=True,
         )
@@ -140,28 +158,88 @@ async def run_remote(
             ``invalid_request`` for everything refused before a send,
             including a client that could not be built.
     """
-    try:
-        base_url = resolve_remote(remote, config_manager)
-    except RemoteError as e:
-        raise RemoteRunError(remote, str(e), kind=INVALID_REQUEST) from e
-    request, left_out = await asyncio.to_thread(
-        _ship_checked,
+    return await _call_remote(
         remote,
         root_name,
+        EXECUTE_PATH,
+        _result_document,
+        on_left_out=on_left_out,
+        find_root=find_root,
+        config_manager=config_manager,
+        project_dir=project_dir,
+        input_text=input_text,
+        with_profiles=with_profiles,
+        bind=bind,
+        pull=pull,
+        persist=persist,
+    )
+
+
+async def preflight_remote(
+    root_name: str,
+    remote: str,
+    *,
+    find_root: Callable[[str], EnsembleConfig | None],
+    config_manager: ConfigurationManager,
+    project_dir: Path | None,
+    with_profiles: Sequence[str] = (),
+    bind: Mapping[str, str] | None = None,
+    pull: bool = False,
+    on_left_out: Callable[[list[LeftOut]], None] | None = None,
+) -> dict[str, Any]:
+    """Judge ``root_name`` and its closure on ``remote`` without running
+    it: ship the same request a run ships (no input, no ``persist``), POST
+    it to the preflight endpoint and return the document, which is the
+    report (``runnable``, ``dependencies``, ``bindings``) or the refusal
+    envelope of an invalid request.
+
+    Raises:
+        RemoteRunError: as ``run_remote``, and when the answer is neither
+            a report nor an envelope.
+    """
+    return await _call_remote(
+        remote,
+        root_name,
+        PREFLIGHT_PATH,
+        _preflight_document,
+        on_left_out=on_left_out,
         find_root=find_root,
         config_manager=config_manager,
         project_dir=project_dir,
         with_profiles=with_profiles,
         bind=bind,
         pull=pull,
-        persist=persist,
-        input_text=input_text,
+    )
+
+
+async def _call_remote(
+    remote: str,
+    root_name: str,
+    path: str,
+    accept: Callable[[str, Any], dict[str, Any]],
+    *,
+    on_left_out: Callable[[list[LeftOut]], None] | None,
+    config_manager: ConfigurationManager,
+    **ship: Any,
+) -> dict[str, Any]:
+    """The call a run and a remote preflight share: resolve ``remote``,
+    ship the closure of ``root_name`` (``ship`` is what
+    ``ship_closure_reporting`` takes), POST it to ``path`` and hand the
+    response to ``accept``, which returns the document or raises
+    ``RemoteRunError``. The two differ in the path and in what an
+    acceptable answer is."""
+    try:
+        base_url = resolve_remote(remote, config_manager)
+    except RemoteError as e:
+        raise RemoteRunError(remote, str(e), kind=INVALID_REQUEST) from e
+    request, left_out = await asyncio.to_thread(
+        _ship_checked, remote, root_name, config_manager=config_manager, **ship
     )
     if left_out and on_left_out is not None:
         on_left_out(left_out)
     client = build_client(remote)
     try:
-        response = await post_run(client, base_url + EXECUTE_PATH, request)
+        response = await post_run(client, base_url + path, request)
     except httpx.InvalidURL as e:
         raise RemoteRunError(
             remote,
@@ -172,7 +250,23 @@ async def run_remote(
         raise RemoteRunError(
             remote, f"could not reach {base_url}: {_first_leaf(e)}"
         ) from e
-    return _result_document(remote, response)
+    except Exception as e:
+        raise _unclassified(remote, base_url, e) from e
+    try:
+        return accept(remote, response)
+    except RemoteRunError:
+        raise
+    except Exception as e:
+        raise _unclassified(remote, base_url, e) from e
+
+
+def _unclassified(remote: str, base_url: str, error: Exception) -> RemoteRunError:
+    """Any other ``Exception`` from the request or the body parse (a body
+    nested too deep to parse, a URL the HTTP library cannot encode) is the
+    remote's error, one line, so no traceback reaches the caller."""
+    return RemoteRunError(
+        remote, f"the call to {base_url} failed: {_shown(_first_leaf(error))}"
+    )
 
 
 def _first_leaf(error: BaseException) -> str:
@@ -225,6 +319,76 @@ def _refuse_interactive(remote: str, request: Mapping[str, Any]) -> None:
 
 
 def _result_document(remote: str, response: Any) -> dict[str, Any]:
+    return _accepted(remote, response, _is_result, "a result document")
+
+
+def _preflight_document(remote: str, response: Any) -> dict[str, Any]:
+    try:
+        return _accepted(remote, response, _is_preflight, "a preflight document")
+    except RemoteRunError as e:
+        if e.status_code not in _NO_ROUTE_STATUSES:
+            raise
+        raise RemoteRunError(
+            remote, f"{e.detail}; {_NO_PREFLIGHT_ROUTE}", e.status_code, e.kind
+        ) from e
+
+
+def _is_result(document: Any) -> bool:
+    return (
+        isinstance(document, dict)
+        and document.get("status") in ("success", "error")
+        and isinstance(document.get("has_errors"), bool)
+    )
+
+
+def _is_preflight(document: Any) -> bool:
+    """A report (a boolean ``runnable``, ``dependencies`` and ``bindings``
+    of the shapes the display prints) or a refusal envelope (an ``error``
+    with string ``kind`` and ``message`` and the same ``dependencies``)."""
+    if not isinstance(document, dict):
+        return False
+    error = document.get("error")
+    if isinstance(error, dict) and isinstance(error.get("kind"), str):
+        return isinstance(error.get("message"), str) and _is_rows(
+            error.get("dependencies")
+        )
+    return (
+        isinstance(document.get("runnable"), bool)
+        and _is_rows(document.get("dependencies"))
+        and _is_bindings(document.get("bindings"))
+    )
+
+
+def _is_rows(rows: Any) -> bool:
+    return isinstance(rows, list) and all(_is_row(row) for row in rows)
+
+
+def _is_row(row: Any) -> bool:
+    return (
+        isinstance(row, dict)
+        and all(isinstance(row.get(key), str) for key in ("kind", "name", "status"))
+        and _is_strings(row.get("via"))
+    )
+
+
+def _is_strings(values: Any) -> bool:
+    return isinstance(values, list) and all(isinstance(v, str) for v in values)
+
+
+def _is_bindings(bindings: Any) -> bool:
+    return isinstance(bindings, dict) and all(
+        isinstance(k, str) and isinstance(v, str) for k, v in bindings.items()
+    )
+
+
+def _accepted(
+    remote: str,
+    response: Any,
+    is_document: Callable[[Any], bool],
+    noun: str,
+) -> dict[str, Any]:
+    """The JSON object of an HTTP 200 answer that ``is_document`` accepts;
+    anything else is a ``RemoteRunError`` naming the remote."""
     status_code = int(response.status_code)
     if status_code != 200:
         raise RemoteRunError(remote, _observed(response), status_code)
@@ -236,14 +400,10 @@ def _result_document(remote: str, response: Any) -> dict[str, Any]:
             f"answered 200 with a body that is not JSON: {_excerpt(response)}",
             status_code,
         ) from e
-    if (
-        not isinstance(document, dict)
-        or document.get("status") not in ("success", "error")
-        or not isinstance(document.get("has_errors"), bool)
-    ):
+    if not is_document(document):
         raise RemoteRunError(
             remote,
-            "answered 200 with a body that is not a result document "
+            f"answered 200 with a body that is not {noun} "
             f"(is this an llm-orc serve?): {_excerpt(response)}",
             status_code,
         )
@@ -280,5 +440,23 @@ def _shown(value: Any) -> str:
     """Text from a remote as it reaches the terminal: runs of ASCII
     whitespace folded to one space, unprintable characters dropped,
     capped. The remote is not trusted not to send escape sequences."""
+    return mask_password(clean(value))[:_SHOWN_BODY_CHARS]
+
+
+def clean(value: Any) -> str:
+    """``_shown`` without the cap: for a cell or a message that is shown
+    whole."""
     folded = _ASCII_WHITESPACE.sub(" ", str(value or "")).strip()
-    return "".join(c for c in folded if c.isprintable())[:_SHOWN_BODY_CHARS]
+    return "".join(c for c in folded if c.isprintable())
+
+
+def cleaned_document(value: Any) -> Any:
+    """``value`` with every string, keys included, passed through
+    ``clean``: a remote's document as text mode may print it."""
+    if isinstance(value, str):
+        return clean(value)
+    if isinstance(value, dict):
+        return {clean(k): cleaned_document(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [cleaned_document(v) for v in value]
+    return value

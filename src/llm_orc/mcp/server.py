@@ -21,20 +21,26 @@ from starlette.applications import Starlette
 
 from llm_orc.core.config.config_manager import ConfigurationManager
 from llm_orc.core.config.ensemble_config import EnsembleLoader
+from llm_orc.core.config.remotes import RemoteError
 from llm_orc.core.execution.artifact_manager import ArtifactManager
 from llm_orc.services.closure_shipper import LeftOut
 from llm_orc.services.handlers.run_preparation import INVALID_REQUEST, RunRefusedError
 from llm_orc.services.handlers.scope import Scope
 from llm_orc.services.orchestra_service import OrchestraService
-from llm_orc.services.remote_run import RemoteRunError, run_remote
+from llm_orc.services.remote_probe import probe_remotes
+from llm_orc.services.remote_run import (
+    RemoteRunError,
+    preflight_remote,
+    run_remote,
+)
 
 if TYPE_CHECKING:
     from llm_orc.core.execution.ensemble_execution import EnsembleExecutor
 
 
 _NOT_A_RELAY = (
-    "this serve does not relay: remote and with_profiles are not accepted "
-    "here, so call that remote yourself"
+    "this serve does not relay: remote, with_profiles and list_remotes are "
+    "not accepted here, so call that remote yourself"
 )
 
 
@@ -253,6 +259,7 @@ class MCPServer:
         self._setup_core_tools()
         self._setup_crud_tools()
         self._setup_provider_discovery_tools()
+        self._setup_remote_tools()
         self._setup_promotion_tools()
         self._setup_help_tool()
 
@@ -753,11 +760,23 @@ class MCPServer:
             return result
 
         @self._mcp.tool()
-        async def check_ensemble_runnable(ensemble_name: str) -> dict[str, Any]:
+        async def check_ensemble_runnable(
+            ensemble_name: str,
+            remote: str | None = None,
+            bind: dict[str, str] | None = None,
+            pull: bool = False,
+            with_profiles: list[str] | None = None,
+        ) -> dict[str, Any]:
             """Check if ensemble can run with current providers.
 
             Args:
                 ensemble_name: Name of the ensemble to check
+                remote: Check the ensemble's closure on this remote instead:
+                    ships it as invoke does and asks the remote to judge it,
+                    running nothing there (see list_remotes)
+                bind: Profile name to profile name, as for invoke (needs remote)
+                pull: Say a pull was asked for; nothing is pulled (needs remote)
+                with_profiles: Local profiles to ship (needs remote)
 
             Returns runnable status with:
             - Whether ensemble can run
@@ -765,11 +784,48 @@ class MCPServer:
             - Suggested local alternatives for unavailable profiles
             - dependencies: every child ensemble, script, profile and model in the
               closure with status and resolve hint (docs/serving.md, Preflight)
+            With remote, the answer is the remote's: runnable, dependencies,
+            bindings that would apply, and left_out when the closure left
+            something to the remote.
             """
-            result = await self._service.check_ensemble_runnable(
-                {"ensemble_name": ensemble_name}
+            if not self._relay and (remote is not None or with_profiles):
+                return RunRefusedError(INVALID_REQUEST, _NOT_A_RELAY).envelope()
+            if remote is None and (bind or pull or with_profiles):
+                return RunRefusedError(
+                    INVALID_REQUEST, "bind, pull and with_profiles need remote"
+                ).envelope()
+            if remote is None:
+                return await self._service.check_ensemble_runnable(
+                    {"ensemble_name": ensemble_name}
+                )
+            return await self._relayed(
+                preflight_remote,
+                ensemble_name,
+                remote,
+                with_profiles=with_profiles or [],
+                bind=bind,
+                pull=pull,
             )
-            return result
+
+    def _setup_remote_tools(self) -> None:
+        """Register the tools that look at remotes."""
+
+        @self._mcp.tool()
+        async def list_remotes() -> dict[str, Any]:
+            """List the remotes named in the global config, each probed.
+
+            A remote is a llm-orc serve that can run an ensemble shipped
+            from here: invoke and check_ensemble_runnable take its name as
+            remote. Each row has name, url and a live GET /health probe:
+            reachable with the serve's version, or the error observed.
+            """
+            if not self._relay:
+                return RunRefusedError(INVALID_REQUEST, _NOT_A_RELAY).envelope()
+            try:
+                rows = await probe_remotes(self._service.config_manager)
+            except RemoteError as e:
+                return RunRefusedError(INVALID_REQUEST, str(e)).envelope()
+            return {"remotes": rows}
 
     def _setup_promotion_tools(self) -> None:
         """Register promotion and demotion tools."""
@@ -1199,6 +1255,28 @@ class MCPServer:
         with_profiles: list[str],
     ) -> dict[str, Any]:
         """Run the named local root on ``remote`` and return its result."""
+        return await self._relayed(
+            run_remote,
+            ensemble_name,
+            remote,
+            input_text=input_data,
+            with_profiles=with_profiles,
+            bind=bind,
+            pull=pull,
+            persist=persist,
+        )
+
+    async def _relayed(
+        self,
+        send: Callable[..., Awaitable[dict[str, Any]]],
+        ensemble_name: str,
+        remote: str,
+        **shipping: Any,
+    ) -> dict[str, Any]:
+        """Ship the named local root's closure to ``remote`` with ``send``
+        (``run_remote`` or ``preflight_remote``) and return its document,
+        with ``left_out`` naming what the closure left to the remote. A
+        failure is the refusal envelope, whose kind says what to do."""
         service = self._service
         # One project answers the root and the closure: all three are read
         # here, on the loop, before the worker thread starts.
@@ -1207,18 +1285,14 @@ class MCPServer:
         root = service.find_ensemble_by_name(ensemble_name)
         left: list[LeftOut] = []
         try:
-            document = await run_remote(
+            document = await send(
                 ensemble_name,
                 remote,
                 find_root=lambda _name: root,
                 config_manager=config_manager,
                 project_dir=project_dir,
-                input_text=input_data,
-                with_profiles=with_profiles,
-                bind=bind,
-                pull=pull,
-                persist=persist,
                 on_left_out=left.extend,
+                **shipping,
             )
         except RemoteRunError as e:
             return RunRefusedError(e.kind, str(e)).envelope()
