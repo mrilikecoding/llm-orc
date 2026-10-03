@@ -295,11 +295,13 @@ reviewed". Docs: `docs/serving.md` "Finding remotes and preflighting
 them" and the `/preflight` paragraph; the CLI reference's three-step
 example and tools table.
 
-**Next: release 0.25.0 on the practitioner's go** (push at 0.24.0 first,
-wait for CI, then the bump; the tap bumps itself), deploy to the remote
-host, then the preflight row against it (`invoke hello-remote --remote
-mini --preflight` should answer the table, and the MCP
-`check_ensemble_runnable(remote="mini")` the same rows). The remote
+**Released as v0.25.0 and deployed to the remote host (2026-10-02, on
+the practitioner's go).** The preflight rows against it passed (spec,
+"Released as v0.25.0 and the remote rows"): `remotes` reads it at 0.25.0,
+`--preflight` answers the table (runnable; a missing role; runnable with
+`--bind`), and over stdio MCP the three steps list, check, run work in one
+session with no prior knowledge. The laptop's brew install is at 0.24.0
+until `brew upgrade llm-orchestra`. The remote
 delegation plan's arcs are done. What remains of #191 is the
 one-service shape; #205 (access levels) is where a serve would say what
 it permits before a client ships; #94 holds candidates for a `${...}`
@@ -307,8 +309,7 @@ dispatch. Owed, the practitioner's words: clean up the invalid library
 example ensembles (`neon-shadows-detective` carries a `conversation` key
 the schema refuses, and the loader warns on every listing from the
 checkout); and the packaged `web_searcher.py` not catching
-`DDGSException` (#196). Local `main` is ahead of `origin/main` by the
-Arc 6 merge and this State.
+`DDGSException` (#196). Local `main` equals `origin/main`.
 
 Tooling since the last handoff: `hooks/pre-commit` and `hooks/pre-push`
 are tracked and both run `make lint` (`make install-hooks`; `make setup`
