@@ -239,7 +239,23 @@ async def _call_remote(
         raise RemoteRunError(
             remote, f"could not reach {base_url}: {_first_leaf(e)}"
         ) from e
-    return accept(remote, response)
+    except Exception as e:
+        raise _unclassified(remote, base_url, e) from e
+    try:
+        return accept(remote, response)
+    except RemoteRunError:
+        raise
+    except Exception as e:
+        raise _unclassified(remote, base_url, e) from e
+
+
+def _unclassified(remote: str, base_url: str, error: Exception) -> RemoteRunError:
+    """Any other ``Exception`` from the request or the body parse (a body
+    nested too deep to parse, a URL the HTTP library cannot encode) is the
+    remote's error, one line, so no traceback reaches the caller."""
+    return RemoteRunError(
+        remote, f"the call to {base_url} failed: {_shown(_first_leaf(error))}"
+    )
 
 
 def _first_leaf(error: BaseException) -> str:
