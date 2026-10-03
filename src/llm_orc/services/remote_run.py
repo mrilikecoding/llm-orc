@@ -324,13 +324,42 @@ def _is_result(document: Any) -> bool:
 
 
 def _is_preflight(document: Any) -> bool:
-    """A report (a boolean ``runnable``) or a refusal envelope (an
-    ``error`` with a ``kind``)."""
+    """A report (a boolean ``runnable``, ``dependencies`` and ``bindings``
+    of the shapes the display prints) or a refusal envelope (an ``error``
+    with string ``kind`` and ``message`` and the same ``dependencies``)."""
     if not isinstance(document, dict):
         return False
     error = document.get("error")
-    return isinstance(document.get("runnable"), bool) or (
-        isinstance(error, dict) and isinstance(error.get("kind"), str)
+    if isinstance(error, dict) and isinstance(error.get("kind"), str):
+        return isinstance(error.get("message"), str) and _is_rows(
+            error.get("dependencies")
+        )
+    return (
+        isinstance(document.get("runnable"), bool)
+        and _is_rows(document.get("dependencies"))
+        and _is_bindings(document.get("bindings"))
+    )
+
+
+def _is_rows(rows: Any) -> bool:
+    return isinstance(rows, list) and all(_is_row(row) for row in rows)
+
+
+def _is_row(row: Any) -> bool:
+    return (
+        isinstance(row, dict)
+        and all(isinstance(row.get(key), str) for key in ("kind", "name", "status"))
+        and _is_strings(row.get("via"))
+    )
+
+
+def _is_strings(values: Any) -> bool:
+    return isinstance(values, list) and all(isinstance(v, str) for v in values)
+
+
+def _is_bindings(bindings: Any) -> bool:
+    return isinstance(bindings, dict) and all(
+        isinstance(k, str) and isinstance(v, str) for k, v in bindings.items()
     )
 
 
