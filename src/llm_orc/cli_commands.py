@@ -23,17 +23,30 @@ from llm_orc.cli_modules.utils.visualization import (
     run_streaming_execution,
 )
 from llm_orc.cli_modules.utils.visualization.refusal_display import (
+    display_preflight,
     display_refusal,
     display_run_record,
 )
 from llm_orc.cli_modules.utils.visualization.streaming import display_result
+from llm_orc.core.config.config_manager import (
+    ConfigurationManager,
+    resolve_global_config_dir,
+)
 from llm_orc.core.config.ensemble_config import EnsembleConfig
+from llm_orc.core.config.remotes import RemoteError, mask_password
 from llm_orc.services.closure_shipper import LeftOut
 from llm_orc.services.handlers.run_preparation import (
     RootNotFoundError,
     RunRefusedError,
 )
-from llm_orc.services.remote_run import RemoteRunError, run_remote
+from llm_orc.services.remote_probe import probe_remotes
+from llm_orc.services.remote_run import (
+    RemoteRunError,
+    clean,
+    cleaned_document,
+    preflight_remote,
+    run_remote,
+)
 
 WAIT_TICK_S = 1.0
 
@@ -375,6 +388,7 @@ def invoke_ensemble(
     remote: str | None = None,
     with_profiles: Sequence[str] = (),
     persist: str | None = None,
+    preflight: bool = False,
 ) -> bool:
     """Invoke an ensemble of agents.
 
@@ -388,6 +402,21 @@ def invoke_ensemble(
         uses this to set a non-zero process exit code in every output
         format (rich/text/json alike).
     """
+    if preflight:
+        return _preflight_invocation(
+            ensemble_name,
+            RemoteInvocation(
+                remote=remote,
+                input_data="",
+                config_dir=config_dir,
+                output_format=output_format,
+                max_concurrent=max_concurrent,
+                detailed=detailed,
+                bind=bind,
+                pull=pull,
+                with_profiles=with_profiles,
+            ),
+        )
     if remote is not None:
         return _invoke_remote(
             ensemble_name,
@@ -435,9 +464,10 @@ def invoke_ensemble(
 
 @dataclass(frozen=True)
 class RemoteInvocation:
-    """What ``invoke --remote`` was asked for."""
+    """What ``invoke --remote`` (or ``--preflight``, whose ``remote`` may be
+    None: a local gate) was asked for."""
 
-    remote: str
+    remote: str | None
     input_data: str
     config_dir: str | None
     output_format: str | None
@@ -449,13 +479,12 @@ class RemoteInvocation:
     persist: str | None = None
 
 
-def _invoke_remote(ensemble_name: str, invocation: RemoteInvocation) -> bool:
-    """Run the named local root on the remote and display its answer.
-
-    Refused before anything is sent: ``--max-concurrent`` (the request
-    has no place for it), an unknown remote, a closure that cannot ship
-    and an interactive script.
-    """
+def _remote_root(
+    ensemble_name: str, invocation: RemoteInvocation
+) -> tuple[Any, EnsembleConfig]:
+    """The service and the local root a remote call ships. Refused before
+    anything is sent: ``--max-concurrent`` (the request has no place for
+    it) and a root that is not a tier ensemble."""
     if invocation.max_concurrent is not None:
         raise click.ClickException(
             "--max-concurrent cannot be used with --remote: "
@@ -466,12 +495,25 @@ def _invoke_remote(ensemble_name: str, invocation: RemoteInvocation) -> bool:
     if root is None:
         # Only a tier root ships: a bundle is a stored request, not a file.
         raise _not_found(service, ensemble_name)
+    return service, root
+
+
+def _invoke_remote(ensemble_name: str, invocation: RemoteInvocation) -> bool:
+    """Run the named local root on the remote and display its answer.
+
+    Refused before anything is sent: ``--max-concurrent`` (the request
+    has no place for it), an unknown remote, a closure that cannot ship
+    and an interactive script.
+    """
+    remote = invocation.remote
+    assert remote is not None
+    service, root = _remote_root(ensemble_name, invocation)
     try:
-        with _waiting_on(invocation.remote, invocation.output_format):
+        with _waiting_on(remote, invocation.output_format):
             document = asyncio.run(
                 run_remote(
                     ensemble_name,
-                    invocation.remote,
+                    remote,
                     find_root=lambda _name: root,
                     config_manager=service.config_manager,
                     project_dir=service.project_path,
@@ -492,6 +534,99 @@ def _invoke_remote(ensemble_name: str, invocation: RemoteInvocation) -> bool:
     )
 
 
+def _preflight_invocation(ensemble_name: str, invocation: RemoteInvocation) -> bool:
+    """Gate the named root, here or on the remote, print the answer and run
+    nothing. Returns whether the answer is a failure."""
+    if invocation.remote is not None:
+        document = _preflight_on_remote(ensemble_name, invocation, invocation.remote)
+        return display_preflight(
+            _printable(document, invocation.output_format), invocation.output_format
+        )
+    service = _get_service()
+    request: dict[str, Any] = {"ensemble_name": ensemble_name}
+    if invocation.bind:
+        request["bind"] = dict(invocation.bind)
+    if invocation.pull:
+        request["pull"] = True
+    lookup = _root_lookup(service, ensemble_name, invocation.config_dir)
+    try:
+        document = asyncio.run(service.preflight_run(request, lookup))
+    except click.ClickException:
+        raise
+    except RootNotFoundError as e:
+        raise _not_found(service, e.name) from e
+    except Exception as e:
+        raise click.ClickException(f"Preflight failed: {e!s}") from e
+    return display_preflight(document, invocation.output_format)
+
+
+def _preflight_on_remote(
+    ensemble_name: str, invocation: RemoteInvocation, remote: str
+) -> dict[str, Any]:
+    service, root = _remote_root(ensemble_name, invocation)
+    try:
+        with _waiting_on(remote, invocation.output_format, "Checking"):
+            return asyncio.run(
+                preflight_remote(
+                    ensemble_name,
+                    remote,
+                    find_root=lambda _name: root,
+                    config_manager=service.config_manager,
+                    project_dir=service.project_path,
+                    with_profiles=invocation.with_profiles,
+                    bind=invocation.bind,
+                    pull=invocation.pull,
+                    on_left_out=_say_left_out,
+                )
+            )
+    except RemoteRunError as e:
+        raise click.ClickException(str(e)) from e
+    except KeyboardInterrupt:
+        raise SystemExit(130) from None
+
+
+def remotes_command(output_format: str | None) -> None:
+    """List the configured remotes, each with a live health probe. Exit 0
+    whether or not any answers; a malformed ``remotes`` key is an error."""
+    try:
+        rows = asyncio.run(probe_remotes(ConfigurationManager(provision=False)))
+    except RemoteError as e:
+        raise click.ClickException(str(e)) from e
+    if output_format == "json":
+        click.echo(json.dumps(rows, indent=2))
+        return
+    if not rows:
+        config_file = resolve_global_config_dir() / "config.yaml"
+        click.echo(
+            "No remotes are configured. Add a remotes: block to "
+            f"{config_file}:\n"
+            "  remotes:\n"
+            "    remote-host:\n"
+            "      url: https://llm-orc.remote.example"
+        )
+    for row in rows:
+        click.echo(_remote_line(row))
+
+
+def _remote_line(row: Mapping[str, Any]) -> str:
+    state = (
+        f"reachable, llm-orc {row['version']}"
+        if row["reachable"]
+        else f"unreachable: {row['error']}"
+    )
+    return f"{clean(row['name'])}  {clean(row['url'])}  {state}"
+
+
+def _printable(document: dict[str, Any], output_format: str | None) -> dict[str, Any]:
+    """The remote's document as it is printed: JSON mode prints it as it
+    came (the encoder escapes control characters), the other modes print
+    its strings stripped of them."""
+    if output_format == "json":
+        return document
+    cleaned: dict[str, Any] = cleaned_document(document)
+    return cleaned
+
+
 def _say_left_out(left_out: list[LeftOut]) -> None:
     """One line on stderr, in every output mode, naming what the remote
     must satisfy with its own copy. stdout stays the result alone."""
@@ -500,7 +635,9 @@ def _say_left_out(left_out: list[LeftOut]) -> None:
 
 
 @contextmanager
-def _waiting_on(remote: str, output_format: str | None) -> Iterator[None]:
+def _waiting_on(
+    remote: str, output_format: str | None, verb: str = "Running"
+) -> Iterator[None]:
     """In rich mode, the remote's name and the elapsed time on stderr
     while the run is out. Text and JSON modes print nothing, so a pipe
     stays clean."""
@@ -514,7 +651,7 @@ def _waiting_on(remote: str, output_format: str | None) -> Iterator[None]:
     def tick() -> None:
         while True:
             elapsed = time.monotonic() - started
-            line = f"Running on {remote}... {elapsed:.0f}s"
+            line = f"{verb} on {mask_password(remote)}... {elapsed:.0f}s"
             click.echo(
                 f"\r{line}" if interactive else line, err=True, nl=not interactive
             )
@@ -543,13 +680,14 @@ def _display_remote_document(
     status is "error"."""
     error = document.get("error")
     if isinstance(error, dict) and "kind" in error:
-        display_refusal(document, output_format)
+        display_refusal(_printable(document, output_format), output_format)
         return True
+    shown = _printable(document, output_format)
     display_run_record(
-        document.get("bindings") or {},
-        document.get("pulled") or [],
+        shown.get("bindings") or {},
+        shown.get("pulled") or [],
         output_format,
-        document.get("persisted"),
+        shown.get("persisted"),
     )
     return display_result(
         {"results": {}, "metadata": {}, **document},

@@ -38,6 +38,11 @@ from tests.unit.services.test_one_run_injection import (  # noqa: F401
 )
 
 REMOTE_URL = "https://llm-orc.remote.example"
+SERVED_PATHS = {
+    "/api/ensembles/execute",
+    "/api/ensembles/preflight",
+    "/health",
+}
 
 _MARK = (
     "import json, os, sys\n"
@@ -75,8 +80,10 @@ class _Recording(httpx.AsyncBaseTransport):
         self._calls = calls
 
     async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
-        self._calls.append((str(request.url), json.loads(request.content)))
-        assert str(request.url) == REMOTE_URL + "/api/ensembles/execute"
+        body = json.loads(request.content) if request.content else {}
+        self._calls.append((str(request.url), body))
+        assert request.url.path in SERVED_PATHS
+        assert str(request.url) == REMOTE_URL + request.url.path
         return await self._inner.handle_async_request(request)
 
 

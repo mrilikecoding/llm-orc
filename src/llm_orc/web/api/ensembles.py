@@ -5,6 +5,7 @@ Provides REST API for ensemble management, delegating to OrchestraService.
 
 import asyncio
 import contextlib
+from collections.abc import Coroutine
 from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Request, Response
@@ -48,6 +49,13 @@ class RunRequest(ExecuteRequest):
     persist: Literal["global"] | None = None
 
 
+class PreflightRequest(RunRequest):
+    """Request body for ``POST /api/ensembles/preflight``: the run request,
+    with ``input`` optional since nothing runs."""
+
+    input: str = ""
+
+
 class CreateEnsembleRequest(BaseModel):
     """Request body for ensemble creation."""
 
@@ -80,13 +88,20 @@ async def _wait_for_disconnect(http_request: Request) -> None:
 async def _invoke_while_connected(
     http_request: Request, request: dict[str, Any]
 ) -> dict[str, Any] | None:
-    """Run the request, cancelling it if the client goes away first.
+    """Run the request, cancelling it if the client goes away first."""
+    return await _while_connected(http_request, get_orchestra_service().invoke(request))
+
+
+async def _while_connected(
+    http_request: Request, work: Coroutine[Any, Any, dict[str, Any]]
+) -> dict[str, Any] | None:
+    """Await ``work``, cancelling it if the client goes away first.
 
     Returns the result, or None after a disconnect: nobody is listening,
     and cancelling the call is what kills the run's scripts and removes
     its layer.
     """
-    run = asyncio.create_task(get_orchestra_service().invoke(request))
+    run = asyncio.create_task(work)
     gone = asyncio.create_task(_wait_for_disconnect(http_request))
     try:
         await asyncio.wait({run, gone}, return_when=asyncio.FIRST_COMPLETED)
@@ -131,6 +146,22 @@ async def run_request(request: RunRequest, http_request: Request) -> Any:
     """
     result = await _invoke_while_connected(
         http_request, request.model_dump(exclude_none=True)
+    )
+    return result if result is not None else Response(status_code=CLIENT_CLOSED_REQUEST)
+
+
+@router.post("/preflight", response_model=dict[str, Any])
+async def preflight_request(request: PreflightRequest, http_request: Request) -> Any:
+    """Judge one run request without running it.
+
+    Answers ``runnable``, the ``dependencies`` rows over the run's view and
+    the ``bindings`` that would apply, or the refusal envelope (HTTP 200)
+    for an invalid request. Runs no agent, pulls nothing, keeps no artifact
+    and writes no bundle. A client that disconnects first cancels it.
+    """
+    result = await _while_connected(
+        http_request,
+        get_orchestra_service().preflight_run(request.model_dump(exclude_none=True)),
     )
     return result if result is not None else Response(status_code=CLIENT_CLOSED_REQUEST)
 
