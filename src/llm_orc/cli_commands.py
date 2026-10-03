@@ -42,6 +42,8 @@ from llm_orc.services.handlers.run_preparation import (
 from llm_orc.services.remote_probe import probe_remotes
 from llm_orc.services.remote_run import (
     RemoteRunError,
+    clean,
+    cleaned_document,
     preflight_remote,
     run_remote,
 )
@@ -537,7 +539,9 @@ def _preflight_invocation(ensemble_name: str, invocation: RemoteInvocation) -> b
     nothing. Returns whether the answer is a failure."""
     if invocation.remote is not None:
         document = _preflight_on_remote(ensemble_name, invocation, invocation.remote)
-        return display_preflight(document, invocation.output_format)
+        return display_preflight(
+            _printable(document, invocation.output_format), invocation.output_format
+        )
     service = _get_service()
     request: dict[str, Any] = {"ensemble_name": ensemble_name}
     if invocation.bind:
@@ -610,7 +614,17 @@ def _remote_line(row: Mapping[str, Any]) -> str:
         if row["reachable"]
         else f"unreachable: {row['error']}"
     )
-    return f"{row['name']}  {row['url']}  {state}"
+    return f"{clean(row['name'])}  {clean(row['url'])}  {state}"
+
+
+def _printable(document: dict[str, Any], output_format: str | None) -> dict[str, Any]:
+    """The remote's document as it is printed: JSON mode prints it as it
+    came (the encoder escapes control characters), the other modes print
+    its strings stripped of them."""
+    if output_format == "json":
+        return document
+    cleaned: dict[str, Any] = cleaned_document(document)
+    return cleaned
 
 
 def _say_left_out(left_out: list[LeftOut]) -> None:
@@ -666,7 +680,7 @@ def _display_remote_document(
     status is "error"."""
     error = document.get("error")
     if isinstance(error, dict) and "kind" in error:
-        display_refusal(document, output_format)
+        display_refusal(_printable(document, output_format), output_format)
         return True
     display_run_record(
         document.get("bindings") or {},

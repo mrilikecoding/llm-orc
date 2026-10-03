@@ -252,6 +252,95 @@ class TestAPreflightAnswerIsCheckedForShape:
         assert "not a preflight document" in result.stderr
 
 
+ESCAPE = "\x1b]0;pwned\x07"
+
+
+def _no_control_characters(text: str) -> None:
+    assert "\x1b" not in text
+    assert "\x07" not in text
+
+
+class TestTextModeStripsControlCharacters:
+    def _preflight(self, *extra: str) -> Result:
+        return CliRunner().invoke(
+            cli,
+            ["invoke", "top", "--remote", "remote-host", "--preflight", *extra],
+        )
+
+    def test_a_preflight_table_cell_from_the_remote(
+        self, in_project: Path, remotes: None, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _write_top(in_project)
+        row = {**ROW, "name": ESCAPE, "via": [ESCAPE], "status": ESCAPE}
+        document = {
+            "runnable": False,
+            "dependencies": [row],
+            "bindings": {ESCAPE: ESCAPE},
+        }
+        _canned(monkeypatch, Canned(200, json.dumps(document)))
+
+        result = self._preflight("--output-format", "text")
+
+        assert result.exit_code == 1, result.output
+        assert "pwned" in result.stdout
+        _no_control_characters(result.stdout)
+
+    def test_a_refusal_table_and_message_from_the_remote(
+        self, in_project: Path, remotes: None, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _write_top(in_project)
+        error = {
+            "kind": ESCAPE,
+            "message": ESCAPE,
+            "dependencies": [{**ROW, "name": ESCAPE}],
+        }
+        _canned(monkeypatch, Canned(200, json.dumps({"error": error})))
+
+        result = self._preflight("--output-format", "text")
+
+        assert result.exit_code == 1, result.output
+        assert "pwned" in result.stdout
+        _no_control_characters(result.stdout)
+
+    def test_a_refusal_to_a_run_from_the_remote(
+        self, in_project: Path, remotes: None, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _write_top(in_project)
+        error = {"kind": "not_equipped", "message": ESCAPE, "dependencies": [ROW]}
+        envelope = {"status": "error", "has_errors": True, "error": error}
+        _canned(monkeypatch, Canned(200, json.dumps(envelope)))
+
+        result = CliRunner().invoke(
+            cli,
+            [
+                "invoke",
+                "top",
+                "hi",
+                "--remote",
+                "remote-host",
+                "--output-format",
+                "text",
+            ],
+        )
+
+        assert result.exit_code == 1, result.output
+        assert "pwned" in result.stdout
+        _no_control_characters(result.stdout)
+
+    def test_a_probe_row_name_and_url_in_text_mode(
+        self, in_project: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _global_config({"remotes": {ESCAPE: {"url": "https://a.example/\x1b[2J"}}})
+        transport = httpx.MockTransport(lambda _: httpx.Response(200, text="x"))
+        monkeypatch.setattr(remote_run, "transport", transport)
+
+        result = CliRunner().invoke(cli, ["remotes", "--output-format", "text"])
+
+        assert result.exit_code == 0, result.output
+        assert "pwned" in result.stdout
+        _no_control_characters(result.stdout)
+
+
 def _one_remote_line(result: Result) -> None:
     assert result.exit_code == 1, result.output
     assert "Traceback" not in result.output

@@ -422,5 +422,23 @@ def _shown(value: Any) -> str:
     """Text from a remote as it reaches the terminal: runs of ASCII
     whitespace folded to one space, unprintable characters dropped,
     capped. The remote is not trusted not to send escape sequences."""
+    return clean(value)[:_SHOWN_BODY_CHARS]
+
+
+def clean(value: Any) -> str:
+    """``_shown`` without the cap: for a cell or a message that is shown
+    whole."""
     folded = _ASCII_WHITESPACE.sub(" ", str(value or "")).strip()
-    return "".join(c for c in folded if c.isprintable())[:_SHOWN_BODY_CHARS]
+    return "".join(c for c in folded if c.isprintable())
+
+
+def cleaned_document(value: Any) -> Any:
+    """``value`` with every string, keys included, passed through
+    ``clean``: a remote's document as text mode may print it."""
+    if isinstance(value, str):
+        return clean(value)
+    if isinstance(value, dict):
+        return {clean(k): cleaned_document(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [cleaned_document(v) for v in value]
+    return value
