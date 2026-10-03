@@ -50,6 +50,9 @@ llm-orc invoke code-review --bind seat=general --input "..."
 
 # Download a model that is listed but not yet pulled, then run
 llm-orc invoke code-review --pull --input "..."
+
+# Gate and print the full dependency table, run nothing (exit 0 if runnable)
+llm-orc invoke code-review --preflight
 ```
 
 ### Running an Ensemble on a Remote Serve
@@ -57,10 +60,16 @@ llm-orc invoke code-review --pull --input "..."
 `--remote` ships a local ensemble, its child ensembles and its scripts to
 another llm-orc serve as one request and prints the result as a local
 run's. Nothing is installed on the remote; everything injected is removed
-when the run ends.
+when the run ends. Three steps need no prior knowledge of the remote:
 
 ```bash
-# A name from `remotes:` in ~/.config/llm-orc/config.yaml, or a URL
+# 1. Which remotes are configured, and is each one up?
+llm-orc remotes
+
+# 2. What would the remote be missing for this ensemble? Runs nothing there.
+llm-orc invoke code-review --remote mini --preflight
+
+# 3. Run it (a name from `remotes:` in ~/.config/llm-orc/config.yaml, or a URL)
 llm-orc invoke code-review --remote mini --input "..."
 
 # Bind a role the remote lacks, or ship a local profile definition
@@ -194,7 +203,7 @@ mcp__llm-orc__list_ensembles        # See available ensembles
 | `llm-orc://artifact/{ensemble}/{id}` | Get individual artifact details |
 | `llm-orc://metrics/{ensemble}` | Get aggregated metrics (success rate, cost, duration) |
 
-#### Tools (25 Total)
+#### Tools
 
 **Core Execution**
 | Tool | Description |
@@ -209,7 +218,8 @@ mcp__llm-orc__list_ensembles        # See available ensembles
 | Tool | Description |
 |------|-------------|
 | `get_provider_status` | Show available providers and the local router's models |
-| `check_ensemble_runnable` | Preflight the ensemble's whole closure: per-dependency status and resolve hint |
+| `check_ensemble_runnable` | Preflight the ensemble's whole closure: per-dependency status and resolve hint; with `remote`, ship the closure and ask that remote (stdio server only) |
+| `list_remotes` | The configured remotes with a live health probe (stdio server only) |
 
 **Ensemble Management**
 | Tool | Description |
@@ -702,7 +712,11 @@ remotes:
 ```
 
 `--remote` takes a name from this map or a URL (`http` or `https`, with a
-host, no query or fragment).
+host, no query or fragment). `llm-orc remotes` lists the map with a live
+health probe of each entry (`--output-format json` for the rows). The MCP
+tools `list_remotes`, `check_ensemble_runnable(ensemble_name, remote=...)`
+and `invoke(ensemble_name, remote=...)` are the same three steps for an
+agent, on the stdio server (`llm-orc mcp serve`).
 
 ### Script Files Block
 
