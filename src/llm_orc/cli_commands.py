@@ -682,11 +682,12 @@ def _display_remote_document(
     if isinstance(error, dict) and "kind" in error:
         display_refusal(_printable(document, output_format), output_format)
         return True
+    shown = _printable(document, output_format)
     display_run_record(
-        document.get("bindings") or {},
-        document.get("pulled") or [],
+        shown.get("bindings") or {},
+        shown.get("pulled") or [],
         output_format,
-        document.get("persisted"),
+        shown.get("persisted"),
     )
     return display_result(
         {"results": {}, "metadata": {}, **document},

@@ -228,3 +228,41 @@ class TestAMalformedEntry:
 
         with pytest.raises(RemoteError, match="remotes"):
             resolve_remote("remote-host", _manager(tmp_path))
+
+
+class TestMaskPassword:
+    """A password is hidden wherever a URL is echoed, whatever the user
+    part looks like (review of the Arc 6 fix wave: an email-style user
+    name with its own ``@`` left the password in the clear)."""
+
+    @pytest.mark.parametrize(
+        ("url", "shown"),
+        [
+            ("https://user:pw@host", "https://user:***@host"),
+            ("https://me@x.com:secret@host", "https://me@x.com:***@host"),
+            ("https://user:p@ss@host", "https://user:***@host"),
+            ("https://user:pw@host/p@q", "https://user:***@host/p@q"),
+            ("https://host:8080/a@b", "https://host:8080/a@b"),
+            ("http://user@host", "http://user@host"),
+        ],
+    )
+    def test_the_password_and_only_the_password_is_hidden(
+        self, url: str, shown: str
+    ) -> None:
+        from llm_orc.core.config.remotes import mask_password
+
+        assert mask_password(url) == shown
+
+    @pytest.mark.parametrize(
+        "url", ["https://user:pa/ss@host", "https://u:p w@h", "https://u:p\tw@h"]
+    )
+    def test_a_refused_url_is_echoed_without_its_password(
+        self, tmp_path: Path, url: str
+    ) -> None:
+        config = _manager(tmp_path)
+        with pytest.raises(RemoteError) as caught:
+            resolve_remote(url, config)
+        text = str(caught.value)
+        for secret in ("pa/ss", "p w", "p\tw"):
+            assert secret not in text
+        assert "***" in text

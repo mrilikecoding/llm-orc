@@ -500,3 +500,109 @@ def _one_remote_line(result: Result) -> None:
     (error,) = [x for x in result.stderr.splitlines() if x.startswith("Error:")]
     assert "Remote 'remote-host'" in error
     assert result.stdout == ""
+
+
+class TestWhatTheFirstReviewLeftUnpinned:
+    """Pins from the re-review of the fix wave: the run-record lines in
+    text mode, a classified error kept whole, JSON mode byte-faithful,
+    the body cap's boundary."""
+
+    def test_a_remote_runs_record_lines_are_cleaned_in_text_mode(
+        self, in_project: Path, remotes: None, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _write_top(in_project)
+        document = {
+            "status": "success",
+            "has_errors": False,
+            "results": {},
+            "deliverable": "fine",
+            "bindings": {f"k{ESCAPE}": f"v{ESCAPE}"},
+            "pulled": [f"m{ESCAPE}"],
+            "persisted": f"p{ESCAPE}",
+        }
+        _canned(monkeypatch, Canned(200, json.dumps(document)))
+
+        result = CliRunner().invoke(
+            cli,
+            [
+                "invoke",
+                "top",
+                "hi",
+                "--remote",
+                "remote-host",
+                "--output-format",
+                "text",
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "Bundle persisted" in result.stdout
+        _no_control_characters(result.stdout)
+
+    def test_a_classified_error_keeps_its_status_code_and_full_message(
+        self, in_project: Path, remotes: None, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _write_top(in_project)
+        detail = "d" * 180
+        _canned(monkeypatch, Canned(405, json.dumps({"detail": detail})))
+
+        result = CliRunner().invoke(
+            cli, ["invoke", "top", "--remote", "remote-host", "--preflight"]
+        )
+
+        assert result.exit_code == 1
+        assert result.output.count("Remote 'remote-host'") == 1
+        assert "(405)" in result.output
+        assert detail in result.output
+        assert "older than 0.25.0" in result.output
+
+    def test_json_mode_prints_the_remotes_preflight_answer_byte_for_byte(
+        self, in_project: Path, remotes: None, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _write_top(in_project)
+        row = {**ROW, "name": f"a\nb{ESCAPE}", "detail": "x\ty"}
+        document = {"runnable": False, "dependencies": [row], "bindings": {}}
+        _canned(monkeypatch, Canned(200, json.dumps(document)))
+
+        result = CliRunner().invoke(
+            cli,
+            [
+                "invoke",
+                "top",
+                "--remote",
+                "remote-host",
+                "--preflight",
+                "--output-format",
+                "json",
+            ],
+        )
+
+        assert result.exit_code == 1, result.output
+        assert json.loads(result.stdout) == document
+
+    @pytest.mark.parametrize(
+        ("size", "reachable"),
+        [
+            (remote_probe.HEALTH_BODY_CAP, True),
+            (remote_probe.HEALTH_BODY_CAP + 1, False),
+        ],
+    )
+    def test_the_health_body_cap_is_inclusive(
+        self,
+        in_project: Path,
+        remotes: None,
+        monkeypatch: pytest.MonkeyPatch,
+        size: int,
+        reachable: bool,
+    ) -> None:
+        version = "1.0"
+        padding = size - len(json.dumps({"version": version, "pad": ""}))
+        body = json.dumps({"version": version, "pad": "x" * padding})
+        assert len(body) == size
+        transport = httpx.MockTransport(lambda _: httpx.Response(200, text=body))
+        monkeypatch.setattr(remote_run, "transport", transport)
+
+        result = CliRunner().invoke(cli, ["remotes", "--output-format", "json"])
+
+        rows = json.loads(result.stdout)
+        assert rows[0]["reachable"] is reachable
