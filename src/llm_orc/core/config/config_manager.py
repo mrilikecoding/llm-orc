@@ -355,8 +355,8 @@ class ConfigurationManager:
         point a run at a host the user did not configure.
 
         Raises:
-            RemoteError: ``remotes`` is not a mapping, or an entry has no
-                string ``url``.
+            RemoteError: ``remotes`` is not a mapping, a name contains
+                ``://``, or an entry has no string ``url``.
         """
         raw = self._load_global_config().get("remotes")
         if raw is None:
@@ -368,6 +368,11 @@ class ConfigurationManager:
             url = entry.get("url") if isinstance(entry, dict) else None
             if not isinstance(url, str) or not url:
                 raise RemoteError(f"Remote '{name}' needs a 'url' string")
+            if "://" in str(name):
+                raise RemoteError(
+                    f"Remote name '{name}' is malformed: a name is not a URL "
+                    "(it must not contain '://')"
+                )
             remotes[str(name)] = url.rstrip("/")
         return remotes
 

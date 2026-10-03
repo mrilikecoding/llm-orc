@@ -21,6 +21,8 @@ import yaml
 from click.testing import CliRunner, Result
 
 from llm_orc.cli import cli
+from llm_orc.core.config.config_manager import ConfigurationManager
+from llm_orc.core.config.remotes import RemoteError
 from llm_orc.services import remote_probe, remote_run
 from tests.unit.cli.test_invoke_remote import (  # noqa: F401
     REMOTE_URL,
@@ -339,6 +341,116 @@ class TestTextModeStripsControlCharacters:
         assert result.exit_code == 0, result.output
         assert "pwned" in result.stdout
         _no_control_characters(result.stdout)
+
+
+class TestANameIsNotAUrl:
+    def test_a_name_with_a_scheme_separator_is_malformed_and_probes_nothing(
+        self, in_project: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _global_config({"remotes": {"http://evil.example": {"url": REMOTE_URL}}})
+        seen: list[httpx.Request] = []
+
+        def handle(request: httpx.Request) -> httpx.Response:
+            seen.append(request)
+            return httpx.Response(200, json={"version": "1"})
+
+        monkeypatch.setattr(remote_run, "transport", httpx.MockTransport(handle))
+
+        result = CliRunner().invoke(cli, ["remotes", "--output-format", "json"])
+
+        assert result.exit_code == 1, result.output
+        assert "malformed" in result.output
+        assert seen == []
+
+    def test_the_config_manager_refuses_it(self, in_project: Path) -> None:
+        _global_config({"remotes": {"a://b": {"url": REMOTE_URL}}})
+
+        with pytest.raises(RemoteError, match="malformed"):
+            ConfigurationManager(provision=False).remotes()
+
+
+SECRET = "s3cret"
+MASKED = "http://user:***@a.example"
+WITH_USERINFO = f"http://user:{SECRET}@a.example"
+
+
+class TestUserinfoIsMasked:
+    @pytest.fixture
+    def configured(self, in_project: Path) -> None:
+        _global_config({"remotes": {"a": {"url": WITH_USERINFO}}})
+
+    @pytest.mark.parametrize("fmt", ["text", "json"])
+    def test_the_remotes_command_shows_the_password_masked(
+        self,
+        configured: None,
+        monkeypatch: pytest.MonkeyPatch,
+        fmt: str,
+    ) -> None:
+        transport = httpx.MockTransport(
+            lambda _: httpx.Response(200, json={"version": "1"})
+        )
+        monkeypatch.setattr(remote_run, "transport", transport)
+
+        result = CliRunner().invoke(cli, ["remotes", "--output-format", fmt])
+
+        assert result.exit_code == 0, result.output
+        assert SECRET not in result.output
+        assert MASKED in result.stdout
+
+    def test_list_remotes_rows_carry_the_masked_url(
+        self,
+        configured: None,
+        stdio_tool: ToolCall,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        transport = httpx.MockTransport(
+            lambda _: httpx.Response(200, json={"version": "1"})
+        )
+        monkeypatch.setattr(remote_run, "transport", transport)
+
+        result = stdio_tool("list_remotes", {})
+
+        assert SECRET not in json.dumps(result)
+        assert result["remotes"][0]["url"] == MASKED
+
+    def test_a_probe_error_that_echoes_the_url_is_masked(
+        self, in_project: Path
+    ) -> None:
+        _global_config({"remotes": {"a": {"url": f"ftp://user:{SECRET}@a.example"}}})
+
+        result = CliRunner().invoke(cli, ["remotes", "--output-format", "json"])
+
+        assert SECRET not in result.output
+        assert "ftp://user:***@a.example" in result.output
+
+    def test_the_ticker_line_and_a_connection_error_are_masked(
+        self, in_project: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _write_top(in_project)
+        _canned(monkeypatch, httpx.ConnectError("refused"))
+
+        result = CliRunner().invoke(
+            cli, ["invoke", "top", "hi", "--remote", WITH_USERINFO]
+        )
+
+        assert result.exit_code == 1, result.output
+        assert SECRET not in result.output
+        assert f"Running on {MASKED}... " in result.stderr
+        assert f"could not reach {MASKED}" in result.stderr
+
+    def test_a_refused_url_is_masked_in_the_message(
+        self, in_project: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _write_top(in_project)
+
+        result = CliRunner().invoke(
+            cli,
+            ["invoke", "top", "hi", "--remote", f"ftp://user:{SECRET}@a.example"],
+        )
+
+        assert result.exit_code == 1, result.output
+        assert SECRET not in result.output
+        assert "ftp://user:***@a.example" in result.output
 
 
 def _one_remote_line(result: Result) -> None:
