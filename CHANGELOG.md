@@ -5,6 +5,37 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.25.0] - 2026-10-02
+
+### Added
+- `llm-orc remotes` and the MCP tool `list_remotes` list the remotes
+  configured in the global `config.yaml`, each with a live probe of its
+  `GET /health` (reachable and version, or the error). One remote's
+  answer never fails the list. The tool exists on the stdio server; a
+  serve's own MCP endpoint does not relay.
+- `POST /api/ensembles/preflight` answers the dependency report for a
+  whole run request (the `/execute` body, `input` optional) without
+  running it: `runnable`, `dependencies`, the `bindings` that would
+  apply, and `pull_requested` when the request asked to pull. No agent
+  runs, nothing is pulled, no artifact is kept and no bundle is written.
+- `llm-orc invoke <ensemble> --preflight` gates and prints the full
+  dependency table, locally or with `--remote`, and runs nothing: exit 0
+  when runnable, 1 when not. `--preflight` with `--persist` is a usage
+  error.
+- The MCP `check_ensemble_runnable` tool takes `remote`, `bind`, `pull`
+  and `with_profiles`: with `remote` it ships the ensemble's closure and
+  asks that remote, returning the report plus `left_out`.
+- `get_help` and the CLI help describe remotes and the three steps:
+  list, preflight, run.
+
+### Changed
+- A remote URL may not hold whitespace or control characters, a query or
+  a fragment; a remote name may not contain `://`. A URL's password is
+  masked wherever a URL is echoed.
+- A remote's answer is accepted only in the shape the CLI prints, and
+  text mode strips control characters from anything a remote sent.
+- A 404 or 405 to a preflight says the remote may be older than 0.25.0.
+
 ## [0.24.0] - 2026-10-02
 
 ### Added
