@@ -1329,6 +1329,20 @@ are unmet; the legacy dict-dispatch MCP surface does not know `remote`
 or `list_remotes`; one gzip chunk can expand past the cap in memory
 before it is dropped.
 
+**Released as v0.25.0 and the remote rows (2026-10-02).** Pushed at
+0.24.0, CI green on six cells, then the bump and tag; PyPI, the GitHub
+release, the tap bumped by the repo's action; the remote host deployed
+with the homelab script, `/health` 0.25.0. From the laptop with its real
+config (`remotes: mini`): `llm-orc remotes` reads the host reachable at
+0.25.0; `invoke hello-remote --remote mini --preflight` answers
+`Preflight: runnable` with four ready rows, exit 0; the same root on a
+role the host lacks answers `not runnable` with the `missing_profile`
+row, and with `--bind` `runnable` with the binding named; the host's
+`runs/` and `bundles/` are empty after. Over stdio MCP: `list_remotes`,
+`check_ensemble_runnable(ensemble_name, remote="mini")` (runnable, four
+rows) and `invoke(..., remote="mini")` (`success`, the script answering
+from the host) in one session with no prior knowledge of the remote.
+
 ## Gates (every arc)
 
 Hermetic suite green, lint clean, mutant-red pins, a live row, and an
