@@ -279,10 +279,36 @@ is not run. Running the ensemble by name on the host, nothing shipped,
 fails the same way. A packaged-script defect, on #196, and the first
 thing to fix for the daily driver.
 
-The remote delegation plan's arcs are done. What remains of #191 is the
+**Arc 6 (remotes are discoverable) merged on local main (`ce43f4f3`,
+2026-10-02), not pushed.** Asked for by the practitioner after the first
+remote run from a fresh install: a new session finds the configured
+remotes (`llm-orc remotes`, MCP `list_remotes`, each with a live health
+probe), asks a remote what it lacks for a local ensemble without running
+it (`POST /api/ensembles/preflight`, `invoke --preflight`,
+`check_ensemble_runnable(remote=...)`), then runs; `get_help` and the
+CLI help say so. 20 commits; suite 5677 in about 77 s; two review rounds
+(one blocker each, both in the probe and error paths, both fixed and
+pinned); laptop live rows passed; against the remote host at 0.24.0 the
+probe reads it and a preflight gets a 405 with the hint that the remote
+is older than 0.25.0. Record in the spec, "Arc 6" and "Built and
+reviewed". Docs: `docs/serving.md` "Finding remotes and preflighting
+them" and the `/preflight` paragraph; the CLI reference's three-step
+example and tools table.
+
+**Next: release 0.25.0 on the practitioner's go** (push at 0.24.0 first,
+wait for CI, then the bump; the tap bumps itself), deploy to the remote
+host, then the preflight row against it (`invoke hello-remote --remote
+mini --preflight` should answer the table, and the MCP
+`check_ensemble_runnable(remote="mini")` the same rows). The remote
+delegation plan's arcs are done. What remains of #191 is the
 one-service shape; #205 (access levels) is where a serve would say what
 it permits before a client ships; #94 holds candidates for a `${...}`
-dispatch. Local `main` equals `origin/main`.
+dispatch. Owed, the practitioner's words: clean up the invalid library
+example ensembles (`neon-shadows-detective` carries a `conversation` key
+the schema refuses, and the loader warns on every listing from the
+checkout); and the packaged `web_searcher.py` not catching
+`DDGSException` (#196). Local `main` is ahead of `origin/main` by the
+Arc 6 merge and this State.
 
 Tooling since the last handoff: `hooks/pre-commit` and `hooks/pre-push`
 are tracked and both run `make lint` (`make install-hooks`; `make setup`
