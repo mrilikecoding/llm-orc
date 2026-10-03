@@ -33,7 +33,7 @@ from llm_orc.core.config.config_manager import (
     resolve_global_config_dir,
 )
 from llm_orc.core.config.ensemble_config import EnsembleConfig
-from llm_orc.core.config.remotes import RemoteError
+from llm_orc.core.config.remotes import RemoteError, mask_password
 from llm_orc.services.closure_shipper import LeftOut
 from llm_orc.services.handlers.run_preparation import (
     RootNotFoundError,
@@ -651,7 +651,7 @@ def _waiting_on(
     def tick() -> None:
         while True:
             elapsed = time.monotonic() - started
-            line = f"{verb} on {remote}... {elapsed:.0f}s"
+            line = f"{verb} on {mask_password(remote)}... {elapsed:.0f}s"
             click.echo(
                 f"\r{line}" if interactive else line, err=True, nl=not interactive
             )

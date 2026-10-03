@@ -25,7 +25,11 @@ import httpx
 
 from llm_orc.core.config.config_manager import ConfigurationManager
 from llm_orc.core.config.ensemble_config import EnsembleConfig
-from llm_orc.core.config.remotes import RemoteError, resolve_remote
+from llm_orc.core.config.remotes import (
+    RemoteError,
+    mask_password,
+    resolve_remote,
+)
 from llm_orc.core.execution.scripting.user_input_handler import (
     ScriptUserInputHandler,
 )
@@ -70,6 +74,8 @@ class RemoteRunError(RuntimeError):
         status_code: int | None = None,
         kind: str = REMOTE_ERROR,
     ) -> None:
+        remote = mask_password(remote)
+        detail = mask_password(detail)
         self.remote = remote
         self.kind = kind
         self.status_code = status_code
@@ -422,7 +428,7 @@ def _shown(value: Any) -> str:
     """Text from a remote as it reaches the terminal: runs of ASCII
     whitespace folded to one space, unprintable characters dropped,
     capped. The remote is not trusted not to send escape sequences."""
-    return clean(value)[:_SHOWN_BODY_CHARS]
+    return mask_password(clean(value))[:_SHOWN_BODY_CHARS]
 
 
 def clean(value: Any) -> str:

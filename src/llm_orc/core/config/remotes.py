@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import TYPE_CHECKING
 from urllib.parse import urlsplit
 
@@ -9,8 +10,21 @@ if TYPE_CHECKING:
     from llm_orc.core.config.config_manager import ConfigurationManager
 
 
+_PASSWORD = re.compile(r"(://[^/\s:@]*):[^/\s]*@")
+
+
+def mask_password(text: str) -> str:
+    """``text`` with the password of any ``scheme://user:password@`` in it
+    shown as ``***``, so a URL with credentials can be echoed."""
+    return _PASSWORD.sub(r"\1:***@", text)
+
+
 class RemoteError(ValueError):
-    """A remote value that cannot be resolved to a URL."""
+    """A remote value that cannot be resolved to a URL. The message never
+    carries a URL's password."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(mask_password(message))
 
 
 def resolve_remote(value: str, config: ConfigurationManager) -> str:

@@ -19,7 +19,7 @@ from typing import Any
 import httpx
 
 from llm_orc.core.config.config_manager import ConfigurationManager
-from llm_orc.core.config.remotes import RemoteError, resolve_remote
+from llm_orc.core.config.remotes import RemoteError, mask_password, resolve_remote
 from llm_orc.services.remote_run import (
     RemoteRunError,
     _first_leaf,
@@ -50,7 +50,11 @@ async def probe_remotes(config_manager: ConfigurationManager) -> list[dict[str, 
 async def _probe(
     name: str, url: str, config_manager: ConfigurationManager
 ) -> dict[str, Any]:
-    row: dict[str, Any] = {"name": name, "url": url, "reachable": False}
+    row: dict[str, Any] = {
+        "name": name,
+        "url": mask_password(url),
+        "reachable": False,
+    }
     try:
         return await asyncio.wait_for(
             _resolved_probe(row, name, config_manager), PROBE_DEADLINE_S
