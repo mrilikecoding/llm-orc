@@ -308,8 +308,10 @@ it permits before a client ships; #94 holds candidates for a `${...}`
 dispatch. Owed, the practitioner's words: clean up the invalid library
 example ensembles (`neon-shadows-detective` carries a `conversation` key
 the schema refuses, and the loader warns on every listing from the
-checkout); and the packaged `web_searcher.py` not catching
-`DDGSException` (#196). Local `main` equals `origin/main`.
+checkout). The packaged `web_searcher.py` now treats an empty `ddgs`
+result as a zero-count success and maps the other `ddgs` errors to the
+script's error payload (merged 2026-10-09, on #196); the mini gets it
+with the next release. Local `main` equals `origin/main`.
 
 Tooling since the last handoff: `hooks/pre-commit` and `hooks/pre-push`
 are tracked and both run `make lint` (`make install-hooks`; `make setup`
