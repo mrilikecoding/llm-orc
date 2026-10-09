@@ -195,3 +195,69 @@ def test_extract_query_empty_for_nothing_usable() -> None:
     """Nothing usable stays '' — main() emits missing_query."""
     assert extract_query({}) == ""
     assert extract_query(_envelope([])) == ""
+
+
+class TestDdgsExceptions:
+    """Issue #196: ddgs raises DDGSException("No results found.") for some
+    queries. An empty result is a normal outcome, so one empty query in a
+    fan-out must not fail the ensemble; other ddgs failures come back as
+    structured errors, not a traceback."""
+
+    @staticmethod
+    def _run(
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+        raises: Exception,
+    ) -> tuple[int, dict[str, Any]]:
+        import ddgs
+
+        class FakeDDGS:
+            def text(self, query: str, max_results: int) -> list[dict[str, str]]:
+                raise raises
+
+        monkeypatch.delenv("WEB_SEARCH_BACKEND", raising=False)
+        monkeypatch.setattr(ddgs, "DDGS", FakeDDGS)
+        monkeypatch.setattr(sys, "stdin", io.StringIO('{"query": "obscure"}'))
+        code = web_searcher.main()
+        return code, json.loads(capsys.readouterr().out)
+
+    def test_no_results_is_empty_success_with_note(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        from ddgs.exceptions import DDGSException
+
+        code, out = self._run(monkeypatch, capsys, DDGSException("No results found."))
+        assert code == 0
+        assert "error" not in out
+        assert out["results"] == []
+        assert out["result_count"] == 0
+        assert out["query"] == "obscure"
+        assert "no results" in out["note"].lower()
+
+    def test_rate_limit_is_structured_error(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        from ddgs.exceptions import RatelimitException
+
+        code, out = self._run(monkeypatch, capsys, RatelimitException("202 Ratelimit"))
+        assert code == 0
+        assert out["error"] == "rate_limited"
+        assert out["backend"] == "ddgs"
+        assert "Ratelimit" in out["detail"]
+
+    def test_other_ddgs_failure_is_structured_error(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        from ddgs.exceptions import DDGSException
+
+        code, out = self._run(monkeypatch, capsys, DDGSException("boom"))
+        assert code == 0
+        assert out["error"] == "backend_unavailable"
+        assert out["backend"] == "ddgs"
+        assert "boom" in out["detail"]
