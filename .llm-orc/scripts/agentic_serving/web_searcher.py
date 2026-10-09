@@ -59,6 +59,9 @@ DEFAULT_TIMEOUT_SECONDS = 30
 KAGI_TOKEN_ENV = "KAGI_API_TOKEN"
 TAVILY_KEY_ENV = "WEB_SEARCH_API_KEY"
 
+# ddgs signals an empty result by raising DDGSException with this message.
+DDGS_NO_RESULTS = "No results found"
+
 
 def _read_input() -> dict[str, Any]:
     """Read the dispatch JSON payload from stdin."""
@@ -188,8 +191,21 @@ def _search_ddgs(query: str, api_key: str) -> dict[str, Any]:
     signature is shared with other adapters for registry consistency.
     """
     from ddgs import DDGS
+    from ddgs.exceptions import DDGSException
 
-    raw_results = DDGS().text(query, max_results=DEFAULT_RESULT_COUNT)
+    try:
+        raw_results = DDGS().text(query, max_results=DEFAULT_RESULT_COUNT)
+    except DDGSException as exc:
+        if not str(exc).startswith(DDGS_NO_RESULTS):
+            raise
+        # An empty result is a normal outcome (#196), not a backend failure.
+        return {
+            "backend": "ddgs",
+            "query": query,
+            "result_count": 0,
+            "results": [],
+            "note": f"No results found for query: {query}",
+        }
 
     results: list[dict[str, str]] = []
     for entry in raw_results:
@@ -288,6 +304,15 @@ def _dispatch_adapter(
         _emit_error("backend_unavailable", backend, f"{type(exc).__name__}: {exc}")
     except json.JSONDecodeError as exc:
         _emit_error("backend_invalid_response", backend, f"JSON decode failure: {exc}")
+    except Exception as exc:  # noqa: BLE001 - map backend library errors
+        if type(exc).__module__.split(".")[0] != "ddgs":
+            raise
+        rate_limited = type(exc).__name__ == "RatelimitException"
+        _emit_error(
+            "rate_limited" if rate_limited else "backend_unavailable",
+            backend,
+            str(exc),
+        )
     return None
 
 
