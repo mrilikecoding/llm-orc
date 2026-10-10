@@ -83,6 +83,7 @@ class ModelFactory:
         response_format: str | dict[str, Any] | None = agent_config.get(
             "response_format"
         )
+        timeout_seconds: float | None = agent_config.get("timeout_seconds")
 
         # Check if model_profile is specified (takes precedence)
         # Use .get() truthy check: model_dump() includes None values as keys
@@ -93,6 +94,7 @@ class ModelFactory:
                 max_tokens=max_tokens,
                 agent_options=agent_options,
                 response_format=response_format,
+                timeout_seconds=timeout_seconds,
             )
 
         # Fall back to explicit model+provider
@@ -111,6 +113,7 @@ class ModelFactory:
             max_tokens=max_tokens,
             options=agent_options,
             response_format=response_format,
+            timeout_seconds=timeout_seconds,
         )
 
     async def _load_profile(
@@ -121,6 +124,7 @@ class ModelFactory:
         max_tokens: int | None = None,
         agent_options: dict[str, Any] | None = None,
         response_format: str | dict[str, Any] | None = None,
+        timeout_seconds: float | None = None,
     ) -> ModelInterface:
         """Load a named model profile — the one code path every profile
         load goes through, whether it is the agent's primary profile or a
@@ -144,6 +148,7 @@ class ModelFactory:
             max_tokens=max_tokens,
             options=merged_options,
             response_format=response_format,
+            timeout_seconds=timeout_seconds,
             base_url=base_url,
         )
 
@@ -156,6 +161,7 @@ class ModelFactory:
         max_tokens: int | None = None,
         options: dict[str, Any] | None = None,
         response_format: str | dict[str, Any] | None = None,
+        timeout_seconds: float | None = None,
         base_url: str | None = None,
     ) -> ModelInterface:
         """Load a model interface based on authentication configuration.
@@ -194,6 +200,7 @@ class ModelFactory:
                 max_tokens=max_tokens,
                 options=options,
                 response_format=response_format,
+                timeout_seconds=timeout_seconds,
                 base_url=base_url,
                 execution_id=self.execution_id,
             )
@@ -220,6 +227,7 @@ class ModelFactory:
         max_tokens: int | None = None,
         agent_options: dict[str, Any] | None = None,
         response_format: str | dict[str, Any] | None = None,
+        timeout_seconds: float | None = None,
     ) -> tuple[ModelInterface, str]:
         """Get a fallback model from the explicit fallback_model_profile chain.
 
@@ -257,6 +265,7 @@ class ModelFactory:
                 max_tokens=max_tokens,
                 agent_options=agent_options,
                 response_format=response_format,
+                timeout_seconds=timeout_seconds,
             )
             if agent_result:
                 return agent_result
@@ -268,6 +277,7 @@ class ModelFactory:
                 max_tokens=max_tokens,
                 agent_options=agent_options,
                 response_format=response_format,
+                timeout_seconds=timeout_seconds,
             )
             if chain_result:
                 return chain_result
@@ -285,6 +295,7 @@ class ModelFactory:
         max_tokens: int | None = None,
         agent_options: dict[str, Any] | None = None,
         response_format: str | dict[str, Any] | None = None,
+        timeout_seconds: float | None = None,
     ) -> tuple[ModelInterface, str] | None:
         """Try loading one named fallback profile — the same code path
         (``_load_profile``) a primary profile load uses, so this hop
@@ -302,6 +313,7 @@ class ModelFactory:
                 max_tokens=max_tokens,
                 agent_options=agent_options,
                 response_format=response_format,
+                timeout_seconds=timeout_seconds,
             )
             return model, profile_name
         except ModelConfigurationError:
@@ -323,6 +335,7 @@ class ModelFactory:
         max_tokens: int | None = None,
         agent_options: dict[str, Any] | None = None,
         response_format: str | dict[str, Any] | None = None,
+        timeout_seconds: float | None = None,
     ) -> tuple[ModelInterface, str] | None:
         """The first loadable candidate in ``original_profile``'s
         fallback_model_profile chain, or None if the chain is exhausted.
@@ -340,6 +353,7 @@ class ModelFactory:
             max_tokens=max_tokens,
             agent_options=agent_options,
             response_format=response_format,
+            timeout_seconds=timeout_seconds,
         ):
             return result
         return None
@@ -352,6 +366,7 @@ class ModelFactory:
         max_tokens: int | None = None,
         agent_options: dict[str, Any] | None = None,
         response_format: str | dict[str, Any] | None = None,
+        timeout_seconds: float | None = None,
     ) -> AsyncIterator[tuple[ModelInterface, str]]:
         """Yield every profile in ``original_profile``'s
         fallback_model_profile chain that successfully loads, in chain
@@ -385,6 +400,7 @@ class ModelFactory:
                     max_tokens=max_tokens,
                     agent_options=agent_options,
                     response_format=response_format,
+                    timeout_seconds=timeout_seconds,
                 )
                 yield model, fallback_profile_name
             except ModelConfigurationError:
@@ -405,6 +421,7 @@ class ModelFactory:
         max_tokens: int | None = None,
         agent_options: dict[str, Any] | None = None,
         response_format: str | dict[str, Any] | None = None,
+        timeout_seconds: float | None = None,
     ) -> AsyncIterator[tuple[ModelInterface, str]]:
         """Yield every loadable candidate in the explicit fallback chain,
         in the same priority order as ``get_fallback_model`` (agent-level
@@ -425,6 +442,7 @@ class ModelFactory:
                 max_tokens=max_tokens,
                 agent_options=agent_options,
                 response_format=response_format,
+                timeout_seconds=timeout_seconds,
             )
             if agent_result:
                 yield agent_result
@@ -436,6 +454,7 @@ class ModelFactory:
                 max_tokens=max_tokens,
                 agent_options=agent_options,
                 response_format=response_format,
+                timeout_seconds=timeout_seconds,
             ):
                 yield result
 
@@ -677,6 +696,7 @@ def _handle_no_authentication(
     response_format: str | dict[str, Any] | None = None,
     base_url: str | None = None,
     execution_id: str | None = None,
+    timeout_seconds: float | None = None,
 ) -> ModelInterface:
     """Handle cases when no authentication is configured.
 
@@ -706,6 +726,7 @@ def _handle_no_authentication(
             max_tokens=max_tokens,
             options=options,
             response_format=response_format,
+            timeout_seconds=timeout_seconds,
             execution_id=execution_id,
         )
     elif _is_openai_compatible(provider):
@@ -716,6 +737,7 @@ def _handle_no_authentication(
             max_tokens=max_tokens,
             options=options,
             response_format=response_format,
+            timeout_seconds=timeout_seconds,
             execution_id=execution_id,
         )
     elif provider:
@@ -737,6 +759,7 @@ def _handle_no_authentication(
             max_tokens=max_tokens,
             options=options,
             response_format=response_format,
+            timeout_seconds=timeout_seconds,
             execution_id=execution_id,
         )
 
@@ -750,6 +773,7 @@ def _create_api_key_model(
     max_tokens: int | None = None,
     base_url: str | None = None,
     execution_id: str | None = None,
+    timeout_seconds: float | None = None,
 ) -> ModelInterface:
     """Create model using API key authentication.
 
@@ -788,6 +812,7 @@ def _create_api_key_model(
             temperature=temperature,
             max_tokens=max_tokens,
             execution_id=execution_id,
+            timeout_seconds=timeout_seconds,
         )
     else:
         return ClaudeModel(
