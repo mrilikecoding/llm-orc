@@ -27,6 +27,15 @@ from llm_orc.schemas.agent_config import (
 logger = logging.getLogger(__name__)
 
 
+def _error_text(error: BaseException) -> str:
+    """The exception's own words, or its type when it has none.
+
+    ``str()`` of httpx's timeouts and of ``asyncio.TimeoutError`` is '',
+    and an agent that fails with ``error: ''`` cannot be diagnosed from
+    its envelope (remote host 2026-10-10)."""
+    return str(error) or type(error).__name__
+
+
 def _script_failure_error(response: str) -> str:
     """The error text a failed script agent's response names.
 
@@ -288,17 +297,18 @@ class AgentDispatcher:
         agent_name = agent_config.name
         agent_end_time = time.time()
 
+        message = _error_text(error)
         self._emit_event(
             "agent_completed",
             {
                 "agent_name": agent_name,
                 "timestamp": agent_end_time,
                 "duration_ms": 0,
-                "error": str(error),
+                "error": message,
             },
         )
 
         return agent_name, AgentResult(
             status="failed",
-            error=str(error),
+            error=message,
         )
