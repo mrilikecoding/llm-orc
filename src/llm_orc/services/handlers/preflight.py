@@ -20,6 +20,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from llm_orc.core.config.closure import Dependency
+from llm_orc.providers.llama_server import cache_entry_id
 
 _LLAMA_SERVER = "llama-server"
 _OPENAI_COMPATIBLE = "openai-compatible"
@@ -196,7 +197,11 @@ def _classify_llama_server(
             DependencyStatus.READY,
             f"model {model!r} listed by the router (no source to check)",
         )
-    if listed and source in info.get("cached", []):
+    if (
+        listed
+        and source is not None
+        and cache_entry_id(source) in info.get("cached", [])
+    ):
         return DependencyStatus.READY, f"model {model!r} listed; {source} cached"
     if listed and model in info.get("loaded", []):
         return (
