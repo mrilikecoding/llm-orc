@@ -99,6 +99,7 @@ class TestModelFactory:
                 max_tokens=None,
                 options=None,
                 response_format=None,
+                timeout_seconds=None,
                 base_url=None,
             )
             assert result is not None
@@ -126,6 +127,7 @@ class TestModelFactory:
                 max_tokens=None,
                 options=None,
                 response_format=None,
+                timeout_seconds=None,
             )
             assert result is not None
 
@@ -149,6 +151,7 @@ class TestModelFactory:
                 max_tokens=None,
                 options=None,
                 response_format=None,
+                timeout_seconds=None,
             )
             assert result is not None
 
@@ -177,6 +180,7 @@ class TestModelFactory:
                 max_tokens=500,
                 options=None,
                 response_format=None,
+                timeout_seconds=None,
             )
 
     async def test_load_model_from_agent_config_missing_model(
@@ -437,6 +441,7 @@ class TestModelFactory:
                 max_tokens=None,
                 options=None,
                 response_format=None,
+                timeout_seconds=None,
                 base_url=None,
             )
             assert isinstance(model, OpenAICompatibleModel)
@@ -476,6 +481,7 @@ class TestModelFactory:
                 max_tokens=None,
                 options=None,
                 response_format=None,
+                timeout_seconds=None,
                 base_url=None,
             )
             assert fallback_profile == "my-explicit-fallback"
@@ -524,6 +530,7 @@ class TestModelFactory:
                 max_tokens=None,
                 options=None,
                 response_format=None,
+                timeout_seconds=None,
                 base_url=None,
             )
             assert fallback_profile == "micro-local"
@@ -947,6 +954,7 @@ class TestOptionsPassThrough:
                 max_tokens=None,
                 options={"num_ctx": 8192, "top_k": 20},
                 response_format=None,
+                timeout_seconds=None,
             )
 
     async def test_load_model_from_agent_config_no_options(
@@ -964,6 +972,7 @@ class TestOptionsPassThrough:
                 max_tokens=None,
                 options=None,
                 response_format=None,
+                timeout_seconds=None,
             )
 
     async def test_load_model_from_agent_config_merges_profile_options(
@@ -995,6 +1004,7 @@ class TestOptionsPassThrough:
                 max_tokens=None,
                 options={"num_ctx": 8192, "top_k": 20, "top_p": 0.8},
                 response_format=None,
+                timeout_seconds=None,
                 base_url=None,
             )
 
@@ -1394,6 +1404,7 @@ class TestResponseFormatPassThrough:
                 max_tokens=None,
                 options=None,
                 response_format=schema,
+                timeout_seconds=None,
             )
 
     async def test_response_format_none_when_absent(
@@ -1411,6 +1422,7 @@ class TestResponseFormatPassThrough:
                 max_tokens=None,
                 options=None,
                 response_format=None,
+                timeout_seconds=None,
             )
 
     async def test_load_model_forwards_format_to_llama_server(
@@ -1422,6 +1434,7 @@ class TestResponseFormatPassThrough:
             "qwen3-14b",
             "llama-server",
             response_format=schema,
+            timeout_seconds=None,
         )
 
         assert isinstance(model, OpenAICompatibleModel)
@@ -1435,6 +1448,7 @@ class TestResponseFormatPassThrough:
             "qwen3-14b",
             "llama-server",
             response_format="json",
+            timeout_seconds=None,
         )
 
         assert isinstance(model, OpenAICompatibleModel)
@@ -1668,6 +1682,7 @@ class TestFallbackHopLoadsProfileConfig:
             max_tokens=222,
             agent_options={"top_k": 5},
             response_format="json",
+            timeout_seconds=None,
         )
 
         assert isinstance(model, OpenAICompatibleModel)
@@ -1786,3 +1801,51 @@ class TestIterFallbackChain:
         with pytest.raises(ValueError, match="Cycle detected in fallback chain"):
             async for _ in factory.iter_fallback_chain(original_profile="profile-a"):
                 pass
+
+
+class TestTimeoutSecondsPassThrough:
+    """Scenario: the agent's resolved budget reaches the local model, so the
+    HTTP read is bounded by the same number the dispatcher applies (#157;
+    remote host 2026-10-10)."""
+
+    @pytest.fixture
+    def factory(self) -> ModelFactory:
+        config_manager = Mock(spec=ConfigurationManager)
+        config_manager.resolve_model_profile.return_value = (
+            "qwen3-8b",
+            "llama-server",
+        )
+        config_manager.get_model_profile.return_value = {
+            "model": "qwen3-8b",
+            "provider": "llama-server",
+        }
+        credential_storage = Mock(spec=CredentialStorage)
+        credential_storage.get_auth_method.return_value = None
+        return ModelFactory(config_manager, credential_storage)
+
+    async def test_model_plus_provider_reaches_the_model(
+        self, factory: ModelFactory
+    ) -> None:
+        model = await factory.load_model_from_agent_config(
+            {"model": "qwen3-8b", "provider": "llama-server", "timeout_seconds": 900}
+        )
+        assert isinstance(model, OpenAICompatibleModel)
+        assert model._timeout_seconds == 900
+
+    async def test_profile_reaches_the_model(self, factory: ModelFactory) -> None:
+        model = await factory.load_model_from_agent_config(
+            {"model_profile": "cheap", "timeout_seconds": 900}
+        )
+        assert isinstance(model, OpenAICompatibleModel)
+        assert model._timeout_seconds == 900
+
+    async def test_fallback_hop_reaches_the_model(self, factory: ModelFactory) -> None:
+        """A fallback hop is one more request; it reads for the same budget."""
+        model, _ = await factory.get_fallback_model(
+            context="agent_x",
+            original_profile="primary",
+            agent_fallback_profile="cheap",
+            timeout_seconds=900,
+        )
+        assert isinstance(model, OpenAICompatibleModel)
+        assert model._timeout_seconds == 900
