@@ -331,6 +331,10 @@ class LlmAgentRunner:
         models and downstream code that still expects dicts (e.g.
         ModelFactory).
         """
+        return self._merged_config(agent_config)
+
+    def _merged_config(self, agent_config: AgentConfig) -> dict[str, Any]:
+        """The agent's config with its profile folded in (agent wins)."""
         config_dict = agent_config.model_dump()
 
         if isinstance(agent_config, LlmAgentConfig) and agent_config.model_profile:
