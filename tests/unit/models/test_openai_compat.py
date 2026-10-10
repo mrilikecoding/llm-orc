@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
+from llm_orc.models.base import HTTPConnectionPool
 from llm_orc.models.openai_compat import OpenAICompatibleModel
 
 
@@ -946,3 +947,108 @@ class TestOpenCodeGoSessionHeader:
 
         assert captured[0].headers["x-opencode-session"] == "exec-shared"
         assert captured[1].headers["x-opencode-session"] == "exec-shared"
+
+
+class TestRequestBudget:
+    """The agent's budget bounds the HTTP read.
+
+    The shared client reads for 180 s by default; a non-streaming compile
+    on a CPU seat took longer (remote host 2026-10-10: 23 tok/s prompt, a
+    5k-token input) and died there while the agent's own 900 s bound sat
+    unused, with ``str(ReadTimeout)`` == '' as the only record. Two
+    answers to "how long may this run" (cf. #157); the request now carries
+    the agent's, and a timeout says what it was.
+    """
+
+    def _ok(self) -> MagicMock:
+        response = MagicMock()
+        response.status_code = 200
+        response.json.return_value = {
+            "choices": [{"message": {"content": "ok"}}],
+            "usage": {"prompt_tokens": 1, "completion_tokens": 1},
+        }
+        return response
+
+    @pytest.mark.asyncio
+    async def test_generate_response_reads_for_the_budget(self) -> None:
+        model = OpenAICompatibleModel(
+            model_name="qwen3-8b",
+            base_url="http://127.0.0.1:8080/v1",
+            timeout_seconds=900,
+        )
+        mock_client = AsyncMock()
+        mock_client.post.return_value = self._ok()
+        with patch(
+            "llm_orc.models.openai_compat.HTTPConnectionPool.get_httpx_client",
+            return_value=mock_client,
+        ):
+            await model.generate_response("compile", role_prompt="x")
+        timeout = mock_client.post.call_args.kwargs["timeout"]
+        assert isinstance(timeout, httpx.Timeout)
+        assert timeout.read == 900
+
+    @pytest.mark.asyncio
+    async def test_generate_with_tools_reads_for_the_budget(self) -> None:
+        model = OpenAICompatibleModel(
+            model_name="qwen3-8b",
+            base_url="http://127.0.0.1:8080/v1",
+            timeout_seconds=900,
+        )
+        response = self._ok()
+        response.json.return_value["choices"][0]["finish_reason"] = "stop"
+        mock_client = AsyncMock()
+        mock_client.post.return_value = response
+        with patch(
+            "llm_orc.models.openai_compat.HTTPConnectionPool.get_httpx_client",
+            return_value=mock_client,
+        ):
+            await model.generate_with_tools(
+                messages=[{"role": "user", "content": "x"}], tools=[]
+            )
+        assert mock_client.post.call_args.kwargs["timeout"].read == 900
+
+    @pytest.mark.asyncio
+    async def test_no_budget_keeps_the_pool_default(self) -> None:
+        model = OpenAICompatibleModel(model_name="gpt-4o", api_key="k")
+        mock_client = AsyncMock()
+        mock_client.post.return_value = self._ok()
+        with patch(
+            "llm_orc.models.openai_compat.HTTPConnectionPool.get_httpx_client",
+            return_value=mock_client,
+        ):
+            await model.generate_response("hi", role_prompt="x")
+        assert "timeout" not in mock_client.post.call_args.kwargs
+
+    @pytest.mark.asyncio
+    async def test_timeout_names_the_model_and_the_budget(self) -> None:
+        model = OpenAICompatibleModel(
+            model_name="qwen3-8b",
+            base_url="http://127.0.0.1:8080/v1",
+            timeout_seconds=900,
+        )
+        mock_client = AsyncMock()
+        mock_client.post.side_effect = httpx.ReadTimeout("")
+        with (
+            patch(
+                "llm_orc.models.openai_compat.HTTPConnectionPool.get_httpx_client",
+                return_value=mock_client,
+            ),
+            pytest.raises(RuntimeError, match="qwen3-8b.*900 s"),
+        ):
+            await model.generate_response("compile", role_prompt="x")
+
+    def test_pool_timeout_replaces_only_read(self) -> None:
+        """The operator's connect, write and pool numbers stay."""
+        saved = HTTPConnectionPool._performance_config
+        HTTPConnectionPool.configure(
+            {"concurrency": {"request_timeout": {"connect": 3.0, "read": 180.0}}}
+        )
+        try:
+            default = HTTPConnectionPool.request_timeout()
+            budgeted = HTTPConnectionPool.request_timeout(read=900)
+        finally:
+            HTTPConnectionPool._performance_config = saved
+
+        assert (default.connect, default.read) == (3.0, 180.0)
+        assert (budgeted.connect, budgeted.read) == (3.0, 900)
+        assert (budgeted.write, budgeted.pool) == (default.write, default.pool)

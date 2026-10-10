@@ -59,7 +59,6 @@ class HTTPConnectionPool:
             # Get connection pool settings from configuration
             concurrency = config.get("concurrency", {})
             pool_config = concurrency.get("connection_pool", {})
-            timeout_config = concurrency.get("request_timeout", {})
 
             # Configure connection pooling for better performance
             limits = httpx.Limits(
@@ -68,28 +67,38 @@ class HTTPConnectionPool:
                 keepalive_expiry=pool_config.get("keepalive_expiry", 30.0),
             )
 
-            # Default read is sized for local tool-calling models
-            # (llama-server with qwen3 / llama3.1-tools style models)
-            # where a single orchestrator iteration routinely takes
-            # 30-80s. Operators deploying against faster remote
-            # providers can tune down via
-            # ``performance.concurrency.request_timeout.read``.
-            timeout = httpx.Timeout(
-                connect=timeout_config.get("connect", 10.0),
-                read=timeout_config.get("read", 180.0),
-                write=timeout_config.get("write", 10.0),
-                pool=timeout_config.get("pool", 5.0),
-            )
-
             cls._httpx_client = httpx.AsyncClient(
                 limits=limits,
-                timeout=timeout,
+                timeout=cls.request_timeout(),
                 headers={
                     "User-Agent": f"llm-orc/{__version__}",
                 },
             )
 
         return cls._httpx_client
+
+    @classmethod
+    def request_timeout(cls, read: float | None = None) -> Any:
+        """The pool's ``httpx.Timeout``, with ``read`` replaced when given.
+
+        One request may read for the agent's own budget
+        (``resolve_agent_timeout``); connect, write and pool stay the
+        operator's numbers. Without ``read`` this is the client default.
+        """
+        import httpx
+
+        config = (
+            cls._performance_config
+            if cls._performance_config is not None
+            else _DEFAULT_PERFORMANCE_CONFIG
+        )
+        timeout_config = config.get("concurrency", {}).get("request_timeout", {})
+        return httpx.Timeout(
+            connect=timeout_config.get("connect", 10.0),
+            read=timeout_config.get("read", 180.0) if read is None else read,
+            write=timeout_config.get("write", 10.0),
+            pool=timeout_config.get("pool", 5.0),
+        )
 
     @classmethod
     async def close(cls) -> None:
