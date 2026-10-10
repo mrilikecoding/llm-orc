@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.25.1] - 2026-10-10
+
+### Fixed
+- The packaged `web_searcher.py` treats a `ddgs` "No results found" as a
+  normal outcome: the ddgs backend returns `result_count: 0`, an empty
+  `results` list and a `note`, and the script exits 0, so one empty query
+  in a `research-dossier` fan-out no longer fails the whole ensemble.
+  Other `ddgs` failures are reported in the script's `{error, backend,
+  detail}` payload (`rate_limited` for a rate limit, `backend_unavailable`
+  otherwise) instead of escaping as a traceback (#196).
+
 ## [0.25.0] - 2026-10-02
 
 ### Added
