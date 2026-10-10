@@ -13,6 +13,7 @@ import pytest
 from llm_orc.providers.llama_server import (
     LlamaServerClient,
     LlamaServerSupervisor,
+    cache_entry_id,
     install_signal_stop,
     render_preset,
     start_router_from_config,
@@ -482,6 +483,26 @@ class TestClientModelList:
             models = client.models()
 
         assert [m["id"] for m in models] == ["qwen3-8b"]
+
+
+class TestCacheEntryId:
+    """The router spells a cache entry after the file's last ``[-.]``
+    segment, uppercased (llama.cpp ``get_gguf_split_info``)."""
+
+    @pytest.mark.parametrize(
+        ("hf_repo", "listed"),
+        [
+            ("unsloth/Qwen3-8B-GGUF:Q4_K_M", "unsloth/Qwen3-8B-GGUF:Q4_K_M"),
+            (
+                "unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ4_XS",
+                "unsloth/Qwen3.6-35B-A3B-GGUF:IQ4_XS",
+            ),
+            ("unsloth/Qwen3-8B-GGUF:q4_k_m", "unsloth/Qwen3-8B-GGUF:Q4_K_M"),
+            ("unsloth/Qwen3-8B-GGUF", "unsloth/Qwen3-8B-GGUF"),
+        ],
+    )
+    def test_matches_the_routers_listing(self, hf_repo: str, listed: str) -> None:
+        assert cache_entry_id(hf_repo) == listed
 
 
 class TestInstallSignalStop:
