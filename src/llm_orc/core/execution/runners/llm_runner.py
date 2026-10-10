@@ -13,6 +13,7 @@ from llm_orc.core.execution.orchestration import Agent
 from llm_orc.core.execution.usage_collector import (
     UsageCollector,
 )
+from llm_orc.core.execution.utils import resolve_agent_timeout
 from llm_orc.core.models.model_factory import (
     ModelConfigurationError,
     ModelFactory,
@@ -31,12 +32,14 @@ class LlmAgentRunner:
         usage_collector: UsageCollector,
         emit_event: Callable[[str, dict[str, Any]], None],
         classify_failure: Callable[[str], str],
+        performance_config: dict[str, Any] | None = None,
     ) -> None:
         self._model_factory = model_factory
         self._config_manager = config_manager
         self._usage_collector = usage_collector
         self._emit_event = emit_event
         self._classify_failure = classify_failure
+        self._performance_config = performance_config or {}
 
     async def execute(
         self,
@@ -83,6 +86,10 @@ class LlmAgentRunner:
         """
         try:
             config_dict = agent_config.model_dump()
+            # Fill the resolved bound in rather than leaving the dumped
+            # None, so the HTTP read is bounded by the same number the
+            # dispatcher applies as its outer timeout (#157).
+            config_dict["timeout_seconds"] = self._agent_budget(agent_config)
             model = await self._model_factory.load_model_from_agent_config(config_dict)
             return model, False
         except ModelConfigurationError:
@@ -105,21 +112,32 @@ class LlmAgentRunner:
             return None, None
         return agent_config.model_profile, agent_config.fallback_model_profile
 
+    def _agent_budget(self, agent_config: AgentConfig) -> int:
+        """Seconds this agent may run (``resolve_agent_timeout`` over the
+        profile-merged config): the one number for the dispatcher's outer
+        bound and for the request's read timeout."""
+        return resolve_agent_timeout(
+            self._merged_config(agent_config), self._performance_config
+        )
+
     def _generation_params(self, agent_config: AgentConfig) -> dict[str, Any]:
         """The agent-level generation params (SF2) carried into whichever
         fallback profile loads, the same way they reach a primary load."""
+        budget = self._agent_budget(agent_config)
         if not isinstance(agent_config, LlmAgentConfig):
             return {
                 "temperature": None,
                 "max_tokens": None,
                 "agent_options": None,
                 "response_format": None,
+                "timeout_seconds": budget,
             }
         return {
             "temperature": agent_config.temperature,
             "max_tokens": agent_config.max_tokens,
             "agent_options": agent_config.options,
             "response_format": agent_config.response_format,
+            "timeout_seconds": budget,
         }
 
     async def _handle_model_loading_fallback(
