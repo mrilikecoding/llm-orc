@@ -276,3 +276,35 @@ class TestListedScriptFiles:
 
         assert status == DependencyStatus.MISSING_SCRIPT
         assert "not valid TOML" in detail
+
+
+def test_cached_matches_the_routers_spelling_of_a_hyphenated_tag() -> None:
+    """The router names a cache entry after the file's last ``[-.]``
+    segment, uppercased (llama.cpp ``get_gguf_split_info``), so a profile's
+    ``:UD-IQ4_XS`` is listed as ``:IQ4_XS``. Seen on the remote host
+    2026-10-10: the file was on disk, preflight said pullable, execute
+    refused with not_equipped after every router restart."""
+    providers = {
+        "llama-server": {
+            "available": True,
+            "models": ["qwen3.6-35b-a3b"],
+            "cached": ["unsloth/Qwen3.6-35B-A3B-GGUF:IQ4_XS"],
+            "loaded": [],
+            "sources": {"qwen3.6-35b-a3b": "unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ4_XS"},
+        }
+    }
+    profiles = {
+        "ud": {
+            "provider": "llama-server",
+            "model": "qwen3.6-35b-a3b",
+            "hf_repo": "unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ4_XS",
+        }
+    }
+    [report] = classify_dependencies(
+        [Dependency("profile", "ud", ("top.a",), provider="llama-server", found=True)],
+        profiles=profiles,
+        providers=providers,
+        script_found=lambda _: False,
+    )
+    assert report.status is DependencyStatus.READY
+    assert "cached" in report.detail

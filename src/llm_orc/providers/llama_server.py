@@ -10,6 +10,7 @@ project knows how a model gets onto the box.
 
 import json
 import os
+import re
 import signal
 import subprocess
 import tempfile
@@ -195,6 +196,22 @@ def _is_cache_entry(model: Mapping[str, Any]) -> bool:
     is the signal, not the newer ``source`` field."""
     model_id = str(model.get("id", ""))
     return model_id != "default" and "/" in model_id
+
+
+def cache_entry_id(hf_repo: str) -> str:
+    """The id the router gives the cached file an ``hf_repo`` names.
+
+    llama.cpp builds it from the GGUF filename, not from the tag that
+    fetched it: the tag is the stem's last ``[-.]``-separated segment,
+    uppercased (``get_gguf_split_info`` in common/download.cpp, b10964).
+    So ``unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ4_XS`` is listed as
+    ``unsloth/Qwen3.6-35B-A3B-GGUF:IQ4_XS`` (remote host, 2026-10-10).
+    A tag-less repo is left as is; the router picks the file then."""
+    repo, sep, tag = hf_repo.partition(":")
+    if not sep or not tag:
+        return hf_repo
+    segment = re.split(r"[-.]", tag)[-1]
+    return f"{repo}:{segment.upper()}"
 
 
 def model_status(model: Mapping[str, Any]) -> str | None:
