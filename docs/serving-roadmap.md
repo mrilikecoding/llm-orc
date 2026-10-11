@@ -331,8 +331,11 @@ profile's `hf_repo` with the router's cache list through
 `cache_entry_id`, because llama.cpp names a cache entry after the
 filename's last `[-.]` segment (`UD-IQ4_XS` is listed as `IQ4_XS`); the
 35B seat had read as pullable after every router restart and execute
-refused it while the file was on disk. Neither is pushed; a release is
-owed so the remote host gets both.
+refused it while the file was on disk. Released as v0.25.2 on
+2026-10-10 and deployed to the remote host: after the restart both seats
+read cached with nothing loaded, and `research-dossier` ran by name to
+`status: success` for the first time there (550 s; the compiler took
+517 s on the 8B seat). Local `main` equals `origin/main`.
 
 Tooling since the last handoff: `hooks/pre-commit` and `hooks/pre-push`
 are tracked and both run `make lint` (`make install-hooks`; `make setup`
