@@ -5,6 +5,7 @@ import json
 from typing import Any, cast
 from unittest.mock import AsyncMock, Mock, patch
 
+import httpx
 import pytest
 
 from llm_orc.core.execution.phases.agent_dispatcher import AgentDispatcher
@@ -351,3 +352,38 @@ class TestScriptAgentFailureShape:
 
         result = results["writer"]
         assert result.status == "success"
+
+
+class TestFailureAlwaysHasAReadableError:
+    """``str(exc)`` is '' for httpx's timeouts and for asyncio.TimeoutError,
+    and the envelope recorded exactly that (remote host 2026-10-10:
+    ``compiler`` failed with ``error: ''`` after 180 s). An agent failure
+    carries the exception's own words when it has any, its type when it
+    has none."""
+
+    @pytest.mark.asyncio
+    async def test_empty_message_falls_back_to_the_exception_type(self) -> None:
+        dispatcher = _make_dispatcher()
+        coordinator = cast(AsyncMock, dispatcher._execution_coordinator)
+        coordinator.execute_agent_with_timeout = AsyncMock(
+            side_effect=httpx.ReadTimeout("")
+        )
+        agent = LlmAgentConfig(name="compiler", model_profile="cheap")
+
+        results = await dispatcher.execute_agents_in_phase([agent], "test input")
+
+        assert results["compiler"].status == "failed"
+        assert results["compiler"].error == "ReadTimeout"
+
+    @pytest.mark.asyncio
+    async def test_a_message_is_kept_as_is(self) -> None:
+        dispatcher = _make_dispatcher()
+        coordinator = cast(AsyncMock, dispatcher._execution_coordinator)
+        coordinator.execute_agent_with_timeout = AsyncMock(
+            side_effect=RuntimeError("qwen3-8b did not answer within 900 s")
+        )
+        agent = LlmAgentConfig(name="compiler", model_profile="cheap")
+
+        results = await dispatcher.execute_agents_in_phase([agent], "test input")
+
+        assert results["compiler"].error == "qwen3-8b did not answer within 900 s"

@@ -4,6 +4,8 @@ import time
 from typing import Any
 from urllib.parse import urlparse
 
+import httpx
+
 from llm_orc.models.base import (
     HTTPConnectionPool,
     ModelInterface,
@@ -53,6 +55,7 @@ class OpenAICompatibleModel(ModelInterface):
         options: dict[str, Any] | None = None,
         response_format: str | dict[str, Any] | None = None,
         execution_id: str | None = None,
+        timeout_seconds: float | None = None,
     ) -> None:
         super().__init__(temperature=temperature, max_tokens=max_tokens)
         self.model_name = model_name
@@ -61,6 +64,39 @@ class OpenAICompatibleModel(ModelInterface):
         self._options = options
         self._response_format = response_format
         self._execution_id = execution_id
+        self._timeout_seconds = timeout_seconds
+
+    async def _post_chat_completion(
+        self, headers: dict[str, str], body: dict[str, Any]
+    ) -> Any:
+        """One ``/chat/completions`` call, read for the agent's budget.
+
+        The shared client reads for the operator's default (180 s). An
+        agent with its own ``timeout_seconds`` reads for that instead: on a
+        CPU seat a non-streaming compile legitimately takes minutes, and
+        the one bound that can stop the request has to be the agent's, not
+        a second, hidden one (#157's rule applied to HTTP; remote host
+        2026-10-10). httpx raises its timeouts with an empty message, so
+        the error here says what ran out.
+        """
+        client = HTTPConnectionPool.get_httpx_client()
+        kwargs: dict[str, Any] = {"headers": headers, "json": body}
+        if self._timeout_seconds is not None:
+            kwargs["timeout"] = HTTPConnectionPool.request_timeout(
+                read=self._timeout_seconds
+            )
+        try:
+            return await client.post(f"{self.base_url}/chat/completions", **kwargs)
+        except httpx.TimeoutException as e:
+            budget = (
+                f"{self._timeout_seconds:g} s"
+                if self._timeout_seconds is not None
+                else "the client's read timeout"
+            )
+            raise RuntimeError(
+                f"{self.model_name} at {self.base_url} did not answer within "
+                f"{budget} ({type(e).__name__})"
+            ) from e
 
     def _apply_options(self, body: dict[str, Any]) -> None:
         """Fold provider options into the request body.
@@ -141,12 +177,7 @@ class OpenAICompatibleModel(ModelInterface):
             body["max_tokens"] = self.max_tokens
         self._apply_options(body)
 
-        client = HTTPConnectionPool.get_httpx_client()
-        response = await client.post(
-            f"{self.base_url}/chat/completions",
-            headers=headers,
-            json=body,
-        )
+        response = await self._post_chat_completion(headers, body)
 
         if response.status_code != 200:
             raise RuntimeError(
@@ -202,12 +233,7 @@ class OpenAICompatibleModel(ModelInterface):
             body["max_tokens"] = self.max_tokens
         self._apply_options(body)
 
-        client = HTTPConnectionPool.get_httpx_client()
-        response = await client.post(
-            f"{self.base_url}/chat/completions",
-            headers=headers,
-            json=body,
-        )
+        response = await self._post_chat_completion(headers, body)
 
         if response.status_code != 200:
             # Per-model tool-calling unsupported: distinguish from generic

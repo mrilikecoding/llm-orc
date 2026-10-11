@@ -303,6 +303,7 @@ class EnsembleExecutor:
             self._usage_collector,
             self._emit_performance_event,
             classify_failure_type,
+            performance_config=self._performance_config,
         )
 
         depth_limit = int(

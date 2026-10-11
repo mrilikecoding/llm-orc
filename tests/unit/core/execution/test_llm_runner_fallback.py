@@ -68,6 +68,7 @@ class TestModelLoadingFallbackWiring:
             max_tokens=None,
             agent_options=None,
             response_format=None,
+            timeout_seconds=60,
         )
 
     @pytest.mark.asyncio
@@ -327,3 +328,81 @@ class TestRuntimeFallbackWiring:
 
         assert exc_info.value is config_error
         assert exc_info.value.__cause__ is primary_error
+
+
+class TestBudgetReachesTheModel:
+    """The runner fills ``timeout_seconds`` in with the resolved budget
+    before loading, as the script runner does for its subprocess (#157):
+    the HTTP read is then bounded by the same number the dispatcher
+    applies outside. Remote host 2026-10-10: a compile died at the
+    client's 180 s while the agent had 900."""
+
+    def _runner(
+        self,
+        model_factory: Mock,
+        profiles: dict[str, dict[str, object]],
+        performance_config: dict[str, object] | None = None,
+    ) -> LlmAgentRunner:
+        config_manager = Mock()
+        config_manager.get_model_profiles.return_value = profiles
+        return LlmAgentRunner(
+            model_factory=model_factory,
+            config_manager=config_manager,
+            usage_collector=UsageCollector(),
+            emit_event=lambda _n, _d: None,
+            classify_failure=lambda _e: "unknown",
+            performance_config=performance_config,
+        )
+
+    def _factory(self) -> Mock:
+        model = AsyncMock()
+        model.model_name = "m"
+        model.generate_response.return_value = "ok"
+        factory = Mock()
+        factory.load_model_from_agent_config = AsyncMock(return_value=model)
+        return factory
+
+    @pytest.mark.asyncio
+    async def test_agent_timeout_wins(self) -> None:
+        factory = self._factory()
+        runner = self._runner(factory, {"p": {"timeout_seconds": 300}})
+        await runner.execute(
+            LlmAgentConfig(name="a", model_profile="p", timeout_seconds=900), "in"
+        )
+        config = factory.load_model_from_agent_config.call_args.args[0]
+        assert config["timeout_seconds"] == 900
+
+    @pytest.mark.asyncio
+    async def test_profile_timeout_when_the_agent_has_none(self) -> None:
+        factory = self._factory()
+        runner = self._runner(factory, {"p": {"timeout_seconds": 300}})
+        await runner.execute(LlmAgentConfig(name="a", model_profile="p"), "in")
+        config = factory.load_model_from_agent_config.call_args.args[0]
+        assert config["timeout_seconds"] == 300
+
+    @pytest.mark.asyncio
+    async def test_operator_default_when_neither_sets_one(self) -> None:
+        factory = self._factory()
+        runner = self._runner(
+            factory, {"p": {}}, {"execution": {"default_timeout": 45}}
+        )
+        await runner.execute(LlmAgentConfig(name="a", model_profile="p"), "in")
+        config = factory.load_model_from_agent_config.call_args.args[0]
+        assert config["timeout_seconds"] == 45
+
+    @pytest.mark.asyncio
+    async def test_fallback_hop_gets_the_same_budget(self) -> None:
+        factory = self._factory()
+        factory.load_model_from_agent_config = AsyncMock(
+            side_effect=Exception("primary load failed")
+        )
+        fallback = AsyncMock()
+        fallback.model_name = "f"
+        fallback.generate_response.return_value = "ok"
+        factory.get_fallback_model = AsyncMock(return_value=(fallback, "fb"))
+        runner = self._runner(factory, {"p": {"timeout_seconds": 300}})
+        await runner.execute(
+            LlmAgentConfig(name="a", model_profile="p", fallback_model_profile="fb"),
+            "in",
+        )
+        assert factory.get_fallback_model.call_args.kwargs["timeout_seconds"] == 300
