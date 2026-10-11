@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- An agent's `timeout_seconds` now bounds the HTTP read of its
+  OpenAI-compatible (llama-server) requests. The shared client's 180 s
+  read default had cut off long non-streaming generations on slow seats
+  while the agent's own budget sat unused; the operator's connect, write
+  and pool timeouts are unchanged. A request that runs out of budget
+  fails with a message naming the model, the endpoint and the budget.
+- A failed agent never records an empty `error`: when an exception has
+  no message (httpx timeouts, `asyncio.TimeoutError`) the envelope
+  carries its type.
+- Preflight recognises a cached llama-server source whose `hf_repo` tag
+  the router spells differently. llama.cpp names a cache entry after the
+  GGUF filename's last `-`/`.` segment, so `unsloth/...:UD-IQ4_XS` is
+  listed as `unsloth/...:IQ4_XS`; the exact string comparison called such
+  a seat pullable after every router restart and `/execute` refused it
+  with `not_equipped` while the file was on disk.
+
 ## [0.25.1] - 2026-10-10
 
 ### Fixed
