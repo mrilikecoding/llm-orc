@@ -310,8 +310,29 @@ example ensembles (`neon-shadows-detective` carries a `conversation` key
 the schema refuses, and the loader warns on every listing from the
 checkout). The packaged `web_searcher.py` now treats an empty `ddgs`
 result as a zero-count success and maps the other `ddgs` errors to the
-script's error payload (merged 2026-10-09, on #196); the mini gets it
-with the next release. Local `main` equals `origin/main`.
+script's error payload (merged 2026-10-09, on #196); released as
+v0.25.1 on 2026-10-10 and deployed to the remote host. The dossier's
+searches then succeeded and its `compiler` failed at 180.01 s with
+`error: ''`: the shared httpx client read for 180 s regardless of the
+agent's 900 s `timeout_seconds` (two answers to "how long may this agent
+take", the rule `resolve_agent_timeout` exists to forbid, #157), and
+`str()` of httpx's timeouts is empty. Measured on the remote host:
+qwen3-8b does prompt at 22.9 tok/s and generation at 3.2 tok/s, so a
+non-streaming 5k-token compile cannot return in 180 s. Merged
+2026-10-10 (`f8b38777`): the LLM runner fills `timeout_seconds` with the
+resolved budget, the factory carries it to `OpenAICompatibleModel`, each
+chat-completion request reads for it (`HTTPConnectionPool.request_timeout`
+keeps the operator's connect/write/pool), a timeout is re-raised naming
+the model and the budget, and the dispatcher records an exception's type
+when its message is empty. Pinned by a chain test (local server, pool
+read 0.2 s, agent budget decides) that fails on the previous code with
+the field's empty message. Also merged (`314d2bdd`): preflight compares a
+profile's `hf_repo` with the router's cache list through
+`cache_entry_id`, because llama.cpp names a cache entry after the
+filename's last `[-.]` segment (`UD-IQ4_XS` is listed as `IQ4_XS`); the
+35B seat had read as pullable after every router restart and execute
+refused it while the file was on disk. Neither is pushed; a release is
+owed so the remote host gets both.
 
 Tooling since the last handoff: `hooks/pre-commit` and `hooks/pre-push`
 are tracked and both run `make lint` (`make install-hooks`; `make setup`
