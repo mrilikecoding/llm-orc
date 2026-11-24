@@ -17,17 +17,17 @@ updated: 2025-12-05
 
 ### 1.1 Primary Question
 
-> Can a swarm of small local models (< 7B parameters), augmented with script-based validation and retry mechanisms, achieve comparable extraction accuracy to a single foundation model (Claude) for structured document analysis tasks?
+> Can a swarm of small local models (< 7B parameters), augmented with script-based validation and retry mechanisms, achieve comparable extraction accuracy to a single foundation model (hosted) for structured document analysis tasks?
 
 ### 1.2 Hypotheses
 
 | ID | Hypothesis | Type | Testable |
 |----|------------|------|----------|
-| H1 | Swarm extraction recall will be significantly lower than Claude baseline without validation gates | Alternative | Yes |
-| H2 | Adding completeness validation gates will increase swarm recall to within 10% of Claude | Alternative | Yes |
+| H1 | Swarm extraction recall will be significantly lower than hosted baseline without validation gates | Alternative | Yes |
+| H2 | Adding completeness validation gates will increase swarm recall to within 10% of the hosted baseline | Alternative | Yes |
 | H3 | Adding retry mechanisms will further improve recall without significantly increasing latency | Alternative | Yes |
-| H4 | Swarm precision will be comparable to Claude regardless of validation | Null | Yes |
-| H5 | Swarm latency will be lower than Claude due to parallelism | Alternative | Yes |
+| H4 | Swarm precision will be comparable to the hosted baseline regardless of validation | Null | Yes |
+| H5 | Swarm latency will be lower than the hosted baseline due to parallelism | Alternative | Yes |
 
 ### 1.3 Scope and Boundaries
 
@@ -55,7 +55,7 @@ updated: 2025-12-05
 
 ### 2.1 Problem Statement
 
-Foundation models like Claude excel at complex reasoning and extraction tasks but require API access, incur costs, and may not be available in all environments (air-gapped systems, privacy-sensitive contexts). Small local models are accessible and free but individually lack the capability for accurate complex extraction.
+Foundation models excel at complex reasoning and extraction tasks but require API access, incur costs, and may not be available in all environments (air-gapped systems, privacy-sensitive contexts). Small local models are accessible and free but individually lack the capability for accurate complex extraction.
 
 The question is whether architectural patterns—parallel execution, focused prompts, validation gates, and retry mechanisms—can compensate for individual model limitations.
 
@@ -85,7 +85,7 @@ This study provides:
 |--------|--------|---------------|
 | Design Type | Experimental (within-subjects) | Same documents analyzed by all conditions |
 | Sampling | Purposive | ADRs selected to cover complexity range |
-| Controls | Single foundation model (Claude) | Gold standard for comparison |
+| Controls | Single foundation model (hosted) | Gold standard for comparison |
 
 ### 3.2 Variables
 
@@ -93,7 +93,7 @@ This study provides:
 
 | Variable | Type | Levels | Operationalization |
 |----------|------|--------|-------------------|
-| Architecture | Categorical | 4 | (1) Claude baseline, (2) Basic swarm, (3) Swarm + validation, (4) Swarm + validation + retry |
+| Architecture | Categorical | 4 | (1) hosted baseline, (2) Basic swarm, (3) Swarm + validation, (4) Swarm + validation + retry |
 | Document complexity | Ordinal | 3 | Low/Medium/High based on section count and length |
 
 **Dependent Variables:**
@@ -104,7 +104,7 @@ This study provides:
 | Precision | Continuous [0,1] | Correct items / Extracted items | Human verification |
 | F1 Score | Continuous [0,1] | Harmonic mean of P and R | Calculated |
 | Latency | Continuous (ms) | Time from invoke to completion | Artifact timestamps |
-| Cost | Continuous ($) | API cost (Claude) or $0 (local) | Tracked |
+| Cost | Continuous ($) | API cost (hosted) or $0 (local) | Tracked |
 
 **Confounding Variables:**
 
@@ -131,8 +131,8 @@ This study provides:
 
 ```yaml
 conditions:
-  - name: claude-baseline
-    ensemble: adr-review-claude
+  - name: hosted-baseline
+    ensemble: adr-review-hosted
     model: claude-sonnet-4-20250514
 
   - name: swarm-basic
@@ -184,11 +184,11 @@ total_executions: 20 × 4 × 3 = 240
 
 ```yaml
 ensembles:
-  - name: adr-review-claude
-    purpose: Baseline extraction with Claude
+  - name: adr-review-hosted
+    purpose: Baseline extraction with a hosted model
     status: NEEDED
     agents:
-      - Single Claude agent with comprehensive extraction prompt
+      - Single hosted-model agent with comprehensive extraction prompt
 
   - name: adr-swarm-review
     purpose: Basic swarm extraction (existing)
@@ -268,7 +268,7 @@ phases:
 
 | Condition | Recall (mean ± SD) | Precision (mean ± SD) | F1 (mean ± SD) | Latency (ms) |
 |-----------|-------------------|----------------------|----------------|--------------|
-| Claude baseline | | | | |
+| hosted baseline | | | | |
 | Swarm basic | | | | |
 | Swarm validated | | | | |
 | Swarm retry | | | | |
@@ -287,9 +287,9 @@ phases:
 
 | Comparison | Cohen's d | Interpretation |
 |------------|-----------|----------------|
-| Claude vs Swarm basic | | |
-| Claude vs Swarm validated | | |
-| Claude vs Swarm retry | | |
+| Hosted vs Swarm basic | | |
+| Hosted vs Swarm validated | | |
+| Hosted vs Swarm retry | | |
 
 ---
 
@@ -320,7 +320,7 @@ phases:
 # 1. Create ground truth (manual step)
 # 2. Run experiment
 python scripts/experiment_runner.py \
-  --conditions claude,swarm,swarm-validated,swarm-retry \
+  --conditions hosted,swarm,swarm-validated,swarm-retry \
   --documents data/adrs/*.md \
   --trials 3 \
   --output data/results_raw.json
@@ -377,9 +377,9 @@ Output format:
 If none found, output: "None found."
 ```
 
-### C. Extraction Prompt (Claude Baseline)
+### C. Extraction Prompt (Hosted Baseline)
 
-Claude receives a comprehensive prompt covering all categories:
+The hosted model receives a comprehensive prompt covering all categories:
 
 ```
 Analyze this Architecture Decision Record and extract the following:
@@ -414,7 +414,7 @@ Output as JSON with these keys. Use empty arrays if nothing found.
 - [ ] `experiment_runner.py` implemented
 - [ ] `descriptive_stats.py` implemented
 - [ ] `anova.py` implemented
-- [ ] `adr-review-claude` ensemble created
+- [ ] `adr-review-hosted` ensemble created
 - [ ] `adr-swarm-validated` ensemble created
 - [ ] `adr-swarm-retry` ensemble created
 
