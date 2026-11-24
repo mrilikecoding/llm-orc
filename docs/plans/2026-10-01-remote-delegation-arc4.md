@@ -28,7 +28,7 @@ ruling wins and you say so in your report.
 ## Global constraints
 
 - One worktree for the arc:
-  `git worktree add .claude/worktrees/arc4-injection -b feat/one-run-injection main`.
+  `git worktree add .harness/worktrees/arc4-injection -b feat/one-run-injection main`.
   Never `git stash` (the working dir is shared with other sessions).
   Never spawn subagents that edit or commit.
 - Strict TDD, one test at a time. Structural and behavioral commits

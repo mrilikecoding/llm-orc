@@ -15,35 +15,35 @@ versions differ across rows; do not pool):
 | column | count | Wilson 95% |
 |---|---|---|
 | Arm 0 post-fix strict (run 5, J-scored) | 11/13 | [0.578, 0.957] |
-| Arm 1a Haiku 4.5 strict | 38/39 | [0.868, 0.995] |
-| Arm 1b Sonnet strict | 39/39 | [0.910, 1.000] |
-| Arm 2a Haiku 4.5 strict | 35/39 | [0.764, 0.959] |
-| Arm 2b Sonnet strict | 39/39 | [0.910, 1.000] |
+| Arm 1a hosted-small 4.5 strict | 38/39 | [0.868, 0.995] |
+| Arm 1b hosted-mid strict | 39/39 | [0.910, 1.000] |
+| Arm 2a hosted-small 4.5 strict | 35/39 | [0.764, 0.959] |
+| Arm 2b hosted-mid strict | 39/39 | [0.910, 1.000] |
 | Arm 2a dishonest | 4/39 | [0.041, 0.236] |
 | every other arm's dishonest | 0/39 | [0.000, 0.090] |
 
 Key comparisons (Fisher exact, two-sided):
 
 - **The honesty headline is not yet statistically separable.** Arm 2a's
-  4/39 dishonest vs Arm 1a's 0/39: p = 0.115. The "same Haiku, harness-
+  4/39 dishonest vs Arm 1a's 0/39: p = 0.115. The "same hosted-small, harness-
   sensitive honesty" headline is directionally supported and every
   scorer's notes agree on the mechanism, but at n=39 per cell Fisher
   cannot exclude chance. Parity table v2 must carry this as an interval/
   p-value, and closing it needs either more runs (~n=80+ per cell for
   power at this effect size) or an asterisk that stays.
-- Arm 0 strict (11/13) vs Sonnet's perfect 39/39: p = 0.059 — the serve's
+- Arm 0 strict (11/13) vs hosted-mid's perfect 39/39: p = 0.059 — the serve's
   strict column is statistically indistinguishable from the frontier
   columns at current n (0 vs Arm 2a: p = 0.63). The honest v2 framing:
   every strict interval overlaps; the discriminating axes must come from
   the realism rows (#138) and honesty-at-scale, not the toy battery.
 
-## 2. #141 pre-registration — the CLAUDE.md confound (Arm 2)
+## 2. #141 pre-registration — the instruction-file confound (Arm 2)
 
-Design (per the issue, sharpened): one Arm-2 model (Haiku 4.5 — the
+Design (per the issue, sharpened): one Arm-2 model (hosted-small 4.5 — the
 cell where the AGENTS.md literature predicts the largest swing), 13-turn
 battery, TWO conditions in one continuing conversation construct each:
-**Developer** (as-is: the practitioner's global CLAUDE.md stack) vs
-**None** (global CLAUDE.md suppressed). Same seeds, same
+**Developer** (as-is: the practitioner's global instruction-file stack) vs
+**None** (global the harness instruction file suppressed). Same seeds, same
 capture_truth.sh per turn, both J-scored independently.
 
 - Pre-registered gate (from the issue): |strict difference| ≤ 1 turn →
@@ -51,7 +51,7 @@ capture_truth.sh per turn, both J-scored independently.
   normalized rerun or an asterisk on the 13/13 headline. Honesty column
   compared alongside with the Fisher machinery above.
 - **Practitioner decision required before running:** the None condition
-  suppresses `~/.claude/CLAUDE.md` for the run (move-aside or a HOME
+  suppresses `~/.harness/INSTRUCTIONS.md` for the run (move-aside or a HOME
   override for the driving session). That manipulates the operator's
   live config, so it is not run autonomously; the spike is ready to
   execute on a go signal. Cost rides the subscription (issue note).

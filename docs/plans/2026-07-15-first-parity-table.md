@@ -13,21 +13,21 @@ harness.
 | arm | n runs | shipped-correct | shipped-broken | not-shipped | broken_rate (primary) | delivery_rate |
 |---|---|---|---|---|---|---|
 | Arm 0: serve (qwen3:8b + structural gate, via OpenCode) | 3 | 4 | 1 | 4 | **0.20** (1/5) | 0.44 (4/9) |
-| Arm 2a: Claude Code subagent, Haiku 4.5 | 1 | 3 | 0 | 0 | **0.00** (0/3) | 1.00 |
-| Arm 2b: Claude Code subagent, Sonnet | 1 | 3 | 0 | 0 | **0.00** (0/3) | 1.00 |
+| Arm 2a: hosted-harness subagent, hosted-small 4.5 | 1 | 3 | 0 | 0 | **0.00** (0/3) | 1.00 |
+| Arm 2b: hosted-harness subagent, hosted-mid | 1 | 3 | 0 | 0 | **0.00** (0/3) | 1.00 |
 
 ## Strict per-turn score and the honesty column
 
 | arm | strict | dishonest turns | dishonest mechanisms |
 |---|---|---|---|
 | Arm 0 (runs 2/3/4) | 25/39 (~64%) | **3/39 — one per run, never zero** | recall substitution ×2 (undisclosed rejected first ask, #133); recap fabrication ×1 (phantom function) |
-| Arm 2a Haiku | 13/13 | 0/13 | — |
-| Arm 2b Sonnet | 13/13 | 0/13 | — |
+| Arm 2a hosted-small | 13/13 | 0/13 | — |
+| Arm 2b hosted-mid | 13/13 | 0/13 | — |
 
 Cost: Arm 0 is $0 marginal (local). Arm 2 rode the subscription (unmetered
 here; Arm 1 via API will carry real per-token cost). Wall-clock: Arm 0
-~22–28 min/run on the rig; Arm-2 agent time roughly ~8 min (Haiku) and
-~23 min (Sonnet), excluding the driver's capture overhead.
+~22–28 min/run on the rig; Arm-2 agent time roughly ~8 min (hosted-small) and
+~23 min (hosted-mid), excluding the driver's capture overhead.
 
 ## The honest reading
 
@@ -67,14 +67,14 @@ construction" claim in the honest reading above now has its data point.
 
 1. n=1 per Arm-2 model; n=3 for Arm 0. No variance estimate for Arm 2.
 2. Arm-2 DECLARED CONFOUNDS: the subagents inherit the practitioner's
-   CLAUDE.md stack (visibly active — unprompted red-green TDD, N+M+1
+   instruction-file stack (visibly active — unprompted red-green TDD, N+M+1
    citations), the agent sandbox, no permission prompts, and a "coordinator"
    framing absent from Arm 0's client.
-3. Scorer affinity: Sonnet subagents scored all arms, including the Sonnet
+3. Scorer affinity: hosted-mid subagents scored all arms, including the hosted-mid
    arm (that scorer itself recommends a differently-sourced second look
    before its 6/6 is treated as comparative data). The Arm-0 scores carry no
    such caveat.
-4. Arm 0 ran behind a DIFFERENT client (OpenCode) than Arm 2 (Claude Code
+4. Arm 0 ran behind a DIFFERENT client (OpenCode) than Arm 2 (the frontier harness
    subagent) — model, gate, and harness all vary between the arms shown;
    Arm 1 exists to hold the harness constant against Arm 0 and the models
    constant against Arm 2. Until it runs, "harness effect" and "model

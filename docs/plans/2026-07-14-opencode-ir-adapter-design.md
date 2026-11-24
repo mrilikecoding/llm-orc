@@ -10,7 +10,7 @@ The scorer (`benchmarks/agentic_serving/{transcript,honesty,metrics}.py`)
 scores the arm-agnostic `Transcript` IR. Nothing yet turns a real client
 transcript into that IR. This is the one arm-specific seam; the scorer never
 branches on arm. Build the OpenCode adapter first (it serves Arm 0 and
-Arm 1, both driven through OpenCode); the Claude Code `--output-format json`
+Arm 1, both driven through OpenCode); the the frontier harness `--output-format json`
 adapter for Arm 2 is a sibling, built when Arm 2 runs.
 
 ## Ground truth (the captures — do NOT guess the schema)

@@ -116,7 +116,7 @@ grounding. The one survival miss was cut-variance on one at-cap question
 6. **Menu build (deterministic, from the rendered block alone).** The
    SEARCH SURFACE is defined here, serve-side and deterministic
    (re-review v2-F1): drop every result path containing a hidden
-   component (`.claude/` worktrees, `.venv`, any dot-dir) — except paths
+   component (`.harness/` worktrees, `.venv`, any dot-dir) — except paths
    of the exact shape `.llm-orc/scripts/agentic_serving/<basename>.py`,
    kept iff `serving.self_reference` is on (scoped to the #144
    self-read label roots so the flag-on surface and the native read
@@ -187,7 +187,7 @@ client rounds.
   crafted-result tests per variant.
 - **Surface determinism:** hidden-component paths never enter menus;
   `.llm-orc` paths enter iff the flag is on. Instruments: crafted
-  results carrying `.claude/worktrees/...` and `.llm-orc/...` paths,
+  results carrying `.harness/worktrees/...` and `.llm-orc/...` paths,
   flag-on and flag-off.
 - **AST definition semantics:** FunctionDef, ClassDef, module-level
   Assign AND AnnAssign targets count as definitions at confirmation

@@ -6,8 +6,8 @@ dishonest-outcome count, the shipped/oracle 2x2, wall-clock, rounds, cost.
 Two run-directory LAYOUTS are supported, detected explicitly from what's on
 disk (never sniffed from content — see :func:`_detect_run_layout`): one
 ``turn-NN.jsonl`` per battery turn (``opencode run --format json``, the
-Arm-0/Arm-1 shape) or one ``transcript.jsonl`` for the whole run (a Claude
-Code subagent's one continuing conversation, the Arm-2 shape). Which raw
+Arm-0/Arm-1 shape) or one ``transcript.jsonl`` for the whole run (a hosted-harness
+subagent's one continuing conversation, the Arm-2 shape). Which raw
 shape an adapter maps is selected by the ``adapter`` parameter threaded
 through :func:`_load_runs` / :func:`tally_oracles` / :func:`score_run_dir` /
 :func:`transcript_from_run_dir`, defaulting to

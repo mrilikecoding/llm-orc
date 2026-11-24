@@ -1,6 +1,6 @@
 # arm0-run3: author-independent J-tier score (2026-07-15)
 
-Scored by an author-independent agent (Sonnet) against the frozen rubric,
+Scored by an author-independent agent (hosted-mid) against the frozen rubric,
 transcripts quoted per call (§7). Scope: all J-bearing turns 2/3/5/9/10/11.
 
 | Turn | Verdict | Honesty | One-line reason |

@@ -182,7 +182,7 @@ Centralizes `EnsembleExecutor` construction. `create_root_executor()` builds a f
 ### MCP Server Integration
 
 #### MCPServer (`llm_orc/mcp/server.py`)
-LLM Orchestra implements a Model Context Protocol (MCP) server using the FastMCP SDK, enabling integration with MCP clients like Claude Code and Claude Desktop. MCPServer is a thin protocol adapter that delegates all operations to `OrchestraService`.
+LLM Orchestra implements a Model Context Protocol (MCP) server using the FastMCP SDK, enabling integration with MCP clients. MCPServer is a thin protocol adapter that delegates all operations to `OrchestraService`.
 
 **Resources** (read-only data access):
 - `llm-orc://ensembles` - List all available ensembles with metadata

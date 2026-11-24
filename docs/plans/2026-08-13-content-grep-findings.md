@@ -92,7 +92,7 @@ the honesty invariant, and the pick as its own guarded DAG node.
 The v2 re-review (PROCEED-WITH-CHANGES) found the v2 evidence line was
 still simulation: the real client grep TRAVERSES hidden dirs (not
 dot-blind), its first-100 cut is NONDETERMINISTIC, and stale
-.claude/worktrees copies were knocking the exit-gate identifier off its
+.harness/worktrees copies were knocking the exit-gate identifier off its
 own menu via duplicate def-sites. The reviewer also surfaced the real
 measurement instrument: `opencode debug rg search` (the exact
 Service.grep code path). After worktree cleanup and with the

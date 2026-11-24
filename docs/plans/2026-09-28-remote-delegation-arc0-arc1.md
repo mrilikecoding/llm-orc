@@ -90,11 +90,11 @@ fallback); record it in the S1 findings.
 
 ## Arc 0: two spikes
 
-Read-mostly. Sonnet. Each spike ends by appending a dated `## Spike
+Read-mostly. hosted-mid. Each spike ends by appending a dated `## Spike
 findings: S<n> (2026-09-28)` section to
 `docs/plans/2026-09-28-remote-delegation.md` and committing it as
 `docs: S<n> spike findings`. No production code changes. Work in a
-worktree off `main` (`git worktree add .claude/worktrees/spikes -b
+worktree off `main` (`git worktree add .harness/worktrees/spikes -b
 spikes/remote-delegation main`).
 
 ### Task S1: project layering spike
@@ -239,8 +239,8 @@ git commit -m "docs: S2 spike findings on llama-server router runtime model load
 
 ## Arc 1: `scope` on CRUD
 
-Sonnet implements, Opus reviews before merge. Worktree:
-`git worktree add .claude/worktrees/arc1-scope -b feat/crud-scope main`.
+hosted-mid implements, hosted-large reviews before merge. Worktree:
+`git worktree add .harness/worktrees/arc1-scope -b feat/crud-scope main`.
 
 ### Task 1: scope vocabulary and cross-scope lookup
 
@@ -1548,7 +1548,7 @@ git add docs/plans/2026-09-28-remote-delegation.md
 git commit -m "docs: Arc 1 live row"
 ```
 
-- [ ] **Step 3: Review gate.** Independent adversarial review (Opus,
+- [ ] **Step 3: Review gate.** Independent adversarial review (hosted-large,
   not the implementer) with an explicit wrong-accept hunt: for each pin
   in Tasks 2-6, can it pass while the defect it names is live? Merge to
   local `main` only on APPROVE. Nothing is pushed.

@@ -66,10 +66,10 @@ class TestConfigs:
         assert "qwen3.6" in cfg.seat  # hosted qwen seat (§0), not the broken 14b swap
         assert cfg.paid is False  # ≈cents/session, not the dollars-gated frontier
 
-    def test_frontier_is_the_sonnet_arm(self) -> None:
+    def test_frontier_is_the_mid_arm(self) -> None:
         cfg = bench.get_config("frontier")
         assert cfg.paid is True
-        assert "sonnet" in cfg.seat.lower()
+        assert "mid" in cfg.seat.lower()
 
     def test_unknown_config_raises(self) -> None:
         with pytest.raises(ValueError, match="unknown config"):
@@ -252,7 +252,7 @@ class TestScorecardAssembly:
 
 class TestAutonomousRunGuard:
     def test_frontier_arm_is_blocked_from_autonomous_run(self) -> None:
-        # The Sonnet arm is gathered in-session, not run by the CLI through serve.
+        # The hosted-mid arm is gathered in-session, not run by the CLI through serve.
         msg = bench.autonomous_run_blocked([bench.CHEAP_LOCAL, bench.FRONTIER])
         assert msg is not None
         assert "in-session" in msg.lower()

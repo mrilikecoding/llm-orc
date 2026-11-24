@@ -1,6 +1,6 @@
 # Ollama Options Pass-Through Implementation Plan
 
-> **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
+> **For the agent:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
 **Goal:** Allow Ollama provider-specific parameters (num_ctx, top_k, top_p, repeat_penalty, seed, etc.) to flow from profile YAML and agent config through to the Ollama API.
 

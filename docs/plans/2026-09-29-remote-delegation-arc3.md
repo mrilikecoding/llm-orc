@@ -31,7 +31,7 @@ before touching anything.
 
 ## Global Constraints
 
-- Own git worktree off `main`: `git worktree add .claude/worktrees/arc3-preflight -b feat/transitive-preflight main`.
+- Own git worktree off `main`: `git worktree add .harness/worktrees/arc3-preflight -b feat/transitive-preflight main`.
   Never `git stash` (the working dir is shared with other sessions);
   never spawn subagents that edit or commit.
 - Strict TDD. Structural and behavioral commits separate. ruff 88 +
@@ -97,8 +97,8 @@ about the cache.
 
 ```bash
 cd /Users/dev/Development/eddi-lab/llm-orc
-git worktree add .claude/worktrees/arc3-preflight -b feat/transitive-preflight main
-cd .claude/worktrees/arc3-preflight
+git worktree add .harness/worktrees/arc3-preflight -b feat/transitive-preflight main
+cd .harness/worktrees/arc3-preflight
 uv sync -q
 ```
 
@@ -1711,7 +1711,7 @@ git add docs/plans/2026-09-28-remote-delegation.md
 git commit -m "docs: Arc 3 live row"
 ```
 
-- [ ] **Step 4: Review gate.** Independent adversarial review (Opus, not
+- [ ] **Step 4: Review gate.** Independent adversarial review (hosted-large, not
   the implementer) with an explicit wrong-accept hunt: for each pin in
   Tasks 1-4, can it pass while the defect it names is live? Particular
   targets: the `owned` frames on a second sighting of a child (review

@@ -90,8 +90,6 @@ credentials.enc
 .worktrees/
 
 # Meta-repo context
-CLAUDE.md
-.claude/settings.local.json
 .llm-orc/.serve-trace/
 .llm-orc/profiles/*.local.yaml
 .llm-orc/llama-server.ini

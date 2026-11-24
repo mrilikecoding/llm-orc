@@ -3333,7 +3333,7 @@ def test_hidden_paths_never_enter_the_menu_flag_off(self_scripts: Path) -> None:
     context = (
         f"{_COMPLETE_LISTING}\n"
         "assistant: [grepped recall,ledger,built]\n"
-        "  .claude/worktrees/x/src/ledger.py: Line 1: def _recall_ledger(e):\n"
+        "  .harness/worktrees/x/src/ledger.py: Line 1: def _recall_ledger(e):\n"
         "  .llm-orc/scripts/agentic_serving/ledger.py: Line 2: def _ledger_of(e):"
     )
     decision = _classify_at(self_scripts, {"task": _GREP_QUESTION, "context": context})
@@ -3344,7 +3344,7 @@ def test_self_script_defs_enter_the_menu_flag_on(self_scripts: Path) -> None:
     context = (
         f"{_COMPLETE_LISTING}\n"
         "assistant: [grepped recall,ledger,built]\n"
-        "  .claude/worktrees/x/src/ledger.py: Line 1: def _recall_ledger(e):\n"
+        "  .harness/worktrees/x/src/ledger.py: Line 1: def _recall_ledger(e):\n"
         "  .llm-orc/scripts/agentic_serving/ledger.py: Line 2: def _ledger_of(e):"
     )
     decision = _classify_at(

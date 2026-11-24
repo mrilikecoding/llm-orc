@@ -51,7 +51,7 @@ which invokes the same code path):
 - File groups are separated by BLANK LINES (the single-file capture
   above never showed one).
 - The grep TRAVERSES HIDDEN DIRS (unlike the client's glob, which cannot
-  list them) — .llm-orc, .claude/worktrees etc. appear in results.
+  list them) — .llm-orc, .harness/worktrees etc. appear in results.
 - The first-100 cut is NONDETERMINISTIC (parallel traversal, no sort
   before the limit): identical invocations return different sequences.
 - Measurement instrument for grep-shaped design work:

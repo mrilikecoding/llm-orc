@@ -14,9 +14,9 @@
 #
 #   VOLUME_MODEL selects the arm behind the same OpenCode client:
 #     arm 0 (the serve, free) : llm-orc/agentic          [default]
-#     arm 1 (harness held constant, PAID): anthropic/claude-haiku-4-5
-#                                          anthropic/claude-sonnet-5
-#   Arm 2 (Claude Code) is a different harness and follows the documented
+#     arm 1 (harness held constant, PAID): anthropic/hosted-small-4-5
+#                                          anthropic/hosted-mid-5
+#   Arm 2 (the frontier harness) is a different harness and follows the documented
 #   per-level protocol instead; it feeds the SAME volume_truth capture.
 #
 # TIMEOUTS SCALE WITH LEVEL. The ladder's flat 780s cap was calibrated to one

@@ -188,7 +188,7 @@ gap — worth its own small issue, separate from this design.
 
 ## Delegation
 
-Sonnet-class implementable from this doc: seams are
+hosted-mid-class implementable from this doc: seams are
 `serving_ensemble_caller._recall_ledger` (→ ask-outcome ledger),
 `classify._recall_route`/`_recall_message` (+ a sibling
 `_memory_interrogative_route`), the recall-answer emit path (reused),

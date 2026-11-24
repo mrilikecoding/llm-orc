@@ -29,7 +29,7 @@ model does not have:
 Latency is the accepted trade; correctness and memory are where we compete.
 
 Stated as the end state (2026-07-11): **llm-orc served agentically behind
-OpenCode should be as functional as Claude Code running a frontier model,
+OpenCode should be as functional as the frontier harness running a frontier model,
 and beyond it where composition wins, all through orchestrated small
 models.** This is a literal engineering target, not an aspiration to
 steer by. Posture (practitioner, 2026-07-11): local-first; occasional
@@ -59,7 +59,7 @@ above:
 The escalating multi-turn ladder driven through **real OpenCode** (never
 harness-only), scored per turn against the same ladder with an Anthropic
 model as the backend. The comparator is a frontier model PLUS its
-harness: behind OpenCode (and more so behind Claude Code) it reads
+harness: behind OpenCode (and more so behind the frontier harness) it reads
 files, runs tests, and iterates, so "a model doesn't check its work" is
 not the bar. WS-8 defines the comparison arms and metrics. Trajectory
 so far:
@@ -88,7 +88,7 @@ so far:
 
 The Cycle-7 benchmark harness (`research/agentic-serving-corpus` branch,
 `benchmark-runs/`) is the automation to revive for a standing
-parity-percentage arm (Haiku 4.5 / Sonnet 5 behind OpenCode as baseline).
+parity-percentage arm (hosted-small 4.5 / a hosted frontier model behind OpenCode as baseline).
 
 **Battery realism ladder (named 2026-07-09):** the todo app is a toy.
 Daily-driver parity means real complexity, and the ladder's upper rungs are
@@ -115,7 +115,7 @@ Two generalizations the upper rungs force (named 2026-07-09):
   and a per-language adequacy checker; the round, router, held carry, and
   gate composition are unchanged. Built when a rung demands a language,
   not speculatively.
-- **Task shapes.** Fable-parity means evaluating a task's shape and
+- **Task shapes.** frontier-parity means evaluating a task's shape and
   deciding how to proceed — up to and including **an ensemble that designs
   other ensembles to suit the task at hand**. That is ADR-047's deferred
   composer-ensemble path, re-elevated from named-forward-direction to
@@ -228,11 +228,11 @@ author-independent review gate is SATISFIED for the first time in five rounds.
    dishonest direction only a frontier arm can exploit, so they cannot stay
    with the author). Blinding stays inert (Arm 0's prose is templated); the
    control is independence plus the frozen rubric.
-4. **Arm 2 = "Claude Code subagent (Haiku / Sonnet)" — practitioner decision
-   2026-07-15, superseding the round-3 "headless claude -p" prescription.**
-   (Ops driver: `claude -p` hit the session usage limit; subagents with model
+4. **Arm 2 = "hosted-harness subagent (hosted-small / hosted-mid)" — practitioner decision
+   2026-07-15, superseding the round-3 "a headless harness session" prescription.**
+   (Ops driver: a headless harness session hit the session usage limit; subagents with model
    overrides are the sanctioned instantiation. Bonus: Arms 1 and 2 now run the
-   SAME two models — Haiku 4.5 and Sonnet — behind two harnesses, so the
+   SAME two models — hosted-small 4.5 and hosted-mid — behind two harnesses, so the
    comparison isolates the harness variable instead of confounding model and
    harness.) Construct requirements carried over from the round-3 methods
    review, restated for the subagent form:
@@ -243,14 +243,14 @@ author-independent review gate is SATISFIED for the first time in five rounds.
      the Arm-0 battery uses (extract it from `ladder_battery.sh` first), run
      caller-side after each turn.
    - Its own adapter over the REAL subagent transcript format (captured, not
-     guessed) normalizing tool names into the IR — Claude Code emits
+     guessed) normalizing tool names into the IR — the frontier harness emits
      `Write`/`Bash`; an unmapped stream silently scores zero shipped.
    - DECLARED confounds, published with the table: the subagent inherits the
-     project CLAUDE.md stack (behavior-relevant instructions Arm 1 never
+     project instruction-file stack (behavior-relevant instructions Arm 1 never
      sees), the agent Bash sandbox, and runs without permission prompts
      (which is the maximally-permissive mode the construct wants — no de
      facto accept gate).
-   Arm 1 (Haiku/Sonnet via OpenCode Go) is unchanged: the existing battery,
+   Arm 1 (hosted-small/hosted-mid via OpenCode Go) is unchanged: the existing battery,
    `LADDER_MODEL=anthropic/...`, paid, pre-authorized ~$12/hr, one turn's
    token count first for the go/no-go.
 5. **First parity table** (2x2 per §2 as amended, deaths/unscored/legacy
@@ -386,8 +386,8 @@ ReAct log format; WS-8 is a NEW build (corpus entry + `opencode run`
 runner + client-observed-transcript scorer). The raw→IR adapter needs a
 real capture (`opencode run --format json`), which #82's live
 re-validation can produce. _Cost model (practitioner authorized
-2026-07-13):_ Arm 2 (Claude Code native) runs FREE via dispatched
-subagents; Arm 1 (Haiku/Sonnet) via OpenCode Go, paid but authorized
+2026-07-13):_ Arm 2 (the frontier harness native) runs FREE via dispatched
+subagents; Arm 1 (hosted-small/hosted-mid) via OpenCode Go, paid but authorized
 within a ~$12/hr limit; full paid comparison est. ~$5–12 (9 sessions);
 GO given, measure one real turn's token count before spending.
 
@@ -440,7 +440,7 @@ Key empirical facts the next work builds on:
   judgment. Latency datum for the deferred escalation rung: 14b think-off
   generates as fast as 8b think-off on the rig; think-on costs 10–20×.
 
-## Gap analysis (2026-07-11): the serve vs Claude Code on a frontier model
+## Gap analysis (2026-07-11): the serve vs the frontier harness on a frontier model
 
 Grounded in OpenCode's advertised tool surface (wire-captured
 2026-07-10, `docs/plans/2026-07-10-opencode-advertised-tools.json`):
@@ -449,7 +449,7 @@ write`. The serve exercises four of the ten (read, glob,
 bash-as-pytest-template, write). Each unused tool is a concrete
 capability gap, and every gap maps to a workstream below.
 
-| Capability | Claude Code + frontier model | Serve today | Workstream |
+| Capability | the frontier harness + frontier model | Serve today | Workstream |
 |---|---|---|---|
 | Verified build | checks its work when it (or harness policy) chooses | structural: unverified builds cannot ship | shipped; WS-8 tests the edge |
 | Fix end to end | edit → run → iterate to green | write → run → honest verdict; no re-fix | WS-1 |
@@ -481,9 +481,9 @@ an invariant.
 
 Each workstream names its north-star lever, the evidence in hand, tasks
 sized for delegation, and a minimal exit gate (vary one thing). Design
-and review belong to the lead session (Opus-class); each task is scoped
-so a Sonnet-class implementer can run it TDD from a short design doc;
-Haiku-class handles mechanical sweeps. Every arc ends with a live
+and review belong to the lead session (hosted-large-class); each task is scoped
+so a hosted-mid-class implementer can run it TDD from a short design doc;
+hosted-small-class handles mechanical sweeps. Every arc ends with a live
 real-OpenCode validation, a ladder rerun, and a trajectory-table row.
 
 ### WS-1: Fix-execution completion (LANDED 2026-07-12)
@@ -760,7 +760,7 @@ operator edits.
 **Lever:** the north star is stated relative to a frontier model driven
 by a sophisticated harness, not a bare model. Behind OpenCode the
 baseline model gets the same ten tools and may read, grep, run tests,
-and iterate; behind Claude Code it does all that with a stronger
+and iterate; behind the frontier harness it does all that with a stronger
 harness. Without measuring against THAT, the parity claim is vibes and
 the structural-verification bet goes untested.
 
@@ -770,12 +770,12 @@ points):
 
 - **Arm 0, the serve:** qwen3:8b seats behind OpenCode (the recorded
   ladder as-is).
-- **Arm 1, harness held constant:** Haiku 4.5 and Sonnet 5 behind the
+- **Arm 1, harness held constant:** hosted-small 4.5 and a hosted frontier model behind the
   SAME OpenCode client. Isolates composition-vs-model with the harness
   fixed; the frontier arm is free to verify its own work with the
   tools it has.
-- **Arm 2, the product bar:** Claude Code driving its native model on
-  the same task scripts (headless `claude -p`, continuity via session
+- **Arm 2, the product bar:** the frontier harness driving its native model on
+  the same task scripts (a headless harness session, continuity via session
   resume). The harness is deliberately different; this is the bar the
   vision statement names.
 
@@ -859,8 +859,8 @@ because Arm 0 emits templates.
 
 **Remaining:** a THIRD review round on the branch, an author-independent scorer
 for the judgment turns (2/3/5/10), then Arm 2 and the first table. Arms:
-**Arm 0** (serve/qwen3:8b) — free; **Arm 2** (Claude Code native) — free via
-dispatched subagents; **Arm 1** (Haiku 4.5 / Sonnet 5 behind OpenCode) — paid,
+**Arm 0** (serve/qwen3:8b) — free; **Arm 2** (the frontier harness native) — free via
+dispatched subagents; **Arm 1** (hosted-small 4.5 / a hosted frontier model behind OpenCode) — paid,
 practitioner-authorized within a ~$12/hr limit, est. ~$5–12 for the full
 comparison (9 sessions), measure one real turn's token count before spending.
 Bounded: one battery per baseline per release checkpoint, estimate before
@@ -898,7 +898,7 @@ multi-session and for WS-5's long sessions) · **#90** llama.cpp backend
 (one-command bootstrap; #64's llamafile ask folds in) · **#106** single
 home for serving shapes (pick candidate 1 or 2; the regression pin
 holds meanwhile) · **#114 remainder** (prose-cap config knob) · **#95**
-dead-surface sweep (mechanical; Haiku-grade).
+dead-surface sweep (mechanical; hosted-small-grade).
 
 ## The seat-capability ladder (cross-cutting; #119)
 
@@ -1011,11 +1011,11 @@ point (never harness-only) → ladder rerun + trajectory row →
 independent adversarial review with an explicit wrong-accept hunt
 before merge (three for three on catching real blockers). Batteries run
 detached (nohup + disown, Monitor tail), strict scoring, misses
-classified honest/dishonest. Lead session (Opus-class) owns designs,
+classified honest/dishonest. Lead session (hosted-large-class) owns designs,
 the WS-3 chain executor and WS-6 topology decisions, and reviews;
-implementer sessions (Sonnet-class) own scoped TDD tasks (each task
+implementer sessions (hosted-mid-class) own scoped TDD tasks (each task
 above names its seams and validation); mechanical sweeps (WS-9 #95,
-doc syncs, battery bookkeeping) go to Haiku-class.
+doc syncs, battery bookkeeping) go to hosted-small-class.
 
 ## Questioned priors (2026-07-11 pass)
 

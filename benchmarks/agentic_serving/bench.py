@@ -83,12 +83,12 @@ CHEAP_LOCAL = BenchConfig(
 
 FRONTIER = BenchConfig(
     name="frontier",
-    coder_cheap="claude-sonnet",
-    coder_escalated="claude-sonnet",
-    seat="claude-sonnet (subagent)",
+    coder_cheap="hosted-mid",
+    coder_escalated="hosted-mid",
+    seat="hosted-mid (subagent)",
     paid=True,
     note=(
-        "Claude Sonnet subagent — one-shot, no llm-orc framework (§7). Gathered "
+        "hosted-mid subagent — one-shot, no llm-orc framework (§7). Gathered "
         "in-session via the Agent tool; scored by frontier.score_cell. The "
         "value-proposition pole: [cheap + framework] vs [frontier, no orchestration]."
     ),
@@ -108,7 +108,7 @@ def get_config(name: str) -> BenchConfig:
 
 
 def autonomous_run_blocked(configs: Sequence[BenchConfig]) -> str | None:
-    """Frontier (Sonnet-subagent) arms are gathered in-session, not run by this
+    """Frontier (hosted-mid-subagent) arms are gathered in-session, not run by this
     CLI through serve (§7). Returns an error message if the autonomous run set
     includes a non-serve-runnable arm, else ``None``."""
     in_session = [c.name for c in configs if not c.serve_runnable]
@@ -116,7 +116,7 @@ def autonomous_run_blocked(configs: Sequence[BenchConfig]) -> str | None:
         return None
     arms = ", ".join(in_session)
     return (
-        f"Arm(s) {arms} are gathered in-session via Claude Sonnet subagents (§7), "
+        f"Arm(s) {arms} are gathered in-session via hosted-mid subagents (§7), "
         "not run by this CLI. Run the cheap arm here, dispatch the frontier arm "
         "in-session (frontier.frontier_prompt + frontier.score_cell), then combine "
         "with render_scorecard. See the runbook (§11)."
@@ -195,13 +195,13 @@ def cost_estimate(configs: Sequence[BenchConfig], grid_size: int) -> str:
     if not paid:
         return (
             "No dollars-gated (frontier) arm requested. The cheap arm runs at "
-            "≈cents/session (hosted qwen seat — §0); no Sonnet spend."
+            "≈cents/session (hosted qwen seat — §0); no hosted-mid spend."
         )
     arms = ", ".join(c.name for c in paid)
     cells = grid_size + CONFIRM_N + CONCENTRATE_N  # rough upper bound of cells run
     return (
-        f"Paid arm(s): {arms}. The frontier arm dispatches a Claude Sonnet "
-        f"subagent per cell (up to ~{cells} cells), incurring Sonnet token usage. "
+        f"Paid arm(s): {arms}. The frontier arm dispatches a hosted-mid "
+        f"subagent per cell (up to ~{cells} cells), incurring hosted-mid token usage. "
         "Re-run with --i-accept-frontier-cost to proceed."
     )
 

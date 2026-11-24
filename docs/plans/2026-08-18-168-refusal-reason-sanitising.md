@@ -161,7 +161,7 @@ same over `tests/unit/web/test_serving_ensemble_endpoint.py`.
    the raw `error` field's length and its two path lengths to
    `test_the_unsanitised_engine_error_is_still_recorded_server_side` and
    running it: 344 chars, stable across 3 runs, on this worktree checkout
-   (root `/Users/.../llm-orc/.claude/worktrees/agent-<id>`, 89 chars, macOS
+   (root `/Users/.../llm-orc/.harness/worktrees/agent-<id>`, 89 chars, macOS
    `/private/var/folders/.../T/pytest-of-<user>/...` temp convention).
    Solving the same formula for the canonical 47-char checkout root
    (`/Users/<user>/Development/eddi-lab/llm-orc`) gives 302 — at the LOW end

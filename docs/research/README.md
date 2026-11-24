@@ -117,7 +117,7 @@ See `tooling/research-tooling-gaps.md` for needed scripts.
 
 ## MCP Integration
 
-Use Claude via MCP to:
+Use an MCP client to:
 - Invoke ensembles for data collection
 - Analyze artifacts
 - Identify implementation gaps

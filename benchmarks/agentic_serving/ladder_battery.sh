@@ -5,7 +5,7 @@
 #
 # WS-8 (#131): arm-parameterized and emitting `--format json` JSONL, so one
 # script drives every OpenCode-hosted arm and `score_run.py` reads the result
-# without regex-scraping human-formatted text. Arm 2 (Claude Code) is a
+# without regex-scraping human-formatted text. Arm 2 (the frontier harness) is a
 # DIFFERENT harness and gets its own driver; this script covers arms 0 and 1.
 #
 # Usage:
@@ -15,8 +15,8 @@
 #
 #   LADDER_MODEL selects the arm behind the same OpenCode client:
 #     arm 0 (the serve, free) : llm-orc/agentic          [default]
-#     arm 1 (harness held constant, PAID): anthropic/claude-haiku-4-5
-#                                          anthropic/claude-sonnet-5
+#     arm 1 (harness held constant, PAID): anthropic/hosted-small-4-5
+#                                          anthropic/hosted-mid-5
 #
 # Output per turn N: `turn-NN.jsonl` (raw JSON events -> score_run.py),
 # `turn-NN.err` (stderr, kept OUT of the JSONL so a warning can't corrupt the

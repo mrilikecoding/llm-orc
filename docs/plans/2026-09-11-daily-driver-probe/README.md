@@ -73,7 +73,7 @@ Same seed, same asks, same driver (`dd-turn.sh` with `DD_MODEL`), fresh
 clone per arm, turn 2 continuing turn 1's session, turns 3-7 fresh.
 Costs are OpenCode's own per-step `cost` field summed per turn.
 
-| turn | serve (arm 0, free) | `opencode-go/qwen3.8-max` (Go) | `opencode/claude-sonnet-5` (Zen) |
+| turn | serve (arm 0, free) | `opencode-go/qwen3.8-max` (Go) | `opencode/hosted-mid-5` (Zen) |
 |---|---|---|---|
 | 1 remove() + tests | refused | ls, glob, 2 reads, 4 edits, pytest → 5 passed ($0.076) | 2 reads, 3 edits, pytest → 5 passed ($0.098) |
 | 2 pure edit (continued) | refused | read → "already done" ($0.012) | read → "already exists, no change" ($0.015) |

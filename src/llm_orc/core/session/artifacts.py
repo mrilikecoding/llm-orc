@@ -169,8 +169,8 @@ class ProgressLog:
     :class:`WriteGateRejectionError`. The file on disk is unchanged
     on rejection (rejection happens before any filesystem call).
 
-    Persistence shape is free text following Anthropic's
-    ``claude-progress.txt`` convention.
+    Persistence shape is free text following the progress-file
+    convention.
     """
 
     def __init__(self, path: Path) -> None:

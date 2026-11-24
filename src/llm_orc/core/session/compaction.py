@@ -111,7 +111,7 @@ DEFAULT_COMPACTION_TRIGGER_TOKEN_COUNT: Final[int] = 100_000
 """WP-E4 addition — aggregate token threshold above which the
 pipeline runs. ADR-012 specifies "until the context budget is
 satisfied" without naming the budget; this default keeps llm-orc
-under Claude Code's 50K rot-onset evidence (Chroma 2025) with
+under the frontier-harness 50K rot-onset evidence (Chroma 2025) with
 headroom for the unwound chars/4 heuristic."""
 
 DEFAULT_COMPACTION_SUMMARIZER_ENSEMBLE: str | None = None

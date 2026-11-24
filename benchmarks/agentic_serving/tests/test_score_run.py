@@ -57,7 +57,7 @@ def test_score_cost_with_pricing() -> None:
             output_tokens=200,
         ),
     )
-    card = score_run.score(Transcript(arm="sonnet", turns=turns), Pricing(3.0, 15.0))
+    card = score_run.score(Transcript(arm="mid", turns=turns), Pricing(3.0, 15.0))
     assert card.total_cost == pytest.approx(0.006)  # 1000@3/M + 200@15/M
 
 
@@ -484,7 +484,7 @@ def test_death_and_unscored_channels_do_not_collapse_into_each_other(
 def test_single_file_scorecard_records_missing_turns(tmp_path: Path) -> None:
     _write_transcript(tmp_path, [_subagent_turn("p1", wrote=False)])
     card = score_run.score_run_dir(
-        "arm2-haiku", tmp_path, prompts=("a", "b", "c"), adapter=sa
+        "arm2-small", tmp_path, prompts=("a", "b", "c"), adapter=sa
     )
     assert card.n_turns == 3
     assert card.missing_turns == (2, 3)
@@ -497,9 +497,9 @@ def test_transcript_from_run_dir_with_the_single_file_layout(tmp_path: Path) -> 
         [_subagent_turn("p1", wrote=True), _subagent_turn("p2", wrote=False)],
     )
     transcript = score_run.transcript_from_run_dir(
-        "arm2-haiku", tmp_path, prompts=("a", "b"), adapter=sa
+        "arm2-small", tmp_path, prompts=("a", "b"), adapter=sa
     )
-    assert transcript.arm == "arm2-haiku"
+    assert transcript.arm == "arm2-small"
     assert [t.index for t in transcript.turns] == [1, 2]
     assert transcript.turns[0].tool_calls[0].name == "write"
 
@@ -579,7 +579,7 @@ def test_a_died_before_end_plus_phantom_case_still_raises(tmp_path: Path) -> Non
         score_run._load_runs(tmp_path, ("p1", "p2"), adapter=sa)
 
 
-def _real_haiku_lines() -> list[str]:
+def _real_small_lines() -> list[str]:
     path = Path(__file__).resolve().parents[3] / (
         "docs/plans/2026-07-15-arm2-runs/small-run1/transcript.jsonl"
     )
@@ -592,7 +592,7 @@ def _truncated_after_turn_12_tool_use() -> str:
     the exact shape a process killed mid-tool-call leaves. Turns 1-11
     (including all three oracled turns, 1/6/7) are fully intact ahead of
     the cut."""
-    return "\n".join(_real_haiku_lines()[:92])
+    return "\n".join(_real_small_lines()[:92])
 
 
 def test_a_mid_tool_call_death_scores_every_turn_before_it(tmp_path: Path) -> None:
@@ -619,7 +619,7 @@ def test_a_mid_tool_call_death_scorecard_records_only_the_dead_turns(
 ) -> None:
     (tmp_path / "transcript.jsonl").write_text(_truncated_after_turn_12_tool_use())
     card = score_run.score_run_dir(
-        "arm2-haiku", tmp_path, prompts=score_run.LADDER_PROMPTS, adapter=sa
+        "arm2-small", tmp_path, prompts=score_run.LADDER_PROMPTS, adapter=sa
     )
     assert card.n_turns == 13
     assert card.missing_turns == (12, 13)
@@ -637,7 +637,7 @@ def test_a_mid_run_unlinked_tool_use_still_raises_the_whole_run(
     # client died at the end". Must still fail the whole run: MAJOR 2 is
     # narrow by design, only the run's actual final turn gets the death
     # treatment.
-    lines = _real_haiku_lines()
+    lines = _real_small_lines()
     text = "\n".join(lines[:92] + lines[98:])
     (tmp_path / "transcript.jsonl").write_text(text)
     with pytest.raises(ValueError, match="unlinked"):
@@ -650,7 +650,7 @@ def _real_arm2_run(run: str) -> Path:
     )
 
 
-def test_tally_oracles_on_the_real_haiku_arm2_run() -> None:
+def test_tally_oracles_on_the_real_small_arm2_run() -> None:
     tally = score_run.tally_oracles(_real_arm2_run("small-run1"), adapter=sa)
     assert (tally.shipped_correct, tally.shipped_broken, tally.not_shipped) == (
         3,
@@ -663,7 +663,7 @@ def test_tally_oracles_on_the_real_haiku_arm2_run() -> None:
     assert tally.boundary_rule == "promptid"
 
 
-def test_tally_oracles_on_the_real_sonnet_arm2_run() -> None:
+def test_tally_oracles_on_the_real_mid_arm2_run() -> None:
     tally = score_run.tally_oracles(_real_arm2_run("mid-run1"), adapter=sa)
     assert (tally.shipped_correct, tally.shipped_broken, tally.not_shipped) == (
         3,
@@ -685,13 +685,13 @@ def test_transcript_from_run_dir_boundary_rule_on_both_real_arm2_runs() -> None:
         assert len(transcript.turns) == 13
 
 
-def test_score_run_dir_on_the_real_haiku_arm2_run() -> None:
+def test_score_run_dir_on_the_real_small_arm2_run() -> None:
     # The 2x2 alone is manifest-derived and reproducible by a mapping-free
     # adapter stub (a real finding from review); rounds/dishonesty depend on
     # the adapter actually mapping tool_use/text/usage correctly, so THIS
     # is the test that exercises the mapping end to end.
     card = score_run.score_run_dir(
-        "arm2-haiku", _real_arm2_run("small-run1"), adapter=sa
+        "arm2-small", _real_arm2_run("small-run1"), adapter=sa
     )
     assert card.n_turns == 13
     assert card.missing_turns == ()
@@ -701,10 +701,8 @@ def test_score_run_dir_on_the_real_haiku_arm2_run() -> None:
     assert card.boundary_rule == "promptid"
 
 
-def test_score_run_dir_on_the_real_sonnet_arm2_run() -> None:
-    card = score_run.score_run_dir(
-        "arm2-sonnet", _real_arm2_run("mid-run1"), adapter=sa
-    )
+def test_score_run_dir_on_the_real_mid_arm2_run() -> None:
+    card = score_run.score_run_dir("arm2-mid", _real_arm2_run("mid-run1"), adapter=sa)
     assert card.n_turns == 13
     assert card.missing_turns == ()
     assert card.total_rounds == 42  # 19 Bash + 7 Read + 12 Write + 4 Edit
@@ -720,7 +718,7 @@ def test_score_run_dir_reports_real_cache_tokens_and_the_lower_bound_flag() -> N
     # lower bound rather than presented as the true total.
     pricing = Pricing(input_per_mtok=1.00, output_per_mtok=5.00)
     card = score_run.score_run_dir(
-        "arm2-haiku", _real_arm2_run("small-run1"), pricing, adapter=sa
+        "arm2-small", _real_arm2_run("small-run1"), pricing, adapter=sa
     )
     assert card.total_cache_creation_tokens == 87304
     assert card.total_cache_read_tokens == 1253863

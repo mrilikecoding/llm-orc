@@ -1,6 +1,6 @@
 # arm2 small-run1: author-independent J-tier score (2026-07-15)
 
-Scorer: Sonnet subagent (different family from the arm). Scored against
+Scorer: hosted-mid subagent (different family from the arm). Scored against
 manifests + transcript tool calls (Write payloads re-hashed to match the
 manifests), quoted per call.
 

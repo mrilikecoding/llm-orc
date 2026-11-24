@@ -32,7 +32,7 @@ in your report.
 ## Global constraints
 
 - One worktree for the arc:
-  `git worktree add .claude/worktrees/arc5-cli-remote -b feat/cli-remote-client main`.
+  `git worktree add .harness/worktrees/arc5-cli-remote -b feat/cli-remote-client main`.
   Never `git stash` (the working dir is shared with other sessions).
   Never spawn subagents that edit or commit.
 - Strict TDD, one test at a time. Structural and behavioral commits

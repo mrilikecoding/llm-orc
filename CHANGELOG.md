@@ -1375,7 +1375,7 @@ cache is now off unless a project opts in.
 ## [0.12.0] - 2025-12-04
 
 ### Added
-- **MCP Server Architecture (ADR-009)** - Model Context Protocol server for Claude Code integration
+- **MCP Server Architecture (ADR-009)** - Model Context Protocol server for MCP client integration
   - **25 MCP tools** organized by category: core execution, provider discovery, CRUD operations
   - **FastMCP SDK integration** with decorator-based tool and resource registration
   - **Streaming progress** via FastMCP Context for real-time execution feedback
@@ -1412,7 +1412,7 @@ cache is now off unless a project opts in.
   - `llm-orc://metrics/{ensemble}` - Get aggregated execution metrics
 
 - **CLI Integration**
-  - `llm-orc mcp serve` - Start MCP server for Claude Code
+  - `llm-orc mcp serve` - Start MCP server for MCP clients
   - HTTP transport option for debugging
 
 ### Technical
@@ -1858,7 +1858,7 @@ cache is now off unless a project opts in.
   - Stdio transport for direct process communication
   - New `llm-orc serve <ensemble> --port <port>` command
   - Seamless integration with existing configuration system
-  - Enables external tools (Claude Code, VS Code extensions) to leverage domain-specific workflows
+  - Enables external tools (coding agents, VS Code extensions) to leverage domain-specific workflows
 
 - **Enhanced OAuth Authentication** - Complete Claude Pro/Max OAuth implementation
   - Anthropic Claude Pro/Max OAuth support with subscription-based access

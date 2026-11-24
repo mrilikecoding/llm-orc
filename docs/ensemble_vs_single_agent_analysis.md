@@ -193,7 +193,7 @@ This analysis reveals possibilities for architectures where **high-capability ag
 
 ```
 ┌─────────────────┐    ┌──────────────────────┐
-│   Claude Code   │───▶│   Strategy & Routing │
+│  Coding Agent   │───▶│   Strategy & Routing │
 │   (Conductor)   │    │   Decision Engine    │
 └─────────────────┘    └──────────────────────┘
          │                        │

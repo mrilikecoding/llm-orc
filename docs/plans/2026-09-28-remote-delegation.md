@@ -44,7 +44,7 @@ closure, preflight transitively, resolve explicitly, run.**
 - Strict TDD; structural and behavioral changes in separate commits; ruff 88
   + mypy strict from the first draft; complexity <= 15; `make lint` clean.
 - Human commit messages (`feat:`/`fix:`/`refactor:`/`test:`/`docs:`); NO AI
-  attribution, no Co-Authored-By, no Claude-Session trailers, no claude.ai
+  attribution, no Co-Authored-By, no session trailers, no hosted-ai
   links, no scratch/session paths in tracked files.
 - Doctrine 11: pins assert outcomes through the real surface (REST
   TestClient, MCP tool call, CliRunner, real executor), and each key pin is
@@ -57,11 +57,11 @@ closure, preflight transitively, resolve explicitly, run.**
 
 ## Arcs
 
-Model per arc: Sonnet implements, Opus reviews (independent, adversarial,
-before merge), Haiku does mechanical sweeps. Arcs 2-4 depend on the spikes;
+Model per arc: hosted-mid implements, hosted-large reviews (independent, adversarial,
+before merge), hosted-small does mechanical sweeps. Arcs 2-4 depend on the spikes;
 revise their cards from the spike findings before starting them.
 
-### Arc 0: two spikes (Sonnet, read-mostly, ~half a day)
+### Arc 0: two spikes (hosted-mid, read-mostly, ~half a day)
 
 Record findings as a dated "Spike findings" section appended to this file.
 
@@ -85,7 +85,7 @@ Record findings as a dated "Spike findings" section appended to this file.
   Answer decides whether Arc 3's `pullable` for a newly shipped profile is a
   live load, a supervised router restart, or a `needs_restart` status.
 
-### Arc 1: `scope` on CRUD (Sonnet, ~1 day, independent of the spikes)
+### Arc 1: `scope` on CRUD (hosted-mid, ~1 day, independent of the spikes)
 
 - `create_ensemble` / `update_ensemble` / `delete_ensemble`, and the same for
   profiles and scripts, accept `scope: "project" | "global"`, default
@@ -126,7 +126,7 @@ profile `local-qwen3-0.6b`.
 - `DELETE ...?scope=global` → `200`, `deleted: true`; file confirmed gone,
   rest of `~/.config/llm-orc/ensembles/` untouched.
 
-### Arc 2: serving project ships with the wheel (#196) (Sonnet, 2-3 days, after S1)
+### Arc 2: serving project ships with the wheel (#196) (hosted-mid, 2-3 days, after S1)
 
 - Package `.llm-orc/{ensembles,profiles,scripts,config.yaml}` (tracked files
   only; never `*.local.yaml`) into the wheel as `llm_orc/serving_project/`
@@ -287,7 +287,7 @@ temp dirs: `llm-orc serve --port 8766 --backend-port 8790 --models-max 1`
   start marker under `serving_project/`; 228 `.pyc` under
   `<state>/llm-orc/pycache/`; cwd empty; SIGTERM stopped serve and router.
 
-### Arc 3: transitive preflight (Sonnet, ~1-2 days, after S2)
+### Arc 3: transitive preflight (hosted-mid, ~1-2 days, after S2)
 
 - `check_ensemble_runnable` (`services/handlers/provider_handler.py` ~165)
   today marks script / ensemble / loop / dispatch agents available without
@@ -472,7 +472,7 @@ agents: `local-qwen3-1.7b`, a project profile `probe-qwen3-4b` with `hf_repo`,
   model that is loaded reads `ready`, so a pulled model reads `ready`
   in the same serve without a restart (until the router evicts it).
 
-### Arc 4: one-run injection (Sonnet, ~2-3 days, after Arc 3)
+### Arc 4: one-run injection (hosted-mid, ~2-3 days, after Arc 3)
 
 Request shape, identical on REST (`POST /api/ensembles/execute` body), MCP
 (`invoke` args) and CLI:
@@ -786,7 +786,7 @@ over ssh:
 - The MCP `invoke` tool over `/mcp`: an inline root with an injected
   script ran in 0.3 s.
 
-### Arc 5: CLI as the remote client (Sonnet, ~1-2 days, after Arc 4)
+### Arc 5: CLI as the remote client (hosted-mid, ~1-2 days, after Arc 4)
 
 - `llm-orc invoke <ensemble> --remote <url> [--bind a=b] [--pull]
   [--persist global]`: the CLI resolves the closure locally (ensemble, child
@@ -1242,7 +1242,7 @@ rounds of key rules passed it and each was wrong on a layout it did not
 hold. What closed the class was running the run's own resolver over the
 request before sending it, for what ships and for what does not.
 
-### Arc 6: remotes are discoverable (Sonnet, about a day, after Arc 5)
+### Arc 6: remotes are discoverable (hosted-mid, about a day, after Arc 5)
 
 Asked for by the practitioner on 2026-10-02 after the first remote run
 from a fresh install: a new session must be able to find the configured

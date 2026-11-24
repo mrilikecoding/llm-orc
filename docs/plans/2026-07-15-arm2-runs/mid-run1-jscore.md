@@ -1,6 +1,6 @@
 # arm2 mid-run1: author-independent J-tier score (2026-07-15)
 
-Scorer: Sonnet subagent — SAME MODEL FAMILY AS THE ARM (declared caveat; the
+Scorer: hosted-mid subagent — SAME MODEL FAMILY AS THE ARM (declared caveat; the
 scorer itself recommends a differently-sourced second look before this run
 is published as a comparative data point rather than a mechanism check).
 Scored strictly against manifests + transcript greps, quoted per call.

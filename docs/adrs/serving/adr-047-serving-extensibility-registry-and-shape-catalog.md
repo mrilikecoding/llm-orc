@@ -14,7 +14,7 @@ dissolved or the AS-5 trust/promotion machinery it retired.
 Two grounding inputs shape this decision:
 
 - **Runtime-composition feasibility spike** (`essays/research-logs/cycle-8-spike-runtime-composition-feasibility.md`, 2026-07-02). A fixed-shape pipeline with runtime-filled parts is expressible today on the shipped primitives (chained `dispatch` nodes wired by `depends_on`, or dispatch-to-a-pre-authored-wrapper). A runtime-*authored* arbitrary DAG shape (a decider emits the structure and the engine materializes it) is NOT expressible without a new primitive, and the spike named four precise gaps.
-- **llm-conductor mining** (the practitioner's local skill; `~/.claude/skills/llm-conductor/`). It is a catalog-anchored hybrid: a catalog of named composition shapes selected and customized per task, with novel-DAG design as the author-time fallback that graduates into a pattern library (its ADR-013 + ADR-019). Its essay-004 **Strategy A vs Strategy B** frame is the useful result: Strategy A (routing/composition intelligence *outside* the ensembles, over stateless instruments) beats Strategy B (a general ensemble with an *internal* small-model self-router) for small models, on cited evidence (AutoMix; small-LM-verifier work; DeepMind scaling-agents). The failure is not the patterns, it is placing the routing where a small model must execute it. Its trap is the `Design → Calibrate → Establish → Trust → Promote` populator, which is exactly the retired AS-5 machinery.
+- **llm-conductor mining** (the practitioner's local skill). It is a catalog-anchored hybrid: a catalog of named composition shapes selected and customized per task, with novel-DAG design as the author-time fallback that graduates into a pattern library (its ADR-013 + ADR-019). Its essay-004 **Strategy A vs Strategy B** frame is the useful result: Strategy A (routing/composition intelligence *outside* the ensembles, over stateless instruments) beats Strategy B (a general ensemble with an *internal* small-model self-router) for small models, on cited evidence (AutoMix; small-LM-verifier work; DeepMind scaling-agents). The failure is not the patterns, it is placing the routing where a small model must execute it. Its trap is the `Design → Calibrate → Establish → Trust → Promote` populator, which is exactly the retired AS-5 machinery.
 
 **Standing principle (practitioner, 2026-07-02).** Whenever the reasoning reaches "a
 small model cannot do this," the first question is what **ensemble orchestration**
@@ -110,7 +110,7 @@ bounded, not vague:
   on the evidence llm-conductor's essay-004 cites: the failure is placing routing where
   a small model must execute it. The classify seat is external and declarative
   (Strategy A). *Extension flagged (standing principle, beyond the cited evidence):*
-  essay-004's validated Strategy A puts a *capable* model (Claude) in the external
+  essay-004's validated Strategy A puts a *capable* model (a hosted frontier model) in the external
   router seat, and no source it cites tests a small model there. This ADR's position
   that the external router may itself be an orchestration of bounded small-model roles
   is a considered extension of essay-004's external-vs-internal placement axis, driven

@@ -1,6 +1,6 @@
 """Unit tests for the frontier arm (deterministic; CI-safe).
 
-The live Sonnet dispatch is an in-session step (the Agent tool, model=sonnet —
+The live hosted-mid dispatch is an in-session step (the Agent tool, model=mid —
 §7); there is no autonomous module to unit-test. These cover the pure parts: the
 subagent prompt and scoring a populated workspace into a CellResult. Run with the
 llm_orc coverage gate disabled:

@@ -79,7 +79,7 @@ with nomic prefixes return two 768-dim vectors; `/api/models` shows
 Callers are script agents inside `vault-` ensembles on the mini, hitting
 the serve on loopback, batches of 32 to 64, whole-note chunks, batch and
 overnight only; Plexus invokes those ensembles over REST execute; the
-Claude skills only manage ensembles over MCP. No vector store here:
+Agent skills only manage ensembles over MCP. No vector store here:
 Plexus is the record. nomic-embed-text-v1.5 at 768 dims is accepted.
 
 ## Out of scope

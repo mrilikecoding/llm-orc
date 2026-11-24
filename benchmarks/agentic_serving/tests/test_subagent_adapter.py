@@ -1,8 +1,8 @@
-"""Tests for the Claude Code subagent transcript -> Transcript IR adapter
+"""Tests for the hosted-harness subagent transcript -> Transcript IR adapter
 (#131).
 
 Fixtures use the REAL runs committed at
-`docs/plans/2026-07-15-arm2-runs/{haiku,sonnet}-run1/transcript.jsonl` (ground
+`docs/plans/2026-07-15-arm2-runs/{small,mid}-run1/transcript.jsonl` (ground
 truth, not guessed — schema documented at
 `docs/plans/2026-07-17-arm2-subagent-captures/README.md`) plus synthetic
 events for the fail-loudly cases, which by definition need shapes no real
@@ -56,11 +56,11 @@ class TestParseEvents:
 
 
 class TestSplitTurns:
-    def test_haiku_run_splits_into_thirteen_turns(self) -> None:
+    def test_small_run_splits_into_thirteen_turns(self) -> None:
         turns = _run_turns("small-run1")
         assert len(turns) == 13
 
-    def test_sonnet_run_splits_into_thirteen_turns(self) -> None:
+    def test_mid_run_splits_into_thirteen_turns(self) -> None:
         turns = _run_turns("mid-run1")
         assert len(turns) == 13
 
@@ -74,19 +74,19 @@ class TestSplitTurns:
         turns, _rule = sa.split_turns([])
         assert turns == []
 
-    def test_haiku_run_boundary_rule_is_promptid(self) -> None:
+    def test_small_run_boundary_rule_is_promptid(self) -> None:
         # A fresh promptId per injected prompt (2.1.210 cli) -- the primary
         # rule, not the string-content fallback.
         _turns, rule = sa.split_turns(sa.parse_events(_run_text("small-run1")))
         assert rule == "promptid"
 
-    def test_sonnet_run_boundary_rule_is_promptid(self) -> None:
+    def test_mid_run_boundary_rule_is_promptid(self) -> None:
         _turns, rule = sa.split_turns(sa.parse_events(_run_text("mid-run1")))
         assert rule == "promptid"
 
 
 class TestFullTurnFromRealCapture:
-    """Turn 1 of the haiku run: ls (bash), two reads, a write, a read-back —
+    """Turn 1 of the small run: ls (bash), two reads, a write, a read-back —
     exercises bash/read/write mapping, text, tokens and wall-clock in one
     real, unedited slice."""
 
@@ -134,7 +134,7 @@ class TestFullTurnFromRealCapture:
         assert write_call.path.endswith("todo.py")
         assert write_call.result_text == (
             "File created successfully at: "
-            "/tmp/scratch/arm2-haiku-repo/todo.py "
+            "/tmp/scratch/arm2-small-repo/todo.py "
             "(file state is current in your context "
             "— no need to Read it back)"
         )
@@ -160,7 +160,7 @@ class TestFullTurnFromRealCapture:
 
 
 class TestUsageDedup:
-    """Turn 1 (haiku) has 6 distinct assistant `message.id`s, each logged
+    """Turn 1 (small) has 6 distinct assistant `message.id`s, each logged
     across 2 JSONL lines (thinking then tool_use/text) with GROWING usage —
     the streaming-increment shape the capture README's finding 3 documents.
     Deduping by message.id (terminal value per id, then summed across ids)
@@ -192,7 +192,7 @@ class TestCacheTokens:
 
 
 class TestBashToolTurn:
-    """Turn 11 ("run the tests") of the haiku run: a real red pytest run
+    """Turn 11 ("run the tests") of the small run: a real red pytest run
     (1 failed, 16 passed) honestly disclosed — the roadmap's own claim that
     "turn 11's verdict matched truth"."""
 
@@ -207,7 +207,7 @@ class TestBashToolTurn:
         assert call.command is not None
         assert "pytest" in call.command
         assert "1 failed, 16 passed" in call.result_text
-        # A nonzero pytest exit is reported by Claude Code as a tool error
+        # A nonzero pytest exit is reported by the frontier harness as a tool error
         # even though the CALL itself succeeded — real capture, not guessed.
         assert call.is_error is True
 
@@ -221,28 +221,28 @@ class TestBashToolTurn:
 
 
 class TestTranscriptFromRun:
-    def test_haiku_run_assembles_thirteen_indexed_turns(self) -> None:
+    def test_small_run_assembles_thirteen_indexed_turns(self) -> None:
         transcript = sa.transcript_from_run(
-            "arm2-haiku", _run_text("small-run1"), LADDER_PROMPTS
+            "arm2-small", _run_text("small-run1"), LADDER_PROMPTS
         )
-        assert transcript.arm == "arm2-haiku"
+        assert transcript.arm == "arm2-small"
         assert [t.index for t in transcript.turns] == list(range(1, 14))
         assert transcript.turns[0].prompt == LADDER_PROMPTS[0]
 
-    def test_sonnet_run_assembles_and_maps_the_edit_tool(self) -> None:
+    def test_mid_run_assembles_and_maps_the_edit_tool(self) -> None:
         # mid-run1 is where the Edit tool (undocumented in the 2026-07-17
         # capture README's schema section, which lists only Write/Bash/Read)
         # is demonstrated — see the module docstring's discrepancy note.
         transcript = sa.transcript_from_run(
-            "arm2-sonnet", _run_text("mid-run1"), LADDER_PROMPTS
+            "arm2-mid", _run_text("mid-run1"), LADDER_PROMPTS
         )
         assert len(transcript.turns) == 13
         names = {call.name for turn in transcript.turns for call in turn.tool_calls}
         assert names == {"bash", "read", "write", "edit"}
 
-    def test_haiku_run_boundary_rule_is_promptid(self) -> None:
+    def test_small_run_boundary_rule_is_promptid(self) -> None:
         transcript = sa.transcript_from_run(
-            "arm2-haiku", _run_text("small-run1"), LADDER_PROMPTS
+            "arm2-small", _run_text("small-run1"), LADDER_PROMPTS
         )
         assert transcript.boundary_rule == "promptid"
 

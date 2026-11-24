@@ -85,7 +85,7 @@ llm-orc previously had a minimal MCP server implementation that:
 - Had hardcoded version strings
 
 As ensemble usage grows, CLI-only interaction becomes limiting. MCP enables:
-1. **Claude Code integration** - Direct ensemble execution from AI assistants
+1. **MCP client integration** - Direct ensemble execution from AI assistants
 2. **GUI tools** - Visual ensemble management (Manza, custom UIs)
 3. **Orchestration systems** - Higher-level systems (like Plexus) can invoke llm-orc
 4. **Resource discovery** - Clients can browse ensembles, artifacts, and metrics
@@ -207,7 +207,7 @@ llm-orc m serve
 
 ### Positive
 
-1. **Full MCP compliance** - Works with any MCP client (Claude Code, Claude Desktop, etc.)
+1. **Full MCP compliance** - Works with any MCP client (coding agents, desktop apps, etc.)
 2. **Resource discoverability** - Clients can browse ensembles without prior knowledge
 3. **Validation before execution** - `validate_ensemble` checks profiles and dependencies
 4. **Streaming UX** - Real-time feedback for long executions
@@ -319,14 +319,14 @@ tests/unit/mcp_server/
 ├── __init__.py
 └── test_server_v2.py    # 88 unit tests
 
-.mcp.json                # Claude Code MCP configuration
+.mcp.json                # MCP client configuration
 ```
 
 > **Updated (2026-02-22):** `MCPServerV2` renamed to `MCPServer`. Handler composition extracted to `OrchestraService` — both MCP and web ports delegate to it. `ProjectContext` value object added for atomic handler configuration after `set_project`.
 
 ## How to Use
 
-### Claude Code Integration
+### MCP Client Integration
 
 Add `.mcp.json` to project root:
 ```json
@@ -340,11 +340,11 @@ Add `.mcp.json` to project root:
 }
 ```
 
-Restart Claude Code. MCP tools become available as `mcp__llm-orc__*`.
+Restart the MCP client. MCP tools become available as `mcp__llm-orc__*`.
 
 ### Validation Runbook
 
-See the [Claude Code MCP Validation Runbook](#claude-code-mcp-validation-runbook) below.
+See the [MCP Client Validation Runbook](#mcp-client-validation-runbook) below.
 
 ## Phase 2: Full CRUD Operations (Complete)
 
@@ -562,14 +562,14 @@ tools:
 - Cross-reference ensemble profiles against available providers and endpoint model lists
 - Suggest local alternatives from Ollama and available OpenAI-compatible profiles
 
-## Claude Code MCP Validation Runbook
+## MCP Client Validation Runbook
 
 This runbook validates the MCP integration is working correctly.
 
 ### Prerequisites
 
 - `.mcp.json` configured in project root
-- Claude Code session started (MCP server auto-launches)
+- MCP client session started (MCP server auto-launches)
 - Ollama running locally (for `validate-ollama` ensemble)
 
 ### Step 1: List Ensembles

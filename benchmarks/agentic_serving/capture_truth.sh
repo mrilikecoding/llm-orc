@@ -1,7 +1,7 @@
 #!/bin/zsh
 # Per-turn workspace ground truth, shared by EVERY arm's driver (#131).
 #
-# Extracted from ladder_battery.sh so a second driver (Arm 2, the Claude Code
+# Extracted from ladder_battery.sh so a second driver (Arm 2, the the frontier harness
 # subagent harness) cannot drift the truth substrate: whatever drives the
 # turns, the recorded facts — hashed manifest, suite/seeded pytest rc, hidden
 # oracle verdict, oracle contamination — come from THIS script, identically.

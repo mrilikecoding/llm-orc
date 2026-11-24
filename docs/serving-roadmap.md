@@ -1,7 +1,7 @@
 # Serving Roadmap — to the North Star
 
-Revamped 2026-07-17 for execution by non-Fable sessions (Opus-class lead,
-Sonnet-class implementers, Haiku-class mechanical). The prior roadmap —
+Revamped 2026-07-17 for execution by non-frontier sessions (hosted-large-class lead,
+hosted-mid-class implementers, hosted-small-class mechanical). The prior roadmap —
 including the full trajectory table, the Arc D correction history, and the
 2026-07-09 path items — is frozen verbatim in
 `docs/serving-roadmap-archive-2026-07-17.md`; treat it as provenance, not
@@ -11,7 +11,7 @@ as the plan. This document is the plan. Its **State** section is rewritten
 ## North star
 
 **Full model parity through composition** (see `docs/serving.md`): llm-orc
-served agentically behind OpenCode should be as functional as Claude Code
+served agentically behind OpenCode should be as functional as the frontier harness
 running a frontier model, and beyond it where composition wins, all through
 orchestrated small models. This is a literal engineering target. The
 comparator is a frontier model PLUS its harness — behind OpenCode it reads
@@ -192,7 +192,7 @@ One engine change reaches every script agent: its subprocess leads its
 own process group, a timeout kills the group, a cancelled run kills it
 before cleanup. `/v1/chat/completions` and the local CLI are not gated.
 
-Process record: Sonnet implementers per task; an Opus review of Tasks
+Process record: hosted-mid implementers per task; a hosted-large review of Tasks
 1-4, a whole-branch review, and three scoped re-reviews of the fix
 waves. Every round but the last found real defects (six, three, three,
 one), and the fix waves introduced two of their own. Lesson, binding:
@@ -419,7 +419,7 @@ This is Next up 2's owed #90 gate, now measured for T1.
 ### Evidence carried forward (2026-09-12)
 
 Comparator row on the existing-repo probe: Go `qwen3.8-max` 7/7 ($0.27),
-Sonnet 5 7/7 ($0.38) vs the serve 1/7. Ladder runs 7-8 on the merged
+a hosted frontier model 7/7 ($0.38) vs the serve 1/7. Ladder runs 7-8 on the merged
 arcs: 10/13, 8/13; T1 decides the ladder (3 correct / 2 broken / 3 refused
 over eight runs; refusals pre-date the arcs). Neither has been re-run on
 the llama-server backend yet — that is the regression gate below.
@@ -653,8 +653,8 @@ honest ask; existence is a workspace fact, never a verb. 2026-09-16: the
 first real run of a new process-owning feature found four defects unit
 tests could not (signal re-raise, list hygiene, async load, swallowed
 stderr) — run the real thing before calling a lifecycle feature done.
-Ops: subagent budget ~4-5M tokens/day before the limit; Sonnet
-implementers, Opus reviews; ladder ~17 min at coder-on, probe ~10 min;
+Ops: subagent budget ~4-5M tokens/day before the limit; hosted-mid
+implementers, hosted-large reviews; ladder ~17 min at coder-on, probe ~10 min;
 one serve per tree, restart before every gate; the 8b GGUF is a 5 GB
 first download per box.
 
@@ -671,14 +671,14 @@ Done:
 - [x] WS-8 instrument (#131 Arcs A–D) — battery, hidden oracles, frozen rubric, hashed manifests; 5-round review gate
 - [x] Arm-0 column n=3; first parity table published
 - [x] #133 #134 — honesty classes closed, live-validated at 0 dishonest (run 5)
-- [x] Arm-2 adapter + automatic scoring (#131); Haiku run 2 scored (2 dishonest — frontier n=1 ceiling broken)
+- [x] Arm-2 adapter + automatic scoring (#131); hosted-small run 2 scored (2 dishonest — frontier n=1 ceiling broken)
 - [x] Battery precondition guards; CI fixes (twine metadata, pyasn1); dogfood channel (`docs/dogfood-log.md`)
 
 Remaining, in order:
 
 - [x] #90 — Ollama dropped; the serve owns a llama-server router (2026-09-16)
-- [x] #131 — Arm-2 runs at n=3 per model, all independently J-scored (Haiku 35/39, 4 dishonest; Sonnet 39/39, 0)
-- [x] #131 — Arm-1 GO'd + n=3 per model, independently J-scored (Haiku 38/39, 0 dishonest; Sonnet 39/39, 0); #147 filed
+- [x] #131 — Arm-2 runs at n=3 per model, all independently J-scored (hosted-small 35/39, 4 dishonest; hosted-mid 39/39, 0)
+- [x] #131 — Arm-1 GO'd + n=3 per model, independently J-scored (hosted-small 38/39, 0 dishonest; hosted-mid 39/39, 0); #147 filed
 - [x] #146 — v0.18.15 RELEASED 2026-08-13 (PyPI + Homebrew green)
 - [x] #148 — truncated-listing refuse merged + live-validated (3 review
   rounds; run-6 validation row); #149 filed (client-side flank)
@@ -802,7 +802,7 @@ measurement; provenance in the archive.
   adapter code, reviews, doc work. RIG-tagged validation of ANY-developed
   work is queued, not skipped: the PR says "needs rig battery" and the next
   rig session runs it.
-- **REMOTE** — a remote Claude Code session specifically: **Arm-2 battery
+- **REMOTE** — a remote frontier-harness session specifically: **Arm-2 battery
   runs** (subagent model overrides + continuation), GitHub issue hygiene,
   independent J-scoring and reviews (a fresh remote session is naturally
   author-independent).
@@ -821,7 +821,7 @@ dishonest outcome.
 - [x] Instrument + Arm-0 column + parity table v1 + Arm-2 auto-scoring (#131)
 - [x] #131 Arm-2 n=3; Arm-1 go/no-go + runs n=3 (all columns complete)
 - [ ] #147 `_PASS_CLAIM_RE` false-positive family (three refuted captures)
-- [ ] #141 CLAUDE.md confound · #167 volume-scaling paid runs
+- [ ] #141 instruction-file confound · #167 volume-scaling paid runs
   (successor to the closed #138, which tracked the instrument) · #63
   statistics
 - [ ] Parity table v2 (realism rows; interval estimates)
@@ -879,7 +879,7 @@ dishonest outcome.
 ### epic:off-path
 #80 #65 #30 #66 — parked, not on the north-star path.
 
-## Delegation contract (updated for non-Fable sessions)
+## Delegation contract (updated for non-frontier sessions)
 
 Every arc: short design doc (`docs/plans/YYYY-MM-DD-*.md`) → TDD
 implementation → live real-OpenCode validation at the earliest runnable
@@ -890,12 +890,12 @@ before merge** (the review record is five-for-five on finding real
 blockers the author missed).
 
 Session roles:
-- **Lead (Opus-class):** designs, reviews, sequencing decisions, this
+- **Lead (hosted-large-class):** designs, reviews, sequencing decisions, this
   document. On entry: read §State, §Doctrine, and the card being worked —
   not the archive.
-- **Implementer (Sonnet-class):** one task card per arc, TDD, hermetic
+- **Implementer (hosted-mid-class):** one task card per arc, TDD, hermetic
   suite green, PR notes any queued RIG validation.
-- **Mechanical (Haiku-class):** #95-grade sweeps, doc syncs, battery
+- **Mechanical (hosted-small-class):** #95-grade sweeps, doc syncs, battery
   bookkeeping, table updates from existing records.
 - **Scoring/review independence (doctrine 1):** J-scores and review
   APPROVEs come from a session or agent that did not author the work; a

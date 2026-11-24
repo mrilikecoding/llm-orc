@@ -1,6 +1,6 @@
 @adr-009 @mcp
 Feature: MCP Server Architecture
-  As an MCP client (Claude Code, Claude Desktop, etc.)
+  As an MCP client (coding agents, desktop apps, etc.)
   I want to interact with llm-orc via the Model Context Protocol
   So that I can discover, execute, and manage ensembles programmatically
 

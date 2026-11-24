@@ -74,8 +74,8 @@ class TestTranscript:
 
     def test_carries_arm_name_and_turns(self) -> None:
         turn = Turn(index=1, prompt="p", assistant_text="a")
-        transcript = Transcript(arm="haiku-4.5", turns=(turn,))
-        assert transcript.arm == "haiku-4.5"
+        transcript = Transcript(arm="small-4.5", turns=(turn,))
+        assert transcript.arm == "small-4.5"
         assert transcript.turns == (turn,)
 
     def test_defaults_to_no_boundary_rule(self) -> None:
@@ -85,7 +85,7 @@ class TestTranscript:
         assert transcript.boundary_rule is None
 
     def test_carries_a_declared_boundary_rule(self) -> None:
-        transcript = Transcript(arm="arm2-haiku", boundary_rule="promptid")
+        transcript = Transcript(arm="arm2-small", boundary_rule="promptid")
         assert transcript.boundary_rule == "promptid"
 
 

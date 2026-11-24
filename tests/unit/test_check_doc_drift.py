@@ -97,10 +97,10 @@ def test_a_checkout_under_a_skip_named_directory_still_knows_its_names(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The skip set names directories INSIDE a checkout (htmlcov, dist, a
-    worktree's own .claude/worktrees). A checkout that itself lives under a
-    directory named like one — every delegated agent's worktree sits at
-    .claude/worktrees/<agent>/ — must still scan its own files. Measured:
-    inside such a worktree the checker knew zero names, so it passed any
+    worktree's own worktrees directory). A checkout that itself lives under a
+    directory named like one — every delegated agent's worktree sits in the
+    harness's agent worktree directory — must still scan its own files.
+    Measured: inside such a worktree the checker knew zero names, so it passed any
     wrong doc and reported 16 right names as drift in `make lint`."""
     repo = tmp_path / "worktrees" / "agent-under-review"
     (repo / "tests").mkdir(parents=True)

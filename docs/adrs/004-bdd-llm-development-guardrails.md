@@ -6,12 +6,12 @@ Superseded
 ## Implementation Status
 
 ### ✅ Core Framework (Complete)
-- [x] BDD scenarios created in .claude/hooks/ and .claude/agents/
+- [x] BDD scenarios created in the harness hooks and agents directories
 - [x] Core automation framework implemented
 - [x] Hook system operational (bdd-development-gate.sh, testing-pyramid-gate.sh)
 - [x] Agent system integrated (llm-orc-bdd-specialist, llm-orc-tdd-specialist)
-- [x] Automation framework documented in .claude/README.md
-- [x] Separation of concerns between Claude automation and application
+- [x] Automation framework documented in the harness README
+- [x] Separation of concerns between agent harness automation and application
 - [x] ADR template with BDD mapping hints (docs/adr-template-with-bdd-hints.md)
 - [x] Testing pyramid discipline enforcement (warning system operational)
 
@@ -27,24 +27,24 @@ Superseded
 **Note**: The testing-pyramid-gate.sh warning that triggered this review actually demonstrates the system is working correctly - it's detecting coverage gaps and providing feedback as designed.
 
 ## BDD Integration
-- **Scenario File**: .claude/hooks/ automation framework implementation
+- **Scenario File**: the harness hooks directory automation framework implementation
 - **Test Command**: Manual hook execution and agent activation
 - **Priority Scenario**: "Issue-to-BDD scenario generation workflow"
 
 ## Implementation Progress Log
 - 2025-09-20: Core automation framework operational
-- 2025-09-20: Proper separation between Claude automation and application achieved
-- 2025-09-20: Application BDD tests cleaned of Claude-specific dependencies
+- 2025-09-20: Proper separation between agent harness automation and application achieved
+- 2025-09-20: Application BDD tests cleaned of harness-specific dependencies
 
 ## Architectural Compliance
 - **Related ADRs**: ADR-001, ADR-002, ADR-003 (validation through automation)
 - **Validation Rules**: Separation of concerns between automation and application
-- **Breaking Changes**: None - Claude automation is orthogonal to application
+- **Breaking Changes**: None - agent harness automation is orthogonal to application
 
 ## Context
 
 ### LLM-Assisted Development Challenges
-As llm-orc development increasingly relies on LLM assistance (Claude, GitHub Copilot, etc.), we face specific challenges that traditional development processes don't address:
+As llm-orc development increasingly relies on LLM assistance (coding agents, GitHub Copilot, etc.), we face specific challenges that traditional development processes don't address:
 
 1. **Architectural Drift**: LLMs may implement features without understanding architectural constraints from ADRs
 2. **Context Loss**: LLMs receive GitHub issues but lack behavioral context linking requirements to architecture

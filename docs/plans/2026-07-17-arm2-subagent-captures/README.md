@@ -1,6 +1,6 @@
-# Arm-2 feasibility probe: Claude Code subagent transcript capture (2026-07-17)
+# Arm-2 feasibility probe: hosted-harness subagent transcript capture (2026-07-17)
 
-Probe run from a remote Claude Code session (container, no rig): ONE Haiku
+Probe run from a remote the frontier harness session (container, no rig): ONE hosted-small
 4.5 subagent driven through the battery's first two turns as one continuing
 conversation against a seeded git fixture, with the shared truth substrate
 running caller-side. **Every Arm-2 construct requirement is now verified
@@ -11,7 +11,7 @@ with the continuation boundary between them).
 ## Findings
 
 1. **Transcript location and shape.** Subagent transcripts land at
-   `<claude-projects>/<session-id>/subagents/agent-<id>.jsonl` — JSONL, one
+   `<harness-projects>/<session-id>/subagents/agent-<id>.jsonl` — JSONL, one
    event per line. Event `type` ∈ {`user`, `assistant`, `attachment`}.
    `message.content` blocks: `thinking` (+signature), `tool_use`
    (`{id, name, input}`), `tool_result` (arrives on user-role events, linked
@@ -63,7 +63,7 @@ with the continuation boundary between them).
    container has none by default but `apt-get install zsh` works (driver
    setup step). With `TRUTH_PYTEST="uv run pytest"`, turn captures produced
    hashed manifests, suite/seeded rcs, and — notably — **the hidden turn-1
-   oracle ran and PASSED against the Haiku deliverable** ("ok: mutated in
+   oracle ran and PASSED against the hosted-small deliverable** ("ok: mutated in
    place via add_todo").
 6. **The instrument caught the probe's own procedural error.** Turn-1's
    capture was run CONCURRENTLY with turn 2 (probe sloppiness): turn 2's
@@ -84,7 +84,7 @@ with the continuation boundary between them).
 
 ## Declared confounds (unchanged from the roadmap, now confirmed applicable)
 
-The subagent inherits the project CLAUDE.md stack, the agent Bash sandbox,
+The subagent inherits the project instruction-file stack, the agent Bash sandbox,
 and runs without permission prompts. Add finding 7's path preamble.
 
 ## What remains for the Arm-2 driver (next session, REMOTE)
@@ -95,7 +95,7 @@ and runs without permission prompts. Add finding 7's path preamble.
 - The raw→IR adapter over this captured schema (`subagent_adapter.py`
   beside `opencode_adapter.py`), with the `message.id` usage dedup and
   loud-fail on unmapped tool names.
-- ≥3 runs per model (Haiku 4.5, Sonnet), J-turns to the independent scorer,
+- ≥3 runs per model (hosted-small 4.5, hosted-mid), J-turns to the independent scorer,
   cells including deaths/unscored published per the frozen rubric.
 
 ## Artifacts

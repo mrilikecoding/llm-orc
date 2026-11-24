@@ -1,7 +1,7 @@
 """Arm-agnostic transcript IR for WS-8 parity scoring (#131).
 
 Every comparison arm (the serve behind OpenCode, a frontier model behind
-OpenCode, Claude Code) produces a different raw output shape. This module
+OpenCode, the frontier harness) produces a different raw output shape. This module
 is the one shape metrics are scored against: a per-arm adapter (not built
 here — see `docs/plans/2026-07-13-parity-scoreboard-design.md`) turns raw
 client output into this IR, and :mod:`benchmarks.agentic_serving.honesty` /

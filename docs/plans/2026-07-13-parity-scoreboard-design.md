@@ -53,9 +53,9 @@ and its scoring signal is now **dead**:
   because they read produced files, not the log.
 - **Serve-log-only scoring can't be arm-blind.** `scorer.score()` takes
   `(workspace, log_slice, cell)` where `log_slice` is a slice of the *llm-orc
-  serve's own log* (`runner.py:245-267`). Arm 1 (Haiku/Sonnet behind
+  serve's own log* (`runner.py:245-267`). Arm 1 (hosted-small/hosted-mid behind
   OpenCode) never touches the llm-orc serve — OpenCode talks straight to
-  Anthropic. Arm 2 (Claude Code) has no llm-orc serve in the loop at all. A
+  Anthropic. Arm 2 (the frontier harness) has no llm-orc serve in the loop at all. A
   scorer keyed to the serve log is structurally Arm-0-only, which is the
   opposite of what WS-8 needs (`docs/serving-roadmap.md:569-570`: "the
   scoring procedure is identical across arms and arm-blind where the
@@ -75,7 +75,7 @@ log — the one thing all three arms produce.
   llm-orc/agentic "$p" > turn-NN.out 2>&1`, no `--format json` — OpenCode's
   human-formatted CLI transcript. This is what every trajectory-table row was
   actually scored from by hand, and it's the only transcript shape Arm 1
-  (same OpenCode client) and Arm 2 (a different client, Claude Code) can both
+  (same OpenCode client) and Arm 2 (a different client, the frontier harness) can both
   produce an analog of. `runner.py:207-216` shows the harness already knows
   how to request `--format json` (raw JSON events) instead — worth adopting
   for the revived battery since it removes the need to regex-scrape
@@ -115,8 +115,8 @@ Transcript: arm, turns: tuple[Turn, ...]
 ```
 
 This is the "transcript shape each metric reads." A per-arm **adapter**
-(OpenCode default-format text -> IR, OpenCode `--format json` -> IR, Claude
-Code `--output-format json` -> IR) is the only arm-specific code; the
+(OpenCode default-format text -> IR, OpenCode `--format json` -> IR, frontier-harness
+`--output-format json` -> IR) is the only arm-specific code; the
 metrics scorer never branches on arm. Implemented on this branch:
 `benchmarks/agentic_serving/transcript.py` (the IR, pure data) and
 `benchmarks/agentic_serving/honesty.py` (the metrics, pure functions over
@@ -127,8 +127,8 @@ the IR). No adapter is built here — see "Not built here" below.
 | Arm | What runs | Cost | Harness |
 |---|---|---|---|
 | 0 — the serve | qwen3:8b seats behind OpenCode | free (serve marginal ~$0; local model, no API spend) | `benchmarks/agentic_serving/ladder_battery.sh`, unmodified |
-| 1 — harness held constant | Haiku 4.5, then Sonnet 5, each behind the SAME OpenCode client | paid (Anthropic API tokens) | same battery, OpenCode's `provider` pointed at Anthropic instead of the llm-orc serve |
-| 2 — the product bar | Claude Code driving its native model, headless (`claude -p`, session resume for continuity) | paid | different harness entirely (Claude Code, not OpenCode) |
+| 1 — harness held constant | hosted-small 4.5, then a hosted frontier model, each behind the SAME OpenCode client | paid (Anthropic API tokens) | same battery, OpenCode's `provider` pointed at Anthropic instead of the llm-orc serve |
+| 2 — the product bar | the frontier harness driving its native model through a headless harness session (session resume for continuity) | paid | different harness entirely (the frontier harness, not OpenCode) |
 
 Arm 0 is the only one runnable for free; it is also the only one this task
 is allowed to run (no rig access here). Arms 1 and 2 require explicit
@@ -220,7 +220,7 @@ fact) is identical across them.
   `runner.py:207-216`), but its event schema is equally unverified from
   here. **First task of the next session with rig or API access: capture one
   real transcript in each format, then write the adapter against it — do not
-  write the adapter blind.** Claude Code's `--output-format json` needs the
+  write the adapter blind.** The frontier harness's `--output-format json` needs the
   same treatment for Arm 2.
 - **The per-turn strict-score expected-outcome table.** This needs to encode
   the same battery-specific judgment the trajectory table's prose notes
@@ -238,8 +238,8 @@ fact) is identical across them.
 
 ## Paid-arm cost estimate
 
-Pricing (per `claude-api` skill, cached 2026-06-24): Sonnet 5 $3.00/$15.00
-per MTok in/out ($2/$10 intro through 2026-08-31); Haiku 4.5 $1.00/$5.00 per
+Pricing (per model-API skill, cached 2026-06-24): a hosted frontier model $3.00/$15.00
+per MTok in/out ($2/$10 intro through 2026-08-31); hosted-small 4.5 $1.00/$5.00 per
 MTok in/out.
 
 **Assumptions (stated, not measured — no real transcript to calibrate
@@ -266,17 +266,17 @@ against):**
 
 | Arm | Input cost | Output cost | Total/session |
 |---|---|---|---|
-| Sonnet 5 via OpenCode | 420K/1M x $3.00 = $1.26 | 14K/1M x $15.00 = $0.21 | ~$1.47 |
-| Haiku 4.5 via OpenCode | 420K/1M x $1.00 = $0.42 | 14K/1M x $5.00 = $0.07 | ~$0.49 |
-| Claude Code native (Sonnet-5-class + ~30% richer tool/system-prompt overhead) | 546K/1M x $3.00 = $1.64 | 18.2K/1M x $15.00 = $0.27 | ~$1.91 |
+| a hosted frontier model via OpenCode | 420K/1M x $3.00 = $1.26 | 14K/1M x $15.00 = $0.21 | ~$1.47 |
+| hosted-small 4.5 via OpenCode | 420K/1M x $1.00 = $0.42 | 14K/1M x $5.00 = $0.07 | ~$0.49 |
+| Frontier harness native (hosted-mid-5-class + ~30% richer tool/system-prompt overhead) | 546K/1M x $3.00 = $1.64 | 18.2K/1M x $15.00 = $0.27 | ~$1.91 |
 
 At **>=3 runs per arm** (the roadmap's variance-control minimum,
-`docs/serving-roadmap.md:548-550`), for the full comparison (Haiku-via-
-OpenCode + Sonnet-via-OpenCode + Claude-Code-native, 9 thirteen-turn
+`docs/serving-roadmap.md:548-550`), for the full comparison (hosted-small-via-
+OpenCode + hosted-mid-via-OpenCode + frontier-harness-native, 9 thirteen-turn
 sessions total):
 
-- Sonnet-via-OpenCode: ~$4.41 · Haiku-via-OpenCode: ~$1.47 ·
-  Claude-Code-native: ~$5.73
+- hosted-mid-via-OpenCode: ~$4.41 · hosted-small-via-OpenCode: ~$1.47 ·
+  frontier-harness-native: ~$5.73
 - **Total, no caching: ~$11.61**
 
 **With effective prompt caching** (typical ~85% cache-hit rate on a
@@ -285,7 +285,7 @@ economics per `shared/prompt-caching.md`): effective input multiplier ~0.235
 -> **total ~$4-5** for the same 9 sessions.
 
 **Headline for the practitioner:** the full first Arm-1 + Arm-2 comparison
-(9 sessions: Haiku x3, Sonnet x3, Claude Code x3) costs an estimated
+(9 sessions: hosted-small x3, hosted-mid x3, the frontier harness x3) costs an estimated
 **$5-$12**, likely nearer $5 if caching engages, and should be budgeted
 against a **~$25 stretch ceiling** (2x pessimistic, for turns/re-fix rounds
 running longer than assumed). This is a bounded, cheap slot — well inside

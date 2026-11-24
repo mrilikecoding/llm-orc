@@ -1,7 +1,7 @@
-"""Claude Code subagent transcript -> Transcript IR adapter (#131).
+"""hosted-harness subagent transcript -> Transcript IR adapter (#131).
 
 The Arm-2 counterpart to :mod:`benchmarks.agentic_serving.opencode_adapter`:
-turns a captured Claude Code subagent transcript (JSONL) into the same
+turns a captured hosted-harness subagent transcript (JSONL) into the same
 arm-agnostic IR (:mod:`benchmarks.agentic_serving.transcript`) so
 ``score_run.tally_oracles`` runs unchanged across arms. The scorer never
 branches on arm; this adapter is where the subagent-specific shape is
@@ -13,7 +13,7 @@ README finding 4 claimed promptId alone was the boundary signal, which the
 LATER of the two capture generations below falsifies — see the dated
 correction note in the README). Chronologically:
 
-- ``docs/plans/2026-07-15-arm2-runs/{haiku,sonnet}-run1/transcript.jsonl``
+- ``docs/plans/2026-07-15-arm2-runs/{small,mid}-run1/transcript.jsonl``
   (client version 2.1.210, entrypoint ``cli``, events 2026-07-16 — the
   EARLIER capture) — two committed 13-turn runs. Each injected prompt gets a
   FRESH ``promptId``. This is the LEGACY-capture shape: reliable, but not
@@ -48,7 +48,7 @@ in both committed runs: ``Write`` ``{file_path, content}``, ``Bash``
 ``{command, description}``, ``Read`` ``{file_path}``, and ``Edit``
 ``{file_path, old_string, new_string, replace_all}``. **Edit is a
 discrepancy**: the 2026-07-17 capture README's schema section names only
-Write/Bash/Read, but both real runs use Edit too (5/5 haiku, 4/4 sonnet Edit
+Write/Bash/Read, but both real runs use Edit too (5/5 small, 4/4 mid Edit
 calls) — resolved here in the captures' favor, since the adapter must build
 against what the transcripts actually contain, not the doc summarizing them.
 

@@ -7,7 +7,7 @@
 
 ## BDD Mapping Hints
 
-This ADR defines design principles for CLI and MCP interfaces optimized for consumption by LLMs like Claude, enabling effective AI-driven development workflows.
+This ADR defines design principles for CLI and MCP interfaces optimized for consumption by LLMs, enabling effective AI-driven development workflows.
 
 **Behavioral capabilities to validate**:
 - LLM agents can discover available commands through help text
@@ -53,7 +53,7 @@ This creates discoverability problems:
 
 ### The LLM-as-User Pattern
 
-With Claude Code and MCP integration, llm-orc has two user types:
+With coding-agent and MCP integration, llm-orc has two user types:
 1. **Human developers**: Traditional CLI users
 2. **LLM agents**: AI assistants driving development workflows
 
@@ -470,7 +470,7 @@ class MCPToolGenerator:
    - Example ensembles demonstrate patterns
 
 3. **LLM-Driven Development**
-   - Claude Code can effectively operate llm-orc
+   - A coding agent can effectively operate llm-orc
    - MCP integration exposes clear tool schemas
    - Error recovery through suggested commands
 
@@ -503,7 +503,7 @@ class MCPToolGenerator:
 ## Success Criteria
 
 1. **LLM Can Initialize Project**
-   - Claude Code can read `--help` and run `init`
+   - A coding agent can read `--help` and run `init`
    - Scripts installed by default
    - Examples demonstrate usage
 
@@ -546,7 +546,7 @@ class MCPToolGenerator:
 
 **Phase 5: MCP Tools** (1 day)
 - Generate tool schemas from CLI
-- Test with Claude Desktop
+- Test with a desktop MCP client
 - Document MCP integration
 
 **Phase 6: Testing** (1 day)

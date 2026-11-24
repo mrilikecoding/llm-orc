@@ -501,7 +501,7 @@ if __name__ == "__main__" and __import__("sys").argv[-1] == "arm-e":
 
 # --- Arm F: the PRODUCTION two-surface union -------------------------------
 # Arm E (--hidden over the whole tree) was killed: the full-tree sweep is
-# both slow (stale worktrees under .claude, per-call cost x hundreds) and
+# both slow (stale worktrees under .harness, per-call cost x hundreds) and
 # NOT what the serve would do. The production surface (#144 capability
 # map): client grep over the WORKSPACE (dot-blind, gitignore-respecting) ∪
 # serve-native grep over the serve's OWN scripts dir. Def-site REQUIRED

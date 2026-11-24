@@ -15,7 +15,7 @@ must be checked against the live repo before implementation.
 
 WS-6 is where composition PASSES a single model rather than chasing it. A
 frontier model behind any harness has no real cross-session memory — it has
-a context window, harness-side files (CLAUDE.md, notes), and compaction
+a context window, harness-side files (the harness instruction file, notes), and compaction
 summaries, all lossy and none provenance-tracked. The serve already holds a
 lossless in-session record; plexus extends that to a cross-session,
 provenance-tracked substrate where every answer can carry a receipt
@@ -178,7 +178,7 @@ a three-layer platform with narrow, explicit contracts:
 |---|---|---|
 | Substrate: knowledge graph, provenance, cross-session identity | plexus (Rust) | MCP tools (18 today); later a socket transport |
 | Engine: orchestration, verification gates, serving | llm-orc | OpenAI-compatible wire + tool_calls; `{requirement, code, tests}` seat contract; MCP (already consumed by plexus) |
-| Execution surface: workspace, permission seam | OpenCode / Claude Code / any client | advertised tool list |
+| Execution surface: workspace, permission seam | OpenCode / the frontier harness / any client | advertised tool list |
 
 The platform claim becomes real when the substrate serves multiple
 consumers (plexus's own vision doc names llm-orc's serving layer as "just

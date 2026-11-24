@@ -70,7 +70,7 @@ This document tracks the scripts, ensembles, and MCP capabilities needed for con
 |---------------|---------|------------|--------|
 | `output_comparator.py` | Compare two outputs (semantic/exact) | Medium | NEEDED |
 | `benchmark_runner.py` | Run same task on different configs | Medium | NEEDED |
-| `baseline_comparator.py` | Compare against baseline (e.g., Claude) | High | NEEDED |
+| `baseline_comparator.py` | Compare against baseline (e.g., a hosted model) | High | NEEDED |
 
 ### Reporting Scripts (Priority: MEDIUM)
 

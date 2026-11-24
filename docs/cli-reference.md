@@ -167,7 +167,7 @@ Script agents use JSON I/O for seamless integration with LLM agents, enabling po
 
 ### MCP Server
 
-LLM Orchestra includes a Model Context Protocol (MCP) server that exposes ensembles, artifacts, and metrics as MCP resources. This enables integration with MCP clients like Claude Code, Claude Desktop, and other tools.
+LLM Orchestra includes a Model Context Protocol (MCP) server that exposes ensembles, artifacts, and metrics as MCP resources. This enables integration with MCP clients and other tools.
 
 #### Quick Start
 
@@ -183,7 +183,7 @@ LLM Orchestra includes a Model Context Protocol (MCP) server that exposes ensemb
 }
 ```
 
-2. Restart Claude Code - MCP tools appear as `mcp__llm-orc__*`
+2. Restart the MCP client - MCP tools appear as `mcp__llm-orc__*`
 
 3. Try it:
 ```

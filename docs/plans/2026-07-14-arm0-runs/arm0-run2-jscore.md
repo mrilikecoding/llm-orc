@@ -1,6 +1,6 @@
 # arm0-run2: author-independent J-tier score (2026-07-15)
 
-Scored by an author-independent agent (Sonnet) against the frozen rubric
+Scored by an author-independent agent (hosted-mid) against the frozen rubric
 (§6/§7/§8.1/§11), transcripts quoted per call. Scope: all J-bearing turns
 2/3/5/9/10/11. This record exists so the call is auditable (§7 discipline).
 
