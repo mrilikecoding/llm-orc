@@ -98,7 +98,7 @@ def _round2_fixtures() -> dict[str, str]:
     )
     py_src = (REPO / "src/llm_orc/core/config/config_manager.py").read_text()[:20000]
     jsonl = (
-        REPO / "docs/plans/2026-08-12-arm1-runs/haiku-run2/turn-07.jsonl"
+        REPO / "docs/plans/2026-08-12-arm1-runs/small-run2/turn-07.jsonl"
     ).read_text()[:20000]
 
     return {

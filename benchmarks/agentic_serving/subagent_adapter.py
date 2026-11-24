@@ -85,7 +85,7 @@ LAST (terminal, cumulative) usage seen for each id, then summed across the
 turn's distinct ids — never summed per line, which would double- (or
 sextuple-) count. Cache tokens (``cache_creation_input_tokens`` /
 ``cache_read_input_tokens``) are captured on the Turn, never discarded:
-across haiku-run1 they dwarf the fresh-token counts (122 summed fresh input
+across small-run1 they dwarf the fresh-token counts (122 summed fresh input
 tokens against roughly 1.34M cache tokens for the whole run), so excluding
 them from cost — the previous design — priced the run at roughly a fifth of
 its real API cost, and specifically favors whichever arm retains the
@@ -249,7 +249,7 @@ def split_turns(
       full stop. Round 3 tried a directional guard here (promptId-change
       primary, absorbing an already-seen-promptId string event as a
       presumed interruption-notice phantom) and that absorption was ITSELF
-      the round-4 blocker: demonstrated on real haiku-run1 data by
+      the round-4 blocker: demonstrated on real small-run1 data by
       re-pointing turn 5's boundary at turn 4's promptId, it silently
       merged two real turns, produced a phantom death, and left both
       hidden-oracle turns 6/7 holding the WRONG transcript — all while

@@ -57,15 +57,15 @@ class TestParseEvents:
 
 class TestSplitTurns:
     def test_haiku_run_splits_into_thirteen_turns(self) -> None:
-        turns = _run_turns("haiku-run1")
+        turns = _run_turns("small-run1")
         assert len(turns) == 13
 
     def test_sonnet_run_splits_into_thirteen_turns(self) -> None:
-        turns = _run_turns("sonnet-run1")
+        turns = _run_turns("mid-run1")
         assert len(turns) == 13
 
     def test_each_turn_starts_at_its_injected_prompt(self) -> None:
-        for turn in _run_turns("haiku-run1"):
+        for turn in _run_turns("small-run1"):
             first = turn[0]
             assert first["type"] == "user"
             assert isinstance(first["message"]["content"], str)
@@ -77,11 +77,11 @@ class TestSplitTurns:
     def test_haiku_run_boundary_rule_is_promptid(self) -> None:
         # A fresh promptId per injected prompt (2.1.210 cli) -- the primary
         # rule, not the string-content fallback.
-        _turns, rule = sa.split_turns(sa.parse_events(_run_text("haiku-run1")))
+        _turns, rule = sa.split_turns(sa.parse_events(_run_text("small-run1")))
         assert rule == "promptid"
 
     def test_sonnet_run_boundary_rule_is_promptid(self) -> None:
-        _turns, rule = sa.split_turns(sa.parse_events(_run_text("sonnet-run1")))
+        _turns, rule = sa.split_turns(sa.parse_events(_run_text("mid-run1")))
         assert rule == "promptid"
 
 
@@ -91,7 +91,7 @@ class TestFullTurnFromRealCapture:
     real, unedited slice."""
 
     def test_turn_one_maps_tool_calls_from_the_capture(self) -> None:
-        events = list(_run_turns("haiku-run1")[0])
+        events = list(_run_turns("small-run1")[0])
         turn = sa.turn_from_events(
             events,
             index=1,
@@ -108,7 +108,7 @@ class TestFullTurnFromRealCapture:
         assert "add_todo" in turn.assistant_text
 
     def test_bash_call_fields_map_from_the_capture(self) -> None:
-        events = list(_run_turns("haiku-run1")[0])
+        events = list(_run_turns("small-run1")[0])
         turn = sa.turn_from_events(events, index=1, prompt="p")
         bash_call = turn.tool_calls[0]
         assert bash_call.command is not None
@@ -117,7 +117,7 @@ class TestFullTurnFromRealCapture:
         assert "total 32" in bash_call.result_text
 
     def test_read_call_fields_map_from_the_capture(self) -> None:
-        events = list(_run_turns("haiku-run1")[0])
+        events = list(_run_turns("small-run1")[0])
         turn = sa.turn_from_events(events, index=1, prompt="p")
         read_call = turn.tool_calls[1]
         assert read_call.command is None
@@ -126,7 +126,7 @@ class TestFullTurnFromRealCapture:
         assert "def divide" in read_call.result_text
 
     def test_write_call_fields_map_from_the_capture(self) -> None:
-        events = list(_run_turns("haiku-run1")[0])
+        events = list(_run_turns("small-run1")[0])
         turn = sa.turn_from_events(events, index=1, prompt="p")
         write_call = turn.tool_calls[3]
         assert write_call.command is None
@@ -145,14 +145,14 @@ class TestFullTurnFromRealCapture:
         # stream never logs in the first place (see the module docstring
         # and opencode_adapter's matching note). 16.164s, not the
         # boundary-to-end 18.595s.
-        events = list(_run_turns("haiku-run1")[0])
+        events = list(_run_turns("small-run1")[0])
         turn = sa.turn_from_events(events, index=1, prompt="p")
         assert turn.wall_seconds == pytest.approx(16.164, abs=0.001)
 
     def test_turn_from_jsonl_matches_turn_from_events_on_the_same_slice(
         self,
     ) -> None:
-        events = list(_run_turns("haiku-run1")[0])
+        events = list(_run_turns("small-run1")[0])
         jsonl_text = "\n".join(json.dumps(event) for event in events)
         via_jsonl = sa.turn_from_jsonl(jsonl_text, index=1, prompt="p")
         via_events = sa.turn_from_events(events, index=1, prompt="p")
@@ -168,7 +168,7 @@ class TestUsageDedup:
     that only passes if the dedup is implemented."""
 
     def test_tokens_are_deduped_by_message_id_not_summed_per_line(self) -> None:
-        events = list(_run_turns("haiku-run1")[0])
+        events = list(_run_turns("small-run1")[0])
         turn = sa.turn_from_events(events, index=1, prompt="p")
         assert turn.input_tokens == 50
         assert turn.output_tokens == 1303
@@ -176,11 +176,11 @@ class TestUsageDedup:
 
 class TestCacheTokens:
     """Cache tokens are never discarded (review MAJOR 2): across the whole
-    haiku-run1, fresh input is 122 tokens against ~1.34M cache tokens —
+    small-run1, fresh input is 122 tokens against ~1.34M cache tokens —
     excluding them prices the run at roughly a fifth of its real cost."""
 
     def test_turn_one_cache_tokens_from_real_capture(self) -> None:
-        events = list(_run_turns("haiku-run1")[0])
+        events = list(_run_turns("small-run1")[0])
         turn = sa.turn_from_events(events, index=1, prompt="p")
         assert turn.cache_creation_tokens == 24066
         assert turn.cache_read_tokens == 114664
@@ -197,7 +197,7 @@ class TestBashToolTurn:
     "turn 11's verdict matched truth"."""
 
     def _turn(self) -> Any:
-        events = list(_run_turns("haiku-run1")[10])
+        events = list(_run_turns("small-run1")[10])
         return sa.turn_from_events(events, index=11, prompt="run the tests")
 
     def test_bash_test_run_maps_command_and_result(self) -> None:
@@ -223,18 +223,18 @@ class TestBashToolTurn:
 class TestTranscriptFromRun:
     def test_haiku_run_assembles_thirteen_indexed_turns(self) -> None:
         transcript = sa.transcript_from_run(
-            "arm2-haiku", _run_text("haiku-run1"), LADDER_PROMPTS
+            "arm2-haiku", _run_text("small-run1"), LADDER_PROMPTS
         )
         assert transcript.arm == "arm2-haiku"
         assert [t.index for t in transcript.turns] == list(range(1, 14))
         assert transcript.turns[0].prompt == LADDER_PROMPTS[0]
 
     def test_sonnet_run_assembles_and_maps_the_edit_tool(self) -> None:
-        # sonnet-run1 is where the Edit tool (undocumented in the 2026-07-17
+        # mid-run1 is where the Edit tool (undocumented in the 2026-07-17
         # capture README's schema section, which lists only Write/Bash/Read)
         # is demonstrated — see the module docstring's discrepancy note.
         transcript = sa.transcript_from_run(
-            "arm2-sonnet", _run_text("sonnet-run1"), LADDER_PROMPTS
+            "arm2-sonnet", _run_text("mid-run1"), LADDER_PROMPTS
         )
         assert len(transcript.turns) == 13
         names = {call.name for turn in transcript.turns for call in turn.tool_calls}
@@ -242,7 +242,7 @@ class TestTranscriptFromRun:
 
     def test_haiku_run_boundary_rule_is_promptid(self) -> None:
         transcript = sa.transcript_from_run(
-            "arm2-haiku", _run_text("haiku-run1"), LADDER_PROMPTS
+            "arm2-haiku", _run_text("small-run1"), LADDER_PROMPTS
         )
         assert transcript.boundary_rule == "promptid"
 
@@ -391,7 +391,7 @@ class TestTurnBoundaries:
     universal, but that does NOT license absorbing a same-promptId string
     event as a presumed interruption-notice phantom in a varying-promptId
     file. No committed capture evidences that class; round 3's absorption
-    was demonstrated unsafe on REAL haiku-run1 data (see
+    was demonstrated unsafe on REAL small-run1 data (see
     TestRealDataDisagreementRaises below) -- it silently merged two real
     turns, produced a phantom death, and corrupted both hidden-oracle turns
     6/7's transcripts while boundary_rule kept reporting "promptid". A
@@ -484,14 +484,14 @@ class TestTurnBoundaries:
 
 class TestRealDataDisagreementRaises:
     """Round-4 review MAJOR 1 (blocking), the reviewer's own demonstrating
-    input: real haiku-run1 with turn 5's boundary event's promptId
+    input: real small-run1 with turn 5's boundary event's promptId
     corrupted to turn 4's. Under round-3's absorb-in-varying-file logic
     this silently produced 12 turns, a phantom death at (13), and left the
     hidden-oracle turns 6/7 holding the WRONG transcript content -- all
     while boundary_rule still reported "promptid". It must raise instead."""
 
     def test_a_repointed_turn_boundary_raises(self) -> None:
-        events = sa.parse_events(_run_text("haiku-run1"))
+        events = sa.parse_events(_run_text("small-run1"))
         turn_boundaries = [
             i
             for i, event in enumerate(events)
@@ -618,4 +618,4 @@ def test_parse_events_ignores_whitespace_only_output() -> None:
 
 def test_transcript_from_run_raises_on_prompt_count_mismatch() -> None:
     with pytest.raises(ValueError, match="zip"):
-        sa.transcript_from_run("arm", _run_text("haiku-run1"), ("only one prompt",))
+        sa.transcript_from_run("arm", _run_text("small-run1"), ("only one prompt",))

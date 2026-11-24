@@ -581,13 +581,13 @@ def test_a_died_before_end_plus_phantom_case_still_raises(tmp_path: Path) -> Non
 
 def _real_haiku_lines() -> list[str]:
     path = Path(__file__).resolve().parents[3] / (
-        "docs/plans/2026-07-15-arm2-runs/haiku-run1/transcript.jsonl"
+        "docs/plans/2026-07-15-arm2-runs/small-run1/transcript.jsonl"
     )
     return [line for line in path.read_text().splitlines() if line.strip()]
 
 
 def _truncated_after_turn_12_tool_use() -> str:
-    """Real haiku-run1 events, truncated right after turn 12's FIRST
+    """Real small-run1 events, truncated right after turn 12's FIRST
     tool_use (raw line 92, 0-indexed 91) with no result ever captured --
     the exact shape a process killed mid-tool-call leaves. Turns 1-11
     (including all three oracled turns, 1/6/7) are fully intact ahead of
@@ -651,7 +651,7 @@ def _real_arm2_run(run: str) -> Path:
 
 
 def test_tally_oracles_on_the_real_haiku_arm2_run() -> None:
-    tally = score_run.tally_oracles(_real_arm2_run("haiku-run1"), adapter=sa)
+    tally = score_run.tally_oracles(_real_arm2_run("small-run1"), adapter=sa)
     assert (tally.shipped_correct, tally.shipped_broken, tally.not_shipped) == (
         3,
         0,
@@ -664,7 +664,7 @@ def test_tally_oracles_on_the_real_haiku_arm2_run() -> None:
 
 
 def test_tally_oracles_on_the_real_sonnet_arm2_run() -> None:
-    tally = score_run.tally_oracles(_real_arm2_run("sonnet-run1"), adapter=sa)
+    tally = score_run.tally_oracles(_real_arm2_run("mid-run1"), adapter=sa)
     assert (tally.shipped_correct, tally.shipped_broken, tally.not_shipped) == (
         3,
         0,
@@ -677,7 +677,7 @@ def test_tally_oracles_on_the_real_sonnet_arm2_run() -> None:
 
 
 def test_transcript_from_run_dir_boundary_rule_on_both_real_arm2_runs() -> None:
-    for run in ("haiku-run1", "sonnet-run1"):
+    for run in ("small-run1", "mid-run1"):
         transcript = score_run.transcript_from_run_dir(
             f"arm2-{run}", _real_arm2_run(run), adapter=sa
         )
@@ -691,7 +691,7 @@ def test_score_run_dir_on_the_real_haiku_arm2_run() -> None:
     # the adapter actually mapping tool_use/text/usage correctly, so THIS
     # is the test that exercises the mapping end to end.
     card = score_run.score_run_dir(
-        "arm2-haiku", _real_arm2_run("haiku-run1"), adapter=sa
+        "arm2-haiku", _real_arm2_run("small-run1"), adapter=sa
     )
     assert card.n_turns == 13
     assert card.missing_turns == ()
@@ -703,7 +703,7 @@ def test_score_run_dir_on_the_real_haiku_arm2_run() -> None:
 
 def test_score_run_dir_on_the_real_sonnet_arm2_run() -> None:
     card = score_run.score_run_dir(
-        "arm2-sonnet", _real_arm2_run("sonnet-run1"), adapter=sa
+        "arm2-sonnet", _real_arm2_run("mid-run1"), adapter=sa
     )
     assert card.n_turns == 13
     assert card.missing_turns == ()
@@ -720,7 +720,7 @@ def test_score_run_dir_reports_real_cache_tokens_and_the_lower_bound_flag() -> N
     # lower bound rather than presented as the true total.
     pricing = Pricing(input_per_mtok=1.00, output_per_mtok=5.00)
     card = score_run.score_run_dir(
-        "arm2-haiku", _real_arm2_run("haiku-run1"), pricing, adapter=sa
+        "arm2-haiku", _real_arm2_run("small-run1"), pricing, adapter=sa
     )
     assert card.total_cache_creation_tokens == 87304
     assert card.total_cache_read_tokens == 1253863
