@@ -13,7 +13,7 @@ This analysis compares multi-agent ensemble approaches against single high-capab
 The study compared two approaches across three scenarios:
 
 1. **Multi-Agent Ensemble**: 3-4 specialized Llama3 8B agents (local, free) with synthesis
-2. **Single Agent**: Claude Sonnet 4 (high-capability, cloud-based model)
+2. **Single Agent**: one hosted frontier model (high-capability, cloud-based)
 
 ### Test Scenarios
 
@@ -43,14 +43,14 @@ The study compared two approaches across three scenarios:
 - **Coverage**: Security, performance, maintainability systematically covered
 - **Key Insights**: Input validation, type hints, error handling
 
-**Claude Sonnet 4**:
+**Single hosted model**:
 
 - **Tokens**: ~400 equivalent
 - **Time**: 5 seconds
 - **Coverage**: All major concerns identified
 - **Key Insights**: Type safety, Union types for flexibility
 
-**Winner**: **Claude** - 7x more efficient for simple analysis
+**Winner**: **Single model** - 7x more efficient for simple analysis
 
 #### Complex Function (`process_user_data`)
 
@@ -61,7 +61,7 @@ The study compared two approaches across three scenarios:
 - **Coverage**: Domain expertise across security, performance, maintainability
 - **Insights**: Specific bottlenecks (string manipulation, dictionary lookups), concrete optimizations
 
-**Claude Sonnet 4**:
+**Single hosted model**:
 
 - **Tokens**: ~1,200 equivalent
 - **Coverage**: All major areas covered
@@ -79,13 +79,13 @@ The study compared two approaches across three scenarios:
 - **Recommendations**: Load balancing, queue-based processing, caching mechanisms
 - **Grade**: B+ (optimistic)
 
-**Claude Sonnet 4**:
+**Single hosted model**:
 
 - **Focus**: Critical architectural bottlenecks and strategic patterns
 - **Recommendations**: Event Sourcing + CQRS, multi-AZ strategy, circuit breakers
 - **Grade**: B- (more realistic)
 
-**Winner**: **Claude** - Deeper architectural insight and pattern recognition
+**Winner**: **Single model** - Deeper architectural insight and pattern recognition
 
 ### Scenario 3: Product Strategy
 
@@ -97,13 +97,13 @@ The study compared two approaches across three scenarios:
 - **Recommendation**: GO with $29/mo add-on, phased approach
 - **Focus**: User survey data and systematic risk analysis
 
-**Claude Sonnet 4**:
+**Single hosted model**:
 
 - **Strategy**: Enterprise differentiation to avoid commoditization
 - **Recommendation**: PIVOT to $39/mo "AI Professional" with security focus
 - **Focus**: Competitive positioning and market dynamics
 
-**Winner**: **Claude** - More sophisticated strategic positioning
+**Winner**: **Single model** - More sophisticated strategic positioning
 
 ## Comparative Analysis
 
@@ -209,7 +209,7 @@ This analysis reveals possibilities for architectures where **high-capability ag
 
 #### **Tier 1: High-Value Strategic Tasks**
 
-- **Model**: Claude Sonnet 4, GPT-4, Gemini Ultra
+- **Model**: hosted frontier models from any vendor
 - **Use Cases**: Strategic decisions, architectural guidance, breakthrough analysis
 - **Economics**: High cost balanced by strategic value
 

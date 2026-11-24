@@ -44,7 +44,7 @@ closure, preflight transitively, resolve explicitly, run.**
 - Strict TDD; structural and behavioral changes in separate commits; ruff 88
   + mypy strict from the first draft; complexity <= 15; `make lint` clean.
 - Human commit messages (`feat:`/`fix:`/`refactor:`/`test:`/`docs:`); NO AI
-  attribution, no Co-Authored-By, no session trailers, no hosted-ai
+  attribution, no Co-Authored-By, no session trailers, no hosted session
   links, no scratch/session paths in tracked files.
 - Doctrine 11: pins assert outcomes through the real surface (REST
   TestClient, MCP tool call, CliRunner, real executor), and each key pin is

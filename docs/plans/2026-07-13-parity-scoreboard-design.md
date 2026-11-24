@@ -127,7 +127,7 @@ the IR). No adapter is built here — see "Not built here" below.
 | Arm | What runs | Cost | Harness |
 |---|---|---|---|
 | 0 — the serve | qwen3:8b seats behind OpenCode | free (serve marginal ~$0; local model, no API spend) | `benchmarks/agentic_serving/ladder_battery.sh`, unmodified |
-| 1 — harness held constant | hosted-small 4.5, then a hosted frontier model, each behind the SAME OpenCode client | paid (Anthropic API tokens) | same battery, OpenCode's `provider` pointed at Anthropic instead of the llm-orc serve |
+| 1 — harness held constant | hosted-small, then a hosted frontier model, each behind the SAME OpenCode client | paid (Anthropic API tokens) | same battery, OpenCode's `provider` pointed at Anthropic instead of the llm-orc serve |
 | 2 — the product bar | the frontier harness driving its native model through a headless harness session (session resume for continuity) | paid | different harness entirely (the frontier harness, not OpenCode) |
 
 Arm 0 is the only one runnable for free; it is also the only one this task
@@ -239,7 +239,7 @@ fact) is identical across them.
 ## Paid-arm cost estimate
 
 Pricing (per model-API skill, cached 2026-06-24): a hosted frontier model $3.00/$15.00
-per MTok in/out ($2/$10 intro through 2026-08-31); hosted-small 4.5 $1.00/$5.00 per
+per MTok in/out ($2/$10 intro through 2026-08-31); hosted-small $1.00/$5.00 per
 MTok in/out.
 
 **Assumptions (stated, not measured — no real transcript to calibrate
@@ -267,8 +267,8 @@ against):**
 | Arm | Input cost | Output cost | Total/session |
 |---|---|---|---|
 | a hosted frontier model via OpenCode | 420K/1M x $3.00 = $1.26 | 14K/1M x $15.00 = $0.21 | ~$1.47 |
-| hosted-small 4.5 via OpenCode | 420K/1M x $1.00 = $0.42 | 14K/1M x $5.00 = $0.07 | ~$0.49 |
-| Frontier harness native (hosted-mid-5-class + ~30% richer tool/system-prompt overhead) | 546K/1M x $3.00 = $1.64 | 18.2K/1M x $15.00 = $0.27 | ~$1.91 |
+| hosted-small via OpenCode | 420K/1M x $1.00 = $0.42 | 14K/1M x $5.00 = $0.07 | ~$0.49 |
+| Frontier harness native (hosted-mid-class + ~30% richer tool/system-prompt overhead) | 546K/1M x $3.00 = $1.64 | 18.2K/1M x $15.00 = $0.27 | ~$1.91 |
 
 At **>=3 runs per arm** (the roadmap's variance-control minimum,
 `docs/serving-roadmap.md:548-550`), for the full comparison (hosted-small-via-
