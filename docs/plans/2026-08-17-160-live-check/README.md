@@ -13,7 +13,7 @@ cache off, `_requires_user_input` is no longer called for the
 cacheability decision. A unit test caught the count change; this
 confirms the pipeline still runs.
 
-Serve restarted on the branch (`fix/160-cache-identity`, `7da3dd2c`),
+Serve restarted on the branch (`fix/160-cache-identity`, `519527c1`),
 venv on PATH, port 8765. Build ask through real `opencode run --format
 json`: one `write` tool_call, `mul.py` on disk (`written-mul.py`),
 "Wrote mul.py."

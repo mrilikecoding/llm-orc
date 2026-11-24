@@ -235,7 +235,7 @@ Implementation notes (measured):
   resubmission accepts (#171's OK-9 shape, unaffected).
 
 Independent review (record: `docs/plans/2026-09-11-182-existing-repo-
-shape-design.md` review, `fix/182-edit-keeps-surface` @ `64a8933b`) found
+shape-design.md` review, `fix/182-edit-keeps-surface` @ `b26e3a83`) found
 the first pass APPROVE-with-rework: three MAJOR findings, all fixed on
 the same branch (F1, F2, F3 below); F4 and F6 recorded as bounds above;
 F5 and F7 fixed/pinned. Superseding the two bullets the review flagged:

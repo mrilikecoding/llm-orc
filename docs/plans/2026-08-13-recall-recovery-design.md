@@ -228,7 +228,7 @@ than adjudicated autonomously):**
 Standalone hardening extracted regardless of the fork: refuse to
 ground on a `(truncated)` glob listing (deterministic, cheap; the
 pre-flight measured real stem families busting the 50-cap with
-mtime-ordered nondeterminism). [Shipped: #148, merged 5a59515,
+mtime-ordered nondeterminism). [Shipped: #148, merged efe4c34,
 live-validated run 6.]
 
 ## Fork resolved: option (b) (practitioner, 2026-08-13)

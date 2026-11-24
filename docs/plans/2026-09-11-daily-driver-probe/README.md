@@ -9,7 +9,7 @@ daily driver actually meets — a small existing package with its own tests?
 Setup: a seeded git repo (`seed-repo.tgz`): `todo/storage.py` (TodoStore:
 add/list/complete, JSON-backed), `todo/cli.py` (argparse add/list),
 `tests/test_storage.py` (3 passing), pyproject with pytest config. Serve
-restarted from main `1ac25bb4` before turn 1 (the 08-30 process on :8765
+restarted from main `0d25d568` before turn 1 (the 08-30 process on :8765
 was stale). Real client: `opencode run --format json -m llm-orc/agentic`
 per turn via `dd-turn.sh` (sandbox-disabled detach, per the wedge note),
 workspace truth captured after each turn in a throwaway copy. Turns 1-2

@@ -111,15 +111,15 @@ this date are the old ones.
 
 ### 2026-10-02: Arc 4 released as v0.23.0; next is the Arc 5 re-cut
 
-Released v0.22.0 on the practitioner's go: push `923fa5a6..a3aa6e70`,
+Released v0.22.0 on the practitioner's go: push `b0b01654..421c0c80`,
 tag, GitHub release, PyPI, tap formula bumped (`1b3cdb00`, Intel
 `cryptography<49` constraint intact). It carries Arc 1's `scope`, Arc 2
 (packaged serving tier, state dir, serving root) and Arc 3 (transitive
 preflight). CI is green on main: six test cells, security, wheel check.
 On the way: `make wheel-check` now runs in CI (one cell) and in the
-publish build before upload (`b783a09f`); pip-audit failed CI on new
+publish build before upload (`caab1e56`); pip-audit failed CI on new
 advisories for `pyjwt` 2.13.0 and `urllib3` 2.7.0 (both transitive), the
-lock pins moved to 2.15.1 and 2.8.0 (`40ce72ed`).
+lock pins moved to 2.15.1 and 2.8.0 (`3e724b79`).
 
 Lesson, binding: `publish.yml` runs on every push to main and publishes
 the version in `pyproject.toml`. The push that carries a version bump IS
@@ -162,7 +162,7 @@ config. `/v1` results taken from the mini before this date ran the
 checkout's 0.20.4-era serving project on a newer engine. The homelab
 cert renewal daemon fix is still owed before December.
 
-**Arc 4 merged 2026-10-02 (`4e1b52da`) and released as v0.23.0** (pushed,
+**Arc 4 merged 2026-10-02 (`79936dd6`) and released as v0.23.0** (pushed,
 PyPI, GitHub release, tap formula; verified by a clean install from
 PyPI; deployed to the remote host, live row in the spec).
 Rulings, the two probes, the live rows and the review record are in the
@@ -218,7 +218,7 @@ clients it does not trust; until then injection relies on who can reach
 the port.
 
 **Arc 5 (the CLI as the remote client) merged on local main
-(`af5a1553`, 2026-10-02), not pushed.** 80 commits; suite 5521, about
+(`7fa97acd`, 2026-10-02), not pushed.** 80 commits; suite 5521, about
 66 s parallel. Rulings 1-12, what the build and four review rounds
 changed, the live rows and the review record are in the spec ("Arc 5
 re-cut (2026-10-02)" to its "Lesson, binding"); task cards in
@@ -235,7 +235,7 @@ request under the host's global `bundles/`, replayed through the
 injection path, shadowing nothing; the MCP `invoke` tool takes `remote`
 on the stdio server only; a REST run is cancelled when its client
 disconnects; the result carries `metadata`. Live rows on the laptop
-passed at `def0b958` with spot checks after each wave, two real serves
+passed at `e7dbcfef` with spot checks after each wave, two real serves
 and a router: Ctrl-C and an MCP cancel each stop the remote in under
 0.1 s.
 
@@ -264,7 +264,7 @@ with the ticker.
 
 **Released as v0.24.0 and deployed to the remote host (2026-10-02, on
 the practitioner's go).** Pushed at 0.23.0 first, CI green, then the
-bump (`06fba7da`) and tag; PyPI, GitHub release; the tap formula is
+bump (`64a33fe1`) and tag; PyPI, GitHub release; the tap formula is
 bumped by the repo's `update-homebrew.yml` action on release (no hand
 bump needed from now on); the host runs 0.24.0 via the homelab deploy
 script. Remote rows (spec, "Released as v0.24.0 and the remote rows"):
@@ -279,7 +279,7 @@ is not run. Running the ensemble by name on the host, nothing shipped,
 fails the same way. A packaged-script defect, on #196, and the first
 thing to fix for the daily driver.
 
-**Arc 6 (remotes are discoverable) merged on local main (`ce43f4f3`,
+**Arc 6 (remotes are discoverable) merged on local main (`074159a5`,
 2026-10-02), not pushed.** Asked for by the practitioner after the first
 remote run from a fresh install: a new session finds the configured
 remotes (`llm-orc remotes`, MCP `list_remotes`, each with a live health
@@ -319,14 +319,14 @@ take", the rule `resolve_agent_timeout` exists to forbid, #157), and
 `str()` of httpx's timeouts is empty. Measured on the remote host:
 qwen3-8b does prompt at 22.9 tok/s and generation at 3.2 tok/s, so a
 non-streaming 5k-token compile cannot return in 180 s. Merged
-2026-10-10 (`f8b38777`): the LLM runner fills `timeout_seconds` with the
+2026-10-10 (`f39a680c`): the LLM runner fills `timeout_seconds` with the
 resolved budget, the factory carries it to `OpenAICompatibleModel`, each
 chat-completion request reads for it (`HTTPConnectionPool.request_timeout`
 keeps the operator's connect/write/pool), a timeout is re-raised naming
 the model and the budget, and the dispatcher records an exception's type
 when its message is empty. Pinned by a chain test (local server, pool
 read 0.2 s, agent budget decides) that fails on the previous code with
-the field's empty message. Also merged (`314d2bdd`): preflight compares a
+the field's empty message. Also merged (`dc202107`): preflight compares a
 profile's `hf_repo` with the router's cache list through
 `cache_entry_id`, because llama.cpp names a cache entry after the
 filename's last `[-.]` segment (`UD-IQ4_XS` is listed as `IQ4_XS`); the
@@ -346,7 +346,7 @@ about 70 s); the serial command the earlier plans name takes about
 
 ### 2026-09-27: fail-closed composition, released v0.21.0
 
-Merged `b647931c`, released v0.21.0 (breaking fix for callers; see
+Merged `7a40313c`, released v0.21.0 (breaking fix for callers; see
 CHANGELOG). Plan and addenda: `docs/plans/2026-09-22-fail-closed-composition.md`.
 Invariant: a failed step never reaches a consumer, parent, or caller as
 a success. Shape: implicit 0.6b fallback removed (explicit
@@ -364,7 +364,7 @@ carry User-Agent and a salted per-invocation `x-opencode-session`.
 Four independent review rounds; suite 4677.
 
 **T1 regression-gate row (laptop, llama-server qwen3-8b, OpenCode, r=5
-each, same fixture):** main `a6341074` 0 correct / 1 shipped broken /
+each, same fixture):** main `f00211a4` 0 correct / 1 shipped broken /
 3 refused / 1 client timeout; branch 0 / 1 / 4 / 0. No branch
 regression. The backend result is the finding: T1 is 0 of 10 correct on
 llama-server vs 3 of 8 on Ollama. Every miss traces to the 8b
@@ -402,7 +402,7 @@ This is Next up 2's owed #90 gate, now measured for T1.
   edge nginx set to 3600 s / buffering off / 50 m body);
   http://llm-orc.remote.example answers 502 until the serve exists on
   remote-host. The launchd unit and setup notes live outside this repo.
-- **#202 (2026-09-22, PR #203 merged as `44d5b313`, released v0.20.6,
+- **#202 (2026-09-22, PR #203 merged as `430753b2`, released v0.20.6,
   formula bumped).** Core-engine fix outside the serving track but landing
   on it: `ensemble:`/`loop:`/`dispatch:` children now share one input
   contract (Option B on the issue: `input_key` value verbatim; otherwise
@@ -430,7 +430,7 @@ the llama-server backend yet — that is the regression gate below.
 cards: `docs/plans/2026-09-28-remote-delegation.md` (#196, #191);
 implementation plan for Arc 0 + Arc 1:
 `docs/plans/2026-09-28-remote-delegation-arc0-arc1.md`. **Arc 0 and Arc 1
-merged on local main 2026-09-28 (`cc3e5e5c`), pushed 2026-09-29 (`923fa5a6`, CI green).** S1: the
+merged on local main 2026-09-28 (`0ac07395`), pushed 2026-09-29 (`b0b01654`, CI green).** S1: the
 packaged serving project can be a read-only layer; artifacts,
 agentic-sessions, serve-trace, the rendered preset and the CRUD write
 fallback move to a state dir; `get_model_profiles` has no layer list
@@ -449,7 +449,7 @@ adversarial review plus two scoped re-reviews. Live row in the plan doc.
 still lives in the checkout. v0.21.0 is deployed on remote-host
 (practitioner, 2026-09-28).
 
-**Arc 2 merged on local main 2026-09-29 (`8b218e79`; released in v0.22.0).**
+**Arc 2 merged on local main 2026-09-29 (`bac0cb9c`; released in v0.22.0).**
 Re-cut rulings in the spec doc ("Arc 2 re-cut (2026-09-29)"); plan
 `docs/plans/2026-09-29-remote-delegation-arc2.md`; summary and findings
 posted on #196 and #191. Shape: the repo's `.llm-orc/` ships in the wheel
@@ -485,7 +485,7 @@ overrides to
 2026-10-01; the wheel check runs in CI. **Next:** re-cut Arc 4 (one-run injection) from the merged Arc 3 shape:
 the `not_equipped` error carries the Arc 3 `dependencies` list.
 
-**Arc 3 merged on local main 2026-09-29 (`b62d3609`; released in v0.22.0).**
+**Arc 3 merged on local main 2026-09-29 (`12403134`; released in v0.22.0).**
 Rulings in the spec doc ("Arc 3 re-cut (2026-09-29)", amended by the
 review round); plan `docs/plans/2026-09-29-remote-delegation-arc3.md`; live
 row in the spec. Shape: `check_ensemble_runnable` (REST
@@ -646,7 +646,7 @@ row is the regression gate in Next up 2.
 Reviews found real blockers 12 of 12 first rounds through 2026-09-12;
 with the three self-tests required in the implementer brief, arcs 1 and
 2 each closed in ONE rework round. Lessons paid for: a moving git ref in
-a pin makes it vacuous after merge (pin to a hash — acfaf427); a
+a pin makes it vacuous after merge (pin to a hash — 7f182865); a
 "harmless internal convention" in a gate field is never internal; a
 fuzzy match that reads then overwrites the wrong file is worse than an
 honest ask; existence is a workspace fact, never a verb. 2026-09-16: the

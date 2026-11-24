@@ -3,7 +3,7 @@
 LlmOrcStructuralError is the base class for llm-orc's typed structural
 errors. It carries four common fields and preserves the message-pass-
 through behavior of the precedent class ``ToolCallingNotSupportedError``
-(commit ``9f86d0b``). The calibration/tier-router subclasses it also
+(commit ``98df0d5``). The calibration/tier-router subclasses it also
 bound were removed with the orchestrator-actor collapse (Cycle-8 WP-F8);
 the surviving concrete subclass exercised here is
 ``ToolCallingNotSupportedError``.
@@ -83,7 +83,7 @@ class TestLlmOrcStructuralError:
 
 
 class TestToolCallingNotSupportedErrorAsConcreteSubclass:
-    """``ToolCallingNotSupportedError`` (commit ``9f86d0b``) is the first
+    """``ToolCallingNotSupportedError`` (commit ``98df0d5``) is the first
     concrete subclass per ADR-017 §"Shared typed-error base class"."""
 
     def test_is_subclass_of_structural_error_base(self) -> None:

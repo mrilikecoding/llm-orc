@@ -2,7 +2,7 @@
 
 The live re-validation the recap-grounding design doc's exit gate requires
 (`docs/plans/2026-07-17-recap-grounding-design.md` §Validation), run on
-merged main (`5ca1f2d`, the 29-commit `feat/133-134-recap-grounding` arc
+merged main (`3b116ef`, the 29-commit `feat/133-134-recap-grounding` arc
 after five adversarial review rounds) plus the merged Arm-2 adapter set.
 Standard 13-turn battery, real OpenCode 1.17.15, qwen3:8b, seeded fixture
 (calc.py, metrics.py, seeded-red buggy.py/test_buggy.py, reconstructed

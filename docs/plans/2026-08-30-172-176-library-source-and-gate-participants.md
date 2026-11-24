@@ -1,7 +1,7 @@
 # #172 + #176 — library source resolution and gate test-participants (design)
 
 Status: review round 2 rework complete. Issues: #172, #176. Prior commit:
-`fc79941b` (first author's attempt, superseded by round 1).
+`aeac3265` (first author's attempt, superseded by round 1).
 
 ## The two invariants
 
@@ -28,7 +28,7 @@ reachable only through an explicit `LLM_ORC_LIBRARY_SOURCE=remote`).
 
 ## Review round 1 outcome
 
-The first author-independent review found the committed fix (`fc79941b`)
+The first author-independent review found the committed fix (`aeac3265`)
 insufficient in both arcs and adjudicated the rework below. Findings, by
 label:
 
@@ -55,7 +55,7 @@ Demonstrated wrong in both directions across an 18-shape matrix (F1, F2):
   with `has_cases` hard-coded to `False`.
 
   Adjudicated fix: delete the guessing. `has_cases` reverts to "any
-  module-level class is present" (as it was before `fc79941b`); the
+  module-level class is present" (as it was before `aeac3265`); the
   runner's real `issubclass(obj, unittest.TestCase)` decides what actually
   executes. The judgment moves to the OUTCOME: an empty `__cases__` child
   is not itself a failure (`_run_children`), and a total of zero executed
@@ -63,7 +63,7 @@ Demonstrated wrong in both directions across an 18-shape matrix (F1, F2):
 
 **#172 — the library source resolver.**
 
-- **F3 (docstring untruth):** `fc79941b`'s commit message claimed "docstring
+- **F3 (docstring untruth):** `aeac3265`'s commit message claimed "docstring
   fixed to describe the code" with no docstring change. `_get_library_
   source_config`'s docstring now describes the real 5-priority order,
   including that remote is reachable only via an explicit env var.
@@ -295,7 +295,7 @@ across a 46-shape matrix.
 `tests/unit/serving/test_serving_accept_gate.py` (helper: `_executor`):
 
 1. `test_a_locally_subclassed_testcase_base_still_runs` — W8, wrong ACCEPT
-   on the branch (RED-verified against `fc79941b`).
+   on the branch (RED-verified against `aeac3265`).
 2. `test_an_aliased_testcase_import_still_runs` — W7, wrong ACCEPT on the
    branch (RED-verified).
 3. `test_a_locally_named_testcase_helper_does_not_wrong_reject` — W10,
@@ -311,7 +311,7 @@ across a 46-shape matrix.
    `_excise_unbound_callable_tests`. Mutation-verified: reintroducing the
    has_cases carve-out flips this red (`tests_excised` goes from 0 to 1).
 7. `test_a_pytest_style_class_refuses_instead_of_silently_passing` — F8
-   / W3, RED-verified against `fc79941b` (both sides of that branch
+   / W3, RED-verified against `aeac3265` (both sides of that branch
    wrongly accept this shape).
 
 Round 2 additions, `tests/unit/serving/test_serving_accept_gate.py`

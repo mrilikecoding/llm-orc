@@ -1,6 +1,6 @@
 # #183 slice B — `think: false` on code-generator's three agents, A/B (2026-09-11)
 
-Two serves from the same tree except `code-generator.yaml`: main `1ac25bb4`
+Two serves from the same tree except `code-generator.yaml`: main `0d25d568`
 on :8765 (coder/critic/synthesizer omit `think`, which Ollama 0.31.1 treats
 as thinking ON for qwen3) and this branch on :8777 (`options: {think:
 false}` on all three). Same tools-bearing request (write+read advertised,

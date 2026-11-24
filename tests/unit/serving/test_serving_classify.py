@@ -3948,7 +3948,7 @@ def test_named_destination_present_in_listing_requests_the_read() -> None:
 
 
 def test_named_destination_matches_a_shallower_listing_via_basename() -> None:
-    """Review finding 1 (BLOCKED, independent review of f71d5402): the
+    """Review finding 1 (BLOCKED, independent review of 02b57345): the
     suffix match requires the listing path to be at least as deep as the
     ask's own naming — a listing SHALLOWER than the ask (bare basenames,
     while the ask names a directory-qualified path) found zero matches and
@@ -3979,7 +3979,7 @@ def test_named_destination_shallower_listing_ambiguous_basename_refuses() -> Non
 
 
 def test_named_destination_write_visible_this_session_skips_the_glob() -> None:
-    """Review finding 2 (independent review of f71d5402): a same-session
+    """Review finding 2 (independent review of 02b57345): a same-session
     ``[wrote ...]`` block already establishes existence — and the content
     itself — so no glob round is needed at all; the build proceeds with
     the prior content already in context, exactly as a fix-verb ask does
@@ -4261,12 +4261,12 @@ _LADDER_PROMPTS = (
 )
 
 
-# The pre-arc-1 main (74bf6023, 2026-09-11): the frozen BEFORE picture the
+# The pre-arc-1 main (c089b68c, 2026-09-11): the frozen BEFORE picture the
 # ladder-identity pin diffs against. A moving ref ("main") made the pin
 # vacuous the moment the arc merged — main compared against itself, and the
 # "gains a first-round glob" half of the assertion went red on the merged
 # tree. A hash cannot move.
-_PRE_ARC1_MAIN = "74bf6023"
+_PRE_ARC1_MAIN = "c089b68c"
 
 
 def _main_agentic_serving_dir(dest: Path) -> Path:

@@ -1,6 +1,6 @@
 # #182 slice D — live rows through real OpenCode (2026-09-11)
 
-Serve started from this branch's worktree (tip 70ca6ecf) on :8765; the
+Serve started from this branch's worktree (tip 9490dd85) on :8765; the
 probe's seeded package (`docs/plans/2026-09-11-daily-driver-probe/seed-repo.tgz`)
 reset to its seed commit; `opencode run --format json -m llm-orc/agentic`,
 fresh session per row, workspace truth captured after each.
@@ -23,7 +23,7 @@ Bounds observed live (recorded, not closed):
   `.pyc`) against the 50-path cap. OpenCode's glob honoured `.gitignore`
   here (no `__pycache__` entries).
 
-## Rows on merged main `a232f9a7` (#171 + D rework + B-1), fresh sessions, seed reset before each
+## Rows on merged main `ebbfb894` (#171 + D rework + B-1), fresh sessions, seed reset before each
 
 | row | ask | events | outcome |
 |---|---|---|---|

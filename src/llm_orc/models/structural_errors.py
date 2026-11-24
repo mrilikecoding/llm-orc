@@ -24,7 +24,7 @@ trip; ADR-016 mechanism (d) severe-drift fail-safe) from
 orchestrator-recoverable errors per round-2 argument-audit finding
 2026-05-06.
 
-The precedent for the typed-error pattern is commit ``9f86d0b``
+The precedent for the typed-error pattern is commit ``98df0d5``
 (``ToolCallingNotSupportedError``), which is migrated as the first
 concrete subclass in :mod:`llm_orc.models.base`.
 """

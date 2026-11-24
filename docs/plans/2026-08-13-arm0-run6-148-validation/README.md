@@ -1,7 +1,7 @@
 # Arm-0 run 6 — #148 merge validation row (2026-08-13)
 
 The live real-OpenCode validation row for the truncated-listing-refuse
-merge (`5a59515`), per the delegation contract: serve restarted on merged
+merge (`efe4c34`), per the delegation contract: serve restarted on merged
 main, standard 13-turn ladder, qwen3:8b, fresh fixture verified against
 the known-good truth-00 baseline.
 

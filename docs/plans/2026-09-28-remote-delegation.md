@@ -109,7 +109,7 @@ Record findings as a dated "Spike findings" section appended to this file.
   `~/.config/llm-orc/ensembles/`.
 
 **Arc 1 live row (2026-09-28).** `llm-orc` 0.21.0, worktree
-`feat/crud-scope` @ 076b05b7, serve on `--port 8766 --backend-port 8790
+`feat/crud-scope` @ dff402de, serve on `--port 8766 --backend-port 8790
 --models-max 1` against the real `~/.config/llm-orc/ensembles/`, agent
 profile `local-qwen3-0.6b`.
 
@@ -238,7 +238,7 @@ plan: `docs/plans/2026-09-29-remote-delegation-arc2.md`.
     says so. The practitioner does the move.
 
 **Arc 2 live row (2026-09-29).** Laptop, branch `feat/packaged-serving` @
-`9ec465b6`, `make wheel-check` → `ok: 162 serving project files match git
+`b4831e7d`, `make wheel-check` → `ok: 162 serving project files match git
 ls-files`; the wheel (`llm_orchestra-0.21.0-py3-none-any.whl`) installed into
 a fresh `python3 -m venv`; `site-packages/llm_orc/serving_project/` carries
 `config.yaml`, `ensembles/`, `profiles/`, `scripts/`. Serve started from an
@@ -272,7 +272,7 @@ temp dirs: `llm-orc serve --port 8766 --backend-port 8790 --models-max 1`
 - `find <venv> -path '*serving_project*' -newer <marker>` → nothing: no write
   under the packaged tier. cwd empty throughout. SIGTERM to the serve stopped
   the router; ports free.
-- **Real client, after the final-review fix (`1913bddf`).** Wheel rebuilt
+- **Real client, after the final-review fix (`914cea76`).** Wheel rebuilt
   (162 ok), installed with `pip install --no-compile` (0 `.pyc` under
   `serving_project/`, the brew shape), served from a second empty dir.
   `opencode run --format json -m llm-orc-live/agentic-tier-cheap-general
@@ -421,7 +421,7 @@ points. Implementation plan: `docs/plans/2026-09-29-remote-delegation-arc3.md`.
    promotion readiness (reads provider status directly, untouched).
 
 **Arc 3 live row (2026-09-29).** Laptop, branch `feat/transitive-preflight` @
-`4607ae3f`, llama-server 9850 (`4f31eedb0`), GGUFs from the Hugging Face hub
+`f34e8d07`, llama-server 9850 (`4f31eedb0`), GGUFs from the Hugging Face hub
 cache (`llama-server --cache-list`: Qwen3-0.6B, Qwen3-8B, nomic-embed-text).
 Serve started from a temp project dir with `XDG_CONFIG_HOME` and
 `XDG_STATE_HOME` pointed at fresh temp dirs: `llm-orc serve --port 8766
@@ -660,7 +660,7 @@ the mini's router read over ssh):
     mismatch (ruling 6).
 
 **Arc 4 live row (2026-10-01).** Laptop, branch `feat/one-run-injection`
-@ `64bfbae0`, llama-server 9850, GGUFs from the Hugging Face hub cache.
+@ `84090c36`, llama-server 9850, GGUFs from the Hugging Face hub cache.
 Serve started from an empty directory with `XDG_CONFIG_HOME` and
 `XDG_STATE_HOME` pointed at fresh temp dirs: `llm-orc serve --port 8766
 --backend-port 8790 --models-max 1`. The temp global tier held one
@@ -740,7 +740,7 @@ contract, beyond the rulings above:
   until its timeout, and the suite stayed green; the wall time (one test
   at 302 s) was the only signal.
 
-The live row was re-run at `67262bf1` with the same setup (the pull
+The live row was re-run at `74e34398` with the same setup (the pull
 model is now `smollm2-135m-b` from `bartowski/SmolLM2-135M-Instruct-GGUF`,
 since the first run had downloaded the other). Every row above repeated
 with the same outcome. Added rows:
@@ -1046,7 +1046,7 @@ above stand except as amended here.
   connection.
 
 **Arc 5 live row (2026-10-02).** Laptop, branch `feat/cli-remote-client`
-@ `def0b958`, llama-server from the Hugging Face hub cache. The remote: a
+@ `e7dbcfef`, llama-server from the Hugging Face hub cache. The remote: a
 serve started from an empty directory with `XDG_CONFIG_HOME` and
 `XDG_STATE_HOME` on fresh temp dirs, `llm-orc serve --port 8766
 --backend-port 8790 --models-max 1`. The caller: the CLI in a separate
@@ -1109,7 +1109,7 @@ the serve cancelled the run, and the bundle stayed stored, which is the
 behavior recorded under ruling 9 above.
 
 **Review round (2026-10-02).** One author-independent whole-branch
-review at `55c1fba1`, CHANGES REQUIRED, eight findings, six of them
+review at `5769d58d`, CHANGES REQUIRED, eight findings, six of them
 demonstrated by a running test: the `scripts/` key collision that ran
 another file with `success`; listed files looked for beside a symlink
 where Python imports beside its target; an exit code that read
@@ -1125,7 +1125,7 @@ first except the transport change, whose pin was shown red under a
 mutant and then confirmed in the live row. The fourteen review-focus
 items each have a pin through a real surface.
 
-A scoped re-review of that fix wave at `def0b958`: CHANGES REQUIRED
+A scoped re-review of that fix wave at `e7dbcfef`: CHANGES REQUIRED
 again. The eight were fixed; three of the fixes had brought problems of
 their own and the review found gaps the wave had not covered. What the
 second wave changed:
@@ -1163,7 +1163,7 @@ A loud refusal of a rare layout. No MCP remote pin goes through an MCP
 wire, since the mounted server refuses `remote`; the stdio live row is
 that check.
 
-A third scoped review at `aedcb66a`: one blocker and notes. The blocker:
+A third scoped review at `92b41d72`: one blocker and notes. The blocker:
 the client's own set-up raised outside its error tree on common
 environments (a SOCKS proxy without `socksio`, a proxy with an unknown
 scheme, a stale `SSL_CERT_FILE`, a port above 65535), and each reached
@@ -1185,7 +1185,7 @@ itself stuck. The event-loop pin's longest-gap assertion was dropped
 after it failed 3 of 20 times under a concurrent suite; its tick
 counts alone go red for both regressions it guards.
 
-A fourth, narrow review at `51a080e1`: one regression and notes. The
+A fourth, narrow review at `85af4166`: one regression and notes. The
 third wave had dropped the `InvalidURL` catch in favor of the resolver's
 check, and `urlsplit` silently drops tabs and newlines, so a YAML
 `url: |` block (which ends in a newline) crashed the run again with a

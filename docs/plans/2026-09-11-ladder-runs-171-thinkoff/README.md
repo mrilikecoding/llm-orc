@@ -12,14 +12,14 @@ turn in a throwaway copy (`capture_truth.sh`). Scored with
 
 | run | tree | code-generator `think` | wall (sum of turns) | rounds | dishonest | misses (turn: what) |
 |---|---|---|---|---|---|---|
-| 1 | main 8f7e9780 (#171 + think-off) | coder/critic/synth OFF | 464 s | 15 | 0 | T1 shipped BROKEN (oracle: no public callable adds the item to an existing list); T6 REFUSED (deliverable not valid Python: a box-drawing `├` at line 31); T7 cascade (storage.py absent) |
-| 2 | cb732246 (#171, think untouched = ON) | all ON | 954 s | 16 | 0 | T1 shipped BROKEN (same miss); T7 shipped (oracle true) but the turn's last text says "another round needed: code failed to load"; T12 REFUSED (tests did not pass) |
-| 3 | main 8f7e9780 | all OFF | 468 s | 12 | 0 | T1 REFUSED (tests did not pass; inadequate) → T2/T3/T4 cascade; T6 REFUSED; T7 cascade — 7/13 |
-| 4 | main 8f7e9780 | all OFF | 377 s | 14 | 0 | T6 REFUSED (tests did not pass); T7 cascade; T12 REFUSED |
-| 5 | main 3be5c82a (coder ON, critic+synth OFF) | coder ON | 1004 s | 17 | 0 | none on disk (oracles 3/3, every deliverable shipped); T7's last text says "another round needed: code failed to load: ModuleNotFoundError: No module named 'storage'" while the shipped todo.py is correct (oracle true) — see #184 |
-| 6 | main 3be5c82a | coder ON | 1026 s | 17 | 0 | same as run 5: all shipped, oracles 3/3, T7's text wrong-direction |
-| 7 | main 01b59026 (arcs 1+2 merged) | coder ON | 920 s | 15 | 0 | T1 REFUSED (tests did not pass, after the new glob round); T6 REFUSED (tests inadequate); T7 cascade; T13 REFUSED: the coder wrote `raise ValueError("empty input")` where the seeded test expects `match="no values"` — an honest refusal of a wrong fix, first time this rung missed in seven runs. No sandbox-, surface-, or ablation-specific reason fired. n=1; run 8 is the second sample. |
-| 8 | main 01b59026 (arcs 1+2 merged) | coder ON | 666 s | 16 | 0 | T1 REFUSED (tests did not pass) → T2/T3/T4/T7 cascade (no todo.py ever lands); T6 shipped correct; T13 FIXED (10 passed) — run 7's T13 miss was variance. 8/13. |
+| 1 | main 36bc3896 (#171 + think-off) | coder/critic/synth OFF | 464 s | 15 | 0 | T1 shipped BROKEN (oracle: no public callable adds the item to an existing list); T6 REFUSED (deliverable not valid Python: a box-drawing `├` at line 31); T7 cascade (storage.py absent) |
+| 2 | 11854f1f (#171, think untouched = ON) | all ON | 954 s | 16 | 0 | T1 shipped BROKEN (same miss); T7 shipped (oracle true) but the turn's last text says "another round needed: code failed to load"; T12 REFUSED (tests did not pass) |
+| 3 | main 36bc3896 | all OFF | 468 s | 12 | 0 | T1 REFUSED (tests did not pass; inadequate) → T2/T3/T4 cascade; T6 REFUSED; T7 cascade — 7/13 |
+| 4 | main 36bc3896 | all OFF | 377 s | 14 | 0 | T6 REFUSED (tests did not pass); T7 cascade; T12 REFUSED |
+| 5 | main c512036f (coder ON, critic+synth OFF) | coder ON | 1004 s | 17 | 0 | none on disk (oracles 3/3, every deliverable shipped); T7's last text says "another round needed: code failed to load: ModuleNotFoundError: No module named 'storage'" while the shipped todo.py is correct (oracle true) — see #184 |
+| 6 | main c512036f | coder ON | 1026 s | 17 | 0 | same as run 5: all shipped, oracles 3/3, T7's text wrong-direction |
+| 7 | main 586ad7f4 (arcs 1+2 merged) | coder ON | 920 s | 15 | 0 | T1 REFUSED (tests did not pass, after the new glob round); T6 REFUSED (tests inadequate); T7 cascade; T13 REFUSED: the coder wrote `raise ValueError("empty input")` where the seeded test expects `match="no values"` — an honest refusal of a wrong fix, first time this rung missed in seven runs. No sandbox-, surface-, or ablation-specific reason fired. n=1; run 8 is the second sample. |
+| 8 | main 586ad7f4 (arcs 1+2 merged) | coder ON | 666 s | 16 | 0 | T1 REFUSED (tests did not pass) → T2/T3/T4/T7 cascade (no todo.py ever lands); T6 shipped correct; T13 FIXED (10 passed) — run 7's T13 miss was variance. 8/13. |
 
 What the four say (n is small; doctrine 6 applies to any single turn):
 
@@ -29,7 +29,7 @@ What the four say (n is small; doctrine 6 applies to any single turn):
   correct in the 1/1 think-on run; T1 was lost once under think-off. The
   wall clock halves (464/468/377 s vs 954 s). Halving latency by turning
   successful builds into "another round needed" is the wrong trade for a
-  daily driver, so the coder's thinking is restored (3be5c82a) and only
+  daily driver, so the coder's thinking is restored (c512036f) and only
   the critic and synthesizer stay think-off — the evaluator's own "safest
   first step" (`docs/plans/2026-09-11-90-llamacpp-eval/README.md` §3.1),
   measured in runs 5-6: **2/2 runs ship every deliverable (oracles 3/3)** at

@@ -8,10 +8,10 @@ ADR-044 codified AS-11 (agentic serving is declarative-ensemble-native; where th
 
 The Cycle-8 DECIDE-entry grounding spike (`essays/research-logs/cycle-8-spike-dynamic-dispatch-stage-swap.md`) closed the dynamic-dispatch gap and validated the target form with real local models on the 32GB rig (via a direct `EnsembleExecutor` harness; real `opencode run` transport is a2-proven separately from Cycle 7, not re-run for this skeleton — see the Provenance check):
 
-- **Dynamic dispatch shipped** as an L0 engine primitive (commits `64c79ee` shared resolver, `c3709a0` primitive): a `dispatch:` node resolves its target ensemble name at the phase layer (sibling to the guard partition, reusing guard's `${dep.field}` resolver against `results_dict`) and executes it as a child. This is the guard/loop pattern extended, not a parallel layer.
+- **Dynamic dispatch shipped** as an L0 engine primitive (commits `cda2d1d` shared resolver, `62ac2b7` primitive): a `dispatch:` node resolves its target ensemble name at the phase layer (sibling to the guard partition, reusing guard's `${dep.field}` resolver against `results_dict`) and executes it as a child. This is the guard/loop pattern extended, not a parallel layer.
 - **The serving turn assembled as ONE declarative ensemble** (classify → seat → marshal), reunifying what Ω-dispatch had to split into decide-ensemble + adapter-invoke + finalize (its own docstring notes the engine "cannot resolve a runtime-chosen `ensemble:` target").
 - **All three pre-registered criteria met with real models:** dynamic dispatch resolves and runs inside the engine (#1); a structurally different seat swaps in at zero skeleton change (#2, single-model seat vs. coder+reviewer seat); a non-build turn routes through the same skeleton (#3, explain turn returns prose, not a file).
-- **Speed resolved as a config lever, not an architecture limit:** the latency wall was thinking tokens (~97% of generation), not throughput or architecture. Ollama's native `think` param, now wired (commit `6943f8e`), cut build turns ~10x (63.5s → 6.1s) with no quality cost on the tested tasks.
+- **Speed resolved as a config lever, not an architecture limit:** the latency wall was thinking tokens (~97% of generation), not throughput or architecture. Ollama's native `think` param, now wired (commit `b5a9738`), cut build turns ~10x (63.5s → 6.1s) with no quality cost on the tested tasks.
 
 This ADR records the target architecture that evidence supports and performs the classification ADR-045 deferred to it.
 

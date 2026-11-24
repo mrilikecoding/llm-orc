@@ -34,7 +34,7 @@ from the battery. No ladder turn's explain fall-through carried a
 complete listing into the grep trigger; the rung is inert on the ladder
 exactly as designed.
 
-Timing note: battery turns ran while review-round-1 fixes (`cbea33c`)
+Timing note: battery turns ran while review-round-1 fixes (`0001f60`)
 landed mid-run (scripts re-read per turn). Every surface those fixes
 touched is grep-phase-only, and no battery turn routed through the grep
 phase (above), so the row is valid for the merged result.

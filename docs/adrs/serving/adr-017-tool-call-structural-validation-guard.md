@@ -16,7 +16,7 @@ The class of failure is documented in the cycle's prior lit-review work (Wave 1.
 
 The intervention class for this failure mode is class (a) deterministic-override in the CAAF taxonomy: validate the structural correspondence between orchestrator claims and tool-call structures, reject mismatches at the structural level rather than relying on the orchestrator to self-correct. Class (a) override is qualitatively different from prompt-mediated correction (CAAF arXiv:2604.17025: *"apparent LLM reliability in safety-critical domains is often a prompt engineering artifact"*).
 
-The codebase precedent is the recent typed-error path established by commit `9f86d0b feat: raise typed error when provider rejects tool calling per-model`. That commit codified the pattern of producing a typed error when a provider's tool-calling capability is structurally absent; ADR-017 extends the same typed-error pattern to the structural-mismatch case (orchestrator claims tool call, structure absent).
+The codebase precedent is the recent typed-error path established by commit `98df0d5 feat: raise typed error when provider rejects tool calling per-model`. That commit codified the pattern of producing a typed error when a provider's tool-calling capability is structurally absent; ADR-017 extends the same typed-error pattern to the structural-mismatch case (orchestrator claims tool call, structure absent).
 
 The framing commitment from research-gate Grounding Action 2 (recorded 2026-05-05, *elaboration-by-evidence*) holds: structural validation responsibilities concentrate within Tool Dispatch (L2) rather than warranting a dedicated validation module. The placement preserves ADR-002's four-layer frame; the elaboration is within-layer.
 
@@ -47,7 +47,7 @@ For each tool-call claim pattern detected, the guard cross-checks whether a corr
 
 ### Rejection
 
-A mismatch produces a typed `phantom_tool_call` error consistent with the existing typed-error path established by commit `9f86d0b`. The error includes:
+A mismatch produces a typed `phantom_tool_call` error consistent with the existing typed-error path established by commit `98df0d5`. The error includes:
 
 - The detected prose claim (the substring that asserted the tool call)
 - The list of tool-call structures actually emitted (zero or more — may be partial mismatch where some calls were emitted but the prose claim references a different one)
@@ -57,7 +57,7 @@ The orchestrator receives the typed error and must take a different action — r
 
 ### Shared typed-error base class (cross-ADR coordination, argument-audit P3.5 finding 2026-05-06)
 
-The new ADRs in Cycle 4 reference the typed-error pattern from commit `9f86d0b` at multiple validation surfaces — ADR-012 (Layer 4 compaction failures), ADR-013 (write-gate validation rejections), ADR-014 (Abstain verdict propagation), ADR-016 (mechanism (e) malformed-signal rejection), and ADR-017 (phantom_tool_call rejection). For BUILD coherence, ADR-017 specifies that all new typed errors derive from a shared `LlmOrcStructuralError` base class (or equivalent name to be finalized in BUILD) parallel to commit `9f86d0b`'s pattern, with the following common fields:
+The new ADRs in Cycle 4 reference the typed-error pattern from commit `98df0d5` at multiple validation surfaces — ADR-012 (Layer 4 compaction failures), ADR-013 (write-gate validation rejections), ADR-014 (Abstain verdict propagation), ADR-016 (mechanism (e) malformed-signal rejection), and ADR-017 (phantom_tool_call rejection). For BUILD coherence, ADR-017 specifies that all new typed errors derive from a shared `LlmOrcStructuralError` base class (or equivalent name to be finalized in BUILD) parallel to commit `98df0d5`'s pattern, with the following common fields:
 
 - `error_kind` — one of {`tool_call_rejected_per_model` (existing), `phantom_tool_call`, `compaction_layer_4_failure`, `write_gate_rejection`, `calibration_abstain`, `malformed_signal`, ...}
 - `dispatch_context` — orchestrator turn identifier, session identifier
@@ -84,7 +84,7 @@ The pattern set is **operator-extensible at deployment configuration** so operat
 
 **(c) Block all responses containing tool-call-claim patterns (over-detection by default).** Rejected: the conservative false-positive discipline is load-bearing. Over-detection produces operator-visible session disruption; the cycle's evidence base does not justify aggressive detection. Conservative detection plus operator-extensibility is the calibration that matches the evidence shape.
 
-**(d) Defer the guard until multi-iteration scale evidence (treat the spike's single-trial confabulation as below evidentiary threshold for in-cycle structural validation).** Rejected: the failure mode's class (Wave 1.A's small-local-model documentation; codebase precedent at commit `9f86d0b`) is established independently of the cycle's spike evidence. The guard codifies a documented class of structural mismatch that has codebase precedent for typed-error treatment; the spike's contribution is the cheap-cloud observation, which extends the failure mode's known surface but does not change the intervention class. The spike's prompt-design caveat applies to *frequency calibration* (how often to expect confabulation under operational conditions), not to *whether the structural guard is justified*.
+**(d) Defer the guard until multi-iteration scale evidence (treat the spike's single-trial confabulation as below evidentiary threshold for in-cycle structural validation).** Rejected: the failure mode's class (Wave 1.A's small-local-model documentation; codebase precedent at commit `98df0d5`) is established independently of the cycle's spike evidence. The guard codifies a documented class of structural mismatch that has codebase precedent for typed-error treatment; the spike's contribution is the cheap-cloud observation, which extends the failure mode's known surface but does not change the intervention class. The spike's prompt-design caveat applies to *frequency calibration* (how often to expect confabulation under operational conditions), not to *whether the structural guard is justified*.
 
 **(e) Validate via prose-content semantic check (LLM judges whether the prose claim is consistent with the tool-call structures).** Rejected: this reintroduces LLM-judgment into the validation path, which has documented reliability problems (CAAF). Structural validation against the tool-call structure presence is class (a) override; semantic validation by LLM is class (b) prompt-judgment.
 
@@ -95,11 +95,11 @@ The pattern set is **operator-extensible at deployment configuration** so operat
 ## Consequences
 
 **Positive:**
-- Closes a documented failure-mode surface (phantom tool-call confabulation) at the structural level, consistent with the existing typed-error path from commit `9f86d0b`
+- Closes a documented failure-mode surface (phantom tool-call confabulation) at the structural level, consistent with the existing typed-error path from commit `98df0d5`
 - Class (a) deterministic override is the literature-supported intervention class for this failure mode (CAAF arXiv:2604.17025; intervention-class taxonomy from essay 005 Wave 1.A)
 - Conservative false-positive discipline matches the spike's evidence shape — the guard runs but does not over-trigger; pattern-set extensibility lets deployment evidence inform calibration without altering core guard logic
 - Typed error provides structural feedback to the orchestrator's reasoning surface; the orchestrator can incorporate the rejection rather than receiving silent retry
-- Composes cleanly with ADR-013's write-gate validation and ADR-014's calibration verdict — all three use the typed-error pattern from commit `9f86d0b`, producing a coherent error-surfacing model across the new ADRs
+- Composes cleanly with ADR-013's write-gate validation and ADR-014's calibration verdict — all three use the typed-error pattern from commit `98df0d5`, producing a coherent error-surfacing model across the new ADRs
 
 **Negative:**
 - Pattern-based detection has inherent false-positive risk; conservative discipline reduces but does not eliminate it
@@ -110,7 +110,7 @@ The pattern set is **operator-extensible at deployment configuration** so operat
 
 **Neutral:**
 - The guard operates in Tool Dispatch (L2 interposition), invisible to the orchestrator's reasoning surface except through the typed error on rejection
-- The codebase precedent at commit `9f86d0b` is the structurally-similar pattern; ADR-017 extends the same typed-error pattern to a different failure-mode surface
+- The codebase precedent at commit `98df0d5` is the structurally-similar pattern; ADR-017 extends the same typed-error pattern to a different failure-mode surface
 - The guard's value scales with the failure-mode's frequency in deployment; if confabulation is rare under operational conditions (the spike's prompt-design caveat suggests it may be), the guard runs but rarely triggers — that is the correct operational character
 - Pattern-set localization (the operator-extensibility for deployment locale) is a deployment concern, not an architecture concern
 
@@ -118,7 +118,7 @@ The pattern set is **operator-extensible at deployment configuration** so operat
 
 ## Provenance check
 
-- **Driver-derived content (failure mode, intervention class, codebase precedent).** The phantom tool-call confabulation failure mode is documented in essay 005 §"The Behavioral Spike" (Wave 3.A Trial 3 observation) and Wave 1.A (small-local-model practitioner-documented finding). The class (a) intervention classification is from the cycle's intervention-class taxonomy, surfaced via essay 005 Wave 1.A. The typed-error pattern is the existing codebase precedent at commit `9f86d0b`.
+- **Driver-derived content (failure mode, intervention class, codebase precedent).** The phantom tool-call confabulation failure mode is documented in essay 005 §"The Behavioral Spike" (Wave 3.A Trial 3 observation) and Wave 1.A (small-local-model practitioner-documented finding). The class (a) intervention classification is from the cycle's intervention-class taxonomy, surfaced via essay 005 Wave 1.A. The typed-error pattern is the existing codebase precedent at commit `98df0d5`.
 
 - **Driver-derived content (scope condition on spike evidence).** The caveat that Trial 3's adversarial prompt confounds frequency calibration is essay-derived (essay 005 §"The Behavioral Spike" explicitly flags this). ADR-017 carries the caveat into the conservative false-positive discipline.
 
@@ -126,7 +126,7 @@ The pattern set is **operator-extensible at deployment configuration** so operat
 
 - **Drafting-time synthesis (conservative false-positive discipline).** Essay 005 does not specify a false-positive vs. false-negative tradeoff. The conservative discipline (under-detection preferred over over-detection) is drafting-time judgment applying the spike's prompt-design caveat. The alternative (aggressive detection) was rejected for the documented reasons.
 
-- **Drafting-time synthesis (typed error name `phantom_tool_call` and error fields).** The error name and field set are drafting-time synthesis. Commit `9f86d0b`'s precedent establishes the typed-error pattern but uses a different error name appropriate to that case (per-model tool-calling rejection). ADR-017's error name is parallel-by-construction.
+- **Drafting-time synthesis (typed error name `phantom_tool_call` and error fields).** The error name and field set are drafting-time synthesis. Commit `98df0d5`'s precedent establishes the typed-error pattern but uses a different error name appropriate to that case (per-model tool-calling rejection). ADR-017's error name is parallel-by-construction.
 
 - **Drafting-time synthesis (operator-extensibility configuration surface).** The pattern-set operator-extensibility model is drafting-time addition. Essay 005 does not specify deployment configuration for the guard; the extensibility is judgment-based addition responsive to the conservative-discipline-but-deployment-evidence-informed tension.
 

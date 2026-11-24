@@ -1,4 +1,4 @@
-# Arc 1 (workspace-aware routing) — live rows on merged main `acfaf427` (2026-09-11, late)
+# Arc 1 (workspace-aware routing) — live rows on merged main `7f182865` (2026-09-11, late)
 
 Real OpenCode, fresh session per row, probe seed reset before each
 (`docs/plans/2026-09-11-daily-driver-probe/seed-repo.tgz`).
@@ -12,7 +12,7 @@ Exit gate of `docs/plans/2026-09-11-workspace-aware-routing-design.md`
 met on both rows. The 13-turn ladder rerun rides the arc-2 merge (one
 ladder validates both arcs).
 
-## Arc 2 rows on merged main `01b59026` (2026-09-12, early)
+## Arc 2 rows on merged main `586ad7f4` (2026-09-12, early)
 
 | row | ask | events | outcome |
 |---|---|---|---|

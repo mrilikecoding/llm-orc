@@ -37,7 +37,7 @@ ladder turn's stems subset-match a serve-owned script; the union is inert
 on the ladder exactly as designed.
 
 Timing note: battery turns 1–12 ran against the branch at the live-gate
-commit; the round-1 review fixes (`ac419af`) landed mid-run (scripts are
+commit; the round-1 review fixes (`291331c`) landed mid-run (scripts are
 re-read per turn). Every surface those fixes touched is self-path-only,
 and no battery turn routed through the self path (above), so the row is
 valid for the merged result.
