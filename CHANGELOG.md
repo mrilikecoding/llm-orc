@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.25.3] - 2026-11-25
+
+### Security
+- `mcp` moves to 1.30.0 (now the minimum) for five advisories, and the
+  transitive `pyasn1` to 0.6.5 for four (CVE-2026-119194 through
+  119197). `certifi` moves to 2026.11.20 in the lock.
+
+### Changed
+- The repository's history was rewritten on 2026-11-24 to normalize
+  commit authorship and messages. Every tag points at a new commit and
+  release archives have new checksums; the Homebrew formula carries the
+  new one. Existing clones should re-clone or reset to `origin/main`.
+
 ## [0.25.2] - 2026-10-10
 
 ### Fixed
