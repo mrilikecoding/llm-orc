@@ -31,8 +31,9 @@ llm-orc invoke code-review --input "Review this function: def add(a, b): return 
 llm-orc invoke code-review --input "..." --output-format json
 
 # Use a specific directory: a folder of ensemble files, or a config
-# directory (a config.yaml next to an ensembles/ subdirectory; only
-# ensembles/ is scanned)
+# directory (a config.yaml next to an ensembles/ subdirectory). A config
+# directory scans only its ensembles/ subdirectory, so config.yaml,
+# credentials.yaml and profiles/ are never read as ensembles.
 llm-orc invoke code-review --config-dir ./custom-config
 
 # Enable streaming for real-time progress (enabled by default)
