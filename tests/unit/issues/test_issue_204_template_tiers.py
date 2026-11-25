@@ -99,3 +99,36 @@ def test_config_templates_ship_no_model_profiles(template: str) -> None:
     data = yaml.safe_load((TEMPLATES / template).read_text())
 
     assert data["model_profiles"] == {}
+
+
+class _Profiles:
+    """Stands in for the manager: a fixed profile table."""
+
+    def __init__(self, table: dict[str, dict[str, str]]) -> None:
+        self._table = table
+
+    def get_model_profile(self, name: str) -> dict[str, str] | None:
+        return self._table.get(name)
+
+
+def test_the_walk_follows_a_fallback_chain_to_a_missing_last_hop(
+    tmp_path: Path,
+) -> None:
+    ensemble = tmp_path / "chain.yaml"
+    ensemble.write_text(
+        yaml.safe_dump(
+            {
+                "name": "chain",
+                "description": "d",
+                "agents": [{"name": "a", "model_profile": "first"}],
+            }
+        )
+    )
+    table = {
+        "first": {"provider": "llama-server", "fallback_model_profile": "second"},
+        "second": {"provider": "llama-server", "fallback_model_profile": "gone"},
+    }
+
+    problems = _problems([ensemble], _Profiles(table))  # type: ignore[arg-type]
+
+    assert problems == {"chain.yaml": ["gone: not found"]}

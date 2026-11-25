@@ -162,3 +162,16 @@ def test_invoke_lookup_reads_the_ensembles_subdir_of_a_config_root(
 
     assert found.name == "real"
     assert "Skipping invalid ensemble" not in caplog.text, caplog.text
+
+
+def test_a_directory_named_config_yaml_is_not_a_config_root(tmp_path: Path) -> None:
+    plain = tmp_path / "mine"
+    (plain / "config.yaml").mkdir(parents=True)
+    (plain / "ensembles").mkdir()
+    (plain / "top.yaml").write_text(_ensemble_yaml("top"))
+    (plain / "ensembles" / "inner.yaml").write_text(_ensemble_yaml("inner"))
+
+    result = CliRunner().invoke(cli, ["list-ensembles", "--config-dir", str(plain)])
+
+    assert "top: top d" in result.output
+    assert "inner: inner d" in result.output
