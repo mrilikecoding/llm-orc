@@ -103,6 +103,9 @@ def list_auth_providers(interactive: bool, verify: bool = False) -> None:
     """List configured authentication providers."""
     from llm_orc.menu_system import AuthMenus
 
+    if interactive and verify:
+        raise click.UsageError("--verify cannot be combined with --interactive")
+
     config_manager = ConfigurationManager()
     storage = CredentialStorage(config_manager)
     auth_manager = AuthenticationManager(storage)

@@ -122,7 +122,8 @@ class HelpHandler:
                 "update_ensemble, analyze_execution"
             ),
             "provider_discovery": (
-                "get_provider_status (check available models), "
+                "get_provider_status (check available models; verify=true asks "
+                "each cloud provider whether its stored key works), "
                 "check_ensemble_runnable (verify ensemble can run)"
             ),
             "remotes": (

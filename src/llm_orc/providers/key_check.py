@@ -55,6 +55,8 @@ def checkable_api_key(storage: "CredentialStorage", provider: str) -> str | None
 
 async def check_api_key(provider: str, api_key: str) -> KeyCheck:
     """Ask ``provider`` to list its models with ``api_key``; never raises."""
+    if not api_key:
+        return KeyCheck("rejected", f"empty key: nothing to send to {provider}")
     if not _is_header_safe(api_key):
         return KeyCheck("rejected", f"malformed key: cannot be sent to {provider}")
     try:
@@ -67,7 +69,7 @@ async def check_api_key(provider: str, api_key: str) -> KeyCheck:
 
 def _is_header_safe(api_key: str) -> bool:
     """Printable ASCII only: the key travels in a request header."""
-    return bool(api_key) and all(0x20 <= ord(c) < 0x7F for c in api_key)
+    return all(0x20 <= ord(c) < 0x7F for c in api_key)
 
 
 def _accepted(provider: str) -> KeyCheck:
@@ -90,7 +92,7 @@ async def _check_anthropic(api_key: str) -> KeyCheck:
         api_key=api_key, timeout=KEY_CHECK_TIMEOUT_SECONDS, max_retries=0
     )
     try:
-        await client.models.list(limit=1)
+        page = await client.models.list(limit=1)
     except (anthropic.AuthenticationError, anthropic.PermissionDeniedError) as e:
         return _rejected(provider, f"HTTP {e.status_code}")
     except anthropic.APITimeoutError:
@@ -103,6 +105,8 @@ async def _check_anthropic(api_key: str) -> KeyCheck:
         return _inconclusive(provider, f"HTTP {e.status_code}")
     finally:
         await client.close()
+    if not page.data:
+        return _inconclusive(provider, "HTTP 200 with no models listed")
     return _accepted(provider)
 
 
@@ -115,7 +119,7 @@ async def _check_google(api_key: str) -> KeyCheck:
         ),
     )
     try:
-        await client.aio.models.list(config={"page_size": 1})
+        pager = await client.aio.models.list(config={"page_size": 1})
     except genai_errors.APIError as e:
         if e.code in _GOOGLE_REJECTED_CODES:
             return _rejected(provider, f"HTTP {e.code}")
@@ -126,4 +130,6 @@ async def _check_google(api_key: str) -> KeyCheck:
         return _inconclusive(provider, type(e).__name__)
     finally:
         await client.aio.aclose()
+    if not pager.page:
+        return _inconclusive(provider, "HTTP 200 with no models listed")
     return _accepted(provider)

@@ -33,6 +33,7 @@ class _Wire:
     def __init__(self) -> None:
         self.requests: list[httpx.Request] = []
         self.respond: int | Exception = 200
+        self.raw: bytes | None = None
 
 
 @pytest.fixture
@@ -49,11 +50,25 @@ def wire(monkeypatch: pytest.MonkeyPatch) -> _Wire:
             return httpx.Response(
                 seen.respond, json={"error": {"message": "no"}}, request=request
             )
+        if seen.raw is not None:
+            return httpx.Response(200, content=seen.raw, request=request)
         google = "googleapis" in request.url.host
         body: dict[str, Any] = (
-            {"models": []}
+            {"models": [{"name": "models/m"}]}
             if google
-            else {"data": [], "has_more": False, "first_id": None, "last_id": None}
+            else {
+                "data": [
+                    {
+                        "id": "m",
+                        "type": "model",
+                        "display_name": "M",
+                        "created_at": "2025-01-01T00:00:00Z",
+                    }
+                ],
+                "has_more": False,
+                "first_id": None,
+                "last_id": None,
+            }
         )
         return httpx.Response(200, json=body, request=request)
 
@@ -397,3 +412,65 @@ def test_auth_list_verifies_only_with_the_flag(wire: _Wire) -> None:
     assert "anthropic-api" in verified.output
     assert "accepted" in verified.output
     assert len(wire.requests) == 1
+
+
+@pytest.mark.parametrize("raw", [b"", b"[]", b"null", b"{}", b'"ok"'])
+@pytest.mark.parametrize("provider", PROVIDERS)
+async def test_a_200_that_is_not_a_model_listing_is_inconclusive(
+    provider: str, raw: bytes, wire: _Wire
+) -> None:
+    wire.raw = raw
+    handler = _handler((provider, "any-key"))
+
+    status = await _verified(handler, provider)
+
+    assert status["available"] is False
+    assert status["state"] == "inconclusive"
+
+
+@pytest.mark.parametrize("provider", PROVIDERS)
+async def test_an_empty_stored_key_is_rejected_as_empty_without_a_request(
+    provider: str, wire: _Wire
+) -> None:
+    handler = _handler((provider, ""))
+
+    status = await _verified(handler, provider)
+
+    assert status["state"] == "rejected"
+    assert "empty key" in status["reason"]
+    assert wire.requests == []
+
+
+@pytest.mark.parametrize("value", ["false", "true", 1, None, "", [True]])
+async def test_verify_must_be_exactly_true_through_the_tool_dispatch(
+    value: Any, wire: _Wire
+) -> None:
+    from llm_orc.mcp.server import MCPServer
+
+    CredentialStorage(ConfigurationManager(provision=False)).store_api_key(
+        "anthropic-api", "a-key"
+    )
+    server = MCPServer(config_manager=ConfigurationManager(provision=False))
+
+    result = await server.call_tool("get_provider_status", {"verify": value})
+
+    assert result["providers"]["anthropic-api"]["state"] == "unchecked"
+    assert wire.requests == []
+
+
+def test_auth_list_refuses_interactive_with_verify(wire: _Wire) -> None:
+    from click.testing import CliRunner
+
+    from llm_orc.cli import cli
+
+    result = CliRunner().invoke(cli, ["auth", "list", "-i", "--verify"])
+
+    assert result.exit_code == 2
+    assert "--verify cannot be combined with --interactive" in result.output
+    assert wire.requests == []
+
+
+def test_help_documents_the_verify_argument() -> None:
+    help_text = OrchestraService().get_help_documentation()["tools"]
+
+    assert "verify=true" in help_text["provider_discovery"]

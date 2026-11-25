@@ -97,7 +97,8 @@ class ProviderHandler:
         grouped from; the service's own runtime profiles when omitted.
         ``config_manager`` is where credentials are read from; the
         service's own when omitted. A stored key reads as configured
-        without a network call; ``arguments["verify"]`` asks each cloud
+        without a network call; ``arguments["verify"] is True`` (exactly
+        that, as the tool dispatch passes raw arguments) asks each cloud
         provider to list its models with that key instead.
         """
         providers: dict[str, Any] = {}
@@ -105,7 +106,7 @@ class ProviderHandler:
         providers["llama-server"] = await self._get_llama_server_status()
 
         clouds = ("anthropic-api", "google-gemini")
-        if arguments.get("verify"):
+        if arguments.get("verify") is True:
             checked = await asyncio.gather(
                 *(
                     self._verify_cloud_provider(cloud, config_manager)
