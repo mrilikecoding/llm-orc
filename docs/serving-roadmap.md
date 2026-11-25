@@ -59,7 +59,7 @@ layer is the insulation that keeps an eventual hardening cheap, and
 "frozen component" status is the trigger, tracked informally the way the
 buy-back ledger tracks hosted seats.
 
-## State (2026-10-02 handoff)
+## State (2026-11-25 handoff)
 
 **Ranked index:** the GitHub project "llm-orc kanban"
 (https://github.com/users/mrilikecoding/projects/2). THIS DOCUMENT
@@ -76,6 +76,30 @@ client; llm-orc must be deployable without coupling to additional
 applications (#90's packaging goal). Standing directives from 2026-09-11
 hold (daily driver on existing repos; real OpenCode sessions; Go spend
 and paid comparison runs within reason; cheaper subagents; meter usage).
+
+### 2026-11-24: history rewritten again; v0.25.3 released
+
+Commit authorship and messages were normalized across the whole history
+(every branch and all tags force-pushed on the practitioner's go), and
+the tree now names harnesses and comparator models in neutral terms
+(`small-runN`/`mid-runN`, "the frontier harness", "the harness
+instruction file"). Anthropic stays a supported provider. Every hash
+cited in this document and in `docs/plans/` was remapped to the new
+history; hashes in GitHub issue comments before this date are the old
+ones. Backups of the old refs are local, under
+`refs/backup/pre-neutral-rewrite/`.
+
+v0.25.3 (2026-11-25) moves `mcp` to 1.30.0 and `pyasn1` to 0.6.5 for
+new advisories, plus `certifi` in the lock; pip-audit had turned CI red.
+Verified by a clean install from PyPI. Not yet deployed to the remote
+host.
+
+#204 answered 2026-11-24: the 0.20.x implicit fallback masked the real
+error (reproduced on macOS). Two bugs found on the way, unfixed: with
+`--config-dir` at the global dir the loader scans `config.yaml`,
+`credentials.yaml` and `profiles/*.yaml` as ensembles; after
+`llm-orc init` the bundled `validate-anthropic-api` refuses with
+`missing_profile` and its template profile names a retired model.
 
 ### 2026-10-01: history rewritten, machine-specific content removed
 
