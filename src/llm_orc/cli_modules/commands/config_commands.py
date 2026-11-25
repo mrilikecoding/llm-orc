@@ -8,7 +8,6 @@ import click
 from llm_orc.cli_modules.utils.cli_utils import echo_error, echo_info, echo_success
 from llm_orc.cli_modules.utils.config_utils import (
     check_ensemble_availability,
-    display_default_models_config,
     display_global_profiles,
     display_local_profiles,
     display_providers_status,
@@ -280,9 +279,6 @@ def check_global_config() -> None:
 
             # Read ONLY global config file, not merged profiles
             global_config = safe_load_yaml(global_config_path)
-
-            # Show default model profiles configuration
-            display_default_models_config(config_manager, available_providers)
 
             # Check global ensembles SECOND
             global_ensembles_dir = global_config_dir / "ensembles"

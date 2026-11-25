@@ -201,8 +201,6 @@ class TestConfigurationManager:
             # Mock template content to avoid expensive I/O operations
             mock_config_template = """project:
   name: {project_name}
-  default_models:
-    test: micro-local
 """
             mock_ensemble_template = """name: example-local-ensemble
 agents:
@@ -241,13 +239,6 @@ agents:
                 with open(config_file) as f:
                     config_data = yaml.safe_load(f)
                     assert config_data["project"]["name"] == "test-project"
-                    assert "test" in config_data["project"]["default_models"]
-                    assert (
-                        config_data["project"]["default_models"]["test"]
-                        == "micro-local"
-                    )
-                    # Only test fallback should exist now
-                    assert len(config_data["project"]["default_models"]) == 1
 
                 # Check example ensemble was copied
                 example_ensemble = (

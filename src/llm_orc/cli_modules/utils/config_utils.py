@@ -407,37 +407,6 @@ def show_provider_details(storage: CredentialStorage, provider: str) -> None:
     click.echo()
 
 
-def display_default_models_config(
-    config_manager: ConfigurationManager, available_providers: set[str]
-) -> None:
-    """Display default model profiles configuration."""
-    project_config = config_manager.load_project_config()
-    if project_config:
-        default_models = project_config.get("project", {}).get("default_models", {})
-        if default_models:
-            click.echo(f"\n⚙️ Default model profiles ({len(default_models)} found):")
-            for purpose, profile in default_models.items():
-                # Resolve profile to show actual model and provider
-                try:
-                    (
-                        resolved_model,
-                        resolved_provider,
-                    ) = config_manager.resolve_model_profile(profile)
-                    # Check if provider is available for status indicator
-                    provider_available = resolved_provider in available_providers
-                    status_symbol = "🟢" if provider_available else "🟥"
-                    click.echo(
-                        f"  {status_symbol} {purpose}: {profile} → "
-                        f"{resolved_model} ({resolved_provider})"
-                    )
-                    click.echo("    Purpose: fallback model for reliability")
-                except (ValueError, KeyError):
-                    click.echo(f"  🟥 {purpose}: {profile} → profile not found")
-                    click.echo("    Purpose: fallback model for reliability")
-        else:
-            click.echo("\n⚙️ Default model profiles: none configured")
-
-
 def display_global_profiles(
     global_config: dict[str, Any], available_providers: set[str]
 ) -> None:

@@ -12,7 +12,6 @@ from click import ClickException
 from llm_orc.cli_modules.utils.config_utils import (
     backup_config_file,
     check_ensemble_availability,
-    display_default_models_config,
     display_global_profiles,
     display_local_profiles,
     display_providers_status,
@@ -524,32 +523,6 @@ class TestShowProviderDetails:
 class TestDisplayFunctions:
     """Test various display functions."""
 
-    def test_display_default_models_config(self) -> None:
-        """Test displaying default models configuration."""
-        mock_config = Mock(spec=ConfigurationManager)
-        project_config = {
-            "project": {
-                "default_models": {
-                    "general": "claude-3-sonnet",
-                    "coding": "claude-3-opus",
-                }
-            }
-        }
-        mock_config.load_project_config.return_value = project_config
-        mock_config.resolve_model_profile.return_value = (
-            "claude-3-sonnet",
-            "anthropic",
-        )
-        available_providers = {"anthropic"}
-
-        with patch("click.echo") as mock_echo:
-            display_default_models_config(mock_config, available_providers)
-
-            calls = [str(call) for call in mock_echo.call_args_list]
-            assert any(
-                "Default model" in call or "default model" in call for call in calls
-            )
-
     def test_display_global_profiles(self) -> None:
         """Test displaying global profiles."""
         global_config = {
@@ -774,67 +747,6 @@ class TestConfigUtilsErrorHandling:
             # Then - should handle the try/except block for OAuth status
             calls = [str(call) for call in mock_echo.call_args_list]
             assert any("OAuth" in call for call in calls)
-
-    @patch("click.echo")
-    def test_display_default_models_config_profile_not_found(
-        self, mock_echo: Mock
-    ) -> None:
-        """Test display_default_models_config with missing profiles."""
-        # Given
-        mock_config = Mock()
-
-        # Mock resolve to raise ValueError for missing profiles
-        def mock_resolve_profile(profile_name: str) -> tuple[str, str]:
-            if profile_name == "missing-profile":
-                raise ValueError("Profile not found")
-            return "claude-3", "anthropic"
-
-        mock_config.resolve_model_profile = mock_resolve_profile
-        mock_config.load_project_config.return_value = {
-            "project": {
-                "default_models": {
-                    "primary": "valid-profile",
-                    "fallback": "missing-profile",
-                }
-            }
-        }
-
-        # When
-        display_default_models_config(mock_config, {"anthropic"})
-
-        # Then
-        calls = [str(call) for call in mock_echo.call_args_list]
-        assert any("profile not found" in call for call in calls)
-
-    @patch("click.echo")
-    def test_display_default_models_config_keyerror_handling(
-        self, mock_echo: Mock
-    ) -> None:
-        """Test display_default_models_config with KeyError."""
-        # Given
-        mock_config = Mock()
-
-        # Mock resolve to raise KeyError for missing profiles
-        def mock_resolve_profile(profile_name: str) -> tuple[str, str]:
-            if profile_name == "missing-profile":
-                raise KeyError("Profile key not found")
-            return "claude-3", "anthropic"
-
-        mock_config.resolve_model_profile = mock_resolve_profile
-        mock_config.load_project_config.return_value = {
-            "project": {
-                "default_models": {
-                    "primary": "missing-profile",
-                }
-            }
-        }
-
-        # When
-        display_default_models_config(mock_config, {"anthropic"})
-
-        # Then
-        calls = [str(call) for call in mock_echo.call_args_list]
-        assert any("profile not found" in call for call in calls)
 
 
 class TestCheckEnsembleAvailabilityHelperMethods:

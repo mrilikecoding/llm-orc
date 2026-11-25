@@ -248,37 +248,33 @@ class TestConfigCommands:
                     "llm_orc.cli_modules.commands.config_commands.display_providers_status"
                 ) as mock_display_providers:
                     with patch(
-                        "llm_orc.cli_modules.commands.config_commands.display_default_models_config"
-                    ) as mock_display_models:
+                        "llm_orc.cli_modules.commands.config_commands.check_ensemble_availability"
+                    ) as mock_check_ensembles:
                         with patch(
-                            "llm_orc.cli_modules.commands.config_commands.check_ensemble_availability"
-                        ) as mock_check_ensembles:
+                            "llm_orc.cli_modules.commands.config_commands.display_global_profiles"
+                        ) as mock_display_profiles:
                             with patch(
-                                "llm_orc.cli_modules.commands.config_commands.display_global_profiles"
-                            ) as mock_display_profiles:
-                                with patch(
-                                    "llm_orc.cli_modules.commands.config_commands.safe_load_yaml"
-                                ) as mock_safe_load:
-                                    mock_config_manager = Mock()
-                                    mock_config_manager_class.return_value = (
-                                        mock_config_manager
-                                    )
-                                    mock_config_manager.global_config_dir = str(
-                                        global_config_dir
-                                    )
+                                "llm_orc.cli_modules.commands.config_commands.safe_load_yaml"
+                            ) as mock_safe_load:
+                                mock_config_manager = Mock()
+                                mock_config_manager_class.return_value = (
+                                    mock_config_manager
+                                )
+                                mock_config_manager.global_config_dir = str(
+                                    global_config_dir
+                                )
 
-                                    mock_get_providers.return_value = {}
-                                    mock_safe_load.return_value = {"model_profiles": {}}
+                                mock_get_providers.return_value = {}
+                                mock_safe_load.return_value = {"model_profiles": {}}
 
-                                    # When
-                                    check_global_config()
+                                # When
+                                check_global_config()
 
-                                    # Then
-                                    mock_get_providers.assert_called_once()
-                                    mock_display_providers.assert_called_once()
-                                    mock_display_models.assert_called_once()
-                                    mock_check_ensembles.assert_called_once()
-                                    mock_display_profiles.assert_called_once()
+                                # Then
+                                mock_get_providers.assert_called_once()
+                                mock_display_providers.assert_called_once()
+                                mock_check_ensembles.assert_called_once()
+                                mock_display_profiles.assert_called_once()
 
     def test_check_global_config_missing(self, temp_dir: str) -> None:
         """Test checking global config when it doesn't exist."""
