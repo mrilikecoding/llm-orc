@@ -35,7 +35,7 @@ dependencies = [
     "rich>=13.0.0",
     "psutil>=5.9.0",
     "python-dotenv>=1.1.1",
-    "mcp>=1.28.1,<2",
+    "mcp>=1.30.0,<2",
     "fastapi>=0.115.0",
     "uvicorn>=0.32.0",
     "ddgs>=9.14.2",
@@ -233,8 +233,8 @@ dev = [
 
 
 [tool.uv]
-# PYSEC-2026-3455: transitive pyasn1 must carry the BER-decoder fix.
+# Transitive pyasn1 must carry the BER-decoder fixes.
 constraint-dependencies = [
-    "pyasn1>=0.6.4",  # PYSEC-2026-3455
+    "pyasn1>=0.6.5",  # PYSEC-2026-3455, CVE-2026-119194..119197
     "cryptography>=50.0.0",  # PYSEC-2026-3552
 ]
