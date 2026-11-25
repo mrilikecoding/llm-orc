@@ -91,8 +91,8 @@ ones. Backups of the old refs are local, under
 
 v0.25.3 (2026-11-25) moves `mcp` to 1.30.0 and `pyasn1` to 0.6.5 for
 new advisories, plus `certifi` in the lock; pip-audit had turned CI red.
-Verified by a clean install from PyPI. Not yet deployed to the remote
-host.
+Verified by a clean install from PyPI. Deployed to the remote host
+2026-11-25: healthy at 0.25.3, `research-dossier` runnable.
 
 #204 answered 2026-11-24: the 0.20.x implicit fallback masked the real
 error (reproduced on macOS). Two bugs found on the way, unfixed: with
