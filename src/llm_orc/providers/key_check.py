@@ -21,10 +21,11 @@ KEY_CHECK_TIMEOUT_SECONDS = 5.0
 
 KeyState = Literal["accepted", "rejected", "inconclusive"]
 
-# Google documents no status for a bad key on this call (nothing in the
-# google-genai package says a bad key is a 400), so only 401 and 403, which
-# mean the credential was refused, are "rejected".
+# 401 and 403 mean the credential was refused. A 400 is "rejected" only when
+# its ErrorInfo detail names the key (see _google_key_invalid); a bare 400
+# says nothing about the key.
 _GOOGLE_REJECTED_CODES = frozenset({401, 403})
+_GOOGLE_KEY_INVALID_REASON = "API_KEY_INVALID"
 
 
 @dataclass(frozen=True)
@@ -110,6 +111,19 @@ async def _check_anthropic(api_key: str) -> KeyCheck:
     return _accepted(provider)
 
 
+def _google_key_invalid(error: genai_errors.APIError) -> bool:
+    """Google answers a well-formed wrong key with a 400 whose ErrorInfo
+    detail names the reason (measured 2026-11-25). Any other 400 says
+    nothing about the key."""
+    body = error.details if isinstance(error.details, dict) else {}
+    inner = body.get("error")
+    details = inner.get("details") if isinstance(inner, dict) else None
+    return isinstance(details, list) and any(
+        isinstance(d, dict) and d.get("reason") == _GOOGLE_KEY_INVALID_REASON
+        for d in details
+    )
+
+
 async def _check_google(api_key: str) -> KeyCheck:
     provider = "google-gemini"
     client = genai.Client(
@@ -121,7 +135,7 @@ async def _check_google(api_key: str) -> KeyCheck:
     try:
         pager = await client.aio.models.list(config={"page_size": 1})
     except genai_errors.APIError as e:
-        if e.code in _GOOGLE_REJECTED_CODES:
+        if e.code in _GOOGLE_REJECTED_CODES or _google_key_invalid(e):
             return _rejected(provider, f"HTTP {e.code}")
         return _inconclusive(provider, f"HTTP {e.code}")
     except httpx.TimeoutException:

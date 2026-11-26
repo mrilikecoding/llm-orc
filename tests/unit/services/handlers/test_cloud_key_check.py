@@ -42,6 +42,7 @@ class _Wire:
         self.requests: list[httpx.Request] = []
         self.respond: int | Exception = 200
         self.raw: bytes | None = None
+        self.error_body: dict[str, Any] | None = None
 
 
 @pytest.fixture
@@ -55,13 +56,12 @@ def wire(monkeypatch: pytest.MonkeyPatch) -> _Wire:
         if isinstance(seen.respond, Exception):
             raise seen.respond
         if seen.respond != 200:
-            return httpx.Response(
-                seen.respond, json={"error": {"message": "no"}}, request=request
-            )
+            body = seen.error_body or {"error": {"message": "no"}}
+            return httpx.Response(seen.respond, json=body, request=request)
         if seen.raw is not None:
             return httpx.Response(200, content=seen.raw, request=request)
         google = "googleapis" in request.url.host
-        body: dict[str, Any] = (
+        listing: dict[str, Any] = (
             {"models": [{"name": "models/m"}]}
             if google
             else {
@@ -78,7 +78,7 @@ def wire(monkeypatch: pytest.MonkeyPatch) -> _Wire:
                 "last_id": None,
             }
         )
-        return httpx.Response(200, json=body, request=request)
+        return httpx.Response(200, json=listing, request=request)
 
     monkeypatch.setattr(httpx.AsyncHTTPTransport, "handle_async_request", handle)
     return seen
@@ -126,6 +126,38 @@ async def test_a_refused_credential_is_rejected(
     assert status["available"] is False
     assert status["state"] == "rejected"
     assert str(code) in status["reason"]
+
+
+# What Google answered for a well-formed wrong key on 2026-11-25: a 400, not a
+# 401, with the refusal named in a structured ErrorInfo detail.
+_GOOGLE_BAD_KEY = {
+    "error": {
+        "code": 400,
+        "message": "API key not valid. Please pass a valid API key.",
+        "status": "INVALID_ARGUMENT",
+        "details": [
+            {
+                "@type": "type.googleapis.com/google.rpc.ErrorInfo",
+                "reason": "API_KEY_INVALID",
+                "domain": "googleapis.com",
+                "metadata": {"service": "generativelanguage.googleapis.com"},
+            }
+        ],
+    }
+}
+
+
+async def test_google_answers_a_wrong_key_with_400_and_it_is_rejected(
+    wire: _Wire,
+) -> None:
+    wire.respond = 400
+    wire.error_body = _GOOGLE_BAD_KEY
+    handler = _handler(("google-gemini", "wrong-key"))
+
+    status = await _verified(handler, "google-gemini")
+
+    assert status["available"] is False
+    assert status["state"] == "rejected"
 
 
 @pytest.mark.parametrize("code", [400, 404, 408, 429, 500, 503, 529])
