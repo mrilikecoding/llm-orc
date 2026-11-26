@@ -219,9 +219,9 @@ Recorded on the issues named; none is in the next tranche.
 ### Owed live rows
 
 #166 #169 #173 #171 (a constructed non-participating shape via fault
-injection), #172 #176, #175, #181 (a real build turn whose deliverable needs an
-injected workspace import), and `update_ensemble` through a real serve.
-#90's is step 1 above.
+injection), #172 #176, #175, and #181 (a real build turn whose deliverable needs
+an injected workspace import). #90's is step 1 above. `update_ensemble`
+has its row, on #191.
 
 ### Operating notes
 
