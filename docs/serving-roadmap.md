@@ -73,10 +73,14 @@ each remote-delegation arc's reviews deferred.
 
 ### Where things stand
 
-- **Released:** v0.25.4 (2026-11-25; PyPI, GitHub release, tap formula;
-  verified by a clean install). The remote host runs 0.25.3.
-- **On local main, not pushed** (`f61b08d2`..`d8217cbb`, suite 6174,
-  each fix independently reviewed):
+- **Released and deployed:** v0.25.5 (2026-11-25; PyPI, GitHub release,
+  tap formula; verified by a clean install). The remote host runs it:
+  `/health` 0.25.5, embeddings 200 and 404 as expected, a traversal
+  name refused on the artifact and script routes, `research-dossier`
+  runnable, the homelab doctor at 12 of 12. v0.25.4 went out the same
+  day with #199, #147 and #204.
+- **In v0.25.5** (`f61b08d2`..`d8217cbb`, suite 6174, each fix
+  independently reviewed):
   - #181: the build envelope ships the code the executor ran, and
     accepts only with that code in hand.
   - #165: every test runs from an empty directory with the router URL
@@ -150,11 +154,14 @@ and the one-service work on #191 and #189.
 
 ### Gated on the practitioner
 
-- Pushing local main, and deploying 0.25.4 to the remote host.
 - The paid parity runs: #167 (volume ladder) and #141 (the
   instruction-file confound), then parity table v2.
-- The remote host's certificate expires 2026-12-15 and its renewal
-  daemon has been failing; the fix is in the homelab repo.
+- The remote host's certificate was renewed 2026-11-25 and is valid to
+  2027-02-24. Renewal already rides the homelab reconciler, whose
+  doctor check renews as the normal user at 14 days left; the old root
+  renewal daemon cannot work (root has neither `certbot` on its PATH
+  nor the certificate directory under its home) and is the
+  practitioner's to remove.
 - The library submodule's invalid example ensembles
   (`neon-shadows-detective` carries a key the schema refuses).
 
