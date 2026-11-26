@@ -147,15 +147,17 @@ self-contradicting expectations). Neither has been run since.
    C (per-node elapsed in the trace, declared context size), since a
    gated build turn takes about five minutes.
 
-Before step 1, checked 2026-11-25 and not yet resolved:
+Before step 1, checked 2026-11-25:
 
-- **Seats.** The checkout's untracked `.llm-orc/profiles/*.local.yaml`
-  re-seat the orchestrator on a hosted OpenAI-compatible model. The
-  earlier rows were taken on local seats. Decide which configuration
-  the baseline measures, record the seat table in the row, and note
-  that since v0.25.5 a keyed hosted seat honors its `timeout_seconds`
-  and `options` (it ignored them before), so a hosted-seat row is not
-  comparable with one taken earlier.
+- **Seats (decided by the practitioner, 2026-11-25).** The baseline is
+  taken on local seats only, which matches the earlier rows and costs
+  nothing. The checkout's untracked `.llm-orc/profiles/*.local.yaml`
+  re-seat the orchestrator on a hosted OpenAI-compatible model, so they
+  must be out of play for that row: confirm the seat table from the
+  running serve and record it with the row. A second row with the
+  hosted orchestrator override then shows what that seat buys. It is
+  not comparable with any hosted-seat result from before v0.25.5, when
+  a keyed seat ignored its `timeout_seconds` and `options`.
 - **T1 has no recorded driver.** T1 is the ladder's first turn run
   alone; the 2026-09-27 row (in the archive) names no script and no
   run directory. Write the r=5 loop around
