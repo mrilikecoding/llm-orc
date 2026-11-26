@@ -351,6 +351,7 @@ class TestEnsembleScriptIntegration:
         assert "Script not found" in success_result["error"]
 
     @pytest.mark.asyncio
+    @pytest.mark.usefixtures("repo_cwd")
     async def test_script_resolver_ensemble_executor_json_contract_validation(
         self,
     ) -> None:

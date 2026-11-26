@@ -27,14 +27,6 @@ from llm_orc.services.orchestra_service import OrchestraService
 PROVIDERS = ["anthropic-api", "google-gemini"]
 
 
-@pytest.fixture(autouse=True)
-def _empty_cwd(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Run from an empty directory: a checkout's own untracked profiles
-    would add OpenAI-compatible endpoint probes to the requests these
-    tests count."""
-    monkeypatch.chdir(tmp_path)
-
-
 class _Wire:
     """What the provider says next, and every request that reached it."""
 

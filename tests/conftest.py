@@ -67,6 +67,33 @@ def _isolated_state_and_packaged_tier(
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path_factory.mktemp("state")))
 
 
+@pytest.fixture(autouse=True)
+def _hermetic_cwd_and_local_router(
+    tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Run from an empty directory, with the llama-server router unreachable (#165).
+
+    The project tier is read from the cwd, so a working checkout's
+    untracked ``.llm-orc/profiles/*.local.yaml`` (operator overrides for
+    hosted endpoints), its populated ``llm-orchestra-library`` submodule
+    and its tracked ``.llm-orc`` all changed what tests saw compared with
+    a clean worktree or CI. An empty cwd removes all three. LLAMA_SERVER_URL
+    points at a closed port, so a router really listening on :8080 cannot
+    change provider detection. Tests that need the checkout as their
+    project use `repo_cwd`; tests that pin the URL set the env themselves.
+    """
+    monkeypatch.chdir(tmp_path_factory.mktemp("cwd"))
+    monkeypatch.setenv("LLAMA_SERVER_URL", "http://127.0.0.1:9/v1")
+
+
+@pytest.fixture
+def repo_cwd(monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Opt back in to the repo checkout as the cwd (and so its tracked
+    ``.llm-orc`` as the project tier). Returns the repo root."""
+    monkeypatch.chdir(_project_root)
+    return _project_root
+
+
 _PACKAGED_PROFILE = """\
 name: agentic-tier-cheap-general
 model: qwen3-8b

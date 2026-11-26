@@ -19,6 +19,7 @@ class TestStoryGeneratorFlow:
     """Test the complete story generator to user input agent flow."""
 
     @pytest.mark.asyncio
+    @pytest.mark.usefixtures("repo_cwd")
     async def test_story_generator_to_user_input_agent_coordination(self) -> None:
         """Test the BDD scenario: story generator → user input agent flow.
 
