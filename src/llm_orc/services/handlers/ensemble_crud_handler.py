@@ -85,6 +85,21 @@ def _apply_changes(
     return {**data, "agents": agents}
 
 
+def _refuse_symlink(path: Path, action: str) -> None:
+    """Refuse to ``action`` an ensemble that is a symlink.
+
+    A checkout's top-level serving shapes are links into
+    ``ensembles/agentic-serving/``; deleting or rewriting one breaks the
+    shape the serve dispatches to (#106).
+    """
+    if path.is_symlink():
+        raise ValueError(
+            f"Cannot {action} '{path.name}': it is a symlink to "
+            f"{path.readlink()} and links are managed by the project. "
+            "Edit or remove the link target by hand if that is intended."
+        )
+
+
 def _agent_to_dict(agent: Any) -> dict[str, Any]:
     """Convert an AgentConfig object to a plain dict for YAML serialization."""
     agent_dict: dict[str, Any] = {}
@@ -219,6 +234,7 @@ class EnsembleCrudHandler:
             ensemble_name, scope, self._flat_filename(ensemble_name, scope)
         )
 
+        _refuse_symlink(ensemble_file, "delete")
         ensemble_file.unlink()
 
         return {
@@ -264,6 +280,7 @@ class EnsembleCrudHandler:
         scope = parse_scope(arguments)
         ensemble_path = self._find_in_scope(ensemble_name, scope)
 
+        _refuse_symlink(ensemble_path, "update")
         original_text = ensemble_path.read_text()
         original = yaml.safe_load(original_text)
         updated = _apply_changes(original, changes, ensemble_name)

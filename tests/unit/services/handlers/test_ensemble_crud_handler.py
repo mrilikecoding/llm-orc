@@ -900,3 +900,69 @@ class TestUpdateEnsembleDryRun:
         assert result["backup_created"] is False
         assert path.read_text() == _COMPOSED_ENSEMBLE
         assert [p.name for p in path.parent.iterdir()] == ["composed.yaml"]
+
+
+def _checkout_with_shape_link(tmp_path: Path) -> tuple[Path, Path]:
+    """A project shaped like the checkout: a shape in a subdirectory and a
+    top-level symlink to it. Returns (link, target)."""
+    ensembles_dir = tmp_path / "ensembles"
+    target = ensembles_dir / "agentic-serving" / "shape.yaml"
+    target.parent.mkdir(parents=True)
+    target.write_text(_COMPOSED_ENSEMBLE)
+    link = ensembles_dir / "shape.yaml"
+    link.symlink_to(Path("agentic-serving") / "shape.yaml")
+    return link, target
+
+
+class TestSymlinkedEnsemble:
+    """A top-level symlink is managed by the project, not by CRUD (#106)."""
+
+    async def test_delete_refuses_a_symlink_and_keeps_both(
+        self, tmp_path: Path
+    ) -> None:
+        link, target = _checkout_with_shape_link(tmp_path)
+        handler = _project_handler(tmp_path)
+
+        with pytest.raises(ValueError, match=r"symlink.*agentic-serving.*managed"):
+            await handler.delete_ensemble({"ensemble_name": "shape", "confirm": True})
+
+        assert link.is_symlink()
+        assert target.read_text() == _COMPOSED_ENSEMBLE
+
+    @pytest.mark.parametrize("dry_run", [True, False])
+    async def test_update_refuses_a_symlink_and_changes_nothing(
+        self, tmp_path: Path, dry_run: bool
+    ) -> None:
+        link, target = _checkout_with_shape_link(tmp_path)
+        handler = _project_handler(tmp_path)
+
+        with pytest.raises(ValueError, match=r"symlink.*managed"):
+            await handler.update_ensemble(
+                {
+                    "ensemble_name": "shape",
+                    "changes": {"remove_agents": ["summary"]},
+                    "dry_run": dry_run,
+                    "backup": True,
+                }
+            )
+
+        assert link.is_symlink()
+        assert target.read_text() == _COMPOSED_ENSEMBLE
+        assert sorted(p.name for p in target.parent.iterdir()) == ["shape.yaml"]
+        assert sorted(p.name for p in link.parent.iterdir()) == [
+            "agentic-serving",
+            "shape.yaml",
+        ]
+
+    async def test_delete_still_removes_an_ordinary_ensemble(
+        self, tmp_path: Path
+    ) -> None:
+        path = _write_ensemble(tmp_path, _COMPOSED_ENSEMBLE)
+        handler = _project_handler(tmp_path)
+
+        result = await handler.delete_ensemble(
+            {"ensemble_name": "composed", "confirm": True}
+        )
+
+        assert result["deleted"] is True
+        assert not path.exists()
