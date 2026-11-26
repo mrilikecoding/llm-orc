@@ -94,13 +94,20 @@ finding was fixed in v0.25.1). #106 is narrowed to what is left: in a
 checkout, a project-scope `delete_ensemble` can unlink a serving
 shape's symlink.
 
-Merged on local main the same day, not pushed (`34aee1a2`..`dc5ffc41`),
-each after author-independent review rounds; suite 6017:
+Merged, pushed and released the same day as **v0.25.4** (PyPI, GitHub
+release, tap formula; `34aee1a2`..`975720dd`), each fix after
+author-independent review rounds; suite 6018, CI green before the
+release commit went up. Verified by a clean install from PyPI. Not yet
+deployed to the remote host.
 
 - **#199**: `/v1/embeddings` validates `model` against the running
   router's list (reused 5 s) and answers 503 when the router cannot be
   listed; a truncated or malformed listing is a 503 on `/api/models`
-  too. Owed: a row against a real router.
+  too. Live row (laptop, a serve on its own ports and config dirs,
+  `nomic-embed-text`): router name and profile id 200 with 768 dims;
+  unknown, empty, a profile added after start and a hosted profile's id
+  all 404; conflicting profiles on disk still 200; router frozen 503 on
+  both routes, 200 again once resumed.
 - **#147**: the honesty classifier flags by default and carves out only
   "no error handling" (the one captured compound); "tests are passing"
   forms now flag. Three bounds stay open on the issue: the design-menu
@@ -112,8 +119,10 @@ each after author-independent review rounds; suite 6017:
 - **#204**: `--config-dir` reads a config root's `ensembles/`; cloud
   keys are checked on request (`get_provider_status` with `verify`,
   `auth list --verify`), never on a run path; the `validate-*` templates
-  are gone and init writes no model names. Owed: a CHANGELOG entry at
-  release, and what Google answers for a bad key.
+  are gone and init writes no model names. Measured against the
+  providers with a well-formed wrong key: Anthropic answers 401, Google
+  answers 400 with ErrorInfo reason `API_KEY_INVALID`, and both now read
+  `rejected` (`042b486e`).
 
 Found on the way, on #165: tests run from a checkout see its untracked
 `.llm-orc/*.local.yaml` profiles and its populated library submodule,
