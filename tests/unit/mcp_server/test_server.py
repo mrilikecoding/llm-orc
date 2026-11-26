@@ -2370,11 +2370,6 @@ class TestToolDispatchMatchesRegistry:
     def dispatchable_names(self, server: MCPServer) -> set[str]:
         return set(server._tool_handlers())  # noqa: SLF001
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="list_ensembles and list_remotes are registered with FastMCP "
-        "but missing from call_tool's table (#189)",
-    )
     def test_every_registered_tool_is_dispatchable(
         self, registered_names: set[str], dispatchable_names: set[str]
     ) -> None:
@@ -2386,3 +2381,12 @@ class TestToolDispatchMatchesRegistry:
     ) -> None:
         assert dispatchable_names
         assert dispatchable_names - registered_names == set()
+
+    async def test_call_tool_lists_ensembles_and_refuses_remotes_off_relay(
+        self, server: MCPServer
+    ) -> None:
+        listed = await server.call_tool("list_ensembles", {})
+        remotes = await server.call_tool("list_remotes", {})
+
+        assert listed == {"ensembles": []}
+        assert remotes["error"]["kind"] == "invalid_request"

@@ -1039,6 +1039,7 @@ class MCPServer:
             "update_ensemble": svc.update_ensemble,
             "analyze_execution": svc.analyze_execution,
             # Ensemble CRUD
+            "list_ensembles": self._list_ensembles_tool,
             "create_ensemble": svc.create_ensemble,
             "delete_ensemble": svc.delete_ensemble,
             # Scripts and library
@@ -1071,7 +1072,13 @@ class MCPServer:
             "demote_ensemble": svc.demote_ensemble,
             # Help
             "get_help": self._help_tool,
+            # Remotes
+            "list_remotes": self._list_remotes_tool,
         }
+
+    async def _list_ensembles_tool(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        """Execute list_ensembles tool (takes no arguments)."""
+        return {"ensembles": await self._service.read_ensembles()}
 
     async def _list_remotes_tool(self, arguments: dict[str, Any]) -> dict[str, Any]:
         """Execute list_remotes tool (takes no arguments)."""
