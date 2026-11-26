@@ -136,9 +136,8 @@ class TestMcpToolParity:
 
         assert mounted_names == expected_names
         # Guard against the comparison being trivially true: the full
-        # set is much bigger than MCPServer.list_tools()'s stale,
-        # hand-maintained subset (invoke, validate_ensemble,
-        # update_ensemble, analyze_execution).
+        # set is much bigger than the original four tools (invoke,
+        # validate_ensemble, update_ensemble, analyze_execution).
         assert len(expected_names) > 4
 
 

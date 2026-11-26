@@ -693,7 +693,8 @@ def request_tools_list(bdd_context: dict[str, Any]) -> None:
     async def _list() -> Any:
         try:
             server = bdd_context["mcp_server"]
-            return await server.list_tools()
+            registered = await server._mcp.list_tools()  # noqa: SLF001
+            return [tool.model_dump() for tool in registered]
         except Exception as e:
             bdd_context["tools_error"] = str(e)
             return []

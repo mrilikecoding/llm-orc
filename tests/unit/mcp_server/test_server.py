@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -2355,3 +2356,42 @@ class TestReadEnsemblesResource:
         assert len(result) == 1
         expected = "research/interdisciplinary/deep-ensemble.yaml"
         assert result[0]["relative_path"] == expected
+
+
+class TestToolDispatchMatchesRegistry:
+    """MCPServer.call_tool's handler table tracks FastMCP's registry (#189)."""
+
+    @pytest.fixture
+    def registered_names(self, server: MCPServer) -> set[str]:
+        tools = asyncio.run(server._mcp.list_tools())  # noqa: SLF001
+        return {tool.name for tool in tools}
+
+    @pytest.fixture
+    def dispatchable_names(self) -> set[str]:
+        # The handler table is a dict literal inside _get_tool_handler, so its
+        # keys are the identifier-shaped string constants of that function.
+        consts = MCPServer._get_tool_handler.__code__.co_consts  # noqa: SLF001
+        return {c for c in consts if isinstance(c, str) and c.isidentifier()}
+
+    @pytest.mark.xfail(
+        strict=True,
+        reason="list_ensembles and list_remotes are registered with FastMCP "
+        "but missing from call_tool's table (#189)",
+    )
+    def test_every_registered_tool_is_dispatchable(
+        self, server: MCPServer, registered_names: set[str]
+    ) -> None:
+        assert len(registered_names) > 4
+        missing = {
+            name
+            for name in registered_names
+            if server._get_tool_handler(name) is None  # noqa: SLF001
+        }
+
+        assert missing == set()
+
+    def test_every_dispatchable_tool_is_registered(
+        self, registered_names: set[str], dispatchable_names: set[str]
+    ) -> None:
+        assert dispatchable_names
+        assert dispatchable_names - registered_names == set()
