@@ -103,10 +103,14 @@ each remote-delegation arc's reviews deferred.
     routes answer a refusal with 400 or 404, not 500.
   - #106: delete and update refuse a symlinked ensemble, so a
     project-scope delete can no longer unlink a serving shape.
-- **Open issues:** 40. Today's session folded eight issues into four by
-  structure (#175, #149, #161, #189), closed eleven as shipped or not
-  planned, and released #199, #147 and #204. The record is on the
-  issues.
+- **Open issues:** 35, of which 25 are top-level. Ten are sub-issues of
+  the structure they belong to: #182 (existing-repo shape) holds #122
+  #123 #124; #189 (code footprint) holds #191 #192 #193; #187 holds
+  #188; #126 (long horizon) holds #136 #137; #119 (seat ladder) holds
+  #135. The 2026-11-25 sessions took the count from 60 by folding
+  issues into the structure they were instances of, closing what had
+  shipped or was not planned, and releasing #199, #147, #204, #181 and
+  #106. Each closed issue says where its remainder went.
 
 ### Standing directives
 
