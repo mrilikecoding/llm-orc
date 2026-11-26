@@ -115,7 +115,7 @@ machine and no vendor tooling.
 
 ### Next tranche: the daily driver on existing repos
 
-Proposed 2026-11-25, to be confirmed by the practitioner. The last
+Confirmed by the practitioner 2026-11-25. The last
 measurements: the 7-turn existing-repo probe went 1 of 7 for the serve
 against 7 of 7 for both comparators (2026-09-11, on Ollama); T1 went 0
 of 10 correct on llama-server against 3 of 8 on Ollama (2026-09-27),
