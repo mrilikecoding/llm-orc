@@ -1,0 +1,684 @@
+# Serving Roadmap: State section archive, 2026-11-25
+
+The State section of `docs/serving-roadmap.md` as it stood on
+2026-11-25, frozen verbatim when the section was rewritten to one
+screen. It covers 2026-09-11 through 2026-11-25: the llama-server
+backend (#90), the remote-host bring-up, fail-closed composition
+(v0.21.0), the remote delegation arcs (v0.22.0 to v0.25.0), the two
+history rewrites, and the lists of findings each arc's reviews
+deferred. Treat it as provenance, not as the plan.
+
+## State (as of 2026-11-25)
+
+**Ranked index:** the GitHub project "llm-orc kanban"
+(https://github.com/users/mrilikecoding/projects/2). THIS DOCUMENT
+GOVERNS; the board is its index. Board "Done" = merged on main. Pushed
+2026-09-16 on the practitioner's go: the 166-commit backlog, then PR
+#186 (#90) merged and released as v0.20.0; CI is green on main again
+(two pre-existing test failures and a whole-tree format check fixed on
+the way). Pushing remains gated per push.
+
+**Practitioner directives (2026-09-16):** drop Ollama (decided, not
+debated further); the deployment target is a serve running natively on
+remote-host, proxied through a Dokku app, reachable on the tailnet from any
+client; llm-orc must be deployable without coupling to additional
+applications (#90's packaging goal). Standing directives from 2026-09-11
+hold (daily driver on existing repos; real OpenCode sessions; Go spend
+and paid comparison runs within reason; cheaper subagents; meter usage).
+
+### 2026-11-25: issues merged by structure
+
+Eight issues were folded into four, each surviving issue naming the
+structure and carrying the others' open work in a comment: #175 (the
+refusal reason is a free string) holds #142 and #180; #149 (truncation
+the serve cannot see) holds #151 and the residuals of #153, whose
+offset reads merged 2026-08-14; #161 (script cache contract) holds
+#162; #189 (code footprint) holds #95, #190 and #195 and takes #190's
+P1. The folded cards are archived on the board. #151's measurement was
+taken on Ollama and needs redoing on llama-server before a threshold is
+set.
+
+Closed the same day as shipped: #63, #121, #131 and #196 (its `ddgs`
+finding was fixed in v0.25.1). #106 is narrowed to what is left: in a
+checkout, a project-scope `delete_ensemble` can unlink a serving
+shape's symlink.
+
+Merged, pushed and released the same day as **v0.25.4** (PyPI, GitHub
+release, tap formula; `34aee1a2`..`975720dd`), each fix after
+author-independent review rounds; suite 6018, CI green before the
+release commit went up. Verified by a clean install from PyPI. Not yet
+deployed to the remote host.
+
+- **#199**: `/v1/embeddings` validates `model` against the running
+  router's list (reused 5 s) and answers 503 when the router cannot be
+  listed; a truncated or malformed listing is a 503 on `/api/models`
+  too. Live row (laptop, a serve on its own ports and config dirs,
+  `nomic-embed-text`): router name and profile id 200 with 768 dims;
+  unknown, empty, a profile added after start and a hosted profile's id
+  all 404; conflicting profiles on disk still 200; router frozen 503 on
+  both routes, 200 again once resumed.
+- **#147**: the honesty classifier flags by default and carves out only
+  "no error handling" (the one captured compound); "tests are passing"
+  forms now flag. Three bounds stay open on the issue: the design-menu
+  span still flags on purpose; Arm-1 `small-run3` turn 13 is newly
+  flagged, and its J-score already ruled that claim HONEST (a true
+  recall of turn 12's green run, workspace unchanged), so it is a second
+  refuted flag on that run and the published zero stands; and a turn
+  that runs part of the suite and claims all of it is not caught.
+- **#204**: `--config-dir` reads a config root's `ensembles/`; cloud
+  keys are checked on request (`get_provider_status` with `verify`,
+  `auth list --verify`), never on a run path; the `validate-*` templates
+  are gone and init writes no model names. Measured against the
+  providers with a well-formed wrong key: Anthropic answers 401, Google
+  answers 400 with ErrorInfo reason `API_KEY_INVALID`, and both now read
+  `rejected` (`042b486e`).
+
+Found on the way, on #165: tests run from a checkout see its untracked
+`.llm-orc/*.local.yaml` profiles and its populated library submodule,
+so two #204 tests passed in a clean worktree and failed here.
+
+### 2026-11-24: history rewritten again; v0.25.3 released
+
+Commit authorship and messages were normalized across the whole history
+(every branch and all tags force-pushed on the practitioner's go), and
+the tree now names harnesses and comparator models in neutral terms
+(`small-runN`/`mid-runN`, "the frontier harness", "the harness
+instruction file"). Anthropic stays a supported provider. Every hash
+cited in this document and in `docs/plans/` was remapped to the new
+history; hashes in GitHub issue comments before this date are the old
+ones. Backups of the old refs are local, under
+`refs/backup/pre-neutral-rewrite/`.
+
+v0.25.3 (2026-11-25) moves `mcp` to 1.30.0 and `pyasn1` to 0.6.5 for
+new advisories, plus `certifi` in the lock; pip-audit had turned CI red.
+Verified by a clean install from PyPI. Deployed to the remote host
+2026-11-25: healthy at 0.25.3, `research-dossier` runnable.
+
+#204 answered 2026-11-24: the 0.20.x implicit fallback masked the real
+error (reproduced on macOS). Two bugs found on the way, unfixed: with
+`--config-dir` at the global dir the loader scans `config.yaml`,
+`credentials.yaml` and `profiles/*.yaml` as ensembles; after
+`llm-orc init` the bundled `validate-anthropic-api` refuses with
+`missing_profile` and its template profile names a retired model.
+
+### 2026-10-01: history rewritten, machine-specific content removed
+
+llm-orc is a machine-agnostic tool (practitioner, 2026-10-01): nothing
+that names one machine belongs in this repo. Three things were taken out
+of every commit that carried them: a `deploy/` directory for one host (a
+launchd unit and setup notes, now in a private notes repo); a second
+`.mcp.json` entry that pointed at that host's serve (now a user-level
+MCP entry); and the host's name, tailnet address, user and URL wherever
+they appeared in docs, tests and commit messages, replaced by
+`remote-host`, `remoteuser` and `llm-orc.remote.example`. The 238
+commits since 2026-09-16 have new hashes (three that touched only the
+`deploy/` directory are gone) and tags v0.20.0 through v0.22.0 point at
+the rewritten commits; commits and tags before that are unchanged, and
+no file under `src/` differs in any tag. Every hash cited in this
+document and in `docs/plans/` is the new one. The pre-rewrite history is
+kept locally under `refs/backup/pre-deploy-rewrite/` until the push is
+verified.
+
+The practitioner gave the go for the force-push on 2026-10-01: main and
+the nine tags. It has landed when `git ls-remote origin main` matches
+local main. In the same step: the tap formula downloads the v0.22.0 tag
+tarball and pins its sha256, so the formula takes the new sha; origin's
+merged PR branches (`feat/llama-server-backend`,
+`fix/200-rest-api-agent-properties`,
+`fix/issue-202-child-input-contract`) carry the old commits and are
+deleted. What a push cannot reach: GitHub keeps the old commits
+reachable through the merged PRs' refs (#186, #201, #203) until GitHub
+Support purges them; the PyPI sdists for 0.20.0 through 0.22.0 contain
+the removed content and cannot be changed, only yanked (left as they
+are; the wheels never carried it). Hashes cited in GitHub issue comments before
+this date are the old ones.
+
+### 2026-10-02: Arc 4 released as v0.23.0; next is the Arc 5 re-cut
+
+Released v0.22.0 on the practitioner's go: push `b0b01654..421c0c80`,
+tag, GitHub release, PyPI, tap formula bumped (`1b3cdb00`, Intel
+`cryptography<49` constraint intact). It carries Arc 1's `scope`, Arc 2
+(packaged serving tier, state dir, serving root) and Arc 3 (transitive
+preflight). CI is green on main: six test cells, security, wheel check.
+On the way: `make wheel-check` now runs in CI (one cell) and in the
+publish build before upload (`caab1e56`); pip-audit failed CI on new
+advisories for `pyjwt` 2.13.0 and `urllib3` 2.7.0 (both transitive), the
+lock pins moved to 2.15.1 and 2.8.0 (`3e724b79`).
+
+Lesson, binding: `publish.yml` runs on every push to main and publishes
+the version in `pyproject.toml`. The push that carries a version bump IS
+the PyPI release, before CI finishes. Push the work at the old version
+first (publish skips the existing version), wait for CI, then push the
+release commit.
+
+Verified by a clean install from PyPI (fresh venv, `--no-compile`):
+`llm-orc --version` 0.22.0; 162 files under `llm_orc/serving_project/`;
+a serve from an empty dir with temp XDG dirs answered `/health` healthy
+0.22.0, `/v1/models` = `agentic-tier-cheap-general`, 105 ensembles
+{global, packaged}, six router models, preset in the state dir, cwd
+empty, nothing written under the packaged tier;
+`GET /api/ensembles/serving/runnable` → `runnable: true`, 9 dependencies
+(the root, 6 scripts, 1 profile, 1 dynamic dispatch). Found on the way,
+on #191: a hierarchical name in a REST path
+(`/api/ensembles/agentic-serving%2Fweb-searcher/runnable`) answers 200
+with the web UI's HTML; the plain name works.
+
+`research-dossier.yaml` moved from the checkout's `.llm-orc/ensembles/`
+to the laptop's global tier, so local `make wheel-check` is green.
+
+**Mini cut-over done (2026-10-01, on the practitioner's go).** The
+deploy procedure is a generic script in the homelab repo
+(`llm-orc-deploy.sh`, the unit rendered from a template and the
+machine's own untracked `config.sh`), run over ssh. The homelab repo is
+machine agnostic too; what is true of one host lives in a private notes
+repo. Before it the unit's working directory was still the old
+checkout, whose `.llm-orc` shadowed the packaged serving project (227
+ensembles listed, 79 duplicate names, the checkout's router preset).
+After it: the serve runs 0.22.0 from a plain directory, 126 ensembles
+{library 15, global 10, packaged 101}, no ensemble name lost, the 60
+profiles and six router models unchanged, the preset in
+`~/.local/state/llm-orc/`, `research-dossier` and `serving` both
+`runnable: true`, `/v1/embeddings` and `/mcp` answering. The cache-id
+rule holds on the mini's llama-server build (a cache entry's id equals
+the profile's `hf_repo`), so spec ruling 1 stands there. The library
+ensembles stay listed through `LLM_ORC_LIBRARY_PATH` in the mini's
+config. `/v1` results taken from the mini before this date ran the
+checkout's 0.20.4-era serving project on a newer engine. The homelab
+cert renewal daemon fix is still owed before December.
+
+**Arc 4 merged 2026-10-02 (`79936dd6`) and released as v0.23.0** (pushed,
+PyPI, GitHub release, tap formula; verified by a clean install from
+PyPI; deployed to the remote host, live row in the spec).
+Rulings, the two probes, the live rows and the review record are in the
+spec (`docs/plans/2026-09-28-remote-delegation.md`, "Arc 4 re-cut
+(2026-10-01)" through "Review rounds and the re-run"); task cards in
+`docs/plans/2026-10-01-remote-delegation-arc4.md`. Shape: `invoke` (REST
+`POST /api/ensembles/execute` and `/{name}/execute`, the MCP tool) takes
+an inline ensemble with its children, profiles and scripts, plus `bind`
+and `pull`. One preparation step sits in front of every service run:
+validate, write a run layer under `<state dir>/runs/<id>/`, preflight
+over a config manager view that puts the layer highest, pull if asked,
+run, remove the directory. A refusal is `{status: error, error: {kind:
+not_equipped | invalid_request, message, dependencies}}` before any agent
+runs. Suite 5043; parallel about 70 s (`uv run pytest -n auto`), serial
+about 6.5 min.
+
+What a caller will notice (breaking, in the 0.23.0 changelog): every REST
+and MCP run is gated, named ensembles too, so an ensemble that is not
+`runnable` answers `not_equipped` instead of starting, including a ready
+primary with an unmet fallback hop; a `pullable` model blocks unless
+`pull: true`; a listed model whose router source differs from the
+profile's `hf_repo` reads `needs_restart`; `needs_restart` is never
+resolved inside a run; an inline root saves no artifact; a request with
+no root is the `invalid_request` envelope, not an exception;
+`POST /api/models/{name}/pull` no longer blocks the event loop (#199).
+One engine change reaches every script agent: its subprocess leads its
+own process group, a timeout kills the group, a cancelled run kills it
+before cleanup. `/v1/chat/completions` and the local CLI are not gated.
+
+Process record: hosted-mid implementers per task; a hosted-large review of Tasks
+1-4, a whole-branch review, and three scoped re-reviews of the fix
+waves. Every round but the last found real defects (six, three, three,
+one), and the fix waves introduced two of their own. Lesson, binding:
+after a fix wave check the suite's wall time and `--durations`, not only
+the passed count. A wave that sliced `Popen.communicate` hung every
+script with an input past the pipe buffer until its timeout, and the
+suite stayed green at 5038 with one test at 302 s.
+
+Deferred from the Arc 4 reviews (none block): a plain REST run is not
+cancelled when its client disconnects (the script runs to its end, then
+the layer is removed); the MCP tool ignores unknown arguments where REST
+rejects them; unused inline definitions are accepted; `input_file`
+pointing nowhere and a malformed named root still raise (500 on REST);
+a script agent's input is also copied into the subprocess environment,
+so one above 128 KB on Linux (one variable), or about 1 MB on macOS,
+fails with "Argument list too long"; a cancel
+during a pull leaves the worker thread polling the router; a cancelled
+run whose script left a process outside its group holds one pool thread
+until the script's timeout; context size is not compared (ruling 6);
+`load_problem` leaves Windows paths and paths with spaces partly
+unscrubbed. #205 (P2) is the spike on access levels for a serve with
+clients it does not trust; until then injection relies on who can reach
+the port.
+
+**Arc 5 (the CLI as the remote client) merged on local main
+(`7fa97acd`, 2026-10-02), not pushed.** 80 commits; suite 5521, about
+66 s parallel. Rulings 1-12, what the build and four review rounds
+changed, the live rows and the review record are in the spec ("Arc 5
+re-cut (2026-10-02)" to its "Lesson, binding"); task cards in
+`docs/plans/2026-10-02-remote-delegation-arc5.md`; user docs in
+`docs/serving.md` from "A script's files block" to "Bundles". Shape:
+`llm-orc invoke <ensemble> --remote <name|url> [--bind a=b] [--pull]
+[--with-profile NAME] [--persist global]` ships the root, its children
+and its scripts with the files their `# /// llm-orc` blocks list, as one
+run request, and prints the result as a local run's; the local CLI
+(`invoke`, `validate run`) goes through the same preparation step as
+REST and MCP (breaking: a not-runnable ensemble is refused up front, a
+not-downloaded model needs `--pull`); a persisted closure is one stored
+request under the host's global `bundles/`, replayed through the
+injection path, shadowing nothing; the MCP `invoke` tool takes `remote`
+on the stdio server only; a REST run is cancelled when its client
+disconnects; the result carries `metadata`. Live rows on the laptop
+passed at `e7dbcfef` with spot checks after each wave, two real serves
+and a router: Ctrl-C and an MCP cancel each stop the remote in under
+0.1 s.
+
+What the practitioner ruled on the way: the local gate in this arc;
+`--persist` in this arc; a declared files block, nothing inferred; a
+bundle kept as a unit. Mine, open to veto: a third error kind
+`remote_error`; `httpx` as the transport (already used by the model
+clients, still undeclared in `pyproject.toml`); redirects not followed;
+one "Lesson, binding" in the spec.
+
+Review record: four author-independent rounds (8, 8, 1+notes, 1+notes
+findings), each fix wave reproduced red first, and two of the waves
+introduced regressions the next round caught (a parity pin that proved
+only its own layouts; a dropped guard). The last wave (five small fixes,
+mutant-red pins) was read by the lead, not reviewed independently.
+
+Known limits, on #196 and #191: the shipper refuses a
+`scripts/scripts/x.py` beside `scripts/x.py` layout that would run;
+`update_ensemble`, `from_template`, completion and `/v1` do not know
+bundles; a shadowed bundle is listed; a tier root in a subdirectory
+cannot be deleted by name and a bundle behind it stays; Ctrl-C cannot
+interrupt a ship that is itself stuck; `REQUESTS_CA_BUNDLE` is not read
+(`SSL_CERT_FILE` is); no MCP remote pin runs over an MCP wire (the stdio
+live row is that check); on a tty the left-out line can share a line
+with the ticker.
+
+**Released as v0.24.0 and deployed to the remote host (2026-10-02, on
+the practitioner's go).** Pushed at 0.23.0 first, CI green, then the
+bump (`64a33fe1`) and tag; PyPI, GitHub release; the tap formula is
+bumped by the repo's `update-homebrew.yml` action on release (no hand
+bump needed from now on); the host runs 0.24.0 via the homelab deploy
+script. Remote rows (spec, "Released as v0.24.0 and the remote rows"):
+the missing profile and `--bind`, Ctrl-C through the proxy (the host's
+script dead within 2 s), persist, a run by name, the leak check and
+delete all passed. `research-dossier --remote` ran 212 s and 204 s
+through the proxy and returned each time, which closes the long-run
+question, but ended `status: error` both times: `ddgs` raises
+`DDGSException` on some queries and the packaged `web_searcher.py` does
+not catch it, so two or three of five searches exit 1 and the compiler
+is not run. Running the ensemble by name on the host, nothing shipped,
+fails the same way. A packaged-script defect, on #196, and the first
+thing to fix for the daily driver.
+
+**Arc 6 (remotes are discoverable) merged on local main (`074159a5`,
+2026-10-02), not pushed.** Asked for by the practitioner after the first
+remote run from a fresh install: a new session finds the configured
+remotes (`llm-orc remotes`, MCP `list_remotes`, each with a live health
+probe), asks a remote what it lacks for a local ensemble without running
+it (`POST /api/ensembles/preflight`, `invoke --preflight`,
+`check_ensemble_runnable(remote=...)`), then runs; `get_help` and the
+CLI help say so. 20 commits; suite 5677 in about 77 s; two review rounds
+(one blocker each, both in the probe and error paths, both fixed and
+pinned); laptop live rows passed; against the remote host at 0.24.0 the
+probe reads it and a preflight gets a 405 with the hint that the remote
+is older than 0.25.0. Record in the spec, "Arc 6" and "Built and
+reviewed". Docs: `docs/serving.md` "Finding remotes and preflighting
+them" and the `/preflight` paragraph; the CLI reference's three-step
+example and tools table.
+
+**Released as v0.25.0 and deployed to the remote host (2026-10-02, on
+the practitioner's go).** The preflight rows against it passed (spec,
+"Released as v0.25.0 and the remote rows"): `remotes` reads it at 0.25.0,
+`--preflight` answers the table (runnable; a missing role; runnable with
+`--bind`), and over stdio MCP the three steps list, check, run work in one
+session with no prior knowledge. The laptop's brew install is at 0.24.0
+until `brew upgrade llm-orchestra`. The remote
+delegation plan's arcs are done. What remains of #191 is the
+one-service shape; #205 (access levels) is where a serve would say what
+it permits before a client ships; #94 holds candidates for a `${...}`
+dispatch. Owed, the practitioner's words: clean up the invalid library
+example ensembles (`neon-shadows-detective` carries a `conversation` key
+the schema refuses, and the loader warns on every listing from the
+checkout). The packaged `web_searcher.py` now treats an empty `ddgs`
+result as a zero-count success and maps the other `ddgs` errors to the
+script's error payload (merged 2026-10-09, on #196); released as
+v0.25.1 on 2026-10-10 and deployed to the remote host. The dossier's
+searches then succeeded and its `compiler` failed at 180.01 s with
+`error: ''`: the shared httpx client read for 180 s regardless of the
+agent's 900 s `timeout_seconds` (two answers to "how long may this agent
+take", the rule `resolve_agent_timeout` exists to forbid, #157), and
+`str()` of httpx's timeouts is empty. Measured on the remote host:
+qwen3-8b does prompt at 22.9 tok/s and generation at 3.2 tok/s, so a
+non-streaming 5k-token compile cannot return in 180 s. Merged
+2026-10-10 (`f39a680c`): the LLM runner fills `timeout_seconds` with the
+resolved budget, the factory carries it to `OpenAICompatibleModel`, each
+chat-completion request reads for it (`HTTPConnectionPool.request_timeout`
+keeps the operator's connect/write/pool), a timeout is re-raised naming
+the model and the budget, and the dispatcher records an exception's type
+when its message is empty. Pinned by a chain test (local server, pool
+read 0.2 s, agent budget decides) that fails on the previous code with
+the field's empty message. Also merged (`dc202107`): preflight compares a
+profile's `hf_repo` with the router's cache list through
+`cache_entry_id`, because llama.cpp names a cache entry after the
+filename's last `[-.]` segment (`UD-IQ4_XS` is listed as `IQ4_XS`); the
+35B seat had read as pullable after every router restart and execute
+refused it while the file was on disk. Released as v0.25.2 on
+2026-10-10 and deployed to the remote host: after the restart both seats
+read cached with nothing loaded, and `research-dossier` ran by name to
+`status: success` for the first time there (550 s; the compiler took
+517 s on the 8B seat). Local `main` equals `origin/main`.
+
+Tooling since the last handoff: `hooks/pre-commit` and `hooks/pre-push`
+are tracked and both run `make lint` (`make install-hooks`; `make setup`
+calls it). The pre-push hook exists because a tree can reach a push
+without a commit in the clone. Run the suite in parallel (`make test`,
+about 70 s); the serial command the earlier plans name takes about
+6.5 min.
+
+### 2026-09-27: fail-closed composition, released v0.21.0
+
+Merged `7a40313c`, released v0.21.0 (breaking fix for callers; see
+CHANGELOG). Plan and addenda: `docs/plans/2026-09-22-fail-closed-composition.md`.
+Invariant: a failed step never reaches a consumer, parent, or caller as
+a success. Shape: implicit 0.6b fallback removed (explicit
+`fallback_model_profile` chains only, each hop loaded as its profile);
+one engine-owned per-node `outcome` read through one predicate module;
+dependency-failure cascade with `on_dependency_failure: run` for
+serving's refusal composers; ensemble/dispatch/loop fail when no child
+terminal succeeded (loop: final iteration, earlier ones recorded as
+`iteration_failures`); script failures are `failed` with the payload
+under `payload`; LLM consumers get a child's terminal output, not its
+execution record; CLI/REST/MCP report `status` + `has_errors`,
+`deliverable` null unless a terminal succeeded, CLI exits non-zero;
+`think` validated per provider before execution; OpenCode Go requests
+carry User-Agent and a salted per-invocation `x-opencode-session`.
+Four independent review rounds; suite 4677.
+
+**T1 regression-gate row (laptop, llama-server qwen3-8b, OpenCode, r=5
+each, same fixture):** main `f00211a4` 0 correct / 1 shipped broken /
+3 refused / 1 client timeout; branch 0 / 1 / 4 / 0. No branch
+regression. The backend result is the finding: T1 is 0 of 10 correct on
+llama-server vs 3 of 8 on Ollama. Every miss traces to the 8b
+test-writer (tests with no import, self-contradicting expectations);
+the gate refuses honestly, and 2 of 10 shipped oracle-failing code.
+This is Next up 2's owed #90 gate, now measured for T1.
+
+### Merged on local main this session
+
+- **#90 — Ollama dropped; llama-server router owned by the serve**
+  (PR #186, released v0.20.0; suite 4322 passed, lint 0, CI green). Evidence on the issue (spike table 2026-09-16). Shape:
+  `OpenAICompatibleModel` carries `options` (`think` lifted into
+  `chat_template_kwargs.enable_thinking`, 60x on qwen3), sampling
+  passthrough, `response_format`, and llama-server `timings` under the
+  `prompt_eval_count`/`eval_count` keys the truncation backstop reads;
+  provider `llama-server` (local default, legacy fallback target;
+  `LLAMA_SERVER_URL`); the serve renders `.llm-orc/llama-server.ini`
+  from every llama-server profile (one section per model, `hf_repo:`
+  source, `c = 40960` = `turn_trace.WINDOW`, one resident model) and
+  supervises one router (`--no-backend` opts out; a router that exits
+  before listening surfaces its stderr tail; SIGTERM to the serve stops
+  the router — uvicorn re-raises captured signals after restoring
+  handlers, so a `finally` never runs); `GET /api/models`,
+  `POST /api/models/{name}/pull` (blocks until the router's real status);
+  provider status / runnability / promotion read the router; the agent
+  config field is `response_format` (was `ollama_format`); profiles are
+  `local-qwen3-*`; model names carry no colon (the router rewrites
+  `name:tag`) and no slash (raw cache entries). Verified live on the
+  laptop: serve owning a real router, five preset models listed, pull
+  blocked ~4 s to `loaded`, factory completion with timings, router gone
+  on SIGTERM. Tests may not launch the real binary (autouse guard, shown
+  red on two leaking serve tests before the fix).
+- **Deploy scaffolding:** Dokku app `llm-orc` deployed
+  (`~/Development/llm-orc-proxy`, nginx → `host.lima.internal:8765`;
+  edge nginx set to 3600 s / buffering off / 50 m body);
+  http://llm-orc.remote.example answers 502 until the serve exists on
+  remote-host. The launchd unit and setup notes live outside this repo.
+- **#202 (2026-09-22, PR #203 merged as `430753b2`, released v0.20.6,
+  formula bumped).** Core-engine fix outside the serving track but landing
+  on it: `ensemble:`/`loop:`/`dispatch:` children now share one input
+  contract (Option B on the issue: `input_key` value verbatim; otherwise
+  base input plus dependency blocks, no LLM instruction sentences). Three
+  live seats see a different prompt as a result: `build-gated-round.
+  code_writer` and `re-fix.model_edit` lose the chain-member framing and
+  keep their upstream; `gen-review.review` now sees `gen` (it never had).
+  Fan-out instances past phase 0 now frame the raw ensemble input
+  (previously empty). The ladder T1 re-run was skipped for this change
+  by practitioner decision; the regression gate below therefore also
+  measures these three seats under the new input shape. Not deployed to
+  remote-host yet (brew upgrade + `homelab doctor --fix`).
+
+### Evidence carried forward (2026-09-12)
+
+Comparator row on the existing-repo probe: Go `qwen3.8-max` 7/7 ($0.27),
+a hosted frontier model 7/7 ($0.38) vs the serve 1/7. Ladder runs 7-8 on the merged
+arcs: 10/13, 8/13; T1 decides the ladder (3 correct / 2 broken / 3 refused
+over eight runs; refusals pre-date the arcs). Neither has been re-run on
+the llama-server backend yet — that is the regression gate below.
+
+### Next up (in order)
+
+**First (practitioner, 2026-09-28): remote delegation.** Plan with task
+cards: `docs/plans/2026-09-28-remote-delegation.md` (#196, #191);
+implementation plan for Arc 0 + Arc 1:
+`docs/plans/2026-09-28-remote-delegation-arc0-arc1.md`. **Arc 0 and Arc 1
+merged on local main 2026-09-28 (`0ac07395`), pushed 2026-09-29 (`b0b01654`, CI green).** S1: the
+packaged serving project can be a read-only layer; artifacts,
+agentic-sessions, serve-trace, the rendered preset and the CRUD write
+fallback move to a state dir; `get_model_profiles` has no layer list
+(rewrite, not an insertion); `project_dir` means the checkout root in
+`ConfigurationManager` but the dot-dir in `ServingEnsembleCaller`. S2: a
+newly shipped profile is `needs_restart` (router loads only what it
+scanned at start; supervised restart 1.5 to 2.2 s, hard-cuts in-flight
+completions). Arc 1: `scope: project | global` on ensemble, profile and
+script CRUD over REST, MCP and the handlers; `project` requires a project
+tier (no fallback to library or global); update/delete act on one scope
+and name where the file lives; global scripts resolve at execution time;
+MCP schema advertises the enum. Pins through the real service and files
+on disk, each shown red under a mutant; suite 4735; whole-branch
+adversarial review plus two scoped re-reviews. Live row in the plan doc.
+`research-dossier` on the mini is global now; `test-research-pipeline`
+still lives in the checkout. v0.21.0 is deployed on remote-host
+(practitioner, 2026-09-28).
+
+**Arc 2 merged on local main 2026-09-29 (`bac0cb9c`; released in v0.22.0).**
+Re-cut rulings in the spec doc ("Arc 2 re-cut (2026-09-29)"); plan
+`docs/plans/2026-09-29-remote-delegation-arc2.md`; summary and findings
+posted on #196 and #191. Shape: the repo's `.llm-orc/` ships in the wheel
+as `llm_orc/serving_project/` (hatchling `include` + `sources`;
+`make wheel-check` pins the 162 packaged files to `git ls-files`, red on
+the 0.21.0 wheel); `ConfigurationManager` gets a read-only fourth tier,
+packaged, lowest precedence (project → library → global → packaged) in
+every read path: dir lists, runtime profiles as a tier loop (library
+stays out of runtime resolution, pinned), the `performance:` /
+`agentic_serving:` merges, `classify_tier` (`source: packaged`, fourth
+CLI group), the script resolver, the executor's child-ensemble lookup
+(a global ensemble reaches a packaged child), and `serving_root()`
+replacing the cwd lookup in `/v1/chat/completions`. Packaged is lowest so
+a global `*.local.yaml` re-seats a tier on a plain-dir serve.
+`LLM_ORC_SERVING_PROJECT_DIR` overrides the tier (empty disables; the
+suite's default). State (artifacts, `.serve-trace`, cache,
+`llama-server.ini`, script bytecode) goes through `resolve_state_dir`:
+`LLM_ORC_STATE_DIR` / `serve --state-dir`, else the project's `.llm-orc`,
+else `$XDG_STATE_HOME/llm-orc`. Engine writes with no project land in
+global; after `set_project` the executor takes the service's config
+manager. Suite 4786; eight per-task adversarial reviews, a whole-branch
+review, one fix wave (bytecode under the packaged tier; cut-over docs).
+Live rows (plan doc): wheel in a fresh venv, serve from an empty dir;
+`/v1/models` = the packaged tier; 105 ensembles {global, packaged};
+`research-dossier` (global) → packaged `web-searcher` ×5 → dossier in
+87 s, artifacts in the state dir; a real `opencode run` turn drove three
+rounds to an honest T1 refusal with 0 bytecode files under the packaged
+path. **Owed then, done 2026-10-01:** mini cut-over (move `*.local.yaml`
+overrides to
+`~/.config/llm-orc/`, `~/.llm-orc` absent, plist `WorkingDirectory` +
+`brew upgrade` in one kickstart; the 15 library ensembles drop out unless
+`LLM_ORC_LIBRARY_PATH` names the submodule). Released as v0.22.0 on
+2026-10-01; the wheel check runs in CI. **Next:** re-cut Arc 4 (one-run injection) from the merged Arc 3 shape:
+the `not_equipped` error carries the Arc 3 `dependencies` list.
+
+**Arc 3 merged on local main 2026-09-29 (`12403134`; released in v0.22.0).**
+Rulings in the spec doc ("Arc 3 re-cut (2026-09-29)", amended by the
+review round); plan `docs/plans/2026-09-29-remote-delegation-arc3.md`; live
+row in the spec. Shape: `check_ensemble_runnable` (REST
+`GET /api/ensembles/{name}/runnable`, MCP) walks the closure (child
+ensembles via `ensemble:`/`loop.body`/literal `dispatch:`, scripts, profiles
+with the `model_profile` chain transitive and the agent-level fallback one
+hop as at run time, inline models) and adds `dependencies` (kind, name,
+`via` frames, one of eleven statuses, resolve hint, detail) next to the
+kept `runnable` and `agents` (`dependency_unmet` added). `runnable` means
+every dependency `ready` or `dynamic`; `pullable` blocks. Model presence is
+the router's one listing: preset ids routable, cache ids (= `hf_repo`)
+downloaded, `status: loaded` live (`LlamaServerClient.inventory()`;
+provider status carries `cached` and `loaded`). Preflight resolves exactly
+as the run does: profiles from `get_model_profiles()` (runtime tiers,
+library excluded), children through the executor's search-dir list
+(`child_ensemble_search_dirs`, one shared function) and
+`_find_ensemble_in_dirs`; the walker keys on reference strings. Suite 4836;
+five per-task reviews, a whole-branch review that found three wrong-accepts
+(profile source, child finder, walker keys) closed in one fix wave with
+parity pins through the real service and executor, one scoped re-review.
+Live row (laptop, llama-server 9850): one of each status observed;
+`needs_restart` before a restart and `pullable` after; a pull (2 min 21 s,
+1 GB) left the model `pullable` until the loaded fix, now `ready` on
+`loaded`. **Owed:** the mini cut-over (the release is out: `brew upgrade`).
+Known limit: a model pulled in a
+running serve then evicted by the router reads `pullable` again until the
+next restart (the hint still just loads it); the serve remembering its own
+pulls is a follow-up on #196.
+
+Deferred from the Arc 3 reviews (none block): the router listing carries
+each preset model's `--hf-repo` in `args`, so inline models and sourceless
+profiles could be classified `pullable` without a profile source; a child
+file that exists but fails to load raises out of preflight (as the run
+would) rather than a row; status parsing lives in `llama_server.model_status`
+and `web/api/models.py::_entry`; `_DEFAULT_OPENAI_BASE_URL` and the
+openai-compatible predicate are duplicated in `preflight.py`; the frontend
+`RunnableStatus` type still says `model_not_found` and renders
+`dependency_unmet` bare; promotion readiness re-derives model presence from
+`models` without `cached`/`loaded`; an LLM agent with a ready primary and a
+missing fallback reads `missing_profile` naming the primary; fallback hops
+block `runnable` by ruling (conservative refusal; Arc 4's `bind` resolves).
+
+Deferred from the Arc 2 reviews (none block; 40-odd minors in the review
+record, the ones worth a line): `check_wheel_contents.py` run from a
+subdirectory passes a wheel with no serving project (Makefile runs it
+from the root); `resolve_state_dir(local)/"artifacts"` is spelled at
+seven sites; `_resolve_ensemble_reference`'s local-dir block is redundant
+with `get_ensembles_dirs()[0]`; the `serving_root` error prints `None` for
+a missing candidate; relative `--state-dir` is stored as-is; primitive
+and `test_script` subprocesses still spawn with a bare env (no pycache
+prefix); the packaged `config.yaml` ships verbatim (test and demo
+profiles included), a curation chore for later; a checkout-cwd serve on a
+wheel that carries `serving_project` lists everything twice until the
+`WorkingDirectory` changes, hence the one-kickstart cut-over.
+
+Deferred from the Arc 1 reviews (none block; pick up when touching the
+area): `_dir_for_scope` / `_find_*` are duplicated across the three CRUD
+handlers (a `refactor:` tidy once Arc 2 settles the packaged tier); the
+REST scope-mismatch pins assert `!= 200` until the ValueError-to-500
+mapping becomes a 4xx (#191); `ScriptResolver.list_available_scripts` is
+cwd-only and ignores `project_dir`; `ScriptHandler._get_scripts_dir`'s
+docstring undersells its "config manager present, no project tier"
+branch; `tests/bdd/test_adr_009_mcp_server_architecture.py` builds a
+MagicMock config manager and asserts only returned dicts; FastMCP and the
+REST bodies ignore unknown keys, so a misspelled `scope` silently means
+`project` (#191). Rulings that shaped Arc 1, for the record: `project`
+scope errors without a project tier rather than falling through to
+library or global (option A over "land on global"); PUT carries `scope`
+in the body and DELETE in the query, never both; the MCP `scope`
+parameter is the `Scope` literal so `/mcp` advertises the enum.
+
+1. **Serve is up on remote-host (2026-09-16 afternoon).** launchd agent,
+   v0.20.0 from origin main, llama.cpp b10964 x64 binary (no Intel brew
+   bottles; the upstream binary instead). http://llm-orc.remote.example
+   answers 200; four tiers pulled over the tailnet; acceptance 1 and 2 of
+   the handoff pass (tool call parsed through the tailnet URL). Measured
+   on the box (i7-8700B, CPU-only): qwen3-8b 23 prompt tok/s, 4-6 gen
+   tok/s; the trivial write_file turn took 560 s end to end because the
+   serving ensemble ran classify + build-gated round + tests at that
+   speed, and classified "create a text file" as a python_module build.
+   Both numbers feed the gate below. HTTPS is on (practitioner's go):
+   the homelab wildcard cert had expired 2026-08-23; renewed, valid to
+   2026-12-15, `https://llm-orc.remote.example` answers 200 and http
+   redirects. The weekly renewal daemon has been failing (root PATH lacks
+   `certbot`), a homelab-repo fix owed to the practitioner before
+   December. Full record: `docs/plans/2026-09-16-remote-serve-handoff.md`.
+   **#194 merged on local main (2026-09-16 evening):** the serve exposes
+   the full MCP tool set at `/mcp` (streamable HTTP, one `OrchestraService`
+   behind REST, `/v1` and MCP; DNS-rebinding guard off for the proxied
+   host; design `docs/plans/2026-09-16-mcp-in-serve.md`). Suite 4328,
+   lint clean, independent review found one wrong-accept (fixed, pinned
+   red/green). A user-level MCP entry on the laptop points at it.
+   Deployed and accepted on the rig (design doc, Result). **Released
+   as v0.20.1** on the practitioner's go (push, PyPI, GitHub release,
+   formula bump). Policy from the practitioner: the mini runs releases,
+   not checkouts. Doing that surfaced #197 (P0, closed the same
+   evening): a clean install of 0.20.1 resolved `mcp` 2.x and died at
+   import (the lock hid it). **v0.20.2** pins `mcp<2` (clean resolve
+   verified from PyPI). The brew formula could not build on the Intel
+   mini (cryptography>=49 has no x86_64 wheel; rust has no Intel bottle
+   either, hours from source); the tap formula now constrains
+   `cryptography<49` on Intel only, with the reasoning (PYSEC-2026-3552
+   is a PKCS#7 decryption oracle; llm-orc uses only Fernet). **The mini
+   runs `brew install llm-orchestra` 0.20.2** (30 s build), health and
+   `/mcp` verified over https; the interim `uv tool` install is removed.
+   Lesson, binding: a release is verified by a clean install from PyPI,
+   never from the checkout. #196: the serving project (`.llm-orc/`) is
+   not in the wheel, so the plist's WorkingDirectory stays the checkout.
+   Follow-up #195. The practitioner may move the mini to Linux; Intel
+   macOS support is dwindling upstream.
+   **#198 embeddings on the serve, released v0.20.3 and deployed the
+   same evening** (driver: the svalbard vault skills; aligned with that
+   session over messages). `POST /v1/embeddings` forwards to the router;
+   `options.embeddings`/`pooling` render into the preset, and an
+   embedding model gets `batch-size`/`ubatch-size` = its context. Review
+   found two blockers the design's acceptance would have missed: the
+   handler blocked the event loop (7 s `/health` behind an 8 s stub;
+   fixed, now a threadpool handler, pinned) and llama-server's 512-token
+   physical batch refused any real note (fixed, pinned). Measured on the
+   mini over https: 32 x ~1.2k-char texts (9,504 tokens) in 10.4 s with
+   `/health` under 110 ms throughout; two seats resident
+   (`--models-max 2`, needs bootout+bootstrap, a kickstart keeps the old
+   argv). Follow-ups #199 (pull blocks the loop; route should ask the
+   router for its model list).
+2. **Regression gate on the new backend** (laptop or remote-host): the ladder
+   (T1 alone at r≥5 first, then the full run) and the 7-turn probe.
+   Chat templating and tool-call parsing moved from Ollama's Go templates
+   to llama.cpp's jinja; the spike showed tool calls parse and thinking
+   is controllable, the ladder decides whether the seats hold. Then
+   OpenCode against `https://llm-orc.remote.example/v1`.
+3. **#123, #122, verified acceptance in the workspace** — unchanged from
+   2026-09-12; the T1 instrument still precedes touching the build round.
+4. **Filed 2026-09-16, sequenced after the remote-host bring-up and the
+   backend gate:** #189 code-footprint epic (#190 wire-or-delete six
+   unwired modules, P1 because AS-2 names a validator nothing runs;
+   #191 one service with generated MCP/REST adapters and a thin CLI;
+   #192 CLI/display re-approach on one event stream; #193 spike:
+   meta-simulation as a client-side ensemble, retire the interactive
+   input mode if it covers the cases). Then #187 strangler-kernel epic
+   with #188 as its spike (port the router supervisor and the
+   OpenAI-compatible client to a Rust crate in the plexus workspace;
+   exit criterion on the issue). Auth and promotion stay as they are.
+5. Follow-ups filed by this arc: `llm-orc web` does not own the router
+   (opt-in later); MCP over the tailnet (the SSE transport is the older
+   protocol, a second launchd unit + proxy path); deepseek-r1's template
+   ignores `enable_thinking` (fine for the reasoning tier); the library
+   submodule's templates still say `provider: ollama`.
+6. Gated on the practitioner: further pushes; #167/#141 (Anthropic arms).
+
+### Owed live rows
+
+#166 #169 #173 #171 (constructed non-participating shape via fault
+injection), #172 #176, #175. Arcs 1-2, D, B-1 have theirs. #90's live
+row is the regression gate in Next up 2.
+
+### Process (agreed 2026-09-11, holding)
+
+Reviews found real blockers 12 of 12 first rounds through 2026-09-12;
+with the three self-tests required in the implementer brief, arcs 1 and
+2 each closed in ONE rework round. Lessons paid for: a moving git ref in
+a pin makes it vacuous after merge (pin to a hash — 7f182865); a
+"harmless internal convention" in a gate field is never internal; a
+fuzzy match that reads then overwrites the wrong file is worse than an
+honest ask; existence is a workspace fact, never a verb. 2026-09-16: the
+first real run of a new process-owning feature found four defects unit
+tests could not (signal re-raise, list hygiene, async load, swallowed
+stderr) — run the real thing before calling a lifecycle feature done.
+Ops: subagent budget ~4-5M tokens/day before the limit; hosted-mid
+implementers, hosted-large reviews; ladder ~17 min at coder-on, probe ~10 min;
+one serve per tree, restart before every gate; the 8b GGUF is a 5 GB
+first download per box.
+
