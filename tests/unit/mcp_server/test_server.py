@@ -2367,11 +2367,8 @@ class TestToolDispatchMatchesRegistry:
         return {tool.name for tool in tools}
 
     @pytest.fixture
-    def dispatchable_names(self) -> set[str]:
-        # The handler table is a dict literal inside _get_tool_handler, so its
-        # keys are the identifier-shaped string constants of that function.
-        consts = MCPServer._get_tool_handler.__code__.co_consts  # noqa: SLF001
-        return {c for c in consts if isinstance(c, str) and c.isidentifier()}
+    def dispatchable_names(self, server: MCPServer) -> set[str]:
+        return set(server._tool_handlers())  # noqa: SLF001
 
     @pytest.mark.xfail(
         strict=True,
@@ -2379,16 +2376,10 @@ class TestToolDispatchMatchesRegistry:
         "but missing from call_tool's table (#189)",
     )
     def test_every_registered_tool_is_dispatchable(
-        self, server: MCPServer, registered_names: set[str]
+        self, registered_names: set[str], dispatchable_names: set[str]
     ) -> None:
         assert len(registered_names) > 4
-        missing = {
-            name
-            for name in registered_names
-            if server._get_tool_handler(name) is None  # noqa: SLF001
-        }
-
-        assert missing == set()
+        assert registered_names - dispatchable_names == set()
 
     def test_every_dispatchable_tool_is_registered(
         self, registered_names: set[str], dispatchable_names: set[str]

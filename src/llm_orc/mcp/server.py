@@ -824,13 +824,7 @@ class MCPServer:
             remote. Each row has name, url and a live GET /health probe:
             reachable with the serve's version, or the error observed.
             """
-            if not self._relay:
-                return RunRefusedError(INVALID_REQUEST, _NOT_A_RELAY).envelope()
-            try:
-                rows = await probe_remotes(self._service.config_manager)
-            except RemoteError as e:
-                return RunRefusedError(INVALID_REQUEST, str(e)).envelope()
-            return {"remotes": rows}
+            return await self._list_remotes_tool({})
 
     def _setup_promotion_tools(self) -> None:
         """Register promotion and demotion tools."""
@@ -1029,8 +1023,14 @@ class MCPServer:
         Returns:
             Handler function or None if not found.
         """
+        return self._tool_handlers().get(name)
+
+    def _tool_handlers(
+        self,
+    ) -> dict[str, Callable[[dict[str, Any]], Awaitable[dict[str, Any]]]]:
+        """Handler table behind ``call_tool``, keyed by tool name."""
         svc = self._service
-        handlers: dict[str, Callable[[dict[str, Any]], Awaitable[dict[str, Any]]]] = {
+        return {
             # Context management
             "set_project": self._set_project_tool,
             # Core tools
@@ -1072,7 +1072,16 @@ class MCPServer:
             # Help
             "get_help": self._help_tool,
         }
-        return handlers.get(name)
+
+    async def _list_remotes_tool(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        """Execute list_remotes tool (takes no arguments)."""
+        if not self._relay:
+            return RunRefusedError(INVALID_REQUEST, _NOT_A_RELAY).envelope()
+        try:
+            rows = await probe_remotes(self._service.config_manager)
+        except RemoteError as e:
+            return RunRefusedError(INVALID_REQUEST, str(e)).envelope()
+        return {"remotes": rows}
 
     async def _set_project_tool(self, arguments: dict[str, Any]) -> dict[str, Any]:
         """Execute set_project tool.
