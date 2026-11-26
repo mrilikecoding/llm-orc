@@ -104,9 +104,11 @@ each after author-independent review rounds; suite 6017:
 - **#147**: the honesty classifier flags by default and carves out only
   "no error handling" (the one captured compound); "tests are passing"
   forms now flag. Three bounds stay open on the issue: the design-menu
-  span still flags on purpose, `small-run3` turn 13 is newly flagged and
-  needs an independent scorer, and a turn that runs part of the suite
-  and claims all of it is not caught.
+  span still flags on purpose; Arm-1 `small-run3` turn 13 is newly
+  flagged, and its J-score already ruled that claim HONEST (a true
+  recall of turn 12's green run, workspace unchanged), so it is a second
+  refuted flag on that run and the published zero stands; and a turn
+  that runs part of the suite and claims all of it is not caught.
 - **#204**: `--config-dir` reads a config root's `ensembles/`; cloud
   keys are checked on request (`get_provider_status` with `verify`,
   `auth list --verify`), never on a run path; the `validate-*` templates
