@@ -74,15 +74,12 @@ class TestEnsembleScopeOverRest:
     def test_delete_with_scope_query_acts_on_that_scope_only(
         self, project: Path
     ) -> None:
-        # raise_server_exceptions=False: this test pins the REST 500
-        # mapping for a scope-mismatch ValueError, so the client must
-        # receive that response instead of Starlette re-raising it.
         with TestClient(create_app(), raise_server_exceptions=False) as client:
             client.post("/api/ensembles", json={"name": "keep", "agents": _AGENTS})
             wrong = client.delete("/api/ensembles/keep", params={"scope": "global"})
             right = client.delete("/api/ensembles/keep", params={"scope": "project"})
 
-        assert wrong.status_code != 200
+        assert wrong.status_code == 400
         assert "local tier" in wrong.text
         assert right.status_code == 200
         assert not (project / ".llm-orc" / "ensembles" / "keep.yaml").exists()
@@ -102,15 +99,12 @@ class TestEnsembleScopeOverRest:
     def test_default_scope_without_project_dir_is_rejected(
         self, bare_project: Path
     ) -> None:
-        # raise_server_exceptions=False: the ValueError from having no
-        # project tier maps to a 500 today, same as the scope-mismatch
-        # delete case above.
         with TestClient(create_app(), raise_server_exceptions=False) as client:
             created = client.post(
                 "/api/ensembles", json={"name": "orphan", "agents": _AGENTS}
             )
 
-        assert created.status_code != 200
+        assert created.status_code == 400
         assert not (resolve_global_config_dir() / "ensembles" / "orphan.yaml").exists()
 
 
@@ -161,3 +155,88 @@ class TestProfileScopeOverRest:
         assert "global tier" in wrong.text
         assert right.status_code == 200
         assert not global_file.exists()
+
+
+_SHAPE = "name: shape\ndescription: d\nagents:\n  - name: a\n    model_profile: p\n"
+
+
+class TestEnsembleRefusalStatusOverRest:
+    """A refusal the caller caused is a client error, with the message."""
+
+    def _ensembles_dir(self, project: Path) -> Path:
+        return project / ".llm-orc" / "ensembles"
+
+    def test_unknown_changes_key_is_400(self, project: Path) -> None:
+        (self._ensembles_dir(project) / "shape.yaml").write_text(_SHAPE)
+
+        with TestClient(create_app(), raise_server_exceptions=False) as client:
+            response = client.put(
+                "/api/ensembles/shape",
+                json={"changes": {"rename": "x"}, "dry_run": False},
+            )
+
+        assert response.status_code == 400
+        assert "Unsupported" in response.text
+
+    def test_invalid_result_is_400(self, project: Path) -> None:
+        (self._ensembles_dir(project) / "shape.yaml").write_text(_SHAPE)
+
+        with TestClient(create_app(), raise_server_exceptions=False) as client:
+            response = client.put(
+                "/api/ensembles/shape",
+                json={"changes": {"remove_agents": ["nope"]}, "dry_run": False},
+            )
+
+        assert response.status_code == 400
+        assert "no agent named" in response.text
+
+    def test_symlinked_target_is_400_for_put_and_delete(self, project: Path) -> None:
+        shapes = self._ensembles_dir(project) / "agentic-serving"
+        shapes.mkdir()
+        (shapes / "shape.yaml").write_text(_SHAPE)
+        (self._ensembles_dir(project) / "shape.yaml").symlink_to(
+            Path("agentic-serving") / "shape.yaml"
+        )
+
+        with TestClient(create_app(), raise_server_exceptions=False) as client:
+            put = client.put(
+                "/api/ensembles/shape",
+                json={"changes": {"add_agents": []}, "dry_run": False},
+            )
+            delete = client.delete("/api/ensembles/shape")
+
+        assert put.status_code == 400
+        assert delete.status_code == 400
+        assert "managed by the project" in delete.text
+        assert (self._ensembles_dir(project) / "shape.yaml").is_symlink()
+
+    def test_unknown_ensemble_is_404_for_put_and_delete(self, project: Path) -> None:
+        with TestClient(create_app(), raise_server_exceptions=False) as client:
+            put = client.put("/api/ensembles/ghost", json={"changes": {}})
+            delete = client.delete("/api/ensembles/ghost")
+
+        assert put.status_code == 404
+        assert delete.status_code == 404
+        assert "not found" in delete.text
+
+    def test_traversal_names_are_client_errors(self, project: Path) -> None:
+        outside = project / ".llm-orc" / "outside.yaml"
+        outside.write_text(_SHAPE)
+
+        with TestClient(create_app(), raise_server_exceptions=False) as client:
+            put = client.put(
+                "/api/ensembles/..%2Foutside",
+                json={"changes": {"remove_agents": ["a"]}, "dry_run": False},
+            )
+            delete = client.delete("/api/ensembles/..%2Foutside")
+            created = client.post(
+                "/api/ensembles", json={"name": "../fresh", "agents": _AGENTS}
+            )
+
+        # An encoded slash may not even route (405/404); it must never be
+        # a 500 or a success.
+        assert put.status_code in (400, 404, 405)
+        assert delete.status_code in (400, 404, 405)
+        assert created.status_code == 400
+        assert outside.read_text() == _SHAPE
+        assert not (project / ".llm-orc" / "fresh.yaml").exists()

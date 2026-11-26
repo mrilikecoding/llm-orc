@@ -5,13 +5,13 @@ Provides REST API for ensemble management, delegating to OrchestraService.
 
 import asyncio
 import contextlib
-from collections.abc import Coroutine
+from collections.abc import Awaitable, Coroutine
 from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Request, Response
 from pydantic import BaseModel, ConfigDict, Field
 
-from llm_orc.services.handlers.scope import Scope
+from llm_orc.services.handlers.scope import NotFoundInScopeError, Scope
 from llm_orc.web.api import get_orchestra_service
 
 router = APIRouter(prefix="/api/ensembles", tags=["ensembles"])
@@ -73,6 +73,21 @@ class UpdateEnsembleRequest(BaseModel):
     dry_run: bool = True
     backup: bool = True
     scope: Scope = "project"
+
+
+async def _crud_result(call: Awaitable[dict[str, Any]]) -> dict[str, Any]:
+    """Await a CRUD call, mapping the caller's mistakes to client errors.
+
+    The handlers refuse with ``ValueError``: a name that is nowhere is 404,
+    anything else the caller got wrong (unknown key, invalid result,
+    symlinked target, wrong scope, bad name) is 400. The message is kept.
+    """
+    try:
+        return await call
+    except NotFoundInScopeError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
 
 # nginx's code for a client that closed the connection before the answer.
@@ -221,14 +236,16 @@ async def create_ensemble(request: CreateEnsembleRequest) -> dict[str, Any]:
         Creation result with path and agents copied.
     """
     service = get_orchestra_service()
-    result = await service.create_ensemble(
-        {
-            "name": request.name,
-            "description": request.description,
-            "agents": request.agents,
-            "from_template": request.from_template,
-            "scope": request.scope,
-        }
+    result = await _crud_result(
+        service.create_ensemble(
+            {
+                "name": request.name,
+                "description": request.description,
+                "agents": request.agents,
+                "from_template": request.from_template,
+                "scope": request.scope,
+            }
+        )
     )
     return result
 
@@ -246,14 +263,16 @@ async def update_ensemble(name: str, request: UpdateEnsembleRequest) -> dict[str
         Update result with preview or applied changes.
     """
     service = get_orchestra_service()
-    result = await service.update_ensemble(
-        {
-            "ensemble_name": name,
-            "changes": request.changes,
-            "dry_run": request.dry_run,
-            "backup": request.backup,
-            "scope": request.scope,
-        }
+    result = await _crud_result(
+        service.update_ensemble(
+            {
+                "ensemble_name": name,
+                "changes": request.changes,
+                "dry_run": request.dry_run,
+                "backup": request.backup,
+                "scope": request.scope,
+            }
+        )
     )
     return result
 
@@ -270,7 +289,9 @@ async def delete_ensemble(name: str, scope: Scope = "project") -> dict[str, Any]
         Deletion result.
     """
     service = get_orchestra_service()
-    result = await service.delete_ensemble(
-        {"ensemble_name": name, "confirm": True, "scope": scope}
+    result = await _crud_result(
+        service.delete_ensemble(
+            {"ensemble_name": name, "confirm": True, "scope": scope}
+        )
     )
     return result

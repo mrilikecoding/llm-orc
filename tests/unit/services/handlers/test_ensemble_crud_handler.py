@@ -966,3 +966,328 @@ class TestSymlinkedEnsemble:
 
         assert result["deleted"] is True
         assert not path.exists()
+
+
+class TestSymlinkRefusalNamesNoAbsolutePath:
+    """The refusal reason carries no absolute server path."""
+
+    def _absolute_link(self, tmp_path: Path) -> Path:
+        elsewhere = tmp_path / "elsewhere" / "t.yaml"
+        elsewhere.parent.mkdir()
+        elsewhere.write_text(_COMPOSED_ENSEMBLE)
+        ensembles_dir = tmp_path / "ensembles"
+        ensembles_dir.mkdir()
+        link = ensembles_dir / "abs.yaml"
+        link.symlink_to(elsewhere)
+        return link
+
+    @pytest.mark.parametrize("dry_run", [True, False])
+    async def test_update_message_has_no_absolute_path(
+        self, tmp_path: Path, dry_run: bool
+    ) -> None:
+        self._absolute_link(tmp_path)
+        handler = _project_handler(tmp_path)
+
+        with pytest.raises(ValueError, match=r"'abs.yaml'.*symlink.*managed") as e:
+            await handler.update_ensemble(
+                {
+                    "ensemble_name": "abs",
+                    "changes": {"remove_agents": ["summary"]},
+                    "dry_run": dry_run,
+                }
+            )
+
+        assert str(tmp_path) not in str(e.value)
+
+    async def test_delete_message_has_no_absolute_path(self, tmp_path: Path) -> None:
+        link = self._absolute_link(tmp_path)
+        handler = _project_handler(tmp_path)
+
+        with pytest.raises(ValueError, match=r"'abs.yaml'.*symlink.*managed") as e:
+            await handler.delete_ensemble({"ensemble_name": "abs", "confirm": True})
+
+        assert str(tmp_path) not in str(e.value)
+        assert link.is_symlink()
+
+    async def test_relative_target_leaving_the_scope_is_not_shown(
+        self, tmp_path: Path
+    ) -> None:
+        secret = tmp_path / "secret-dir" / "t.yaml"
+        secret.parent.mkdir()
+        secret.write_text(_COMPOSED_ENSEMBLE)
+        ensembles_dir = tmp_path / "ensembles"
+        ensembles_dir.mkdir()
+        (ensembles_dir / "up.yaml").symlink_to(Path("..") / "secret-dir" / "t.yaml")
+        handler = _project_handler(tmp_path)
+
+        with pytest.raises(ValueError, match=r"symlink.*managed") as e:
+            await handler.delete_ensemble({"ensemble_name": "up", "confirm": True})
+
+        assert "secret-dir" not in str(e.value)
+
+
+class TestUpdateEnsembleArgumentShapes:
+    """Wrongly typed arguments are refused with a clear message, nothing
+    written."""
+
+    @pytest.mark.parametrize(
+        ("changes", "match"),
+        [
+            (None, "changes must be an object"),
+            ('{"remove_agents": ["summary"]}', "changes must be an object"),
+            (["remove_agents"], "changes must be an object"),
+            ({"remove_agents": "summary"}, "remove_agents must be a list of names"),
+            ({"remove_agents": [1]}, "remove_agents must be a list of names"),
+            ({"add_agents": {"name": "x"}}, "add_agents must be a list of objects"),
+            ({"add_agents": ["x"]}, "add_agents must be a list of objects"),
+            ({"add_agents": None}, "add_agents must be a list of objects"),
+        ],
+    )
+    @pytest.mark.parametrize("dry_run", [True, False])
+    async def test_refused_and_nothing_written(
+        self, tmp_path: Path, changes: Any, match: str, dry_run: bool
+    ) -> None:
+        path = _write_ensemble(tmp_path, _COMPOSED_ENSEMBLE)
+        handler = _project_handler(tmp_path)
+
+        with pytest.raises(ValueError, match=match):
+            await handler.update_ensemble(
+                _update_args(changes=changes, dry_run=dry_run, backup=True)
+            )
+
+        assert path.read_text() == _COMPOSED_ENSEMBLE
+        assert [p.name for p in path.parent.iterdir()] == ["composed.yaml"]
+
+    async def test_multi_document_file_is_refused(self, tmp_path: Path) -> None:
+        text = _COMPOSED_ENSEMBLE + "---\nname: second\n"
+        path = _write_ensemble(tmp_path, text)
+        handler = _project_handler(tmp_path)
+
+        with pytest.raises(ValueError, match="not a single YAML document"):
+            await handler.update_ensemble(
+                _update_args(changes={"remove_agents": ["summary"]})
+            )
+
+        assert path.read_text() == text
+
+
+class TestUpdateEnsembleWriteSafety:
+    """The write is all-or-nothing and leaves no stray files."""
+
+    @pytest.mark.parametrize("failing_step", ["fsync", "replace"])
+    async def test_a_failed_write_leaves_target_intact_and_no_stray_files(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        failing_step: str,
+    ) -> None:
+        path = _write_ensemble(tmp_path, _COMPOSED_ENSEMBLE)
+        handler = _project_handler(tmp_path)
+
+        def _boom(*args: Any, **kwargs: Any) -> None:
+            raise OSError("disk went away")
+
+        monkeypatch.setattr(f"os.{failing_step}", _boom)
+
+        with pytest.raises(OSError, match="disk went away"):
+            await handler.update_ensemble(
+                _update_args(changes={"remove_agents": ["summary"]}, backup=True)
+            )
+        monkeypatch.undo()
+
+        assert path.read_text() == _COMPOSED_ENSEMBLE
+        assert [p.name for p in path.parent.iterdir()] == ["composed.yaml"]
+
+    async def test_a_read_only_file_is_refused_before_any_backup(
+        self, tmp_path: Path
+    ) -> None:
+        path = _write_ensemble(tmp_path, _COMPOSED_ENSEMBLE)
+        path.chmod(0o444)
+        handler = _project_handler(tmp_path)
+
+        try:
+            with pytest.raises(ValueError, match="not writable"):
+                await handler.update_ensemble(
+                    _update_args(changes={"remove_agents": ["summary"]}, backup=True)
+                )
+        finally:
+            path.chmod(0o644)
+
+        assert path.read_text() == _COMPOSED_ENSEMBLE
+        assert [p.name for p in path.parent.iterdir()] == ["composed.yaml"]
+
+    async def test_the_new_file_keeps_the_old_file_mode(self, tmp_path: Path) -> None:
+        path = _write_ensemble(tmp_path, _COMPOSED_ENSEMBLE)
+        path.chmod(0o640)
+        handler = _project_handler(tmp_path)
+
+        await handler.update_ensemble(
+            _update_args(changes={"remove_agents": ["summary"]})
+        )
+
+        assert path.stat().st_mode & 0o777 == 0o640
+
+
+class TestUpdateEnsembleYmlFile:
+    async def test_a_yml_only_ensemble_is_found_and_updated(
+        self, tmp_path: Path
+    ) -> None:
+        ensembles_dir = tmp_path / "ensembles"
+        ensembles_dir.mkdir()
+        path = ensembles_dir / "composed.yml"
+        path.write_text(_COMPOSED_ENSEMBLE)
+        handler = _project_handler(tmp_path)
+
+        result = await handler.update_ensemble(
+            _update_args(changes={"remove_agents": ["summary"]}, backup=True)
+        )
+
+        assert result["modified"] is True
+        assert "summary" not in path.read_text()
+        assert (ensembles_dir / "composed.yml.bak").read_text() == _COMPOSED_ENSEMBLE
+        assert not (ensembles_dir / "composed.yaml").exists()
+
+
+class TestUpdateEnsembleNestedName:
+    async def test_a_name_with_a_separator_inside_the_scope_updates(
+        self, tmp_path: Path
+    ) -> None:
+        path = _write_ensemble(tmp_path, _COMPOSED_ENSEMBLE)
+        nested = path.parent / "sub" / "inner.yaml"
+        nested.parent.mkdir()
+        nested.write_text(_COMPOSED_ENSEMBLE)
+        handler = _project_handler(tmp_path)
+
+        result = await handler.update_ensemble(
+            _update_args(
+                ensemble_name="sub/inner",
+                changes={"remove_agents": ["summary"]},
+            )
+        )
+
+        assert result["modified"] is True
+        assert "summary" not in nested.read_text()
+
+
+_SHIPPED = Path(__file__).resolve().parents[4] / ".llm-orc/ensembles/agentic-serving"
+_HEADER = "# Header comment\n#\n# more about this ensemble\n\n"
+
+
+def _leading_comment_block(text: str) -> str:
+    lines: list[str] = []
+    for line in text.splitlines(keepends=True):
+        if line.strip() and not line.startswith("#"):
+            break
+        lines.append(line)
+    return "".join(lines)
+
+
+class TestUpdateEnsembleTextFidelity:
+    """What a rewrite keeps of the file's text."""
+
+    async def test_leading_comment_block_is_written_back_verbatim(
+        self, tmp_path: Path
+    ) -> None:
+        path = _write_ensemble(tmp_path, _HEADER + _COMPOSED_ENSEMBLE)
+        handler = _project_handler(tmp_path)
+
+        await handler.update_ensemble(
+            _update_args(changes={"remove_agents": ["summary"]})
+        )
+
+        text = path.read_text()
+        assert text.startswith(_HEADER + "name: composed\n")
+        assert "summary" not in text
+
+    async def test_non_ascii_is_written_as_itself(self, tmp_path: Path) -> None:
+        path = _write_ensemble(tmp_path, _COMPOSED_ENSEMBLE)
+        handler = _project_handler(tmp_path)
+
+        await handler.update_ensemble(
+            _update_args(
+                changes={
+                    "add_agents": [
+                        {
+                            "name": "greet",
+                            "model_profile": "p",
+                            "system_prompt": "héllo — café",
+                        }
+                    ]
+                }
+            )
+        )
+
+        text = path.read_text(encoding="utf-8")
+        assert "héllo — café" in text
+        assert "\\x" not in text
+        assert "\\u" not in text
+
+    async def test_multi_line_strings_are_written_in_block_style(
+        self, tmp_path: Path
+    ) -> None:
+        path = _write_ensemble(tmp_path, _COMPOSED_ENSEMBLE)
+        prompt = "first line\nsecond line\n"
+        handler = _project_handler(tmp_path)
+
+        await handler.update_ensemble(
+            _update_args(
+                changes={
+                    "add_agents": [
+                        {"name": "multi", "model_profile": "p", "system_prompt": prompt}
+                    ]
+                }
+            )
+        )
+
+        text = path.read_text()
+        assert "system_prompt: |" in text
+        assert "  first line\n" in text
+        assert yaml.safe_load(text)["agents"][-1]["system_prompt"] == prompt
+
+    @pytest.mark.parametrize(
+        "name",
+        [
+            "build-gated",
+            "serving",
+            "adequacy-judge",
+            "write-tests",
+            "recall-answer",
+            "need-grep",
+        ],
+    )
+    async def test_shipped_ensemble_round_trips_by_value(
+        self, tmp_path: Path, name: str
+    ) -> None:
+        original = (_SHIPPED / f"{name}.yaml").read_text(encoding="utf-8")
+        path = _write_ensemble(tmp_path, original, name=name)
+        before = yaml.safe_load(original)
+        handler = _project_handler(tmp_path)
+        args = {"ensemble_name": name, "dry_run": False, "backup": False}
+
+        await handler.update_ensemble(
+            {
+                **args,
+                "changes": {"add_agents": [{"name": "zz-added", "model_profile": "p"}]},
+            }
+        )
+        await handler.update_ensemble(
+            {**args, "changes": {"remove_agents": ["zz-added"]}}
+        )
+
+        text = path.read_text(encoding="utf-8")
+        assert yaml.safe_load(text) == before
+        assert _leading_comment_block(text) == _leading_comment_block(original)
+        assert EnsembleLoader().load_from_file(str(path)).name == before["name"]
+
+    async def test_dry_run_says_inner_comments_are_not_preserved(
+        self, tmp_path: Path
+    ) -> None:
+        _write_ensemble(tmp_path, _COMPOSED_ENSEMBLE)
+        handler = _project_handler(tmp_path)
+
+        result = await handler.update_ensemble(
+            _update_args(changes={"remove_agents": ["summary"]}, dry_run=True)
+        )
+
+        assert "comments inside the document are not preserved" in result["note"]
+        assert "backup" in result["note"]

@@ -7,7 +7,12 @@ import yaml
 
 from llm_orc.core.config.config_manager import ConfigurationManager
 from llm_orc.mcp.project_context import ProjectContext
-from llm_orc.services.handlers.scope import Scope, find_in_scope, parse_scope
+from llm_orc.services.handlers.scope import (
+    Scope,
+    find_in_scope,
+    parse_scope,
+    resolve_in_dir,
+)
 
 
 class ProfileHandler:
@@ -109,7 +114,12 @@ class ProfileHandler:
                 "No project directory (.llm-orc) here; pass scope: global to "
                 f"write under {global_profiles}, or run llm-orc config init"
             )
-        target_file = local_dir / f"{name}.yaml"
+        target_file = resolve_in_dir(
+            scope_dir=local_dir,
+            filename=f"{name}.yaml",
+            scope=scope,
+            label="Profile",
+        )
         if target_file.exists():
             raise ValueError(f"Profile '{name}' already exists")
 

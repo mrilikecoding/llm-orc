@@ -7,7 +7,12 @@ from typing import Any
 
 from llm_orc.core.config.config_manager import ConfigurationManager
 from llm_orc.mcp.project_context import ProjectContext
-from llm_orc.services.handlers.scope import Scope, find_in_scope, parse_scope
+from llm_orc.services.handlers.scope import (
+    Scope,
+    find_in_scope,
+    parse_scope,
+    resolve_in_dir,
+)
 
 
 class ScriptHandler:
@@ -246,8 +251,13 @@ class ScriptHandler:
                 "No project directory (.llm-orc) here; pass scope: global to "
                 f"write under {global_scripts}, or run llm-orc config init"
             )
-        category_dir = scripts_dir / category
-        script_file = category_dir / f"{name}.py"
+        script_file = resolve_in_dir(
+            scope_dir=scripts_dir,
+            filename=f"{category}/{name}.py",
+            scope=scope,
+            label="Script",
+        )
+        category_dir = script_file.parent
 
         if script_file.exists():
             raise ValueError(f"Script '{category}/{name}' already exists")

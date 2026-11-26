@@ -817,8 +817,9 @@ class TestTheOtherSurfacesKnowBundles:
         a bundle only where the directory entry is exactly ``PACK.json``."""
         _persisted(client)
 
-        with pytest.raises(ValueError, match="not found"):
-            client.delete("/api/ensembles/PACK", params={"scope": "global"})
+        response = client.delete("/api/ensembles/PACK", params={"scope": "global"})
+        assert response.status_code == 404
+        assert "not found" in response.text
         with pytest.raises(ValueError, match="does not exist"):
             _run_named(client, "PACK")
 
@@ -880,8 +881,9 @@ class TestTheOtherSurfacesKnowBundles:
         nested = resolve_global_config_dir() / "ensembles" / "sub" / "pack.yaml"
         _write_tier_yml(nested)
 
-        with pytest.raises(ValueError, match="not found"):
-            client.delete("/api/ensembles/pack", params={"scope": "global"})
+        response = client.delete("/api/ensembles/pack", params={"scope": "global"})
+        assert response.status_code == 404
+        assert "not found" in response.text
 
         assert nested.exists()
         assert _bundle_file().exists()
@@ -891,8 +893,9 @@ class TestTheOtherSurfacesKnowBundles:
     ) -> None:
         _persisted(client)
 
-        with pytest.raises(ValueError, match="not found"):
-            client.delete("/api/ensembles/pack", params={"scope": "project"})
+        response = client.delete("/api/ensembles/pack", params={"scope": "project"})
+        assert response.status_code == 404
+        assert "not found" in response.text
 
         assert _bundle_file().exists()
 
