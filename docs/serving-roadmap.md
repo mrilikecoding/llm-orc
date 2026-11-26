@@ -77,6 +77,46 @@ applications (#90's packaging goal). Standing directives from 2026-09-11
 hold (daily driver on existing repos; real OpenCode sessions; Go spend
 and paid comparison runs within reason; cheaper subagents; meter usage).
 
+### 2026-11-25: issues merged by structure
+
+Eight issues were folded into four, each surviving issue naming the
+structure and carrying the others' open work in a comment: #175 (the
+refusal reason is a free string) holds #142 and #180; #149 (truncation
+the serve cannot see) holds #151 and the residuals of #153, whose
+offset reads merged 2026-08-14; #161 (script cache contract) holds
+#162; #189 (code footprint) holds #95, #190 and #195 and takes #190's
+P1. The folded cards are archived on the board. #151's measurement was
+taken on Ollama and needs redoing on llama-server before a threshold is
+set.
+
+Closed the same day as shipped: #63, #121, #131 and #196 (its `ddgs`
+finding was fixed in v0.25.1). #106 is narrowed to what is left: in a
+checkout, a project-scope `delete_ensemble` can unlink a serving
+shape's symlink.
+
+Merged on local main the same day, not pushed (`34aee1a2`..`dc5ffc41`),
+each after author-independent review rounds; suite 6017:
+
+- **#199**: `/v1/embeddings` validates `model` against the running
+  router's list (reused 5 s) and answers 503 when the router cannot be
+  listed; a truncated or malformed listing is a 503 on `/api/models`
+  too. Owed: a row against a real router.
+- **#147**: the honesty classifier flags by default and carves out only
+  "no error handling" (the one captured compound); "tests are passing"
+  forms now flag. Three bounds stay open on the issue: the design-menu
+  span still flags on purpose, `small-run3` turn 13 is newly flagged and
+  needs an independent scorer, and a turn that runs part of the suite
+  and claims all of it is not caught.
+- **#204**: `--config-dir` reads a config root's `ensembles/`; cloud
+  keys are checked on request (`get_provider_status` with `verify`,
+  `auth list --verify`), never on a run path; the `validate-*` templates
+  are gone and init writes no model names. Owed: a CHANGELOG entry at
+  release, and what Google answers for a bad key.
+
+Found on the way, on #165: tests run from a checkout see its untracked
+`.llm-orc/*.local.yaml` profiles and its populated library submodule,
+so two #204 tests passed in a clean worktree and failed here.
+
 ### 2026-11-24: history rewritten again; v0.25.3 released
 
 Commit authorship and messages were normalized across the whole history
@@ -737,7 +777,7 @@ Remaining, in order:
   plexus substrate; #82 remainder (cross-session)
 - [ ] #128 #129 #130 — task shapes toward compose-at-runtime
 - [ ] #125 — Rust gate; #119 #135 — seat ladder on-signal
-- [ ] #85 #84 #90 #93 #95 #106 #110 #114 #132 #142 — platform hardening as gates demand
+- [ ] #85 #84 #93 #106 #110 #114 #132 #175 #189 — platform hardening as gates demand
 - [x] #166 #169 #170 merged (empty deliverable never written; empty re-fix
   candidate never accepted; `make test` independent of the working
   directory), plus loop-protocol 13-19 and the doc-drift check
@@ -757,7 +797,7 @@ Remaining, in order:
 - [x] #182 D + B-1 merged (discovery before an unnamed build; edits keep the prior surface); #183 B measured (coder keeps thinking)
 - [x] Arc 1 workspace-aware routing (#185) and arc 2 the sandbox mirrors the workspace (#184, #182 A) merged 2026-09-12
 - [ ] #123 code+tests per turn (+ tests destination); #122 edit delegation; verified acceptance in the workspace; #183 A/C; #181
-- [ ] #161 #162 #165 — script-cache purity/imports and the -n auto flake;
+- [ ] #161 (holds #162) #165 — script-cache purity/imports and the -n auto flake;
   #155 Arcs B/C remainder
 - [ ] North star: parity on real work, honesty column held at zero
 
@@ -846,8 +886,8 @@ dishonest outcome.
 - [x] #131 Arm-2 n=3; Arm-1 go/no-go + runs n=3 (all columns complete)
 - [ ] #147 `_PASS_CLAIM_RE` false-positive family (three refuted captures)
 - [ ] #141 instruction-file confound · #167 volume-scaling paid runs
-  (successor to the closed #138, which tracked the instrument) · #63
-  statistics
+  (successor to the closed #138, which tracked the instrument); #63
+  and #131 closed 2026-11-25, their shipped scope complete
 - [ ] Parity table v2 (realism rows; interval estimates)
 
 ### epic:ws3-client-surface — the serve upgrades any client
@@ -857,7 +897,7 @@ dishonest outcome.
 - [x] #121 slice A — content-grep rung merged+live (exit gate met; bounds ride #153)
 - [x] #153 offset reads merged+live (50–96KB grounding restored; the
   #121 bound converted); remaining flanks recorded on the issue
-- [ ] #149 client-side truncation flank
+- [ ] #149 truncation the serve cannot see (holds #151 and the #153 residuals)
 - [ ] #122 edit delegation · #123 multi-file · #124 command registry · #117 fix-completion tail
 
 ### epic:ws5-long-horizon
@@ -898,7 +938,7 @@ dishonest outcome.
 - [x] #179 the doc-drift check knows its names inside agent worktrees
 - [x] #172 #176 — an empty submodule is not a library; the gate's verdict
   comes only from tests the runner executes (four rounds)
-- [ ] #151 runtime-window detector remainder · #155 Arcs B/C · #174 a dead seat ships the engine envelope as the answer · #175 vocabulary half (env route CLOSED; path-free literals still reach the wire) · #177 three file-vs-inline classifiers · #180 the accept report is unbounded · #161 cache purity · #162 cache misses imports · #165 `-n auto` flake · #85 sandbox hardening · #205 spike: access levels for a serve with clients it does not trust · #84 gate adversarial harness · #90 llama.cpp · #93 hot path · #95 dead surface · #106 shape home · #110 artifact quality · #114 trace cap · #132 BitNet · #142 reject templates
+- [ ] #155 Arcs B/C · #175 the refusal reason is a free string (holds #142 #180; env route CLOSED) · #161 script cache contract (holds #162) · #165 `-n auto` flake and test hermeticity · #85 sandbox hardening · #205 spike: access levels for a serve with clients it does not trust · #84 gate adversarial harness · #93 hot path · #106 shape home · #110 artifact quality · #114 trace cap · #132 BitNet · #189 code footprint (holds #95 #190 #195)
 
 ### epic:off-path
 #80 #65 #30 #66 — parked, not on the north-star path.
