@@ -5,6 +5,47 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.25.4] - 2026-11-25
+
+### Added
+- `llm-orc auth list --verify`, and `verify: true` on the MCP tool
+  `get_provider_status`, ask a cloud provider whether its stored API key
+  works. The check is one list-models request (no model name, no
+  tokens), bounded at 5 s and never retried, and reports `accepted`,
+  `rejected` or `inconclusive`. Without `verify` a stored key reads
+  `configured` and no request is made, so preflight and every run path
+  stay as they were (#204).
+
+### Changed
+- `--config-dir` pointed at a config directory (one with `config.yaml`
+  beside an `ensembles/` directory) scans only its `ensembles/`
+  subdirectory. It used to try `config.yaml`, `credentials.yaml` and the
+  profile files as ensembles and warn about each on every lookup. Any
+  other directory is scanned as before (#204).
+- `llm-orc init` writes no model profiles. The config templates ship
+  `model_profiles: {}` with a commented example, and the example ensemble
+  uses the packaged local profiles (`local-qwen3-0.6b`,
+  `local-qwen3-8b`), so nothing init writes names a hosted model version
+  or a provider that no longer exists (#204).
+
+### Removed
+- The bundled `validate-anthropic-api`, `validate-google-gemini` and
+  `validate-ollama` ensembles. None resolved its profile after `init`,
+  and two named providers that are gone. Use `llm-orc auth list
+  --verify` to check a key (#204).
+- `project.default_models` in the local config template, and the lines
+  `llm-orc config check` printed for it. Nothing read it at run time.
+
+### Fixed
+- `POST /v1/embeddings` validates `model` against the running router's
+  own model list (reused for 5 s). It used to re-render the preset from
+  the profile files on each request, so after a profile edit it
+  disagreed with `/api/models`, and a conflicting profile set made every
+  embeddings call a 500. A router that cannot be listed is a 503, on
+  this route and on `/api/models`, including for a truncated or
+  malformed listing. Only llama-server profiles alias to router model
+  names (#199).
+
 ## [0.25.3] - 2026-11-25
 
 ### Security
