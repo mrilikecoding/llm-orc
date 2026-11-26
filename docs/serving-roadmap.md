@@ -147,6 +147,30 @@ self-contradicting expectations). Neither has been run since.
    C (per-node elapsed in the trace, declared context size), since a
    gated build turn takes about five minutes.
 
+Before step 1, checked 2026-11-25 and not yet resolved:
+
+- **Seats.** The checkout's untracked `.llm-orc/profiles/*.local.yaml`
+  re-seat the orchestrator on a hosted OpenAI-compatible model. The
+  earlier rows were taken on local seats. Decide which configuration
+  the baseline measures, record the seat table in the row, and note
+  that since v0.25.5 a keyed hosted seat honors its `timeout_seconds`
+  and `options` (it ignored them before), so a hosted-seat row is not
+  comparable with one taken earlier.
+- **T1 has no recorded driver.** T1 is the ladder's first turn run
+  alone; the 2026-09-27 row (in the archive) names no script and no
+  run directory. Write the r=5 loop around
+  `benchmarks/agentic_serving/ladder_battery.sh`'s first turn, record
+  it, and read that script's header before the first run.
+- **The probe driver carries placeholder paths.**
+  `docs/plans/2026-09-11-daily-driver-probe/dd-turn.sh` hardcodes a
+  scratch directory and a virtualenv path that the history rewrite
+  neutralized; set both, and seed the repo from that directory's
+  README.
+- **Running it.** `opencode run` hangs when launched inside an agent's
+  command sandbox; run it detached with the sandbox off. One serve per
+  tree, restarted before each gate. The 8B model is already in the
+  local model cache.
+
 The exit instrument is #182's: probe turns 1, 2, 3 and 6 convert to
 correct workspace truth while turn 7 and the 13-turn ladder hold.
 Nothing is planned past step 1's result.
