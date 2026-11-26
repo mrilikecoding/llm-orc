@@ -217,6 +217,7 @@ class ModelFactory:
             response_format=response_format,
             base_url=base_url,
             execution_id=self.execution_id,
+            timeout_seconds=timeout_seconds,
         )
 
     async def get_fallback_model(
@@ -651,6 +652,7 @@ def _create_authenticated_model(
     response_format: str | dict[str, Any] | None = None,
     base_url: str | None = None,
     execution_id: str | None = None,
+    timeout_seconds: float | None = None,
 ) -> ModelInterface:
     """Create authenticated model based on authentication method.
 
@@ -665,6 +667,7 @@ def _create_authenticated_model(
         response_format: Optional structured-output format (openai-compatible only)
         base_url: Optional base URL for OpenAI-compatible endpoints
         execution_id: Stable id for the top-level ensemble execution
+        timeout_seconds: Optional per-agent HTTP read budget (openai-compatible)
 
     Returns:
         Configured model interface
@@ -688,6 +691,7 @@ def _create_authenticated_model(
             response_format=response_format,
             base_url=base_url,
             execution_id=execution_id,
+            timeout_seconds=timeout_seconds,
         )
 
     else:

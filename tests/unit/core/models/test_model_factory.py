@@ -813,6 +813,7 @@ class TestLoadModelHelperMethods:
             response_format=None,
             base_url=None,
             execution_id=None,
+            timeout_seconds=None,
         )
 
     def test_create_authenticated_model_no_api_key(
@@ -1898,3 +1899,64 @@ class TestOpenAICompatibleRequestBody:
         body = client.post.call_args[1]["json"]
         assert body["seed"] == 11
         assert body["response_format"] == {"type": "json_object"}
+
+
+def _factory_with_key(api_key: str | None) -> ModelFactory:
+    credential_storage = Mock(spec=CredentialStorage)
+    credential_storage.get_auth_method.return_value = "api_key" if api_key else None
+    credential_storage.get_api_key.return_value = api_key
+    return ModelFactory(Mock(spec=ConfigurationManager), credential_storage)
+
+
+class TestOpenAICompatibleAgentTimeout:
+    """Scenario: an agent's timeout_seconds bounds the HTTP read on every
+    OpenAI-compatible path, keyed or not (#189)."""
+
+    @pytest.mark.parametrize(
+        ("provider", "api_key"),
+        [
+            ("llama-server", None),
+            ("openai-compatible", None),
+            ("openai-compatible", "sk-test"),
+        ],
+        ids=["llama-server", "openai-compatible-no-key", "openai-compatible-key"],
+    )
+    async def test_agent_timeout_reaches_the_model(
+        self, provider: str, api_key: str | None
+    ) -> None:
+        model = await _factory_with_key(api_key).load_model(
+            "some-model", provider, timeout_seconds=900
+        )
+
+        assert isinstance(model, OpenAICompatibleModel)
+        assert model._timeout_seconds == 900
+
+
+class TestKeyedAndUnkeyedParity:
+    """Scenario: the keyed and unkeyed openai-compatible paths hand the model
+    the same per-agent parameters; only the credential differs (#189)."""
+
+    async def test_same_settings_build_the_same_model(self) -> None:
+        settings: dict[str, Any] = {
+            "temperature": 0.3,
+            "max_tokens": 77,
+            "options": {"seed": 11},
+            "response_format": "json",
+            "timeout_seconds": 900,
+            "base_url": "http://provider.test/v1",
+        }
+        unkeyed_factory = _factory_with_key(None)
+        keyed_factory = _factory_with_key("sk-test")
+        keyed_factory.execution_id = unkeyed_factory.execution_id
+        unkeyed = await unkeyed_factory.load_model(
+            "some-model", "openai-compatible", **settings
+        )
+        keyed = await keyed_factory.load_model(
+            "some-model", "openai-compatible", **settings
+        )
+
+        unkeyed_state = dict(vars(unkeyed))
+        keyed_state = dict(vars(keyed))
+        assert keyed_state.pop("api_key") == "sk-test"
+        assert unkeyed_state.pop("api_key") is None
+        assert keyed_state == unkeyed_state
