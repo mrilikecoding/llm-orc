@@ -151,7 +151,10 @@ def completion(shell: str | None) -> None:
 @click.option(
     "--config-dir",
     default=None,
-    help="Directory containing ensemble configurations",
+    help=(
+        "Directory of ensemble files, or a config directory (one with a "
+        "config.yaml and an ensembles/ subdirectory; ensembles/ is scanned)"
+    ),
 )
 @click.option(
     "--input-data",
@@ -292,7 +295,10 @@ def remotes(output_format: str | None) -> None:
 @click.option(
     "--config-dir",
     default=None,
-    help="Directory containing ensemble configurations",
+    help=(
+        "Directory of ensemble files, or a config directory with an "
+        "ensembles/ subdirectory (that subdirectory is scanned)"
+    ),
 )
 def list_ensembles(config_dir: str | None) -> None:
     """List available ensembles."""
@@ -763,7 +769,10 @@ def artifacts_show(name: str, format_type: str, execution: str | None) -> None:
 @click.option(
     "--config-dir",
     default=None,
-    help="Directory containing ensemble configurations",
+    help=(
+        "Directory of ensemble files, or a config directory with an "
+        "ensembles/ subdirectory (that subdirectory is scanned)"
+    ),
 )
 @_bind_and_pull_options
 def run(
@@ -845,9 +854,14 @@ def auth_add(
 @click.option(
     "--interactive", "-i", is_flag=True, help="Show interactive menu with actions"
 )
-def auth_list(interactive: bool) -> None:
+@click.option(
+    "--verify",
+    is_flag=True,
+    help="Ask each cloud provider whether its stored key works (one request each)",
+)
+def auth_list(interactive: bool, verify: bool) -> None:
     """List configured authentication providers."""
-    list_auth_providers(interactive)
+    list_auth_providers(interactive, verify)
 
 
 @auth.command("remove")

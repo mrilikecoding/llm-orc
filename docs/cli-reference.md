@@ -30,7 +30,9 @@ llm-orc invoke code-review --input "Review this function: def add(a, b): return 
 # JSON output for integration with other tools
 llm-orc invoke code-review --input "..." --output-format json
 
-# Use specific configuration directory
+# Use a specific directory: a folder of ensemble files, or a config
+# directory (a config.yaml next to an ensembles/ subdirectory; only
+# ensembles/ is scanned)
 llm-orc invoke code-review --config-dir ./custom-config
 
 # Enable streaming for real-time progress (enabled by default)

@@ -17,6 +17,7 @@ import yaml
 from llm_orc.cli_modules.utils.config_utils import (
     display_local_profiles,
     get_available_providers,
+    resolve_ensembles_dir,
 )
 from llm_orc.cli_modules.utils.visualization import (
     run_standard_execution,
@@ -290,7 +291,8 @@ def _root_lookup(
 
     def lookup(name: str) -> Any:
         if config_dir is not None:
-            return _find_ensemble_config(name, [Path(config_dir)], service)
+            root = resolve_ensembles_dir(config_dir)
+            return _find_ensemble_config(name, [root], service)
         return service.find_ensemble_by_name(name)
 
     return lookup
@@ -700,7 +702,7 @@ def _display_remote_document(
 
 def _list_ensembles_from_dir(config_dir: str, service: Any) -> None:
     """List ensembles from a specific directory."""
-    ensembles = service.list_ensembles_in_dir(config_dir)
+    ensembles = service.list_ensembles_in_dir(str(resolve_ensembles_dir(config_dir)))
 
     if not ensembles:
         click.echo(f"No ensembles found in {config_dir}")

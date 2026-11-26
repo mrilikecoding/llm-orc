@@ -21,6 +21,23 @@ def _router_client() -> LlamaServerClient:
     )
 
 
+def resolve_ensembles_dir(config_dir: str | Path) -> Path:
+    """The directory ``--config-dir`` means to scan for ensembles.
+
+    A directory with a ``config.yaml`` file and an ``ensembles/``
+    subdirectory is a config root (the shape of the global config dir), so
+    its ``ensembles/`` is scanned and ``config.yaml``, ``credentials.yaml``
+    and ``profiles/`` are left alone. Any other directory is the ensembles
+    directory itself, so a category folder named ``ensembles`` inside a
+    plain ensembles directory is scanned with its siblings.
+    """
+    path = Path(config_dir)
+    ensembles = path / "ensembles"
+    if (path / "config.yaml").is_file() and ensembles.is_dir():
+        return ensembles
+    return path
+
+
 def safe_load_yaml(file_path: Path) -> dict[str, Any]:
     """Safely load YAML file with error handling.
 

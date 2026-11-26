@@ -114,11 +114,7 @@ class TestConfigurationManager:
                 assert ensembles_dir.exists()
 
                 # Check that template files were copied
-                expected_files = [
-                    "validate-anthropic-api.yaml",
-                    "validate-google-gemini.yaml",
-                    "validate-ollama.yaml",
-                ]
+                expected_files = ["example-local-ensemble.yaml"]
 
                 for filename in expected_files:
                     ensemble_file = ensembles_dir / filename

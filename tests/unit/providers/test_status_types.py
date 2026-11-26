@@ -96,9 +96,15 @@ class TestCloudProviderStatus:
 
     def test_not_configured(self) -> None:
         """Unconfigured provider is not available."""
-        status = CloudProviderStatus(available=False, reason="not configured")
+        status = CloudProviderStatus(
+            available=False, reason="not configured", state="not_configured"
+        )
         dumped = status.model_dump()
-        assert dumped == {"available": False, "reason": "not configured"}
+        assert dumped == {
+            "available": False,
+            "reason": "not configured",
+            "state": "not_configured",
+        }
 
 
 class TestEndpointStatus:

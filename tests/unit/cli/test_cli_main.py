@@ -380,7 +380,7 @@ class TestMainCLI:
         with patch("llm_orc.cli.list_auth_providers") as mock_list:
             result = runner.invoke(cli, ["auth", "list"])
 
-            mock_list.assert_called_once_with(False)
+            mock_list.assert_called_once_with(False, False)
             assert result.exit_code == 0
 
     def test_auth_list_command_interactive(self) -> None:
@@ -390,7 +390,7 @@ class TestMainCLI:
         with patch("llm_orc.cli.list_auth_providers") as mock_list:
             result = runner.invoke(cli, ["auth", "list", "--interactive"])
 
-            mock_list.assert_called_once_with(True)
+            mock_list.assert_called_once_with(True, False)
             assert result.exit_code == 0
 
     def test_auth_remove_command(self) -> None:

@@ -8,6 +8,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Literal
 
+from llm_orc.core.auth.authentication import CredentialStorage
 from llm_orc.core.config.closure import Closure, Key, walk_closure
 from llm_orc.core.config.config_manager import ConfigurationManager
 from llm_orc.core.config.ensemble_config import EnsembleConfig
@@ -16,6 +17,7 @@ from llm_orc.core.execution.scripting.resolver import (
     ScriptResolver,
 )
 from llm_orc.mcp.utils import get_agent_attr as _get_agent_attr
+from llm_orc.providers.key_check import check_api_key, checkable_api_key
 from llm_orc.providers.llama_server import LlamaServerClient
 from llm_orc.providers.status_types import (
     AgentRunnability,
@@ -94,14 +96,28 @@ class ProviderHandler:
         ``profiles`` is the map the OpenAI-compatible endpoints are
         grouped from; the service's own runtime profiles when omitted.
         ``config_manager`` is where credentials are read from; the
-        service's own when omitted.
+        service's own when omitted. A stored key reads as configured
+        without a network call; ``arguments["verify"]`` asks each cloud
+        provider to list its models with that key instead.
         """
         providers: dict[str, Any] = {}
 
         providers["llama-server"] = await self._get_llama_server_status()
 
-        for cloud in ("anthropic-api", "google-gemini"):
-            providers[cloud] = self._get_cloud_provider_status(cloud, config_manager)
+        clouds = ("anthropic-api", "google-gemini")
+        if arguments.get("verify"):
+            checked = await asyncio.gather(
+                *(
+                    self._verify_cloud_provider(cloud, config_manager)
+                    for cloud in clouds
+                )
+            )
+            providers.update(zip(clouds, checked, strict=True))
+        else:
+            for cloud in clouds:
+                providers[cloud] = self._get_cloud_provider_status(
+                    cloud, config_manager
+                )
 
         oai_status = await self._get_openai_compatible_status(profiles)
         providers["openai-compatible"] = oai_status.model_dump()
@@ -135,6 +151,29 @@ class ProviderHandler:
             base_url=base_url,
         ).model_dump()
 
+    async def _verify_cloud_provider(
+        self, provider: str, config_manager: ConfigurationManager | None
+    ) -> dict[str, Any]:
+        """A cloud provider's status from its own list-models call.
+
+        The stored credential decides whether to ask at all, and every
+        call asks afresh: this runs only when a caller asked to verify.
+        """
+        manager = config_manager or self._profile_handler.config_manager
+        status = self._get_cloud_provider_status(provider, manager)
+        if not status["available"]:
+            return status
+        api_key = checkable_api_key(CredentialStorage(manager), provider)
+        if api_key is None:
+            return status
+
+        check = await check_api_key(provider, api_key)
+        return CloudProviderStatus(
+            available=check.state == "accepted",
+            reason=check.reason,
+            state=check.state,
+        ).model_dump()
+
     def _get_cloud_provider_status(
         self, provider: str, config_manager: ConfigurationManager | None = None
     ) -> dict[str, Any]:
@@ -156,7 +195,7 @@ class ProviderHandler:
             return CloudProviderStatus(available=True, reason="configured").model_dump()
 
         return CloudProviderStatus(
-            available=False, reason="not configured"
+            available=False, reason="not configured", state="not_configured"
         ).model_dump()
 
     async def _get_openai_compatible_status(

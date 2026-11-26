@@ -99,7 +99,7 @@ def add_auth_provider(
         raise click.ClickException(f"Failed to add authentication: {str(e)}") from e
 
 
-def list_auth_providers(interactive: bool) -> None:
+def list_auth_providers(interactive: bool, verify: bool = False) -> None:
     """List configured authentication providers."""
     from llm_orc.menu_system import AuthMenus
 
@@ -112,7 +112,7 @@ def list_auth_providers(interactive: bool) -> None:
 
         if not interactive:
             # Simple list view using helper method
-            _display_simple_provider_list(providers, storage)
+            _display_simple_provider_list(providers, storage, verify)
             return
 
         # Interactive mode with action menu
@@ -326,8 +326,25 @@ def _handle_authentication_setup(
     return False  # Continue with next provider
 
 
+def _verification(provider: str, storage: "CredentialStorage") -> str:
+    """The provider's own answer about the stored key, for ``--verify``."""
+    import asyncio
+
+    from llm_orc.providers.key_check import check_api_key, checkable_api_key
+
+    if provider not in ("anthropic-api", "google-gemini"):
+        return " (not checked)"
+    api_key = checkable_api_key(storage, provider)
+    if api_key is None:
+        return " (not checked)"
+    check = asyncio.run(check_api_key(provider, api_key))
+    return f" ({check.state}: {check.reason})"
+
+
 def _display_simple_provider_list(
-    providers: list[str], storage: "CredentialStorage | None" = None
+    providers: list[str],
+    storage: "CredentialStorage | None" = None,
+    verify: bool = False,
 ) -> None:
     """Display a simple list of configured providers.
 
@@ -346,7 +363,8 @@ def _display_simple_provider_list(
             if auth_method == "oauth":
                 click.echo(f"  {provider}: OAuth")
             else:
-                click.echo(f"  {provider}: API key")
+                checked = _verification(provider, storage) if verify else ""
+                click.echo(f"  {provider}: API key{checked}")
         else:
             click.echo(f"  {provider}")
 

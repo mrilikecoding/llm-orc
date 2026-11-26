@@ -1,6 +1,7 @@
 """Pydantic models for provider status and ensemble runnability."""
 
 from enum import StrEnum
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -32,10 +33,20 @@ class LlamaServerProviderStatus(BaseModel):
 
 
 class CloudProviderStatus(BaseModel):
-    """Status of a cloud provider (API key check only)."""
+    """Status of a cloud provider.
+
+    ``state`` tells the callers apart: ``unchecked`` (a stored credential
+    nobody asked the provider about), ``accepted`` (the provider listed its
+    models with the key), ``rejected`` (it refused the credential),
+    ``inconclusive`` (the check did not finish or the provider answered
+    something else) and ``not_configured`` (no credential).
+    """
 
     available: bool
     reason: str = ""
+    state: Literal[
+        "accepted", "rejected", "inconclusive", "unchecked", "not_configured"
+    ] = "unchecked"
 
 
 class EndpointStatus(BaseModel):

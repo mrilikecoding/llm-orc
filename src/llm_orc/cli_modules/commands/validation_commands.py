@@ -8,6 +8,7 @@ from typing import Any
 import click
 
 from llm_orc.cli_commands import _find_ensemble_config
+from llm_orc.cli_modules.utils.config_utils import resolve_ensembles_dir
 from llm_orc.cli_modules.utils.visualization.refusal_display import display_refusal
 from llm_orc.core.config.config_manager import ConfigurationManager
 from llm_orc.services.handlers.run_preparation import RunRefusedError
@@ -48,7 +49,7 @@ def _resolve_ensemble_dirs(
 ) -> list[Path]:
     """Resolve ensemble directories from config_dir or config_manager."""
     if config_dir is not None:
-        return [Path(config_dir)]
+        return [resolve_ensembles_dir(config_dir)]
     dirs = config_manager.get_ensembles_dirs()
     if not dirs:
         click.echo(

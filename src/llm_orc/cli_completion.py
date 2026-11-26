@@ -1,10 +1,11 @@
 """Tab completion support for llm-orc CLI."""
 
-from pathlib import Path
-
 import click
 
-from llm_orc.cli_modules.utils.config_utils import get_available_providers
+from llm_orc.cli_modules.utils.config_utils import (
+    get_available_providers,
+    resolve_ensembles_dir,
+)
 from llm_orc.core.config.config_manager import ConfigurationManager
 from llm_orc.core.config.ensemble_config import EnsembleLoader
 
@@ -28,7 +29,7 @@ def complete_ensemble_names(
 
         # Get ensemble directories
         if config_dir:
-            ensemble_dirs = [Path(config_dir)]
+            ensemble_dirs = [resolve_ensembles_dir(config_dir)]
         else:
             # Initialize configuration manager
             config_manager = ConfigurationManager(provision=False)

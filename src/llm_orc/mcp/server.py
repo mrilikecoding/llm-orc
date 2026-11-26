@@ -749,14 +749,19 @@ class MCPServer:
         """Register provider & model discovery tools."""
 
         @self._mcp.tool()
-        async def get_provider_status() -> dict[str, Any]:
+        async def get_provider_status(verify: bool = False) -> dict[str, Any]:
             """Show which providers are configured and available models.
 
             Returns status of all providers including:
             - llama-server: models the local router serves
             - Cloud providers: Whether authentication is configured
+
+            With verify=true each cloud provider is asked to list its
+            models with the stored key (one request each, no tokens):
+            state is accepted, rejected or inconclusive. By default a
+            stored key reads as configured and nothing is sent.
             """
-            result = await self._service.get_provider_status({})
+            result = await self._service.get_provider_status({"verify": verify})
             return result
 
         @self._mcp.tool()
