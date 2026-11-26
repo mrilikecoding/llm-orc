@@ -2,7 +2,8 @@
 
 This module implements the MCP server following ADR-009, providing:
 - Resource exposure for ensembles, artifacts, metrics, and profiles
-- Tools for invoke, validate_ensemble, update_ensemble, analyze_execution
+- Tools (invoke, validate_ensemble, update_ensemble, and the rest) registered
+  with FastMCP, whose registry is the list a client sees
 - Streaming support for long-running executions
 """
 
