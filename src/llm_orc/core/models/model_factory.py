@@ -205,7 +205,7 @@ class ModelFactory:
                 execution_id=self.execution_id,
             )
 
-        # Create authenticated model (cloud providers don't use options)
+        # Create authenticated model (only openai-compatible reads options)
         return _create_authenticated_model(
             model_name,
             provider,
@@ -213,6 +213,8 @@ class ModelFactory:
             storage,
             temperature=temperature,
             max_tokens=max_tokens,
+            options=options,
+            response_format=response_format,
             base_url=base_url,
             execution_id=self.execution_id,
         )
@@ -645,6 +647,8 @@ def _create_authenticated_model(
     *,
     temperature: float | None = None,
     max_tokens: int | None = None,
+    options: dict[str, Any] | None = None,
+    response_format: str | dict[str, Any] | None = None,
     base_url: str | None = None,
     execution_id: str | None = None,
 ) -> ModelInterface:
@@ -657,6 +661,8 @@ def _create_authenticated_model(
         storage: Credential storage instance
         temperature: Optional temperature for generation
         max_tokens: Optional max tokens for generation
+        options: Optional provider-specific options (openai-compatible only)
+        response_format: Optional structured-output format (openai-compatible only)
         base_url: Optional base URL for OpenAI-compatible endpoints
         execution_id: Stable id for the top-level ensemble execution
 
@@ -678,6 +684,8 @@ def _create_authenticated_model(
             provider,
             temperature=temperature,
             max_tokens=max_tokens,
+            options=options,
+            response_format=response_format,
             base_url=base_url,
             execution_id=execution_id,
         )
@@ -771,6 +779,8 @@ def _create_api_key_model(
     *,
     temperature: float | None = None,
     max_tokens: int | None = None,
+    options: dict[str, Any] | None = None,
+    response_format: str | dict[str, Any] | None = None,
     base_url: str | None = None,
     execution_id: str | None = None,
     timeout_seconds: float | None = None,
@@ -783,6 +793,8 @@ def _create_api_key_model(
         provider: Optional provider name
         temperature: Optional temperature for generation
         max_tokens: Optional max tokens for generation
+        options: Optional provider-specific options (openai-compatible only)
+        response_format: Optional structured-output format (openai-compatible only)
         base_url: Optional base URL for OpenAI-compatible endpoints
         execution_id: Stable id for the top-level ensemble execution
 
@@ -811,6 +823,8 @@ def _create_api_key_model(
             api_key=api_key,
             temperature=temperature,
             max_tokens=max_tokens,
+            options=options,
+            response_format=response_format,
             execution_id=execution_id,
             timeout_seconds=timeout_seconds,
         )

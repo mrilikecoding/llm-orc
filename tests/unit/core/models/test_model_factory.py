@@ -1,7 +1,7 @@
 """Tests for ModelFactory."""
 
 from typing import Any, cast
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
 
@@ -809,6 +809,8 @@ class TestLoadModelHelperMethods:
             "anthropic",
             temperature=None,
             max_tokens=None,
+            options=None,
+            response_format=None,
             base_url=None,
             execution_id=None,
         )
@@ -1849,3 +1851,50 @@ class TestTimeoutSecondsPassThrough:
         )
         assert isinstance(model, OpenAICompatibleModel)
         assert model._timeout_seconds == 900
+
+
+class TestOpenAICompatibleRequestBody:
+    """Scenario: what a hosted provider receives for a profile's options and
+    an agent's response_format, with and without a stored API key (#189)."""
+
+    @pytest.mark.parametrize(
+        ("provider", "api_key"),
+        [
+            ("llama-server", None),
+            ("openai-compatible", None),
+            ("openai-compatible", "sk-test"),
+        ],
+        ids=["llama-server", "openai-compatible-no-key", "openai-compatible-key"],
+    )
+    async def test_request_body_carries_options_and_response_format(
+        self, provider: str, api_key: str | None
+    ) -> None:
+        credential_storage = Mock(spec=CredentialStorage)
+        credential_storage.get_auth_method.return_value = "api_key" if api_key else None
+        credential_storage.get_api_key.return_value = api_key
+        factory = ModelFactory(Mock(spec=ConfigurationManager), credential_storage)
+        response = MagicMock()
+        response.status_code = 200
+        response.json.return_value = {
+            "choices": [{"message": {"content": "{}"}}],
+            "usage": {"prompt_tokens": 1, "completion_tokens": 1},
+        }
+        client = AsyncMock()
+        client.post.return_value = response
+
+        model = await factory.load_model(
+            "some-model",
+            provider,
+            base_url="http://provider.test/v1",
+            options={"seed": 11},
+            response_format="json",
+        )
+        with patch(
+            "llm_orc.models.openai_compat.HTTPConnectionPool.get_httpx_client",
+            return_value=client,
+        ):
+            await model.generate_response("hello", role_prompt="system prompt")
+
+        body = client.post.call_args[1]["json"]
+        assert body["seed"] == 11
+        assert body["response_format"] == {"type": "json_object"}
