@@ -5,6 +5,51 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.25.5] - 2026-11-25
+
+### Security
+- Every service operation that turns a request-supplied name into a
+  path now stays inside the directory it is about. Before this, a
+  crafted name over REST or MCP could: rewrite, delete or create an
+  ensemble, profile or script file outside its scope directory; read
+  and run a `.py` file above the scripts directory (`get_script`,
+  `test_script`); remove a directory beside the artifacts base
+  (`delete_artifact`, `cleanup_artifacts`); delete a file outside a
+  tier (`demote_ensemble`); and write to any path or read outside the
+  library (`library_copy`). Writes no longer follow a link that leaves
+  the directory. A serve still runs the scripts a client ships with a
+  run, so this is not an access boundary (#191).
+
+### Fixed
+- An accepted build ships the code the gate verified. The gate repairs
+  a candidate before running the suite (workspace imports, trimming to
+  what parses), but the build envelope re-derived the code from the
+  model's text, so a deliverable could be accepted on bytes the client
+  never received. The envelope now carries the code that ran, and
+  accepts only with that code in hand (#181).
+- `update_ensemble` (MCP tool and `PUT /api/ensembles/{name}`) applies
+  `add_agents` and `remove_agents`. It used to write a backup and
+  report `modified: true` without changing the file. The result is
+  validated before an atomic write; unknown keys and wrong argument
+  shapes are refused; a leading comment block is kept, comments inside
+  the document are not (#191).
+- OpenAI-compatible profiles with a stored API key get the profile's
+  `options` and `response_format` and the agent's `timeout_seconds`.
+  All three were dropped on that path, so a hosted seat ignored JSON
+  mode and read to the 180 s default (#189).
+- `delete_ensemble` and `update_ensemble` refuse a symlinked ensemble,
+  so a project-scope delete cannot unlink a serving shape in a checkout
+  (#106).
+
+### Changed
+- `library_copy`'s `destination` is a file name inside the local
+  ensembles or scripts directory. It was any path, relative to the
+  working directory.
+- The ensemble create, update and delete routes answer a not-found
+  with 404 and any other refused call with 400; they answered 500.
+- Creating an ensemble or script under a subdirectory that does not
+  exist creates it. A profile name cannot contain a directory.
+
 ## [0.25.4] - 2026-11-25
 
 ### Added
