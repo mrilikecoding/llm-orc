@@ -28,6 +28,9 @@ from _helpers import response as _response
 from _helpers import terminal as _terminal
 
 
+_UNVERIFIED_REASON = "verified code unavailable; nothing was written"
+
+
 def _executor_result(deps: dict[str, object]) -> dict[str, object]:
     try:
         parsed = json.loads(_response(deps.get("executor", {})))
@@ -39,6 +42,28 @@ def _executor_result(deps: dict[str, object]) -> dict[str, object]:
 
 
 
+
+
+def _executed_code(deps: dict[str, object]) -> str | None:
+    """The code the executor ran, echoed back (#181), or None when the
+    executor's output is unreadable or carries no string ``code``.
+
+    accept_gather repairs the candidate (injected workspace imports,
+    trimmed trailing prose) before the suite runs, and the executor echoes
+    the result. Never stringified: a non-string is not the verified code."""
+    code = _executor_result(deps).get("code")
+    return code if isinstance(code, str) else None
+
+
+def _deliverable_code(deps: dict[str, object], executed: str | None) -> str:
+    """What the envelope carries: the executed code when there is one. The
+    raw extraction is only the fallback for a round with no executed code,
+    and such a round can never be accepted (see main)."""
+    if executed is not None:
+        return executed
+    return _extract_code(
+        _terminal(_response(deps.get("code_writer", {}))), drop_test_blocks=True
+    )
 
 
 def _verdict(deps: dict[str, object]) -> dict[str, object]:
@@ -63,9 +88,8 @@ def _held_round(deps: dict[str, object]) -> bool:
 def main() -> None:
     payload = _payload(sys.stdin.read().strip())
     deps = _deps(payload)
-    code = _extract_code(
-        _terminal(_response(deps.get("code_writer", {}))), drop_test_blocks=True
-    )
+    executed = _executed_code(deps)
+    code = _deliverable_code(deps, executed)
     verdict = _verdict(deps)
     summary = code.splitlines()[0][:80] if code.strip() else "code deliverable"
 
@@ -77,6 +101,11 @@ def main() -> None:
         "tests_adequate": bool(verdict.get("tests_adequate", False)),
         "held_round": _held_round(deps),
     }
+    if diagnostics["accept"] and not (executed and executed.strip()):
+        # accept is a claim about the shipped bytes; with no verified code in
+        # hand there is nothing to claim it about, whatever the gate said
+        diagnostics["accept"] = False
+        diagnostics["accept_reason"] = _UNVERIFIED_REASON
     if not diagnostics["accept"]:
         # the bounded retry round's carry REPLACES the next iteration's
         # input (loop primitive semantics), so compose turn + evidence here

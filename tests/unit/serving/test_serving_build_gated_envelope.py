@@ -30,15 +30,18 @@ def _sub_ensemble_response(terminal_text: str) -> str:
     )
 
 
-def _envelope(code_terminal: str, gate_verdict: dict[str, Any]) -> dict[str, Any]:
-    payload = json.dumps(
-        {
-            "dependencies": {
-                "code_writer": {"response": _sub_ensemble_response(code_terminal)},
-                "accept_gate": {"response": json.dumps(gate_verdict)},
-            }
-        }
-    )
+def _envelope(
+    code_terminal: str,
+    gate_verdict: dict[str, Any],
+    executor_code: str | None = None,
+) -> dict[str, Any]:
+    deps: dict[str, Any] = {
+        "code_writer": {"response": _sub_ensemble_response(code_terminal)},
+        "accept_gate": {"response": json.dumps(gate_verdict)},
+    }
+    if executor_code is not None:
+        deps["executor"] = {"response": json.dumps({"code": executor_code})}
+    payload = json.dumps({"dependencies": deps})
     out = subprocess.run(
         [sys.executable, str(ENVELOPE)],
         input=payload,
@@ -54,6 +57,7 @@ def test_envelope_carries_code_and_accept_verdict() -> None:
     env = _envelope(
         "def f():\n    return 1",
         {"accept": True, "tests_pass": True, "tests_adequate": True, "reason": "ok"},
+        executor_code="def f():\n    return 1",
     )
     assert env["status"] == "success"
     assert env["artifacts"][0]["content"] == "def f():\n    return 1"
@@ -120,9 +124,10 @@ def test_envelope_carries_reject_verdict_and_reason() -> None:
 
 
 def test_envelope_extracts_code_from_fenced_seat_output() -> None:
+    """Fallback extraction: only a rejected round lacks executed code."""
     env = _envelope(
         "Here it is:\n```python\nx = 1\n```",
-        {"accept": True, "reason": "ok"},
+        {"accept": False, "reason": "no"},
     )
     assert env["artifacts"][0]["content"] == "x = 1"
 
@@ -133,7 +138,7 @@ def test_envelope_drops_a_seat_emitted_test_fence_from_the_deliverable() -> None
     env = _envelope(
         "Code:\n```python\nx = 1\n```\nTests:\n"
         "```python\ndef test_x():\n    assert x == 1\n```",
-        {"accept": True, "reason": "ok"},
+        {"accept": False, "reason": "no"},
     )
     assert env["artifacts"][0]["content"] == "x = 1"
 
@@ -289,6 +294,7 @@ def test_accept_envelope_has_no_retry_input() -> None:
         "def f():\n    return 1",
         {"accept": True, "tests_pass": True, "tests_adequate": True, "reason": "ok"},
         base_input="Write f() in f.py",
+        executor_extra={"code": "def f():\n    return 1"},
     )
     assert env["diagnostics"]["accept"] is True
     assert "retry_input" not in env["diagnostics"]

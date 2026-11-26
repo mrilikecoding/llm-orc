@@ -238,14 +238,16 @@ class TestAnEmptyDeliverableIsNeverAClientWrite:
         tests_adequate cannot notice either."""
         envelope = _build_gated_envelope("", "fix helpers.py so restock adds one")
 
-        assert envelope["diagnostics"]["accept"] is True
+        # the gate accepts (workspace-satisfied); the envelope holds no
+        # verified code to claim that about (#181), so it refuses first
+        assert envelope["diagnostics"]["accept"] is False
         assert envelope["artifacts"][0]["content"] == ""
 
         outcome = _serving_tail("build-gated", _seat_wire(envelope), "solution.py")
         chunks = _chunks(outcome)
 
         assert not any(isinstance(chunk, ClientToolCall) for chunk in chunks)
-        assert "solution.py" in _text(chunks)
+        assert "verified code unavailable" in _text(chunks)
 
     def test_a_whitespace_only_deliverable_refuses(self) -> None:
         """Kills a ``== ""`` implementation. The rule is emptiness after
