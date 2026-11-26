@@ -27,6 +27,14 @@ from llm_orc.services.orchestra_service import OrchestraService
 PROVIDERS = ["anthropic-api", "google-gemini"]
 
 
+@pytest.fixture(autouse=True)
+def _empty_cwd(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Run from an empty directory: a checkout's own untracked profiles
+    would add OpenAI-compatible endpoint probes to the requests these
+    tests count."""
+    monkeypatch.chdir(tmp_path)
+
+
 class _Wire:
     """What the provider says next, and every request that reached it."""
 
@@ -374,14 +382,9 @@ async def test_rate_limited_valid_key_does_not_block_the_run(
 # --- The callers that ask -----------------------------------------------------
 
 
-async def test_mcp_tool_verifies_only_when_asked(
-    wire: _Wire, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+async def test_mcp_tool_verifies_only_when_asked(wire: _Wire) -> None:
     from llm_orc.mcp.server import MCPServer
 
-    # An empty cwd: a checkout's own untracked profiles would add
-    # OpenAI-compatible endpoint probes to the requests counted here.
-    monkeypatch.chdir(tmp_path)
     CredentialStorage(ConfigurationManager(provision=False)).store_api_key(
         "anthropic-api", "a-key"
     )
