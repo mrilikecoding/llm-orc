@@ -368,7 +368,7 @@ class TestMcpCrudScope:
 def _setup_delete_ensemble(global_dir: Path) -> dict[str, Any]:
     target = global_dir / "ensembles" / "only-global.yaml"
     target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text("name: only-global\nagents: []\n")
+    target.write_text("name: only-global\ndescription: d\nagents: []\n")
     return {"ensemble_name": "only-global", "confirm": True, "scope": "global"}
 
 
@@ -386,10 +386,10 @@ def _check_delete_ensemble(
 def _setup_update_ensemble(global_dir: Path) -> dict[str, Any]:
     target = global_dir / "ensembles" / "only-global.yaml"
     target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text("name: only-global\nagents: []\n")
+    target.write_text("name: only-global\ndescription: d\nagents: []\n")
     return {
         "ensemble_name": "only-global",
-        "changes": {"add_agents": []},
+        "changes": {"add_agents": [{"name": "a", "model_profile": "p"}]},
         "dry_run": False,
         "scope": "global",
     }
@@ -411,7 +411,7 @@ def _check_update_ensemble(
         "update_ensemble",
         {
             "ensemble_name": "only-global",
-            "changes": {"add_agents": []},
+            "changes": {"add_agents": [{"name": "a", "model_profile": "p"}]},
             "dry_run": False,
         },
         rpc_id=10,

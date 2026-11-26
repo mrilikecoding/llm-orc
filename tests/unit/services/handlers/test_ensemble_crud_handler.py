@@ -13,7 +13,15 @@ from llm_orc.core.config.config_manager import (
     ConfigurationManager,
     resolve_global_config_dir,
 )
+from llm_orc.core.config.ensemble_config import EnsembleLoader
 from llm_orc.services.handlers.ensemble_crud_handler import EnsembleCrudHandler
+
+_MY_ENSEMBLE: dict[str, Any] = {
+    "name": "my-ensemble",
+    "description": "A test ensemble",
+    "agents": [],
+}
+_AGENT_X: dict[str, Any] = {"name": "agent-x", "model_profile": "p"}
 
 
 def _make_handler(
@@ -175,12 +183,12 @@ class TestUpdateEnsemble:
         ensembles_dir = tmp_path / "ensembles"
         ensembles_dir.mkdir()
         ensemble_file = ensembles_dir / "my-ensemble.yaml"
-        ensemble_file.write_text(yaml.dump({"name": "my-ensemble", "agents": []}))
+        ensemble_file.write_text(yaml.dump(_MY_ENSEMBLE))
 
         handler = _make_handler(
             ensemble_dirs=[str(ensembles_dir)], local_config_dir=tmp_path
         )
-        changes: dict[str, Any] = {"add_agents": [{"name": "agent-x"}]}
+        changes: dict[str, Any] = {"add_agents": [_AGENT_X]}
 
         result = await handler.update_ensemble(
             {
@@ -198,9 +206,7 @@ class TestUpdateEnsemble:
         """dry_run defaults to True when omitted from arguments."""
         ensembles_dir = tmp_path / "ensembles"
         ensembles_dir.mkdir()
-        (ensembles_dir / "my-ensemble.yaml").write_text(
-            yaml.dump({"name": "my-ensemble", "agents": []})
-        )
+        (ensembles_dir / "my-ensemble.yaml").write_text(yaml.dump(_MY_ENSEMBLE))
 
         handler = _make_handler(
             ensemble_dirs=[str(ensembles_dir)], local_config_dir=tmp_path
@@ -215,12 +221,12 @@ class TestUpdateEnsemble:
         ensembles_dir = tmp_path / "ensembles"
         ensembles_dir.mkdir()
         ensemble_file = ensembles_dir / "my-ensemble.yaml"
-        ensemble_file.write_text(yaml.dump({"name": "my-ensemble", "agents": []}))
+        ensemble_file.write_text(yaml.dump(_MY_ENSEMBLE))
 
         handler = _make_handler(
             ensemble_dirs=[str(ensembles_dir)], local_config_dir=tmp_path
         )
-        changes: dict[str, Any] = {"add_agents": [{"name": "agent-x"}]}
+        changes: dict[str, Any] = {"add_agents": [_AGENT_X]}
 
         result = await handler.update_ensemble(
             {
@@ -239,7 +245,7 @@ class TestUpdateEnsemble:
         ensembles_dir = tmp_path / "ensembles"
         ensembles_dir.mkdir()
         ensemble_file = ensembles_dir / "my-ensemble.yaml"
-        original_content = yaml.dump({"name": "my-ensemble", "agents": []})
+        original_content = yaml.dump(_MY_ENSEMBLE)
         ensemble_file.write_text(original_content)
 
         handler = _make_handler(
@@ -249,7 +255,7 @@ class TestUpdateEnsemble:
         result = await handler.update_ensemble(
             {
                 "ensemble_name": "my-ensemble",
-                "changes": {},
+                "changes": {"add_agents": [_AGENT_X]},
                 "dry_run": False,
                 "backup": True,
             }
@@ -264,9 +270,7 @@ class TestUpdateEnsemble:
         """backup=False leaves no .yaml.bak file."""
         ensembles_dir = tmp_path / "ensembles"
         ensembles_dir.mkdir()
-        (ensembles_dir / "my-ensemble.yaml").write_text(
-            yaml.dump({"name": "my-ensemble", "agents": []})
-        )
+        (ensembles_dir / "my-ensemble.yaml").write_text(yaml.dump(_MY_ENSEMBLE))
 
         handler = _make_handler(
             ensemble_dirs=[str(ensembles_dir)], local_config_dir=tmp_path
@@ -275,7 +279,7 @@ class TestUpdateEnsemble:
         result = await handler.update_ensemble(
             {
                 "ensemble_name": "my-ensemble",
-                "changes": {},
+                "changes": {"add_agents": [_AGENT_X]},
                 "dry_run": False,
                 "backup": False,
             }
@@ -695,3 +699,204 @@ class TestEnsembleScope:
             )
 
         assert global_file.exists()
+
+
+_COMPOSED_ENSEMBLE = """\
+name: composed
+description: Has agents with the properties issue 200 reported stripped
+agents:
+  - name: splitter
+    script: split.py
+    parameters:
+      size: 3
+  - name: each
+    ensemble: child-ens
+    depends_on:
+      - splitter
+    fan_out: true
+    input_key: items
+  - name: summary
+    model_profile: p1
+    depends_on:
+      - each
+"""
+
+
+def _write_ensemble(tmp_path: Path, text: str, name: str = "composed") -> Path:
+    ensembles_dir = tmp_path / "ensembles"
+    ensembles_dir.mkdir(exist_ok=True)
+    path = ensembles_dir / f"{name}.yaml"
+    path.write_text(text)
+    return path
+
+
+def _project_handler(tmp_path: Path) -> EnsembleCrudHandler:
+    return _make_handler(
+        ensemble_dirs=[str(tmp_path / "ensembles")], local_config_dir=tmp_path
+    )
+
+
+def _update_args(**overrides: Any) -> dict[str, Any]:
+    args: dict[str, Any] = {
+        "ensemble_name": "composed",
+        "dry_run": False,
+        "backup": False,
+    }
+    args.update(overrides)
+    return args
+
+
+class TestUpdateEnsembleWritesChanges:
+    """A non-dry-run update that reports modified has changed the file."""
+
+    async def test_add_agent_is_on_disk_and_loads(self, tmp_path: Path) -> None:
+        path = _write_ensemble(tmp_path, _COMPOSED_ENSEMBLE)
+        handler = _project_handler(tmp_path)
+
+        result = await handler.update_ensemble(
+            _update_args(
+                changes={
+                    "add_agents": [
+                        {"name": "extra", "model_profile": "p2", "depends_on": ["each"]}
+                    ]
+                }
+            )
+        )
+
+        assert result["modified"] is True
+        loaded = EnsembleLoader().load_from_file(str(path))
+        assert [a.name for a in loaded.agents] == [
+            "splitter",
+            "each",
+            "summary",
+            "extra",
+        ]
+
+    async def test_remove_agent_is_gone_from_disk(self, tmp_path: Path) -> None:
+        path = _write_ensemble(tmp_path, _COMPOSED_ENSEMBLE)
+        handler = _project_handler(tmp_path)
+
+        result = await handler.update_ensemble(
+            _update_args(changes={"remove_agents": ["summary"]})
+        )
+
+        assert result["modified"] is True
+        loaded = EnsembleLoader().load_from_file(str(path))
+        assert [a.name for a in loaded.agents] == ["splitter", "each"]
+
+    async def test_unrelated_agent_properties_survive(self, tmp_path: Path) -> None:
+        path = _write_ensemble(tmp_path, _COMPOSED_ENSEMBLE)
+        before = yaml.safe_load(path.read_text())
+        handler = _project_handler(tmp_path)
+
+        await handler.update_ensemble(
+            _update_args(changes={"remove_agents": ["summary"]})
+        )
+
+        after = yaml.safe_load(path.read_text())
+        assert after["agents"] == before["agents"][:2]
+        assert after["name"] == before["name"]
+        assert after["description"] == before["description"]
+        assert list(after) == list(before)
+
+    async def test_no_op_change_reports_not_modified(self, tmp_path: Path) -> None:
+        path = _write_ensemble(tmp_path, _COMPOSED_ENSEMBLE)
+        handler = _project_handler(tmp_path)
+
+        result = await handler.update_ensemble(
+            _update_args(changes={"add_agents": []}, backup=True)
+        )
+
+        assert result["modified"] is False
+        assert path.read_text() == _COMPOSED_ENSEMBLE
+        assert not (path.parent / "composed.yaml.bak").exists()
+
+    async def test_backup_holds_the_pre_change_content(self, tmp_path: Path) -> None:
+        path = _write_ensemble(tmp_path, _COMPOSED_ENSEMBLE)
+        handler = _project_handler(tmp_path)
+
+        result = await handler.update_ensemble(
+            _update_args(changes={"remove_agents": ["summary"]}, backup=True)
+        )
+
+        assert result["backup_created"] is True
+        backup = path.parent / "composed.yaml.bak"
+        assert backup.read_text() == _COMPOSED_ENSEMBLE
+        assert "summary" not in path.read_text()
+
+
+class TestUpdateEnsembleRefusals:
+    """A refused update changes nothing on disk."""
+
+    async def _assert_refused(
+        self, tmp_path: Path, changes: dict[str, Any], match: str
+    ) -> None:
+        path = _write_ensemble(tmp_path, _COMPOSED_ENSEMBLE)
+        handler = _project_handler(tmp_path)
+
+        with pytest.raises(ValueError, match=match):
+            await handler.update_ensemble(_update_args(changes=changes, backup=True))
+
+        assert path.read_text() == _COMPOSED_ENSEMBLE
+        assert not (path.parent / "composed.yaml.bak").exists()
+
+    async def test_unknown_key_names_the_supported_keys(self, tmp_path: Path) -> None:
+        await self._assert_refused(
+            tmp_path,
+            {"rename": "x"},
+            r"Unsupported.*rename.*add_agents.*remove_agents",
+        )
+
+    async def test_removing_a_depended_on_agent_is_refused(
+        self, tmp_path: Path
+    ) -> None:
+        await self._assert_refused(
+            tmp_path, {"remove_agents": ["each"]}, "missing dependency"
+        )
+
+    async def test_removing_an_unknown_agent_is_refused(self, tmp_path: Path) -> None:
+        await self._assert_refused(
+            tmp_path, {"remove_agents": ["nope"]}, "no agent named 'nope'"
+        )
+
+    async def test_adding_a_duplicate_name_is_refused(self, tmp_path: Path) -> None:
+        await self._assert_refused(
+            tmp_path,
+            {"add_agents": [{"name": "each", "model_profile": "p"}]},
+            "already has an agent named 'each'",
+        )
+
+    async def test_invalid_result_is_refused(self, tmp_path: Path) -> None:
+        await self._assert_refused(
+            tmp_path,
+            {"add_agents": [{"name": "bad", "bogus_field": 1}]},
+            "invalid ensemble",
+        )
+
+    async def test_dry_run_refuses_the_same_way(self, tmp_path: Path) -> None:
+        path = _write_ensemble(tmp_path, _COMPOSED_ENSEMBLE)
+        handler = _project_handler(tmp_path)
+
+        with pytest.raises(ValueError, match="Unsupported"):
+            await handler.update_ensemble(
+                _update_args(changes={"rename": "x"}, dry_run=True)
+            )
+
+        assert path.read_text() == _COMPOSED_ENSEMBLE
+
+
+class TestUpdateEnsembleDryRun:
+    async def test_dry_run_writes_nothing(self, tmp_path: Path) -> None:
+        path = _write_ensemble(tmp_path, _COMPOSED_ENSEMBLE)
+        handler = _project_handler(tmp_path)
+
+        result = await handler.update_ensemble(
+            _update_args(
+                changes={"remove_agents": ["summary"]}, dry_run=True, backup=True
+            )
+        )
+
+        assert result["modified"] is False
+        assert result["backup_created"] is False
+        assert path.read_text() == _COMPOSED_ENSEMBLE
+        assert [p.name for p in path.parent.iterdir()] == ["composed.yaml"]

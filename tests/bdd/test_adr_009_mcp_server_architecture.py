@@ -55,6 +55,9 @@ def _create_mock_config_manager(
 
     mock_config = MagicMock()
     mock_config.get_ensembles_dirs.return_value = [str(d) for d in ensemble_dirs]
+    if ensemble_dirs:
+        # A real project dir, so writes resolve to real files, not mocks.
+        mock_config.local_config_dir = Path(ensemble_dirs[0]).parent
     # Set global_config_dir to the artifacts directory itself
     mock_config.global_config_dir = str(artifacts_dir) if artifacts_dir else ""
     mock_config.get_model_profiles.return_value = _MOCK_PROFILES

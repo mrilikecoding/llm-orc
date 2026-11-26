@@ -382,7 +382,10 @@ class MCPServer:
 
             Args:
                 ensemble_name: Name of the ensemble to update
-                changes: Changes to apply (add_agents, remove_agents, etc.)
+                changes: Changes to apply. Supported keys: add_agents (list of
+                    agent mappings) and remove_agents (list of agent names).
+                    Any other key is refused, and so is a result that does not
+                    load as a valid ensemble.
                 dry_run: If True, only preview changes without applying
                 backup: If True, create backup before modifying
                 scope: Which scope holds the item: "project" (default) or "global"

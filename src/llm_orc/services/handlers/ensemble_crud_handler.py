@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import tempfile
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -43,6 +44,45 @@ _PRESERVED_FIELDS = (
     "loop",
     "dispatch",
 )
+
+
+_SUPPORTED_CHANGES = ("add_agents", "remove_agents")
+
+
+def _dump_ensemble(data: dict[str, Any]) -> str:
+    """YAML for ``data`` keeping key order (``sort_keys`` would reorder)."""
+    return yaml.dump(data, default_flow_style=False, sort_keys=False)
+
+
+def _apply_changes(
+    data: dict[str, Any], changes: dict[str, Any], name: str
+) -> dict[str, Any]:
+    """Return ``data`` with ``changes`` applied; ``data`` is not mutated.
+
+    Raises:
+        ValueError: for an unsupported key, a removal of an agent the
+            ensemble does not have, or an added name that already exists.
+    """
+    unknown = sorted(set(changes) - set(_SUPPORTED_CHANGES))
+    if unknown:
+        raise ValueError(
+            f"Unsupported changes key(s) {unknown}; "
+            f"supported keys: {list(_SUPPORTED_CHANGES)}"
+        )
+    agents: list[dict[str, Any]] = list(data.get("agents") or [])
+    for agent_name in changes.get("remove_agents") or []:
+        if not any(a.get("name") == agent_name for a in agents):
+            raise ValueError(f"Ensemble '{name}' has no agent named '{agent_name}'")
+        agents = [a for a in agents if a.get("name") != agent_name]
+    for new_agent in changes.get("add_agents") or []:
+        if not isinstance(new_agent, dict) or not new_agent.get("name"):
+            raise ValueError("Each add_agents entry must be a mapping with a name")
+        if any(a.get("name") == new_agent["name"] for a in agents):
+            raise ValueError(
+                f"Ensemble '{name}' already has an agent named '{new_agent['name']}'"
+            )
+        agents.append(dict(new_agent))
+    return {**data, "agents": agents}
 
 
 def _agent_to_dict(agent: Any) -> dict[str, Any]:
@@ -224,6 +264,11 @@ class EnsembleCrudHandler:
         scope = parse_scope(arguments)
         ensemble_path = self._find_in_scope(ensemble_name, scope)
 
+        original_text = ensemble_path.read_text()
+        original = yaml.safe_load(original_text)
+        updated = _apply_changes(original, changes, ensemble_name)
+        self._validate_candidate(updated, ensemble_name)
+
         if dry_run:
             return {
                 "preview": changes,
@@ -231,17 +276,48 @@ class EnsembleCrudHandler:
                 "backup_created": False,
             }
 
+        if updated == original:
+            return {
+                "modified": False,
+                "backup_created": False,
+                "changes_applied": {},
+            }
+
         backup_created = False
         if backup:
             backup_path = ensemble_path.with_suffix(".yaml.bak")
-            backup_path.write_text(ensemble_path.read_text())
+            backup_path.write_text(original_text)
             backup_created = True
+
+        ensemble_path.write_text(_dump_ensemble(updated))
 
         return {
             "modified": True,
             "backup_created": backup_created,
             "changes_applied": changes,
         }
+
+    def _validate_candidate(self, data: dict[str, Any], name: str) -> None:
+        """Load ``data`` through the real ensemble loader before any write.
+
+        Raises:
+            ValueError: when the loader rejects the result, with its reason.
+        """
+        search_dirs = [str(d) for d in self._config_manager.get_ensembles_dirs()]
+        with tempfile.TemporaryDirectory() as tmp:
+            candidate = Path(tmp) / f"{name}.yaml"
+            candidate.write_text(_dump_ensemble(data))
+            try:
+                EnsembleLoader().load_from_file(str(candidate), search_dirs)
+            except KeyError as e:
+                raise ValueError(
+                    f"Update would produce an invalid ensemble '{name}': "
+                    f"missing required key {e}"
+                ) from e
+            except Exception as e:
+                raise ValueError(
+                    f"Update would produce an invalid ensemble '{name}': {e}"
+                ) from e
 
     async def analyze_execution(self, arguments: dict[str, Any]) -> dict[str, Any]:
         """Analyze an execution artifact.
