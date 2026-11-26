@@ -8,6 +8,7 @@ between the profile set and the inference process; nothing else in the
 project knows how a model gets onto the box.
 """
 
+import http.client
 import json
 import os
 import re
@@ -280,10 +281,22 @@ class LlamaServerClient:
         return cls(root)
 
     def _list(self) -> list[dict[str, Any]]:
-        """One ``GET /models``, the raw ``data`` list."""
-        with _DIRECT.open(f"{self.root_url}/models", timeout=5) as resp:
-            data = json.load(resp)
-        return [m for m in data.get("data", []) if isinstance(m, dict)]
+        """One ``GET /models``, the ``data`` entries that name a model: an
+        entry without a non-empty string ``id`` is dropped here, so no
+        caller can route to ``""`` or trip over a missing key."""
+        try:
+            with _DIRECT.open(f"{self.root_url}/models", timeout=5) as resp:
+                data = json.load(resp)
+        except http.client.IncompleteRead as e:
+            raise OSError(f"router listing cut short: {e}") from e
+        entries = data.get("data", []) if isinstance(data, dict) else None
+        if not isinstance(entries, list):
+            raise ValueError("router listing is not an object with a data list")
+        return [
+            m
+            for m in entries
+            if isinstance(m, dict) and isinstance(m.get("id"), str) and m["id"]
+        ]
 
     def inventory(self) -> RouterInventory:
         """Routable models and cached sources from one listing.

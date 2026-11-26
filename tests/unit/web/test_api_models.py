@@ -2,14 +2,18 @@
 serves and pull a model, so a remote operator never needs ssh or a
 separate inference app."""
 
+import http.client
+import io
+import json
 import threading
 import time
 from typing import Any
 from unittest.mock import MagicMock, patch
 
+import pytest
 from fastapi.testclient import TestClient
 
-from llm_orc.providers.llama_server import LlamaServerClient
+from llm_orc.providers.llama_server import _DIRECT, LlamaServerClient
 from llm_orc.web.server import create_app
 
 
@@ -117,6 +121,43 @@ class TestModelsApi:
         router.models.side_effect = OSError("connection refused")
 
         with patch("llm_orc.web.api.models.router_client", return_value=router):
+            response = client.get("/api/models")
+
+        assert response.status_code == 503
+        assert "llama-server" in response.json()["error"]
+
+    def test_an_id_less_listing_entry_is_left_out(self, client: TestClient) -> None:
+        listing = {
+            "data": [{"status": "loaded"}, {"id": "qwen3-8b", "status": "loaded"}]
+        }
+
+        with patch.object(
+            _DIRECT,
+            "open",
+            side_effect=lambda *a, **k: io.BytesIO(json.dumps(listing).encode()),
+        ):
+            response = client.get("/api/models")
+
+        assert response.status_code == 200
+        assert response.json() == {"models": [{"name": "qwen3-8b", "status": "loaded"}]}
+
+    @pytest.mark.parametrize(
+        "body",
+        [b"[]", b'{"data": null}', None],
+        ids=["non-dict-body", "data-null", "incomplete-read"],
+    )
+    def test_a_broken_router_listing_is_a_503_not_a_500(
+        self, client: TestClient, body: bytes | None
+    ) -> None:
+        opener = (
+            patch.object(_DIRECT, "open", side_effect=http.client.IncompleteRead(b"{"))
+            if body is None
+            else patch.object(
+                _DIRECT, "open", side_effect=lambda *a, **k: io.BytesIO(body)
+            )
+        )
+
+        with opener:
             response = client.get("/api/models")
 
         assert response.status_code == 503
