@@ -240,3 +240,30 @@ class TestEnsembleRefusalStatusOverRest:
         assert created.status_code == 400
         assert outside.read_text() == _SHAPE
         assert not (project / ".llm-orc" / "fresh.yaml").exists()
+
+    def test_an_over_long_name_is_400_not_500(self, project: Path) -> None:
+        long_name = "a" * 4000
+
+        with TestClient(create_app(), raise_server_exceptions=False) as client:
+            created = client.post(
+                "/api/ensembles", json={"name": long_name, "agents": _AGENTS}
+            )
+            put = client.put(f"/api/ensembles/{long_name}", json={"changes": {}})
+            delete = client.delete(f"/api/ensembles/{long_name}")
+
+        assert created.status_code == 400
+        assert put.status_code == 400
+        assert delete.status_code == 400
+        assert str(project) not in created.text + put.text + delete.text
+
+    def test_create_into_a_new_subdirectory_makes_the_directory(
+        self, project: Path
+    ) -> None:
+        with TestClient(create_app(), raise_server_exceptions=False) as client:
+            created = client.post(
+                "/api/ensembles", json={"name": "sub/inner", "agents": _AGENTS}
+            )
+
+        assert created.status_code == 200, created.text
+        written = self._ensembles_dir(project) / "sub" / "inner.yaml"
+        assert written.exists()

@@ -9,10 +9,20 @@ from llm_orc.core.config.config_manager import ConfigurationManager
 from llm_orc.mcp.project_context import ProjectContext
 from llm_orc.services.handlers.scope import (
     Scope,
+    check_write_target,
     find_in_scope,
     parse_scope,
     resolve_in_dir,
 )
+
+
+def _check_flat(name: str) -> None:
+    """Profiles load from ``*.yaml`` directly in a profiles directory, so a
+    name with a separator could be written but never found."""
+    if "/" in name or "\\" in name:
+        raise ValueError(
+            "Profile name is not allowed: profile names cannot contain a directory"
+        )
 
 
 class ProfileHandler:
@@ -106,6 +116,7 @@ class ProfileHandler:
         if not model:
             raise ValueError("model is required")
 
+        _check_flat(name)
         scope = parse_scope(arguments)
         local_dir = self._dir_for_scope(scope)
         if local_dir is None:
@@ -119,6 +130,9 @@ class ProfileHandler:
             filename=f"{name}.yaml",
             scope=scope,
             label="Profile",
+        )
+        check_write_target(
+            path=target_file, scope_dir=local_dir, scope=scope, label="Profile"
         )
         if target_file.exists():
             raise ValueError(f"Profile '{name}' already exists")
@@ -137,7 +151,7 @@ class ProfileHandler:
         if arguments.get("max_tokens") is not None:
             profile_data["max_tokens"] = arguments["max_tokens"]
 
-        local_dir.mkdir(parents=True, exist_ok=True)
+        target_file.parent.mkdir(parents=True, exist_ok=True)
         yaml_content = yaml.safe_dump(profile_data, default_flow_style=False)
         target_file.write_text(yaml_content)
 
@@ -151,7 +165,13 @@ class ProfileHandler:
         if not name:
             raise ValueError("name is required")
 
-        profile_file = self._find_profile_file(name, parse_scope(arguments))
+        scope = parse_scope(arguments)
+        profile_file = self._find_profile_file(name, scope)
+        scope_dir = self._dir_for_scope(scope)
+        if scope_dir is not None:
+            check_write_target(
+                path=profile_file, scope_dir=scope_dir, scope=scope, label="Profile"
+            )
 
         content = profile_file.read_text()
         data = yaml.safe_load(content) or {}
@@ -179,6 +199,7 @@ class ProfileHandler:
 
     def _find_profile_file(self, name: str, scope: Scope) -> Path:
         """Find the profile YAML in one scope; name the tier if elsewhere."""
+        _check_flat(name)
         return find_in_scope(
             name=name,
             filename=f"{name}.yaml",

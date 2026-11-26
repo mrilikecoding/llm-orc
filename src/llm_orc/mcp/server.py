@@ -512,7 +512,8 @@ class MCPServer:
 
             Args:
                 source: Library path to copy from
-                destination: Optional destination path
+                destination: Optional file name, relative to the local
+                    ensembles or scripts directory
                 overwrite: Whether to overwrite existing files
             """
             result = await self._service.library_copy(

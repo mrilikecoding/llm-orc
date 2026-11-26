@@ -8,6 +8,12 @@ from typing import Any
 from llm_orc.core.config.config_manager import ConfigurationManager
 from llm_orc.core.config.state import ARTIFACTS_DIRNAME, resolve_state_dir
 from llm_orc.mcp.project_context import ProjectContext
+from llm_orc.services.handlers.scope import refuse_link, resolve_names_in_dir
+
+
+def _is_real_dir(path: Path) -> bool:
+    """A directory that is not a link: a walk never follows a link out."""
+    return path.is_dir() and not path.is_symlink()
 
 
 class ArtifactHandler:
@@ -58,8 +64,12 @@ class ArtifactHandler:
         ensemble_name, timestamp = parts
 
         artifacts_base = self._get_artifacts_base()
-        artifact_dir = artifacts_base / ensemble_name / timestamp
+        artifact_dir = resolve_names_in_dir(
+            artifacts_base, ensemble_name, timestamp, label="Artifact"
+        )
 
+        refuse_link(artifact_dir.parent, "Artifact")
+        refuse_link(artifact_dir, "Artifact")
         if not artifact_dir.exists():
             raise ValueError(f"Artifact '{artifact_id}' not found")
 
@@ -100,9 +110,13 @@ class ArtifactHandler:
     ) -> list[Path]:
         """Get list of ensemble artifact directories to check."""
         if ensemble_name:
-            return [artifacts_base / ensemble_name]
+            named = resolve_names_in_dir(
+                artifacts_base, ensemble_name, label="Artifact"
+            )
+            refuse_link(named, "Artifact")
+            return [named]
         if artifacts_base.exists():
-            return [d for d in artifacts_base.iterdir() if d.is_dir()]
+            return [d for d in artifacts_base.iterdir() if _is_real_dir(d)]
         return []
 
     def _process_old_artifacts(
@@ -120,7 +134,7 @@ class ArtifactHandler:
                 continue
 
             for artifact_dir in ensemble_dir.iterdir():
-                if not artifact_dir.is_dir():
+                if not _is_real_dir(artifact_dir):
                     continue
 
                 mtime = artifact_dir.stat().st_mtime

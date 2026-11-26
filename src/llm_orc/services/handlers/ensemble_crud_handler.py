@@ -19,6 +19,7 @@ from llm_orc.schemas.agent_config import parse_agent_config
 from llm_orc.services.handlers.bundle_store import BundleStore
 from llm_orc.services.handlers.scope import (
     Scope,
+    check_write_target,
     find_in_scope,
     parse_scope,
     resolve_in_dir,
@@ -68,9 +69,9 @@ def _represent_str(dumper: yaml.SafeDumper, value: str) -> yaml.ScalarNode:
 _EnsembleDumper.add_representer(str, _represent_str)
 
 _COMMENT_NOTE = (
-    "Applying this rewrites the file: the leading comment block is kept, but "
-    "comments inside the document are not preserved. A backup is written "
-    "unless backup is false."
+    "Applying this rewrites the file: only a leading block of unindented '#' "
+    "lines is kept, every other comment is dropped, and line endings are "
+    "normalized. A backup is written unless backup is false."
 )
 
 
@@ -117,6 +118,16 @@ def _stage_file(path: Path, text: str) -> Path:
     return staged
 
 
+def _write_backup(backup_path: Path, text: str, mode: int) -> None:
+    """Write ``text`` to ``backup_path`` with the original file's ``mode``.
+    The file is created owner-only first, so a 0600 ensemble's content is
+    never readable through a looser backup."""
+    fd = os.open(backup_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as handle:
+        handle.write(text)
+    backup_path.chmod(mode)
+
+
 def _write_with_backup(path: Path, text: str, original_text: str, backup: bool) -> bool:
     """Replace ``path`` with ``text`` in one step, so a crash cannot leave a
     truncated file. With ``backup``, ``<name>.bak`` first holds the previous
@@ -127,7 +138,7 @@ def _write_with_backup(path: Path, text: str, original_text: str, backup: bool) 
     prior_backup = backup_path.read_text() if backup_path.exists() else None
     try:
         if backup:
-            backup_path.write_text(original_text)
+            _write_backup(backup_path, original_text, stat.S_IMODE(path.stat().st_mode))
         os.replace(staged, path)
     except BaseException:
         staged.unlink(missing_ok=True)
@@ -302,6 +313,9 @@ class EnsembleCrudHandler:
             scope=scope,
             label="Ensemble",
         )
+        check_write_target(
+            path=target_file, scope_dir=local_dir, scope=scope, label="Ensemble"
+        )
         if target_file.exists():
             raise ValueError(f"Ensemble already exists: {name}")
 
@@ -329,7 +343,7 @@ class EnsembleCrudHandler:
         }
         yaml_content = yaml.dump(ensemble_data, default_flow_style=False)
 
-        local_dir.mkdir(parents=True, exist_ok=True)
+        target_file.parent.mkdir(parents=True, exist_ok=True)
         target_file.write_text(yaml_content)
 
         return {
@@ -385,9 +399,13 @@ class EnsembleCrudHandler:
         """``<name>.yaml``, or ``<name>.yml`` when that is the file the
         scope's directory holds (the loader reads both)."""
         scope_dir = self._dir_for_scope(scope)
-        if scope_dir is not None and (scope_dir / f"{name}.yml").exists():
-            if not (scope_dir / f"{name}.yaml").exists():
-                return f"{name}.yml"
+        if scope_dir is None:
+            return f"{name}.yaml"
+        yml = resolve_in_dir(
+            scope_dir=scope_dir, filename=f"{name}.yml", scope=scope, label="Ensemble"
+        )
+        if yml.exists() and not (scope_dir / f"{name}.yaml").exists():
+            return f"{name}.yml"
         return f"{name}.yaml"
 
     async def update_ensemble(self, arguments: dict[str, Any]) -> dict[str, Any]:

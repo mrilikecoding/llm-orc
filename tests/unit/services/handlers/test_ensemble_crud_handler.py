@@ -1127,6 +1127,18 @@ class TestUpdateEnsembleWriteSafety:
 
         assert path.stat().st_mode & 0o777 == 0o640
 
+    async def test_the_backup_keeps_the_old_file_mode(self, tmp_path: Path) -> None:
+        path = _write_ensemble(tmp_path, _COMPOSED_ENSEMBLE)
+        path.chmod(0o600)
+        handler = _project_handler(tmp_path)
+
+        await handler.update_ensemble(
+            _update_args(changes={"remove_agents": ["summary"]}, backup=True)
+        )
+
+        backup = path.parent / "composed.yaml.bak"
+        assert backup.stat().st_mode & 0o777 == 0o600
+
 
 class TestUpdateEnsembleYmlFile:
     async def test_a_yml_only_ensemble_is_found_and_updated(
@@ -1279,7 +1291,7 @@ class TestUpdateEnsembleTextFidelity:
         assert _leading_comment_block(text) == _leading_comment_block(original)
         assert EnsembleLoader().load_from_file(str(path)).name == before["name"]
 
-    async def test_dry_run_says_inner_comments_are_not_preserved(
+    async def test_dry_run_note_says_what_is_kept_and_what_is_normalized(
         self, tmp_path: Path
     ) -> None:
         _write_ensemble(tmp_path, _COMPOSED_ENSEMBLE)
@@ -1289,5 +1301,25 @@ class TestUpdateEnsembleTextFidelity:
             _update_args(changes={"remove_agents": ["summary"]}, dry_run=True)
         )
 
-        assert "comments inside the document are not preserved" in result["note"]
+        assert "only a leading block of unindented" in result["note"]
+        assert "line endings are normalized" in result["note"]
         assert "backup" in result["note"]
+
+    async def test_the_note_is_true_of_a_comment_after_a_marker_and_of_crlf(
+        self, tmp_path: Path
+    ) -> None:
+        text = (
+            "---\r\n# after the marker\r\nname: composed\r\ndescription: d\r\n"
+            "agents:\r\n  # indented\r\n  - name: a\r\n    model_profile: p\r\n"
+            "  - name: b\r\n    model_profile: p\r\n"
+        )
+        path = _write_ensemble(tmp_path, "")
+        path.write_bytes(text.encode())
+        handler = _project_handler(tmp_path)
+
+        await handler.update_ensemble(_update_args(changes={"remove_agents": ["b"]}))
+
+        written = path.read_bytes().decode()
+        assert "after the marker" not in written
+        assert "indented" not in written
+        assert "\r" not in written

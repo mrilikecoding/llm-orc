@@ -9,6 +9,7 @@ from llm_orc.core.config.config_manager import ConfigurationManager
 from llm_orc.mcp.project_context import ProjectContext
 from llm_orc.services.handlers.scope import (
     Scope,
+    check_write_target,
     find_in_scope,
     parse_scope,
     resolve_in_dir,
@@ -66,9 +67,9 @@ class ScriptHandler:
             return None
         return self._get_scripts_dir()
 
-    def _scope_dirs(self) -> list[tuple[str, Path]]:
+    def _scope_dirs(self) -> list[tuple[Scope, Path]]:
         """Read order: project shadows global."""
-        dirs: list[tuple[str, Path]] = [("project", self._get_scripts_dir())]
+        dirs: list[tuple[Scope, Path]] = [("project", self._get_scripts_dir())]
         if self._config_manager is not None:
             dirs.append(("global", self._global_scripts_dir()))
         return dirs
@@ -80,8 +81,13 @@ class ScriptHandler:
         return "unknown"
 
     def _find_script(self, category: str, name: str) -> Path:
-        for _scope, scripts_dir in self._scope_dirs():
-            candidate = scripts_dir / category / f"{name}.py"
+        for scope, scripts_dir in self._scope_dirs():
+            candidate = resolve_in_dir(
+                scope_dir=scripts_dir,
+                filename=f"{category}/{name}.py",
+                scope=scope,
+                label="Script",
+            )
             if candidate.exists():
                 return candidate
         raise ValueError(f"Script '{category}/{name}' not found")
@@ -256,6 +262,9 @@ class ScriptHandler:
             filename=f"{category}/{name}.py",
             scope=scope,
             label="Script",
+        )
+        check_write_target(
+            path=script_file, scope_dir=scripts_dir, scope=scope, label="Script"
         )
         category_dir = script_file.parent
 

@@ -15,6 +15,7 @@ from llm_orc.services.handlers.bundle_store import (
     BundleError,
     BundleStore,
 )
+from llm_orc.services.handlers.scope import refuse_link, resolve_names_in_dir
 
 
 def _serialize_agent(agent: Any) -> dict[str, Any]:
@@ -249,8 +250,11 @@ class ResourceHandler:
             List of artifact metadata.
         """
         artifacts: list[dict[str, Any]] = []
-        artifacts_dir = self.get_artifacts_dir() / ensemble_name
+        artifacts_dir = resolve_names_in_dir(
+            self.get_artifacts_dir(), ensemble_name, label="Artifact"
+        )
 
+        refuse_link(artifacts_dir, "Artifact")
         if not artifacts_dir.exists():
             return []
 
@@ -294,7 +298,13 @@ class ResourceHandler:
         Raises:
             ValueError: If artifact not found.
         """
-        artifact_dir = self.get_artifacts_dir() / ensemble_name / artifact_id
+        base = self.get_artifacts_dir()
+        artifact_dir = resolve_names_in_dir(
+            base, ensemble_name, artifact_id, label="Artifact"
+        )
+        refuse_link(artifact_dir.parent, "Artifact")
+        if not artifact_dir.resolve().is_relative_to(base.resolve()):
+            raise ValueError("Artifact name is not allowed: it is a link out")
         execution_file = artifact_dir / "execution.json"
 
         if not execution_file.exists():

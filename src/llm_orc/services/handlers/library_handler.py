@@ -8,6 +8,7 @@ from typing import Any
 from llm_orc.core.config.config_manager import ConfigurationManager
 from llm_orc.core.config.ensemble_config import EnsembleLoader
 from llm_orc.mcp.project_context import ProjectContext
+from llm_orc.services.handlers.scope import check_write_target, resolve_in_dir
 
 logger = logging.getLogger(__name__)
 
@@ -110,16 +111,27 @@ class LibraryHandler:
         subdir = "ensembles" if "ensembles" in str(source_path) else "scripts"
         return local_dir / subdir / source_path.name
 
+    def _in_library(self, library_dir: Path, source: str) -> Path:
+        """``library_dir / source``, refused unless it stays in the library."""
+        return resolve_in_dir(
+            scope_dir=library_dir, filename=source, scope="library", label="Source"
+        )
+
     def _resolve_library_source(self, source: str) -> Path:
         """Resolve a library source string to a path."""
         library_dir = self.get_library_dir()
-        source_path = library_dir / source
+        source_path = self._in_library(library_dir, source)
 
         if not source_path.exists() and not source.endswith(".yaml"):
-            source_path = library_dir / f"{source}.yaml"
+            source_path = self._in_library(library_dir, f"{source}.yaml")
 
         if not source_path.exists():
             raise ValueError(f"Source not found in library: {source}")
+        if not source_path.resolve().is_relative_to(library_dir.resolve()):
+            raise ValueError(
+                "Source name is not allowed: it is a link that resolves outside "
+                "the 'library' scope directory"
+            )
         return source_path
 
     async def copy(self, arguments: dict[str, Any]) -> dict[str, Any]:
@@ -132,12 +144,24 @@ class LibraryHandler:
             raise ValueError("source is required")
 
         source_path = self._resolve_library_source(source)
+        default_dest = self._resolve_copy_destination(source_path)
         dest_path = (
-            Path(destination)
+            resolve_in_dir(
+                scope_dir=default_dest.parent,
+                filename=destination,
+                scope="local",
+                label="Destination",
+            )
             if destination
-            else self._resolve_copy_destination(source_path)
+            else default_dest
         )
 
+        check_write_target(
+            path=dest_path,
+            scope_dir=default_dest.parent,
+            scope="local",
+            label="Destination",
+        )
         if dest_path.exists() and not overwrite:
             raise ValueError(f"File already exists: {dest_path}")
 

@@ -19,6 +19,7 @@ from llm_orc.services.handlers.bundle_store import not_a_tier_ensemble
 from llm_orc.services.handlers.library_handler import LibraryHandler
 from llm_orc.services.handlers.profile_handler import ProfileHandler
 from llm_orc.services.handlers.provider_handler import ProviderHandler
+from llm_orc.services.handlers.scope import check_write_target, resolve_in_dir
 
 
 class PromotionHandler:
@@ -92,7 +93,9 @@ class PromotionHandler:
         source_path, source_tier = found
 
         dest_ensembles, dest_profiles = self._get_tier_dirs(destination)
-        dest_file = dest_ensembles / f"{ensemble_name}.yaml"
+        dest_file = self._tier_file(
+            dest_ensembles, ensemble_name, destination, write=True
+        )
 
         if dest_file.exists() and not overwrite:
             raise ValueError(
@@ -111,6 +114,11 @@ class PromotionHandler:
             raise ValueError(
                 f"Broken profile references: {', '.join(profiles_missing)}. "
                 "These profiles do not exist in any tier."
+            )
+
+        for profile in profiles_to_copy:
+            self._tier_file(
+                dest_profiles, profile["name"], destination, "Profile", write=True
             )
 
         if dry_run:
@@ -137,7 +145,7 @@ class PromotionHandler:
         copied_profiles: list[str] = []
         if include_profiles:
             copied_profiles = self._write_profiles(
-                profiles_to_copy, dest_profiles, overwrite
+                profiles_to_copy, dest_profiles, overwrite, destination
             )
 
         return {
@@ -222,7 +230,9 @@ class PromotionHandler:
             raise self._not_found(ensemble_name)
 
         dest_ensembles, _ = self._get_tier_dirs(destination)
-        already_exists = (dest_ensembles / f"{ensemble_name}.yaml").exists()
+        already_exists = self._tier_file(
+            dest_ensembles, ensemble_name, destination
+        ).exists()
 
         profiles_needed = self._get_ensemble_profiles(ensemble_name)
 
@@ -271,7 +281,7 @@ class PromotionHandler:
             raise ValueError("tier must be 'global' or 'library'")
 
         ensembles_dir, profiles_dir = self._get_tier_dirs(tier)
-        ensemble_file = ensembles_dir / f"{ensemble_name}.yaml"
+        ensemble_file = self._tier_file(ensembles_dir, ensemble_name, tier)
 
         if not ensemble_file.exists():
             raise ValueError(f"Ensemble '{ensemble_name}' not found at {tier} tier")
@@ -295,12 +305,15 @@ class PromotionHandler:
                 result["would_remove"]["orphaned_profiles"] = orphaned
             return result
 
+        orphan_files = [
+            (name, self._tier_file(profiles_dir, name, tier, "Profile"))
+            for name in orphaned
+        ]
         ensemble_file.unlink()
 
         removed_profiles: list[str] = []
         if remove_orphaned_profiles:
-            for profile_name in orphaned:
-                profile_file = profiles_dir / f"{profile_name}.yaml"
+            for profile_name, profile_file in orphan_files:
                 if profile_file.exists():
                     profile_file.unlink()
                     removed_profiles.append(profile_name)
@@ -315,6 +328,29 @@ class PromotionHandler:
     # =========================================================================
     # Internal helpers
     # =========================================================================
+
+    def _tier_file(
+        self,
+        directory: Path,
+        name: str,
+        tier: str,
+        label: str = "Ensemble",
+        *,
+        write: bool = False,
+    ) -> Path:
+        """``<directory>/<name>.yaml``, refused unless it stays inside the
+        tier directory. ``name`` is an ensemble name from the caller or a
+        profile name an ensemble or profile file lists. With ``write``, a
+        link at the file that points outside the directory is refused too."""
+        path = resolve_in_dir(
+            scope_dir=directory,
+            filename=f"{name}.yaml",
+            scope=tier,
+            label=label,
+        )
+        if write:
+            check_write_target(path=path, scope_dir=directory, scope=tier, label=label)
+        return path
 
     def _get_tier_dirs(self, tier: str) -> tuple[Path, Path]:
         """Get ensembles and profiles directories for a tier.
@@ -343,9 +379,10 @@ class PromotionHandler:
             Tuple of (file_path, tier_name) or None if not found.
         """
         for dir_path in self._config_manager.get_ensembles_dirs():
-            potential = Path(dir_path) / f"{ensemble_name}.yaml"
+            tier = self._config_manager.classify_tier(Path(dir_path))
+            potential = self._tier_file(Path(dir_path), ensemble_name, tier)
             if potential.exists():
-                return potential, self._config_manager.classify_tier(Path(dir_path))
+                return potential, tier
         return None
 
     def _get_ensemble_profiles(self, ensemble_name: str) -> set[str]:
@@ -415,6 +452,7 @@ class PromotionHandler:
         profiles_to_copy: list[dict[str, Any]],
         dest_profiles: Path,
         overwrite: bool,
+        tier: str,
     ) -> list[str]:
         """Write profile YAML files to destination directory.
 
@@ -422,6 +460,7 @@ class PromotionHandler:
             profiles_to_copy: Dicts with 'name' and 'data' keys.
             dest_profiles: Destination profiles directory.
             overwrite: Whether to overwrite existing files.
+            tier: The destination tier, for a refusal's message.
 
         Returns:
             List of profile names that were written.
@@ -430,7 +469,9 @@ class PromotionHandler:
         copied: list[str] = []
         for profile_info in profiles_to_copy:
             profile_name = profile_info["name"]
-            profile_file = dest_profiles / f"{profile_name}.yaml"
+            profile_file = self._tier_file(
+                dest_profiles, profile_name, tier, "Profile", write=True
+            )
             if not profile_file.exists() or overwrite:
                 profile_data = dict(profile_info["data"])
                 profile_data["name"] = profile_name
