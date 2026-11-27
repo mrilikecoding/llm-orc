@@ -145,7 +145,10 @@ self-contradicting expectations). Neither has been run since.
    post-edit file and runs the existing suite; C is #123, code and
    tests in one turn; E is #124), #122 edit delegation, and #183 A and
    C (per-node elapsed in the trace, declared context size), since a
-   gated build turn takes about five minutes.
+   gated build turn takes about five minutes. Slices C and D change
+   routing in `classify.py`, which is 2,820 lines with a 417-line
+   `main` (measured on #130): extract the route a slice touches as a
+   structural commit first, and leave the rest of the file alone.
 
 Before step 1, checked 2026-11-25:
 
@@ -179,8 +182,8 @@ Nothing is planned past step 1's result.
 
 Not in this tranche, picked up when the area is touched: #175 (the
 refusal reason as a closed type), #149 (truncation the serve cannot
-see), #155 (one known gap), #161 (script cache contract), #93, #110,
-and the one-service work on #191 and #189.
+see), #155 (one known gap), #161 (script cache contract), #110, and
+the one-service work on #191 and #189.
 
 ### Gated on the practitioner
 
